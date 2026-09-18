@@ -1,0 +1,172 @@
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
+
+from .models import QueueStatus, TemplateHeaderType, TemplateStatus
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+# --- Números ---
+
+
+class WhatsappNumberCreate(BaseModel):
+    waba_id: str
+    phone_number_id: str
+    display_phone_number: str
+    label: str = ""
+
+
+class WhatsappNumberOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    waba_id: str
+    phone_number_id: str
+    display_phone_number: str
+    label: str
+    active: bool
+    created_at: datetime
+
+
+# --- Templates ---
+
+
+class TemplateVariableIn(BaseModel):
+    position: int
+    internal_name: str
+
+
+class TemplateCreate(BaseModel):
+    name: str
+    meta_template_name: str
+    language: str = "pt_BR"
+    category: str = "UTILITY"
+    header_type: TemplateHeaderType = TemplateHeaderType.none
+    body_text: str
+    waba_id: str
+    variables: list[TemplateVariableIn] = []
+    submit_to_meta: bool = False
+
+
+class TemplateVariableOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    position: int
+    internal_name: str
+
+
+class TemplateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    meta_template_name: str
+    language: str
+    category: str
+    header_type: TemplateHeaderType
+    image_url: str | None
+    body_text: str
+    status: TemplateStatus
+    meta_status_raw: str | None
+    meta_template_id: str | None
+    waba_id: str | None
+    created_at: datetime
+    updated_at: datetime
+    variables: list[TemplateVariableOut] = []
+
+
+# --- Faixas ---
+
+
+class FaixaVariableMappingIn(BaseModel):
+    template_variable_id: str
+    column_name: str
+
+
+class FaixaCreate(BaseModel):
+    name: str
+    template_id: str
+    whatsapp_number_ids: list[str]
+    variable_mappings: list[FaixaVariableMappingIn]
+
+
+class FaixaVariableMappingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    template_variable_id: str
+    column_name: str
+
+
+class DispatchConfigOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    interval_seconds: int
+    batch_size: int
+    schedule_days: str
+    schedule_start: str
+    schedule_end: str
+    active: bool
+    last_run_at: datetime | None = None
+
+
+class DispatchConfigUpdate(BaseModel):
+    interval_seconds: int = 5
+    batch_size: int = 3
+    schedule_days: str = "1,2,3,4,5"
+    schedule_start: str = "08:00"
+    schedule_end: str = "18:30"
+    active: bool = True
+
+
+class FaixaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    template_id: str
+    active: bool
+    created_at: datetime
+    template: TemplateOut
+    variable_mappings: list[FaixaVariableMappingOut] = []
+    dispatch_config: DispatchConfigOut | None = None
+
+
+class QueueItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    faixa_id: str
+    nome: str
+    celular: str
+    status: QueueStatus
+    error_message: str | None
+    created_at: datetime
+    sent_at: datetime | None
+
+
+class UploadResult(BaseModel):
+    filename: str
+    row_count: int
+    accepted_count: int
+    rejected_count: int
+    rejected_reasons: list[str] = []
+
+
+class DashboardSummary(BaseModel):
+    total_pendentes: int
+    total_enviados: int
+    total_erros: int
+    total_telefones_invalidos: int
+    por_faixa: list[dict]
+    erros_recentes: list[dict]
