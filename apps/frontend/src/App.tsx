@@ -23,10 +23,10 @@ function Layout({ children }: { children: JSX.Element }) {
     <div className="layout">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">FC</div>
+          <div className="brand-mark">TF</div>
           <div className="brand-text">
-            <div className="name">FintechCRM</div>
-            <div className="tagline">Cobrança via WhatsApp</div>
+            <div className="name">TopFama</div>
+            <div className="tagline">Fintech · Crédito &amp; Cobrança</div>
           </div>
         </div>
 

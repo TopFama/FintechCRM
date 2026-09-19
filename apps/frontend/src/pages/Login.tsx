@@ -29,8 +29,8 @@ export default function Login() {
     <div className="login-screen">
       <div className="login-card">
         <div className="login-brand">
-          <div className="brand-mark">FC</div>
-          <h2>FintechCRM</h2>
+          <div className="brand-mark">TF</div>
+          <h2>TopFama Cobrança</h2>
           <p>Entre para gerenciar a cobrança via WhatsApp</p>
         </div>
 
