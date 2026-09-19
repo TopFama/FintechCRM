@@ -34,9 +34,9 @@ export default function Relatorios() {
     setError(null);
     try {
       if (tab === "invalidos") {
-        await api.downloadInvalidPhonesCsv(faixaId || undefined);
+        await api.downloadInvalidPhonesXlsx(faixaId || undefined);
       } else {
-        await api.downloadDispatchReportCsv(faixaId || undefined);
+        await api.downloadDispatchReportXlsx(faixaId || undefined);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao baixar relatório");
@@ -79,7 +79,7 @@ export default function Relatorios() {
               ))}
             </select>
             <button className="secondary" onClick={handleDownload} disabled={downloading}>
-              <IconDownload width={16} height={16} /> {downloading ? "Baixando..." : "Baixar CSV"}
+              <IconDownload width={16} height={16} /> {downloading ? "Baixando..." : "Baixar Excel"}
             </button>
           </div>
         </div>

@@ -1,7 +1,9 @@
-import csv
 import io
 
 from fastapi import APIRouter, Depends, Response
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
@@ -10,18 +12,46 @@ from ..deps import get_current_user
 
 router = APIRouter(prefix="/relatorios", tags=["relatorios"])
 
-_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+_DATETIME_FORMAT = "DD/MM/YYYY HH:MM:SS"
 
 
-def _csv_safe(value: str) -> str:
-    """Neutraliza injeção de fórmula em CSV (CWE-1236): nome/valor/telefone
-    vêm da planilha importada por qualquer usuário e, sem isso, um valor
-    como "=cmd|'/c calc'!A0" seria executado ao abrir o relatório exportado
-    no Excel/LibreOffice."""
+def _formula_safe(value: str) -> str:
+    """Neutraliza injeção de fórmula (CWE-1236): nome/valor/telefone vêm da
+    planilha importada por qualquer usuário e, sem isso, um valor como
+    "=cmd|'/c calc'!A0" seria executado ao abrir o relatório no Excel/
+    LibreOffice — o openpyxl trata string começando com "=" como fórmula
+    igual ao próprio Excel."""
 
-    if value and value[0] in _CSV_FORMULA_PREFIXES:
+    if value and value[0] in _FORMULA_PREFIXES:
         return "'" + value
     return value
+
+
+def _build_xlsx(headers: list[str], rows: list[list]) -> bytes:
+    """Gera um .xlsx com cabeçalho destacado, painel congelado, autofiltro e
+    largura de coluna ajustada — usado por todos os relatórios exportáveis."""
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="003090")
+    for row in rows:
+        ws.append(row)
+        for cell in ws[ws.max_row]:
+            if hasattr(cell.value, "strftime"):
+                cell.number_format = _DATETIME_FORMAT
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    for i, header in enumerate(headers, start=1):
+        widths = [len(header)] + [len(str(row[i - 1])) for row in rows if row[i - 1] is not None]
+        ws.column_dimensions[get_column_letter(i)].width = min(max(widths) + 4, 40)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
 
 
 def _invalid_phones_query(db: Session, faixa_id: str | None):
@@ -51,24 +81,22 @@ def export_invalid_phones(
         .options(selectinload(models.InvalidPhoneRecord.faixa))
         .all()
     )
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(["codigo_cliente", "faixa", "celular_original", "celular_normalizado", "motivo", "data_hora"])
-    for r in records:
-        writer.writerow(
-            [
-                r.codigo_cliente,
-                r.faixa.name if r.faixa else "",
-                _csv_safe(r.celular_original),
-                r.celular_normalizado or "",
-                r.motivo,
-                r.created_at.isoformat(),
-            ]
-        )
+    headers = ["Código do cliente", "Faixa", "Telefone informado", "Telefone normalizado", "Motivo", "Data/hora"]
+    rows = [
+        [
+            r.codigo_cliente,
+            r.faixa.name if r.faixa else "",
+            _formula_safe(r.celular_original),
+            r.celular_normalizado or "",
+            r.motivo,
+            r.created_at,
+        ]
+        for r in records
+    ]
     return Response(
-        content=buffer.getvalue().encode("utf-8-sig"),
-        media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="telefones_invalidos.csv"'},
+        content=_build_xlsx(headers, rows),
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="telefones_invalidos.xlsx"'},
     )
 
 
@@ -113,25 +141,22 @@ def export_dispatch_report(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    rows = _dispatch_report_rows(db, faixa_id)
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(["codigo_cliente", "faixa_de_atraso", "nome", "valor_cobrado", "telefone_que_cobrou", "data_hora"])
-    for item in rows:
-        if not item.sent_at:
-            continue
-        writer.writerow(
-            [
-                item.codigo_cliente,
-                item.faixa.name if item.faixa else "",
-                _csv_safe(item.nome),
-                _csv_safe(item.valor or ""),
-                item.whatsapp_number.display_phone_number if item.whatsapp_number else "",
-                item.sent_at.isoformat(),
-            ]
-        )
+    rows_data = _dispatch_report_rows(db, faixa_id)
+    headers = ["Código do cliente", "Faixa de atraso", "Nome", "Valor cobrado", "Telefone que cobrou", "Data/hora"]
+    rows = [
+        [
+            item.codigo_cliente,
+            item.faixa.name if item.faixa else "",
+            _formula_safe(item.nome),
+            _formula_safe(item.valor or ""),
+            item.whatsapp_number.display_phone_number if item.whatsapp_number else "",
+            item.sent_at,
+        ]
+        for item in rows_data
+        if item.sent_at
+    ]
     return Response(
-        content=buffer.getvalue().encode("utf-8-sig"),
-        media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="relatorio_envios.csv"'},
+        content=_build_xlsx(headers, rows),
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="relatorio_envios.xlsx"'},
     )

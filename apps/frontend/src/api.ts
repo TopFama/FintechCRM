@@ -86,12 +86,12 @@ export const api = {
   listDispatchReport: (faixaId?: string) =>
     request<DispatchReportItem[]>(`/relatorios/envios${faixaId ? `?faixa_id=${faixaId}` : ""}`),
 
-  // Exportações em CSV exigem o mesmo Bearer token das outras rotas, então
+  // Exportações em Excel exigem o mesmo Bearer token das outras rotas, então
   // baixamos como blob autenticado em vez de um <a href> simples.
-  downloadInvalidPhonesCsv: (faixaId?: string) =>
-    downloadFile(`/relatorios/telefones-invalidos/export${faixaId ? `?faixa_id=${faixaId}` : ""}`, "telefones_invalidos.csv"),
-  downloadDispatchReportCsv: (faixaId?: string) =>
-    downloadFile(`/relatorios/envios/export${faixaId ? `?faixa_id=${faixaId}` : ""}`, "relatorio_envios.csv"),
+  downloadInvalidPhonesXlsx: (faixaId?: string) =>
+    downloadFile(`/relatorios/telefones-invalidos/export${faixaId ? `?faixa_id=${faixaId}` : ""}`, "telefones_invalidos.xlsx"),
+  downloadDispatchReportXlsx: (faixaId?: string) =>
+    downloadFile(`/relatorios/envios/export${faixaId ? `?faixa_id=${faixaId}` : ""}`, "relatorio_envios.xlsx"),
 };
 
 async function downloadFile(path: string, filename: string): Promise<void> {
