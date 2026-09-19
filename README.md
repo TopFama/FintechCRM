@@ -61,8 +61,8 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 | `POSTGRES_PASSWORD` | container `db` | **sim**, em produção | `change-me` | Senha do Postgres — troque antes de expor o sistema. |
 | `POSTGRES_DB` | container `db` | não | `fintechcrm` | Nome do banco criado na primeira subida do container. |
 | `DATABASE_URL` | backend | não | `postgresql+psycopg://fintechcrm:change-me@db:5432/fintechcrm` | String de conexão completa (SQLAlchemy + psycopg 3). Se mudar usuário/senha/banco acima, ajuste aqui também — o backend usa esta variável, não as três de cima diretamente. |
-| `JWT_SECRET` | backend | **sim**, em produção | `change-me-too` | Chave usada para assinar o JWT de login — troque antes de expor o sistema. |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | backend | não | `admin@topfama.com.br` / `change-me-admin` | Credenciais do usuário admin criado automaticamente na primeira subida (só se ainda não existir um usuário com esse email). |
+| `JWT_SECRET` | backend | **sim** | `change-me-too` | Chave usada para assinar o JWT de login — o backend **recusa subir** se este valor continuar igual ao default do `.env.example`. |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | backend | `ADMIN_PASSWORD` **sim** | `admin@topfama.com.br` / `change-me-admin` | Credenciais do usuário admin criado automaticamente na primeira subida (só se ainda não existir um usuário com esse email). O backend também recusa subir se `ADMIN_PASSWORD` continuar com o valor default. |
 | `META_ACCESS_TOKEN` | backend | **sim** | *(vazio)* | Token de acesso à Graph API da Meta. Única credencial externa obrigatória — ver passo a passo abaixo. |
 | `META_GRAPH_API_VERSION` | backend | não | `v21.0` | Versão da Graph API usada em todas as chamadas (`app/meta_client.py`). |
 | `VITE_API_URL` | frontend (build) | não | `http://localhost:8000` | URL base da API que o frontend chama — usada só no build do Vite (fica embutida no bundle). |

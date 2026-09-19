@@ -10,6 +10,19 @@ from ..deps import get_current_user
 
 router = APIRouter(prefix="/relatorios", tags=["relatorios"])
 
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: str) -> str:
+    """Neutraliza injeção de fórmula em CSV (CWE-1236): nome/valor/telefone
+    vêm da planilha importada por qualquer usuário e, sem isso, um valor
+    como "=cmd|'/c calc'!A0" seria executado ao abrir o relatório exportado
+    no Excel/LibreOffice."""
+
+    if value and value[0] in _CSV_FORMULA_PREFIXES:
+        return "'" + value
+    return value
+
 
 def _invalid_phones_query(db: Session, faixa_id: str | None):
     query = db.query(models.InvalidPhoneRecord).order_by(models.InvalidPhoneRecord.created_at.desc())
@@ -46,7 +59,7 @@ def export_invalid_phones(
             [
                 r.codigo_cliente,
                 r.faixa.name if r.faixa else "",
-                r.celular_original,
+                _csv_safe(r.celular_original),
                 r.celular_normalizado or "",
                 r.motivo,
                 r.created_at.isoformat(),
@@ -111,8 +124,8 @@ def export_dispatch_report(
             [
                 item.codigo_cliente,
                 item.faixa.name if item.faixa else "",
-                item.nome,
-                item.valor or "",
+                _csv_safe(item.nome),
+                _csv_safe(item.valor or ""),
                 item.whatsapp_number.display_phone_number if item.whatsapp_number else "",
                 item.sent_at.isoformat(),
             ]

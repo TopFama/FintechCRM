@@ -30,6 +30,26 @@ def _run_migrations() -> None:
     command.upgrade(alembic_cfg, "head")
 
 
+def _check_secrets() -> None:
+    """Recusa subir com os valores padrão do `.env.example` — são públicos
+    no repositório e, se esquecidos em produção, permitem login direto com
+    a senha padrão do admin ou forjar um token JWT válido para qualquer
+    usuário."""
+
+    insecure_defaults = {
+        "jwt_secret": "change-me-too",
+        "admin_password": "change-me-admin",
+    }
+    leaked = [name for name, default in insecure_defaults.items() if getattr(settings, name) == default]
+    if leaked:
+        raise RuntimeError(
+            "Configuração insegura: defina variáveis de ambiente reais para "
+            f"{', '.join(leaked)} antes de subir o backend (ver README.md → "
+            "'Configuração do ambiente (.env)'). Os valores padrão do "
+            "`.env.example` são públicos e não podem ser usados fora de desenvolvimento local."
+        )
+
+
 def _ensure_admin_user() -> None:
     db = SessionLocal()
     try:
@@ -48,6 +68,7 @@ def _ensure_admin_user() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _check_secrets()
     _run_migrations()
     _ensure_admin_user()
     scheduler = start_scheduler()
