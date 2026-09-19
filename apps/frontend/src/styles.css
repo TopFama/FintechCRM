@@ -1,35 +1,36 @@
 :root {
-  /* Identidade TopFama: bordô (cor da marca no portal de renegociação,
-     lojastopfama.com.br / renegociacao.lojastopfama.com.br) + dourado como
-     acento, sobre uma tipografia arredondada e amigável (Poppins). */
+  /* Identidade TopFama, a partir da logo oficial (azul, amarelo e vermelho
+     sobre branco): azul como cor primária (confiança, tom financeiro),
+     amarelo como acento pontual, tipografia Poppins (mesmo tom amigável da
+     marca). Vermelho fica reservado para estados de erro, como já era. */
   --font-sans: "Poppins", "Segoe UI", system-ui, -apple-system, sans-serif;
 
-  --color-bg: #f6f3f1;
+  --color-bg: #f3f5fb;
   --color-surface: #ffffff;
-  --color-border: #ece3e2;
-  --color-border-strong: #ddd0ce;
+  --color-border: #e2e6f2;
+  --color-border-strong: #ccd3e8;
 
-  --color-text: #2a1b20;
-  --color-text-muted: #7a6669;
-  --color-text-faint: #a6969a;
+  --color-text: #101a33;
+  --color-text-muted: #5b6683;
+  --color-text-faint: #8e97b3;
 
-  --color-primary: #6b1f34;
-  --color-primary-dark: #4f1626;
-  --color-primary-light: #f6e9ec;
+  --color-primary: #003090;
+  --color-primary-dark: #001f66;
+  --color-primary-light: #e8ecfa;
   --color-primary-contrast: #ffffff;
-  --color-accent: #c9a15a;
+  --color-accent: #fce400;
 
   --color-success: #17945e;
   --color-success-bg: #e7f8ef;
   --color-warning: #b7791f;
   --color-warning-bg: #fef6e0;
-  --color-danger: #d92d20;
-  --color-danger-bg: #fef1f0;
-  --color-neutral-bg: #f1eae9;
+  --color-danger: #e0201b;
+  --color-danger-bg: #fdecec;
+  --color-neutral-bg: #eceff8;
 
-  --sidebar-bg: #24121a;
-  --sidebar-bg-alt: #3a1a26;
-  --sidebar-text: #d9bcc4;
+  --sidebar-bg: #041233;
+  --sidebar-bg-alt: #0a2266;
+  --sidebar-text: #b7c3e8;
   --sidebar-text-active: #ffffff;
 
   --radius-sm: 8px;
@@ -107,43 +108,33 @@ a {
 
 .brand {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px 22px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 6px 10px 22px;
 }
 
-.brand-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #6b1f34 0%, #8a2a44 55%, #c9a15a 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 800;
-  font-size: 14px;
-  flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(107, 31, 52, 0.5);
+.brand-logo {
+  width: 148px;
+  height: auto;
+  display: block;
+  /* logo tem fundo transparente e texto branco/amarelo — leve sombra ajuda
+     a separar do azul-marinho da sidebar sem precisar de uma versão à parte */
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
 }
 
-.brand-text .name {
-  color: #fff;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.1;
-}
-
-.brand-text .tagline {
+.brand-tagline {
   font-size: 11.5px;
-  color: #c9a8af;
+  font-weight: 600;
+  color: #a9b7e0;
+  padding-left: 2px;
 }
 
 .nav-section-label {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #a98890;
+  color: #7683ad;
   padding: 4px 12px;
   margin-top: 6px;
 }
@@ -871,12 +862,10 @@ label {
   margin-bottom: 22px;
 }
 
-.login-brand .brand-mark {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  font-size: 20px;
-  margin-bottom: 14px;
+.login-brand .brand-logo {
+  width: 220px;
+  filter: none;
+  margin-bottom: 6px;
 }
 
 .login-brand h2 {

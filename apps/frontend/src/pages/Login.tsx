@@ -29,8 +29,8 @@ export default function Login() {
     <div className="login-screen">
       <div className="login-card">
         <div className="login-brand">
-          <div className="brand-mark">TF</div>
-          <h2>TopFama Cobrança</h2>
+          <img src="/topfama-logo.png" alt="TopFama" className="brand-logo" />
+          <h2>Cobrança</h2>
           <p>Entre para gerenciar a cobrança via WhatsApp</p>
         </div>
 

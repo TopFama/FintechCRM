@@ -23,11 +23,8 @@ function Layout({ children }: { children: JSX.Element }) {
     <div className="layout">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">TF</div>
-          <div className="brand-text">
-            <div className="name">TopFama</div>
-            <div className="tagline">Fintech · Crédito &amp; Cobrança</div>
-          </div>
+          <img src="/topfama-logo.png" alt="TopFama" className="brand-logo" />
+          <span className="brand-tagline">Fintech · Crédito &amp; Cobrança</span>
         </div>
 
         <div className="nav-section-label">Menu</div>
