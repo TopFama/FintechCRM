@@ -25,7 +25,7 @@ FintechCRM/
         utils/
           phone.py                 # normalização/validação de telefone (formato 55DD9XXXXXXXX)
           document.py               # validação de código do cliente (SETA de 8 dígitos ou CPF)
-          spreadsheet.py             # leitura de CSV/XLSX e geração do modelo de planilha
+          spreadsheet.py             # leitura de .xlsx e geração do modelo de planilha
       alembic/                    # migrations do schema (ver seção Migrations abaixo)
       requirements.txt
       Dockerfile
@@ -223,7 +223,7 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    recentes — tudo lido direto do Postgres do próprio sistema.
 9. **Relatórios** — telefones inválidos (código do cliente + telefone) e envios realizados (código
    do cliente, faixa de atraso, nome, valor cobrado, telefone que cobrou e data/hora), com filtro
-   por faixa e exportação em CSV.
+   por faixa e exportação em Excel (.xlsx) já formatado.
 
 ## Testes / validação de mudanças
 

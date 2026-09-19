@@ -28,8 +28,10 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
 - `utils/phone.py` — normalização/validação de telefone (formato final `55DD9XXXXXXXX`).
 - `utils/document.py` — validação de código do cliente (SETA de 8 dígitos ou CPF com dígito
   verificador).
-- `utils/spreadsheet.py` — leitura de CSV/XLSX (sem pandas, usa `openpyxl` + `csv` da stdlib) e
-  geração do modelo de planilha para download.
+- `utils/spreadsheet.py` — leitura de .xlsx (sem pandas, usa `openpyxl`) e geração do modelo de
+  planilha para download. `routers/reports.py` tem sua própria geração de .xlsx para os
+  relatórios exportáveis. Não há CSV em lugar nenhum do sistema — todo upload/download de
+  planilha é em Excel (.xlsx).
 - `alembic/` — migrations. Ver seção própria abaixo.
 
 **Frontend** (`apps/frontend/src/`):

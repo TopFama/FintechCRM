@@ -39,7 +39,7 @@ async def read_upload_columns(
     _load_faixa(db, faixa_id)
     content = await file.read()
     try:
-        columns = read_spreadsheet_headers(file.filename or "planilha.csv", content)
+        columns = read_spreadsheet_headers(file.filename or "planilha.xlsx", content)
     except Exception as exc:  # noqa: BLE001 - erro de parsing vira 400 explícito
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Não foi possível ler a planilha: {exc}") from exc
     if not columns:
@@ -72,7 +72,7 @@ async def upload_planilha(
 
     content = await file.read()
     try:
-        rows = parse_uploaded_spreadsheet(file.filename or "planilha.csv", content)
+        rows = parse_uploaded_spreadsheet(file.filename or "planilha.xlsx", content)
     except Exception as exc:  # noqa: BLE001 - erro de parsing vira 400 explícito
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Não foi possível ler a planilha: {exc}") from exc
 
@@ -159,7 +159,7 @@ async def upload_planilha(
     db.add(
         models.UploadLog(
             faixa_id=faixa_id,
-            filename=file.filename or "planilha.csv",
+            filename=file.filename or "planilha.xlsx",
             uploaded_by=user.id,
             row_count=len(rows),
             accepted_count=accepted,
@@ -170,7 +170,7 @@ async def upload_planilha(
     db.commit()
 
     return schemas.UploadResult(
-        filename=file.filename or "planilha.csv",
+        filename=file.filename or "planilha.xlsx",
         row_count=len(rows),
         accepted_count=accepted,
         rejected_count=rejected,

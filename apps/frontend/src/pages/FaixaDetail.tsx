@@ -30,6 +30,7 @@ export default function FaixaDetail() {
   const [savingConfig, setSavingConfig] = useState(false);
   const [dispatchMessage, setDispatchMessage] = useState<string | null>(null);
   const [lastQueueUpdate, setLastQueueUpdate] = useState<Date | null>(null);
+  const [downloadingModel, setDownloadingModel] = useState(false);
 
   // Upload em duas etapas: 1) escolher arquivo e ler as colunas reais do
   // cabeçalho; 2) mapear cada variável/campo para uma dessas colunas antes
@@ -158,6 +159,19 @@ export default function FaixaDetail() {
     }
   }
 
+  async function handleDownloadModel() {
+    if (!id || !faixa) return;
+    setError(null);
+    setDownloadingModel(true);
+    try {
+      await api.downloadSpreadsheetModel(id, faixa.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao baixar modelo");
+    } finally {
+      setDownloadingModel(false);
+    }
+  }
+
   async function dispatchNow() {
     if (!id) return;
     setError(null);
@@ -197,12 +211,9 @@ export default function FaixaDetail() {
       <div className="card">
         <div className="card-header">
           <h3>1. Subir planilha e mapear colunas</h3>
-          <a
-            href={id ? api.spreadsheetModelUrl(id) : "#"}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}
-          >
-            <IconDownload width={16} height={16} /> Baixar modelo sugerido (.csv)
-          </a>
+          <button className="ghost small" onClick={handleDownloadModel} disabled={downloadingModel}>
+            <IconDownload width={16} height={16} /> {downloadingModel ? "Baixando..." : "Baixar modelo sugerido (.xlsx)"}
+          </button>
         </div>
         <p className="card-subtitle">
           Suba a planilha com a base de clientes desta faixa. O sistema lê o cabeçalho (primeira linha) e você
@@ -214,12 +225,12 @@ export default function FaixaDetail() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv,.xlsx"
+              accept=".xlsx"
               onChange={(e) => e.target.files && handlePickFile(e.target.files[0])}
             />
             <IconUpload width={26} height={26} />
             <div className="dz-title">{loadingColumns ? "Lendo colunas da planilha..." : "Clique ou arraste a planilha aqui"}</div>
-            <div className="dz-hint">.csv ou .xlsx</div>
+            <div className="dz-hint">.xlsx</div>
           </label>
         )}
 
