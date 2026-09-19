@@ -6,6 +6,7 @@ import Templates from "./pages/Templates";
 import Faixas from "./pages/Faixas";
 import FaixaWizard from "./pages/FaixaWizard";
 import FaixaDetail from "./pages/FaixaDetail";
+import { IconDashboard, IconLayers, IconLogout, IconPhone, IconTemplate } from "./icons";
 
 function isAuthenticated() {
   return Boolean(localStorage.getItem("token"));
@@ -20,23 +21,41 @@ function Layout({ children }: { children: JSX.Element }) {
   return (
     <div className="layout">
       <aside className="sidebar">
-        <h1>FintechCRM</h1>
-        <NavLink to="/" end>
-          Dashboard
-        </NavLink>
-        <NavLink to="/numeros">Números</NavLink>
-        <NavLink to="/templates">Templates</NavLink>
-        <NavLink to="/faixas">Faixas de cobrança</NavLink>
-        <button
-          className="secondary"
-          style={{ marginTop: 24, width: "100%" }}
-          onClick={() => {
-            localStorage.removeItem("token");
-            window.location.href = "/login";
-          }}
-        >
-          Sair
-        </button>
+        <div className="brand">
+          <div className="brand-mark">FC</div>
+          <div className="brand-text">
+            <div className="name">FintechCRM</div>
+            <div className="tagline">Cobrança via WhatsApp</div>
+          </div>
+        </div>
+
+        <div className="nav-section-label">Menu</div>
+        <nav>
+          <NavLink to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <IconDashboard /> Dashboard
+          </NavLink>
+          <NavLink to="/numeros" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <IconPhone /> Números
+          </NavLink>
+          <NavLink to="/templates" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <IconTemplate /> Templates
+          </NavLink>
+          <NavLink to="/faixas" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <IconLayers /> Faixas de cobrança
+          </NavLink>
+        </nav>
+
+        <div className="sidebar-footer">
+          <button
+            className="logout-btn"
+            onClick={() => {
+              localStorage.removeItem("token");
+              window.location.href = "/login";
+            }}
+          >
+            <IconLogout /> Sair
+          </button>
+        </div>
       </aside>
       <main className="content">{children}</main>
     </div>

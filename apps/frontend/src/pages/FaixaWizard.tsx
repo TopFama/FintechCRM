@@ -1,6 +1,29 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Template, WhatsappNumber } from "../api";
+import { IconAlert, IconCheckCircle } from "../icons";
+
+const STEPS = [
+  { n: 1, label: "Nome e template" },
+  { n: 2, label: "Números de envio" },
+  { n: 3, label: "Variáveis" },
+];
+
+function Stepper({ step }: { step: number }) {
+  return (
+    <div className="stepper">
+      {STEPS.map((s, i) => (
+        <Fragment key={s.n}>
+          <div className={`stepper-step${step === s.n ? " active" : ""}${step > s.n ? " done" : ""}`}>
+            <div className="stepper-circle">{step > s.n ? <IconCheckCircle width={16} height={16} /> : s.n}</div>
+            <div className="stepper-label">{s.label}</div>
+          </div>
+          {i < STEPS.length - 1 && <div className={`stepper-line${step > s.n ? " done" : ""}`} />}
+        </Fragment>
+      ))}
+    </div>
+  );
+}
 
 export default function FaixaWizard() {
   const [step, setStep] = useState(1);
@@ -47,16 +70,34 @@ export default function FaixaWizard() {
 
   return (
     <div>
-      <h2>Nova faixa de cobrança</h2>
-      {error && <div className="error-box">{error}</div>}
+      <div className="page-header">
+        <div>
+          <h2>Nova faixa de cobrança</h2>
+          <div className="subtitle">Dê um nome livre à faixa (ex. "21 A 30" ou "RENEGOCIE") e ligue a um template</div>
+        </div>
+      </div>
+
+      {error && (
+        <div className="error-box">
+          <IconAlert width={16} height={16} />
+          <span>{error}</span>
+        </div>
+      )}
 
       <div className="card">
+        <Stepper step={step} />
+
         {step === 1 && (
           <>
-            <h3>1. Nome da faixa e template</h3>
+            <h3>Nome da faixa e template</h3>
+            <p className="card-subtitle">O nome é livre — use o rótulo que fizer sentido para a sua régua de cobrança.</p>
             <div className="field">
-              <label>Nome da faixa (ex. RENEGOCIE, 21 A 30)</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} />
+              <label>Nome da faixa</label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="ex. RENEGOCIE, 21 A 30"
+              />
             </div>
             <div className="field">
               <label>Template aprovado</label>
@@ -69,31 +110,32 @@ export default function FaixaWizard() {
                 ))}
               </select>
             </div>
-            <button disabled={!name || !templateId} onClick={() => setStep(2)}>
-              Próximo
-            </button>
+            <div className="actions-row">
+              <button disabled={!name || !templateId} onClick={() => setStep(2)}>
+                Próximo
+              </button>
+            </div>
           </>
         )}
 
         {step === 2 && (
           <>
-            <h3>2. Números de envio</h3>
-            <p style={{ color: "#64748b" }}>
-              Selecione um ou mais números. Quando mais de um for escolhido, os disparos alternam
-              entre eles.
+            <h3>Números de envio</h3>
+            <p className="card-subtitle">
+              Selecione um ou mais números. Quando mais de um for escolhido, os disparos alternam entre eles.
             </p>
-            {numbers.map((n) => (
-              <label key={n.id} style={{ display: "block", marginBottom: 6 }}>
-                <input
-                  type="checkbox"
-                  style={{ width: "auto", marginRight: 6 }}
-                  checked={numberIds.includes(n.id)}
-                  onChange={() => toggleNumber(n.id)}
-                />
-                {n.label || n.display_phone_number} ({n.display_phone_number})
-              </label>
-            ))}
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <div className="option-list">
+              {numbers.map((n) => (
+                <label key={n.id} className={`option-item${numberIds.includes(n.id) ? " checked" : ""}`}>
+                  <input type="checkbox" checked={numberIds.includes(n.id)} onChange={() => toggleNumber(n.id)} />
+                  {n.label || n.display_phone_number} ({n.display_phone_number})
+                </label>
+              ))}
+              {numbers.length === 0 && (
+                <p className="text-muted">Nenhum número cadastrado ainda — cadastre em "Números" primeiro.</p>
+              )}
+            </div>
+            <div className="actions-row">
               <button className="secondary" onClick={() => setStep(1)}>
                 Voltar
               </button>
@@ -106,12 +148,12 @@ export default function FaixaWizard() {
 
         {step === 3 && selectedTemplate && (
           <>
-            <h3>3. Variáveis internas → colunas da planilha</h3>
-            <p style={{ color: "#64748b" }}>
-              Para cada variável do template, informe o nome da coluna que vai existir na planilha de
-              clientes dessa faixa.
+            <h3>Variáveis internas → colunas da planilha</h3>
+            <p className="card-subtitle">
+              Para cada variável do template, informe o nome da coluna que vai existir na planilha de clientes dessa
+              faixa.
             </p>
-            {selectedTemplate.variables.length === 0 && <p>Este template não tem variáveis no corpo.</p>}
+            {selectedTemplate.variables.length === 0 && <p className="text-muted">Este template não tem variáveis no corpo.</p>}
             {selectedTemplate.variables.map((v) => (
               <div className="field" key={v.id}>
                 <label>Variável interna: {v.internal_name}</label>
@@ -121,7 +163,7 @@ export default function FaixaWizard() {
                 />
               </div>
             ))}
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <div className="actions-row">
               <button className="secondary" onClick={() => setStep(2)}>
                 Voltar
               </button>

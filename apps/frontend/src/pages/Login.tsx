@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { IconAlert } from "../icons";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -26,27 +27,47 @@ export default function Login() {
 
   return (
     <div className="login-screen">
-      <form className="card" style={{ width: 320 }} onSubmit={handleSubmit}>
-        <h2>FintechCRM</h2>
-        <p style={{ color: "#64748b", marginTop: -8 }}>Cobrança via WhatsApp</p>
-        {error && <div className="error-box">{error}</div>}
-        <div className="field">
-          <label>Email</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
+      <div className="login-card">
+        <div className="login-brand">
+          <div className="brand-mark">FC</div>
+          <h2>FintechCRM</h2>
+          <p>Entre para gerenciar a cobrança via WhatsApp</p>
         </div>
-        <div className="field">
-          <label>Senha</label>
-          <input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            type="password"
-            required
-          />
-        </div>
-        <button type="submit" disabled={loading} style={{ width: "100%" }}>
-          {loading ? "Entrando..." : "Entrar"}
-        </button>
-      </form>
+
+        {error && (
+          <div className="error-box">
+            <IconAlert width={16} height={16} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label>Email</label>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              placeholder="voce@empresa.com"
+              autoFocus
+              required
+            />
+          </div>
+          <div className="field">
+            <label>Senha</label>
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+          <button type="submit" disabled={loading} style={{ width: "100%", justifyContent: "center" }}>
+            {loading ? "Entrando..." : "Entrar"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
