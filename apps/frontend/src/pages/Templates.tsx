@@ -1,10 +1,11 @@
-import { FormEvent, useEffect, useState } from "react";
-import { api, Template } from "../api";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { api, Template, WhatsappNumber } from "../api";
 import { IconAlert, IconPlus, IconTemplate } from "../icons";
 
 export default function Templates() {
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [wabaId, setWabaId] = useState("");
+  const [numbers, setNumbers] = useState<WhatsappNumber[]>([]);
+  const [selectedWabaId, setSelectedWabaId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -16,22 +17,26 @@ export default function Templates() {
     category: "UTILITY",
     header_type: "none" as "none" | "image",
     body_text: "",
-    waba_id: "",
     submit_to_meta: false,
   });
 
+  const wabaIds = useMemo(
+    () => Array.from(new Set(numbers.map((n) => n.waba_id))),
+    [numbers]
+  );
+
   function load() {
     api.listTemplates().then(setTemplates).catch((e) => setError(e.message));
+    api.listNumbers().then(setNumbers).catch(() => undefined);
   }
 
   useEffect(load, []);
 
-  async function handleSync(e: FormEvent) {
-    e.preventDefault();
+  async function handleSync() {
     setError(null);
     setSyncing(true);
     try {
-      await api.syncTemplatesFromMeta(wabaId);
+      await api.syncTemplatesFromMeta();
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao sincronizar com a Meta");
@@ -52,7 +57,7 @@ export default function Templates() {
     setSaving(true);
     try {
       const variables = detectVariables(form.body_text);
-      const payload = { ...form, variables };
+      const payload = { ...form, variables, waba_id: wabaIds.length > 1 ? selectedWabaId : undefined };
       await api.createTemplate(payload);
       setShowCreate(false);
       setForm({
@@ -62,7 +67,6 @@ export default function Templates() {
         category: "UTILITY",
         header_type: "none",
         body_text: "",
-        waba_id: "",
         submit_to_meta: false,
       });
       load();
@@ -111,16 +115,16 @@ export default function Templates() {
         <div className="card-header">
           <h3>Sincronizar templates da Meta</h3>
         </div>
-        <p className="card-subtitle">Puxa os templates já aprovados/pendentes de um WABA ID diretamente da Meta.</p>
-        <form onSubmit={handleSync} style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-          <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-            <label>WABA ID</label>
-            <input value={wabaId} onChange={(e) => setWabaId(e.target.value)} required />
-          </div>
-          <button type="submit" disabled={syncing}>
-            {syncing ? "Sincronizando..." : "Sincronizar"}
-          </button>
-        </form>
+        <p className="card-subtitle">
+          Puxa os templates já aprovados/pendentes direto da Meta para todos os números de WhatsApp já
+          cadastrados na aba Números — não precisa mais informar o WABA ID na mão.
+        </p>
+        <button onClick={handleSync} disabled={syncing || numbers.length === 0}>
+          {syncing ? "Sincronizando..." : "Sincronizar"}
+        </button>
+        {numbers.length === 0 && (
+          <p className="field-hint">Cadastre um número de WhatsApp na aba Números antes de sincronizar.</p>
+        )}
       </div>
 
       <div className="card">
@@ -151,10 +155,19 @@ export default function Templates() {
               </div>
             </div>
             <div className="form-row">
-              <div className="field">
-                <label>WABA ID</label>
-                <input value={form.waba_id} onChange={(e) => setForm({ ...form, waba_id: e.target.value })} required />
-              </div>
+              {wabaIds.length > 1 && (
+                <div className="field">
+                  <label>WABA</label>
+                  <select value={selectedWabaId} onChange={(e) => setSelectedWabaId(e.target.value)} required>
+                    <option value="">Selecione...</option>
+                    {wabaIds.map((id) => (
+                      <option key={id} value={id}>
+                        {id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="field">
                 <label>Idioma</label>
                 <input value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} />

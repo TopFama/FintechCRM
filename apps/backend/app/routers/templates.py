@@ -26,60 +26,74 @@ def list_templates(
     ).all()
 
 
-@router.get("/meta/sync", response_model=list[schemas.TemplateOut])
+@router.post("/meta/sync", response_model=list[schemas.TemplateOut])
 async def sync_from_meta(
-    waba_id: str,
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
     """Puxa os templates aprovados/pendentes direto da Meta e faz upsert local,
-    para que o cadastro de faixa sempre escolha a partir do que existe na Meta."""
+    para que o cadastro de faixa sempre escolha a partir do que existe na Meta.
+    Não pede mais o WABA ID na mão: sincroniza automaticamente todos os WABAs
+    dos números de WhatsApp já cadastrados na aba Números."""
+
+    waba_ids = sorted(
+        {row[0] for row in db.query(models.WhatsappNumber.waba_id).distinct().all() if row[0]}
+    )
+    if not waba_ids:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Cadastre um número de WhatsApp (aba Números) antes de sincronizar templates",
+        )
 
     client = MetaClient()
-    try:
-        remote_templates = await client.list_templates(waba_id)
-    except MetaAPIError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    for waba_id in waba_ids:
+        try:
+            remote_templates = await client.list_templates(waba_id)
+        except MetaAPIError as exc:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
-    for remote in remote_templates:
-        existing = (
-            db.query(models.Template)
-            .filter(
-                models.Template.meta_template_name == remote["name"],
-                models.Template.language == remote["language"],
-            )
-            .first()
-        )
-        status_value = _map_meta_status(remote.get("status"))
-        if existing:
-            existing.status = status_value
-            existing.meta_status_raw = remote.get("status")
-            existing.meta_template_id = remote.get("id")
-            existing.category = remote.get("category", existing.category)
-            existing.waba_id = waba_id
-        else:
-            template = models.Template(
-                name=remote["name"],
-                meta_template_name=remote["name"],
-                language=remote.get("language", "pt_BR"),
-                category=remote.get("category", "UTILITY"),
-                status=status_value,
-                meta_status_raw=remote.get("status"),
-                meta_template_id=remote.get("id"),
-                waba_id=waba_id,
-                body_text=_extract_body_text(remote),
-            )
-            db.add(template)
-            db.flush()
-            for i, name in enumerate(_extract_variable_count(remote), start=1):
-                db.add(
-                    models.TemplateVariable(
-                        template_id=template.id, position=i, internal_name=name
-                    )
+        for remote in remote_templates:
+            existing = (
+                db.query(models.Template)
+                .filter(
+                    models.Template.meta_template_name == remote["name"],
+                    models.Template.language == remote["language"],
                 )
+                .first()
+            )
+            status_value = _map_meta_status(remote.get("status"))
+            header_type = _extract_header_type(remote)
+            if existing:
+                existing.status = status_value
+                existing.meta_status_raw = remote.get("status")
+                existing.meta_template_id = remote.get("id")
+                existing.category = remote.get("category", existing.category)
+                existing.waba_id = waba_id
+                existing.header_type = header_type
+            else:
+                template = models.Template(
+                    name=remote["name"],
+                    meta_template_name=remote["name"],
+                    language=remote.get("language", "pt_BR"),
+                    category=remote.get("category", "UTILITY"),
+                    header_type=header_type,
+                    status=status_value,
+                    meta_status_raw=remote.get("status"),
+                    meta_template_id=remote.get("id"),
+                    waba_id=waba_id,
+                    body_text=_extract_body_text(remote),
+                )
+                db.add(template)
+                db.flush()
+                for i, name in enumerate(_extract_variable_count(remote), start=1):
+                    db.add(
+                        models.TemplateVariable(
+                            template_id=template.id, position=i, internal_name=name
+                        )
+                    )
     db.commit()
-    return _with_variables(db.query(models.Template)).filter(
-        models.Template.waba_id == waba_id
+    return _with_variables(db.query(models.Template)).order_by(
+        models.Template.created_at.desc()
     ).all()
 
 
@@ -107,12 +121,46 @@ def _extract_variable_count(remote: dict) -> list[str]:
     return [f"variavel_{p}" for p in positions]
 
 
+def _extract_header_type(remote: dict) -> models.TemplateHeaderType:
+    """Detecta se o template já tem cabeçalho de mídia (imagem) na Meta —
+    é isso que decide se a opção de atribuir imagem aparece pra esse
+    template na aba Templates."""
+
+    for component in remote.get("components", []):
+        if component.get("type") == "HEADER" and component.get("format") == "IMAGE":
+            return models.TemplateHeaderType.image
+    return models.TemplateHeaderType.none
+
+
+def _resolve_waba_id(db: Session, waba_id: str | None) -> str:
+    """Resolve o WABA ID sem exigir digitação manual: usa o informado (quando
+    a aba de Números tem mais de um WABA cadastrado) ou o único já existente."""
+
+    if waba_id:
+        return waba_id
+    waba_ids = sorted(
+        {row[0] for row in db.query(models.WhatsappNumber.waba_id).distinct().all() if row[0]}
+    )
+    if not waba_ids:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Cadastre um número de WhatsApp (aba Números) antes de criar um template",
+        )
+    if len(waba_ids) > 1:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Existe mais de um WABA cadastrado — escolha um na lista de Números",
+        )
+    return waba_ids[0]
+
+
 @router.post("", response_model=schemas.TemplateOut, status_code=status.HTTP_201_CREATED)
 async def create_template(
     payload: schemas.TemplateCreate,
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
+    waba_id = _resolve_waba_id(db, payload.waba_id)
     template = models.Template(
         name=payload.name,
         meta_template_name=payload.meta_template_name,
@@ -120,7 +168,7 @@ async def create_template(
         category=payload.category,
         header_type=payload.header_type,
         body_text=payload.body_text,
-        waba_id=payload.waba_id,
+        waba_id=waba_id,
         status=models.TemplateStatus.draft,
     )
     db.add(template)
@@ -140,7 +188,7 @@ async def create_template(
             components.insert(0, {"type": "HEADER", "format": "IMAGE"})
         try:
             result = await client.create_template(
-                payload.waba_id,
+                waba_id,
                 {
                     "name": payload.meta_template_name,
                     "language": payload.language,
@@ -199,6 +247,11 @@ async def upload_template_image(
     ).first()
     if not template:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
+    if template.header_type != models.TemplateHeaderType.image:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Este template não tem cabeçalho de imagem habilitado — a opção de mídia só existe para templates com cabeçalho de imagem na Meta",
+        )
 
     os.makedirs(settings.media_dir, exist_ok=True)
     ext = os.path.splitext(file.filename or "")[1] or ".jpg"
@@ -209,7 +262,6 @@ async def upload_template_image(
         f.write(content)
 
     template.image_url = f"/media/{stored_name}"
-    template.header_type = models.TemplateHeaderType.image
     db.commit()
     db.refresh(template)
     return template

@@ -52,7 +52,7 @@ class TemplateCreate(BaseModel):
     category: str = "UTILITY"
     header_type: TemplateHeaderType = TemplateHeaderType.none
     body_text: str
-    waba_id: str
+    waba_id: str | None = None
     variables: list[TemplateVariableIn] = []
     submit_to_meta: bool = False
 

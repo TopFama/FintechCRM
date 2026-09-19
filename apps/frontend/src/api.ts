@@ -44,8 +44,7 @@ export const api = {
   listTemplates: () => request<Template[]>("/templates"),
   createTemplate: (payload: unknown) =>
     request<Template>("/templates", { method: "POST", body: JSON.stringify(payload) }),
-  syncTemplatesFromMeta: (wabaId: string) =>
-    request<Template[]>(`/templates/meta/sync?waba_id=${encodeURIComponent(wabaId)}`),
+  syncTemplatesFromMeta: () => request<Template[]>("/templates/meta/sync", { method: "POST" }),
   refreshTemplateStatus: (id: string) =>
     request<Template>(`/templates/${id}/refresh-status`, { method: "POST" }),
   uploadTemplateImage: (id: string, file: File) => {
@@ -61,7 +60,10 @@ export const api = {
   updateDispatchConfig: (id: string, payload: unknown) =>
     request(`/faixas/${id}/dispatch-config`, { method: "PUT", body: JSON.stringify(payload) }),
   dispatchNow: (id: string) => request(`/faixas/${id}/dispatch-now`, { method: "POST" }),
-  spreadsheetModelUrl: (id: string) => `${API_URL}/faixas/${id}/spreadsheet-model`,
+  // Exige o mesmo Bearer token das outras rotas, então baixa como blob
+  // autenticado em vez de um <a href> simples (que não manda o header).
+  downloadSpreadsheetModel: (id: string, faixaName: string) =>
+    downloadFile(`/faixas/${id}/spreadsheet-model`, `modelo_${faixaName || "planilha"}.xlsx`),
 
   uploadColumns: (faixaId: string, file: File) => {
     const form = new FormData();
