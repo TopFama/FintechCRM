@@ -10,8 +10,9 @@ rodando em container — não há mais dependência do Supabase.
 ```
 FintechCRM/
   apps/
-    backend/   # FastAPI + SQLAlchemy + APScheduler (worker de disparo) + cliente Graph API
-    frontend/  # React + TypeScript + Vite
+    backend/       # FastAPI + SQLAlchemy + APScheduler (worker de disparo) + cliente Graph API
+      alembic/     # migrations do schema (versionadas, aplicadas automaticamente na subida)
+    frontend/      # React + TypeScript + Vite
   docker-compose.yml
   .env.example
 ```
@@ -33,6 +34,45 @@ FintechCRM/
 
 4. Login inicial: o backend cria automaticamente um usuário admin na primeira subida, com
    `ADMIN_EMAIL` / `ADMIN_PASSWORD` definidos no `.env`.
+
+## Migrations (Alembic)
+
+O schema do banco é versionado com [Alembic](https://alembic.sqlalchemy.org/) — o backend roda
+`alembic upgrade head` automaticamente a cada subida (dentro do `lifespan` do FastAPI, em
+`app/main.py`), então `docker compose up` continua sendo o único passo necessário em
+desenvolvimento; não existe mais `Base.metadata.create_all()`.
+
+- **Criar uma migration nova** depois de alterar `app/models.py`:
+
+  ```bash
+  cd apps/backend
+  alembic revision --autogenerate -m "descreva a mudança"
+  ```
+
+  Sempre **revise o arquivo gerado** em `alembic/versions/` antes de commitar — o autogenerate não
+  detecta tudo (ex. mudança só de `nullable`/default em alguns casos) e, no Postgres, colunas
+  `Enum` exigem que o `downgrade()` derrube também o tipo nativo (`sa.Enum(name=...).drop(bind)`),
+  senão um `upgrade` seguinte falha com "type already exists".
+- **Aplicar manualmente** (o backend já faz isso sozinho na subida, mas é útil para depurar):
+
+  ```bash
+  alembic upgrade head      # aplica todas as migrations pendentes
+  alembic downgrade -1      # desfaz a última
+  alembic check             # confere se o models.py bate com o schema do banco (sem diffs pendentes)
+  ```
+- **Banco já existente antes desta versão** (schema criado via `create_all()`, sem histórico do
+  Alembic): a migration `3bd1d89aa92f` (baseline) cria tudo do zero e vai falhar em cima de tabelas
+  que já existem. Se o schema já bate com `app/models.py` atual, marque o banco como já estando na
+  baseline **sem rodar a migration**:
+
+  ```bash
+  alembic stamp head
+  ```
+
+  Se o schema estiver desatualizado (schema anterior à faixa de mapeamento de planilha/código do
+  cliente/telefones inválidos), aplique manualmente o `ALTER TABLE`/tabela nova equivalente ao
+  diff antes do `stamp head` — ou, em ambiente sem dados que valha a pena preservar, derrube e
+  recrie o banco e deixe o `upgrade head` automático cuidar do resto.
 
 ## Fluxo do sistema
 
@@ -81,11 +121,6 @@ FintechCRM/
 - **Retry de envio**: hoje, uma falha de envio marca o item como `error` e fica visível no
   dashboard; reprocessamento automático (retry com backoff) ainda não está implementado — é o
   próximo incremento natural do worker (`app/worker.py`).
-- **Migrations**: o schema é criado via `Base.metadata.create_all()` na subida do backend (sem
-  Alembic) — só cria tabelas novas, não altera as existentes. Esta versão adicionou colunas em
-  `cobranca_fila`/`faixas` e a tabela `telefones_invalidos`: num Postgres que já tinha dados do
-  schema anterior, rode o `ALTER TABLE`/recrie essas tabelas manualmente antes de subir. Para
-  evoluir o schema em produção sem esse tipo de passo manual, vale introduzir Alembic.
 - **Fila em "tempo real"**: o acompanhamento da fila no portal usa polling (nova consulta a cada
   poucos segundos), não WebSocket — simples e suficiente para o volume atual, mas vale revisar se
   o volume de faixas abertas simultaneamente crescer muito.

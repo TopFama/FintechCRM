@@ -1,18 +1,33 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import models
 from .config import settings
-from .database import Base, SessionLocal, engine
+from .database import SessionLocal
 from .routers import auth, dashboard, faixas, numbers, reports, templates, uploads
 from .security import hash_password
 from .worker import start_scheduler
 
 logging.basicConfig(level=logging.INFO)
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+
+def _run_migrations() -> None:
+    """Aplica as migrations do Alembic até a mais recente na subida do
+    backend — substitui o antigo `Base.metadata.create_all()`, que só criava
+    tabelas novas e nunca alterava as existentes."""
+
+    alembic_cfg = Config(str(BACKEND_DIR / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
+    command.upgrade(alembic_cfg, "head")
 
 
 def _ensure_admin_user() -> None:
@@ -33,7 +48,7 @@ def _ensure_admin_user() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    _run_migrations()
     _ensure_admin_user()
     scheduler = start_scheduler()
     yield
