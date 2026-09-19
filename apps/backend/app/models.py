@@ -104,6 +104,11 @@ class Faixa(Base):
     template_id: Mapped[str] = mapped_column(ForeignKey("templates.id"))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_number_index: Mapped[int] = mapped_column(Integer, default=0)
+    # Último mapeamento coluna-da-planilha -> campo usado num upload, guardado só
+    # para pré-preencher os selects na próxima vez (a planilha real pode ter
+    # cabeçalhos diferentes a cada upload, então o mapeamento é reconferido
+    # sempre, nunca fixo desde a criação da faixa).
+    upload_field_mapping: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     template: Mapped[Template] = relationship()
@@ -156,7 +161,10 @@ class QueueItem(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     faixa_id: Mapped[str] = mapped_column(ForeignKey("faixas.id"), index=True)
-    nome: Mapped[str] = mapped_column(String)
+    codigo_cliente: Mapped[str] = mapped_column(String, index=True)
+    codigo_tipo: Mapped[str] = mapped_column(String)  # "seta" (8 dígitos) ou "cpf"
+    nome: Mapped[str] = mapped_column(String, default="")
+    valor: Mapped[str | None] = mapped_column(String, nullable=True)
     celular: Mapped[str] = mapped_column(String, index=True)
     celular_original: Mapped[str] = mapped_column(String)
     variables_json: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -171,6 +179,7 @@ class QueueItem(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     faixa: Mapped[Faixa] = relationship()
+    whatsapp_number: Mapped["WhatsappNumber | None"] = relationship()
 
 
 class UploadLog(Base):
@@ -183,7 +192,25 @@ class UploadLog(Base):
     row_count: Mapped[int] = mapped_column(Integer, default=0)
     accepted_count: Mapped[int] = mapped_column(Integer, default=0)
     rejected_count: Mapped[int] = mapped_column(Integer, default=0)
+    invalid_phone_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    faixa: Mapped[Faixa] = relationship()
+
+
+class InvalidPhoneRecord(Base):
+    """Relatório de clientes cuja planilha trouxe telefone fora do padrão
+    55DD9XXXXXXXX (ou com menos dígitos que o mínimo esperado)."""
+
+    __tablename__ = "telefones_invalidos"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    faixa_id: Mapped[str] = mapped_column(ForeignKey("faixas.id"), index=True)
+    codigo_cliente: Mapped[str] = mapped_column(String, index=True)
+    celular_original: Mapped[str] = mapped_column(String)
+    celular_normalizado: Mapped[str | None] = mapped_column(String, nullable=True)
+    motivo: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     faixa: Mapped[Faixa] = relationship()
 

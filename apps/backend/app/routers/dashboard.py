@@ -37,11 +37,13 @@ def summary(db: Session = Depends(get_db), _user: models.User = Depends(get_curr
         .all()
     )
 
+    total_invalidos = db.query(func.count(models.InvalidPhoneRecord.id)).scalar() or 0
+
     return schemas.DashboardSummary(
         total_pendentes=count(models.QueueStatus.pending),
         total_enviados=count(models.QueueStatus.sent),
         total_erros=count(models.QueueStatus.error),
-        total_telefones_invalidos=count(models.QueueStatus.invalid_phone),
+        total_telefones_invalidos=total_invalidos,
         por_faixa=list(por_faixa.values()),
         erros_recentes=[
             {"id": e.id, "faixa_id": e.faixa_id, "message": e.message, "created_at": e.created_at.isoformat()}

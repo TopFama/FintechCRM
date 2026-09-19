@@ -63,15 +63,55 @@ export const api = {
   dispatchNow: (id: string) => request(`/faixas/${id}/dispatch-now`, { method: "POST" }),
   spreadsheetModelUrl: (id: string) => `${API_URL}/faixas/${id}/spreadsheet-model`,
 
-  uploadPlanilha: (faixaId: string, file: File) => {
+  uploadColumns: (faixaId: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
+    return request<UploadColumnsResult>(`/faixas/${faixaId}/uploads/columns`, {
+      method: "POST",
+      body: form,
+    });
+  },
+  uploadPlanilha: (faixaId: string, file: File, mapping: UploadFieldMapping) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("mapping", JSON.stringify(mapping));
     return request<UploadResult>(`/faixas/${faixaId}/uploads`, { method: "POST", body: form });
   },
   listQueue: (faixaId: string) => request<QueueItem[]>(`/faixas/${faixaId}/queue`),
 
   dashboardSummary: () => request<DashboardSummary>("/dashboard/summary"),
+
+  listInvalidPhones: (faixaId?: string) =>
+    request<InvalidPhoneRecord[]>(`/relatorios/telefones-invalidos${faixaId ? `?faixa_id=${faixaId}` : ""}`),
+  listDispatchReport: (faixaId?: string) =>
+    request<DispatchReportItem[]>(`/relatorios/envios${faixaId ? `?faixa_id=${faixaId}` : ""}`),
+
+  // Exportações em CSV exigem o mesmo Bearer token das outras rotas, então
+  // baixamos como blob autenticado em vez de um <a href> simples.
+  downloadInvalidPhonesCsv: (faixaId?: string) =>
+    downloadFile(`/relatorios/telefones-invalidos/export${faixaId ? `?faixa_id=${faixaId}` : ""}`, "telefones_invalidos.csv"),
+  downloadDispatchReportCsv: (faixaId?: string) =>
+    downloadFile(`/relatorios/envios/export${faixaId ? `?faixa_id=${faixaId}` : ""}`, "relatorio_envios.csv"),
 };
+
+async function downloadFile(path: string, filename: string): Promise<void> {
+  const token = getToken();
+  const response = await fetch(`${API_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) {
+    throw new Error(`Erro ${response.status} ao baixar o relatório`);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 export interface WhatsappNumber {
   id: string;
@@ -127,12 +167,16 @@ export interface Faixa {
   template: Template;
   variable_mappings: FaixaVariableMapping[];
   dispatch_config: DispatchConfig | null;
+  upload_field_mapping: Partial<UploadFieldMapping>;
 }
 
 export interface QueueItem {
   id: string;
   faixa_id: string;
+  codigo_cliente: string;
+  codigo_tipo: "seta" | "cpf";
   nome: string;
+  valor: string | null;
   celular: string;
   status: "pending" | "reserved" | "sent" | "error" | "invalid_phone";
   error_message: string | null;
@@ -140,12 +184,44 @@ export interface QueueItem {
   sent_at: string | null;
 }
 
+export interface UploadColumnsResult {
+  columns: string[];
+}
+
+export interface UploadFieldMapping {
+  celular: string;
+  codigo_cliente: string;
+  nome?: string | null;
+  valor?: string | null;
+  variables: Record<string, string>; // template_variable_id -> nome da coluna
+}
+
 export interface UploadResult {
   filename: string;
   row_count: number;
   accepted_count: number;
   rejected_count: number;
+  invalid_phone_count: number;
   rejected_reasons: string[];
+}
+
+export interface InvalidPhoneRecord {
+  id: string;
+  faixa_id: string;
+  codigo_cliente: string;
+  celular_original: string;
+  celular_normalizado: string | null;
+  motivo: string;
+  created_at: string;
+}
+
+export interface DispatchReportItem {
+  codigo_cliente: string;
+  faixa: string;
+  nome: string;
+  valor: string | null;
+  telefone: string;
+  enviado_em: string;
 }
 
 export interface DashboardSummary {

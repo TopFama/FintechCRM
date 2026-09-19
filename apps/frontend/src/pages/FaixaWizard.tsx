@@ -148,10 +148,11 @@ export default function FaixaWizard() {
 
         {step === 3 && selectedTemplate && (
           <>
-            <h3>Variáveis internas → colunas da planilha</h3>
+            <h3>Variáveis internas → modelo de planilha</h3>
             <p className="card-subtitle">
-              Para cada variável do template, informe o nome da coluna que vai existir na planilha de clientes dessa
-              faixa.
+              Defina o nome de coluna sugerido para cada variável — vira o cabeçalho do modelo de planilha para
+              download. Ao subir a planilha de verdade, você poderá reconferir esse mapeamento escolhendo a coluna
+              real em uma lista suspensa, então não precisa ser exato.
             </p>
             {selectedTemplate.variables.length === 0 && <p className="text-muted">Este template não tem variáveis no corpo.</p>}
             {selectedTemplate.variables.map((v) => (

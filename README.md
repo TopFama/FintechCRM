@@ -44,18 +44,29 @@ FintechCRM/
 3. **Faixas de cobrança** — wizard guiado: nome da faixa → template aprovado → número(s) de envio
    (com rotação automática quando mais de um) → mapeamento de cada variável interna do template
    para o nome da coluna da planilha.
-4. Dentro da faixa: baixe o **modelo de planilha** (colunas variam conforme as variáveis daquele
-   template), preencha, suba de volta. O sistema valida telefone, evita duplicidade e insere na
-   fila de cobrança.
-5. Configure **intervalo entre rodadas de envio**, **quantidade de cobranças por rodada** e a
+4. Dentro da faixa: baixe o **modelo de planilha** (sugestão de colunas) ou suba direto a planilha
+   que já tiver. O sistema lê o cabeçalho (primeira linha) e mostra um mapeamento em lista suspensa
+   — você escolhe qual coluna real vira cada variável do template, o nome, o celular, o valor
+   cobrado e o **código do cliente** (obrigatório: SETA de 8 dígitos ou CPF válido). Só depois de
+   confirmar o mapeamento a planilha é importada para a fila.
+5. Validação por linha: telefone é normalizado para `55DD9XXXXXXXX` (detecta se falta o DDI `55`
+   ou o 9º dígito e completa; se tiver menos dígitos que o padrão, a linha vai para o **relatório
+   de telefones inválidos**, com código do cliente e telefone informado). Linhas sem código de
+   cliente válido ou com telefone duplicado na fila são rejeitadas e listadas no resultado do
+   upload.
+6. Configure **intervalo entre rodadas de envio**, **quantidade de cobranças por rodada** e a
    **janela de agendamento** (dias/horário) — ou dispare **"Cobrar esta base agora"** para rodar
-   imediatamente, sem esperar o agendamento.
-6. O **worker interno** (APScheduler, dentro do próprio processo do backend) varre periodicamente
+   imediatamente, sem esperar o agendamento. A fila da faixa é acompanhada quase em tempo real
+   (atualização automática a cada poucos segundos).
+7. O **worker interno** (APScheduler, dentro do próprio processo do backend) varre periodicamente
    as faixas ativas/marcadas para rodar agora, reserva um lote de clientes pendentes, envia via
    Graph API alternando entre os números configurados, e atualiza o status de cada envio
    (enviado/erro), com log de erro consultável no dashboard.
-7. **Dashboard** — pendentes, enviados, erros, telefones inválidos, por faixa, e os erros mais
+8. **Dashboard** — pendentes, enviados, erros, telefones inválidos, por faixa, e os erros mais
    recentes — tudo lido direto do Postgres do próprio sistema.
+9. **Relatórios** — telefones inválidos (código do cliente + telefone) e envios realizados (código
+   do cliente, faixa de atraso, nome, valor cobrado, telefone que cobrou e data/hora), com filtro
+   por faixa e exportação em CSV.
 
 ## Limitações conhecidas / próximos passos
 
@@ -71,7 +82,13 @@ FintechCRM/
   dashboard; reprocessamento automático (retry com backoff) ainda não está implementado — é o
   próximo incremento natural do worker (`app/worker.py`).
 - **Migrations**: o schema é criado via `Base.metadata.create_all()` na subida do backend (sem
-  Alembic). Para evoluir o schema em produção com dados já existentes, vale introduzir Alembic.
+  Alembic) — só cria tabelas novas, não altera as existentes. Esta versão adicionou colunas em
+  `cobranca_fila`/`faixas` e a tabela `telefones_invalidos`: num Postgres que já tinha dados do
+  schema anterior, rode o `ALTER TABLE`/recrie essas tabelas manualmente antes de subir. Para
+  evoluir o schema em produção sem esse tipo de passo manual, vale introduzir Alembic.
+- **Fila em "tempo real"**: o acompanhamento da fila no portal usa polling (nova consulta a cada
+  poucos segundos), não WebSocket — simples e suficiente para o volume atual, mas vale revisar se
+  o volume de faixas abertas simultaneamente crescer muito.
 - **Autenticação**: login simples (usuário/senha + JWT), sem papéis granulares, conforme escopo
   combinado para a v1.
 

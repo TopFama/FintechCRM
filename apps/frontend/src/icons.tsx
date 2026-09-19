@@ -132,6 +132,27 @@ export function IconBolt(props: IconProps) {
   );
 }
 
+export function IconReport(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M7 3.5h7l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1Z" />
+      <path d="M14 3.5V8h4" />
+      <path d="M9 13h6M9 16.3h6M9 9.7h2.5" />
+    </svg>
+  );
+}
+
+export function IconRefresh(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M4.5 12a7.5 7.5 0 0 1 12.6-5.5L19.5 8" />
+      <path d="M19.5 4.5V8H16" />
+      <path d="M19.5 12a7.5 7.5 0 0 1-12.6 5.5L4.5 16" />
+      <path d="M4.5 19.5V16H8" />
+    </svg>
+  );
+}
+
 export function IconInbox(props: IconProps) {
   return (
     <svg {...base} {...props}>

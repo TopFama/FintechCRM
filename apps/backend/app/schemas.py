@@ -140,6 +140,7 @@ class FaixaOut(BaseModel):
     template: TemplateOut
     variable_mappings: list[FaixaVariableMappingOut] = []
     dispatch_config: DispatchConfigOut | None = None
+    upload_field_mapping: dict = {}
 
 
 class QueueItemOut(BaseModel):
@@ -147,7 +148,10 @@ class QueueItemOut(BaseModel):
 
     id: str
     faixa_id: str
+    codigo_cliente: str
+    codigo_tipo: str
     nome: str
+    valor: str | None
     celular: str
     status: QueueStatus
     error_message: str | None
@@ -155,12 +159,56 @@ class QueueItemOut(BaseModel):
     sent_at: datetime | None
 
 
+# --- Upload da planilha da faixa ---
+
+
+class UploadColumnsOut(BaseModel):
+    columns: list[str]
+
+
+class UploadFieldMapping(BaseModel):
+    """Qual coluna real da planilha (pelo cabeçalho) alimenta cada campo.
+    Escolhido pelo usuário via lista suspensa a cada upload, já que o
+    cabeçalho pode variar de planilha para planilha."""
+
+    celular: str
+    codigo_cliente: str
+    nome: str | None = None
+    valor: str | None = None
+    variables: dict[str, str] = {}  # template_variable_id -> nome da coluna
+
+
 class UploadResult(BaseModel):
     filename: str
     row_count: int
     accepted_count: int
     rejected_count: int
+    invalid_phone_count: int = 0
     rejected_reasons: list[str] = []
+
+
+# --- Relatórios ---
+
+
+class InvalidPhoneOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    faixa_id: str
+    codigo_cliente: str
+    celular_original: str
+    celular_normalizado: str | None
+    motivo: str
+    created_at: datetime
+
+
+class DispatchReportItemOut(BaseModel):
+    codigo_cliente: str
+    faixa: str
+    nome: str
+    valor: str | None
+    telefone: str
+    enviado_em: datetime
 
 
 class DashboardSummary(BaseModel):

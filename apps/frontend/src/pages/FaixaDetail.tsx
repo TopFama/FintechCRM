@@ -1,7 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, DispatchConfig, Faixa, QueueItem, UploadResult } from "../api";
-import { IconAlert, IconBolt, IconCheckCircle, IconDownload, IconInbox, IconUpload } from "../icons";
+import { api, DispatchConfig, Faixa, QueueItem, UploadFieldMapping, UploadResult } from "../api";
+import {
+  IconAlert,
+  IconBolt,
+  IconCheckCircle,
+  IconDownload,
+  IconInbox,
+  IconRefresh,
+  IconUpload,
+} from "../icons";
+
+const QUEUE_POLL_MS = 4000;
+
+const NO_COLUMN = "";
+
+function pickDefault(columns: string[], previous: string | null | undefined): string {
+  if (previous && columns.includes(previous)) return previous;
+  return NO_COLUMN;
+}
 
 export default function FaixaDetail() {
   const { id } = useParams<{ id: string }>();
@@ -10,11 +27,28 @@ export default function FaixaDetail() {
   const [error, setError] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [config, setConfig] = useState<DispatchConfig | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [dispatchMessage, setDispatchMessage] = useState<string | null>(null);
+  const [lastQueueUpdate, setLastQueueUpdate] = useState<Date | null>(null);
 
-  function load() {
+  // Upload em duas etapas: 1) escolher arquivo e ler as colunas reais do
+  // cabeçalho; 2) mapear cada variável/campo para uma dessas colunas antes
+  // de confirmar a importação.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [columns, setColumns] = useState<string[] | null>(null);
+  const [loadingColumns, setLoadingColumns] = useState(false);
+  const [fieldMap, setFieldMap] = useState<UploadFieldMapping>({
+    celular: NO_COLUMN,
+    codigo_cliente: NO_COLUMN,
+    nome: NO_COLUMN,
+    valor: NO_COLUMN,
+    variables: {},
+  });
+  const [importing, setImporting] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function loadFaixa() {
     if (!id) return;
     api
       .getFaixa(id)
@@ -23,23 +57,90 @@ export default function FaixaDetail() {
         setConfig(f.dispatch_config);
       })
       .catch((e) => setError(e.message));
-    api.listQueue(id).then(setQueue).catch((e) => setError(e.message));
   }
 
-  useEffect(load, [id]);
-
-  async function handleUpload(file: File) {
+  function loadQueue() {
     if (!id) return;
+    api
+      .listQueue(id)
+      .then((q) => {
+        setQueue(q);
+        setLastQueueUpdate(new Date());
+      })
+      .catch((e) => setError(e.message));
+  }
+
+  useEffect(() => {
+    loadFaixa();
+    loadQueue();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  // Acompanhamento da fila em tempo (quase) real: revalida periodicamente
+  // enquanto a tela estiver aberta.
+  useEffect(() => {
+    if (!id) return;
+    const interval = setInterval(loadQueue, QUEUE_POLL_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  async function handlePickFile(file: File) {
     setError(null);
-    setUploading(true);
+    setUploadResult(null);
+    setPendingFile(file);
+    setColumns(null);
+    setLoadingColumns(true);
     try {
-      const result = await api.uploadPlanilha(id, file);
+      const result = await api.uploadColumns(id!, file);
+      setColumns(result.columns);
+      const previous = faixa?.upload_field_mapping;
+      setFieldMap({
+        celular: pickDefault(result.columns, previous?.celular),
+        codigo_cliente: pickDefault(result.columns, previous?.codigo_cliente),
+        nome: pickDefault(result.columns, previous?.nome),
+        valor: pickDefault(result.columns, previous?.valor),
+        variables: Object.fromEntries(
+          (faixa?.template.variables || []).map((v) => [
+            v.id,
+            pickDefault(result.columns, previous?.variables?.[v.id]),
+          ])
+        ),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao ler colunas da planilha");
+      setPendingFile(null);
+    } finally {
+      setLoadingColumns(false);
+    }
+  }
+
+  function cancelMapping() {
+    setPendingFile(null);
+    setColumns(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  const requiredVariableIds = faixa?.template.variables.map((v) => v.id) || [];
+  const mappingComplete =
+    Boolean(fieldMap.celular) &&
+    Boolean(fieldMap.codigo_cliente) &&
+    requiredVariableIds.every((vid) => Boolean(fieldMap.variables[vid]));
+
+  async function confirmImport() {
+    if (!id || !pendingFile || !mappingComplete) return;
+    setError(null);
+    setImporting(true);
+    try {
+      const result = await api.uploadPlanilha(id, pendingFile, fieldMap);
       setUploadResult(result);
-      load();
+      cancelMapping();
+      loadFaixa();
+      loadQueue();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao subir planilha");
     } finally {
-      setUploading(false);
+      setImporting(false);
     }
   }
 
@@ -49,7 +150,7 @@ export default function FaixaDetail() {
     setSavingConfig(true);
     try {
       await api.updateDispatchConfig(id, config);
-      load();
+      loadFaixa();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar configuração");
     } finally {
@@ -95,51 +196,167 @@ export default function FaixaDetail() {
 
       <div className="card">
         <div className="card-header">
-          <h3>1. Modelo de planilha e upload</h3>
-          <a href={id ? api.spreadsheetModelUrl(id) : "#"} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
-            <IconDownload width={16} height={16} /> Baixar modelo (.csv)
+          <h3>1. Subir planilha e mapear colunas</h3>
+          <a
+            href={id ? api.spreadsheetModelUrl(id) : "#"}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}
+          >
+            <IconDownload width={16} height={16} /> Baixar modelo sugerido (.csv)
           </a>
         </div>
         <p className="card-subtitle">
-          Preencha o modelo com a base de clientes desta faixa e suba de volta abaixo. Telefones inválidos ou
-          duplicados são identificados automaticamente.
+          Suba a planilha com a base de clientes desta faixa. O sistema lê o cabeçalho (primeira linha) e você
+          escolhe, em uma lista suspensa, qual coluna alimenta cada campo — não precisa usar os nomes do modelo.
         </p>
-        <label className="dropzone">
-          <input
-            type="file"
-            accept=".csv,.xlsx"
-            onChange={(e) => e.target.files && handleUpload(e.target.files[0])}
-          />
-          <IconUpload width={26} height={26} />
-          <div className="dz-title">{uploading ? "Enviando planilha..." : "Clique ou arraste a planilha aqui"}</div>
-          <div className="dz-hint">.csv ou .xlsx</div>
-        </label>
-        {uploadResult && (
-          <div className="upload-summary">
-            <div className="item">
-              <span className="num" style={{ color: "var(--color-success)" }}>
-                {uploadResult.accepted_count}
-              </span>
-              aceitos
+
+        {!columns && (
+          <label className="dropzone">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.xlsx"
+              onChange={(e) => e.target.files && handlePickFile(e.target.files[0])}
+            />
+            <IconUpload width={26} height={26} />
+            <div className="dz-title">{loadingColumns ? "Lendo colunas da planilha..." : "Clique ou arraste a planilha aqui"}</div>
+            <div className="dz-hint">.csv ou .xlsx</div>
+          </label>
+        )}
+
+        {columns && (
+          <div>
+            <p className="card-subtitle" style={{ marginTop: 0 }}>
+              Arquivo: <strong>{pendingFile?.name}</strong> — {columns.length} coluna(s) encontrada(s)
+            </p>
+
+            <div className="form-row">
+              <div className="field">
+                <label>Coluna do código do cliente (SETA de 8 dígitos ou CPF) *</label>
+                <select value={fieldMap.codigo_cliente} onChange={(e) => setFieldMap({ ...fieldMap, codigo_cliente: e.target.value })}>
+                  <option value="">Selecione...</option>
+                  {columns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Coluna do celular *</label>
+                <select value={fieldMap.celular} onChange={(e) => setFieldMap({ ...fieldMap, celular: e.target.value })}>
+                  <option value="">Selecione...</option>
+                  {columns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="item">
-              <span className="num" style={{ color: "var(--color-danger)" }}>
-                {uploadResult.rejected_count}
-              </span>
-              rejeitados
+
+            <div className="form-row">
+              <div className="field">
+                <label>Coluna do nome (opcional)</label>
+                <select value={fieldMap.nome || ""} onChange={(e) => setFieldMap({ ...fieldMap, nome: e.target.value })}>
+                  <option value="">Nenhuma</option>
+                  {columns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Coluna do valor cobrado (opcional)</label>
+                <select value={fieldMap.valor || ""} onChange={(e) => setFieldMap({ ...fieldMap, valor: e.target.value })}>
+                  <option value="">Nenhuma</option>
+                  {columns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="item">
-              <span className="num">{uploadResult.row_count}</span>
-              linhas na planilha
+
+            {faixa.template.variables.length > 0 && (
+              <>
+                <label style={{ marginBottom: 8 }}>Variáveis do template</label>
+                <div className="form-row" style={{ flexWrap: "wrap" }}>
+                  {faixa.template.variables.map((v) => (
+                    <div className="field" key={v.id} style={{ minWidth: 220 }}>
+                      <label>{v.internal_name} *</label>
+                      <select
+                        value={fieldMap.variables[v.id] || ""}
+                        onChange={(e) =>
+                          setFieldMap({ ...fieldMap, variables: { ...fieldMap.variables, [v.id]: e.target.value } })
+                        }
+                      >
+                        <option value="">Selecione...</option>
+                        {columns.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <div className="actions-row">
+              <button className="secondary" onClick={cancelMapping} disabled={importing}>
+                Cancelar
+              </button>
+              <button onClick={confirmImport} disabled={!mappingComplete || importing}>
+                {importing ? "Importando..." : "Confirmar e importar"}
+              </button>
             </div>
           </div>
         )}
-        {uploadResult && uploadResult.rejected_reasons.length > 0 && (
-          <ul style={{ fontSize: 13, color: "var(--color-danger)", marginTop: 10 }}>
-            {uploadResult.rejected_reasons.map((r, i) => (
-              <li key={i}>{r}</li>
-            ))}
-          </ul>
+
+        {uploadResult && (
+          <>
+            <div className="upload-summary">
+              <div className="item">
+                <span className="num" style={{ color: "var(--color-success)" }}>
+                  {uploadResult.accepted_count}
+                </span>
+                aceitos
+              </div>
+              <div className="item">
+                <span className="num" style={{ color: "var(--color-danger)" }}>
+                  {uploadResult.rejected_count}
+                </span>
+                rejeitados
+              </div>
+              {uploadResult.invalid_phone_count > 0 && (
+                <div className="item">
+                  <span className="num" style={{ color: "var(--color-warning)" }}>
+                    {uploadResult.invalid_phone_count}
+                  </span>
+                  telefone(s) inválido(s)
+                </div>
+              )}
+              <div className="item">
+                <span className="num">{uploadResult.row_count}</span>
+                linhas na planilha
+              </div>
+            </div>
+            {uploadResult.invalid_phone_count > 0 && (
+              <p className="field-hint">
+                <Link to="/relatorios">Ver no relatório de telefones inválidos →</Link>
+              </p>
+            )}
+            {uploadResult.rejected_reasons.length > 0 && (
+              <ul style={{ fontSize: 13, color: "var(--color-danger)", marginTop: 10 }}>
+                {uploadResult.rejected_reasons.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </div>
 
@@ -221,7 +438,10 @@ export default function FaixaDetail() {
       <div className="card">
         <div className="card-header">
           <h3>Fila desta faixa</h3>
-          <span className="text-faint">últimos 500</span>
+          <span className="text-faint" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <IconRefresh width={13} height={13} />
+            {lastQueueUpdate ? `atualizado ${lastQueueUpdate.toLocaleTimeString("pt-BR")}` : "atualizando..."}
+          </span>
         </div>
         {queue.length === 0 ? (
           <div className="empty-state">
@@ -234,8 +454,10 @@ export default function FaixaDetail() {
             <table>
               <thead>
                 <tr>
+                  <th>Código</th>
                   <th>Nome</th>
                   <th>Celular</th>
+                  <th>Valor</th>
                   <th>Status</th>
                   <th>Erro</th>
                 </tr>
@@ -243,8 +465,10 @@ export default function FaixaDetail() {
               <tbody>
                 {queue.map((q) => (
                   <tr key={q.id}>
-                    <td className="cell-strong">{q.nome}</td>
+                    <td className="cell-strong">{q.codigo_cliente}</td>
+                    <td>{q.nome || "—"}</td>
                     <td>{q.celular}</td>
+                    <td className="text-muted">{q.valor || "—"}</td>
                     <td>
                       <span className={`badge ${q.status}`}>{q.status}</span>
                     </td>

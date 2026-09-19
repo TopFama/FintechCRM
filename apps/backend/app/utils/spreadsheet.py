@@ -6,7 +6,7 @@ import io
 
 from openpyxl import Workbook, load_workbook
 
-REQUIRED_COLUMNS = ["nome", "celular"]
+REQUIRED_COLUMNS = ["codigo_cliente", "nome", "celular", "valor"]
 
 
 def build_model_columns(variable_internal_names: list[str]) -> list[str]:
@@ -66,3 +66,26 @@ def parse_uploaded_spreadsheet(filename: str, content: bytes) -> list[dict[str, 
         {k.strip(): (v or "").strip() for k, v in row.items() if k is not None}
         for row in reader
     ]
+
+
+def read_spreadsheet_headers(filename: str, content: bytes) -> list[str]:
+    """Lê só a primeira linha (cabeçalho) de um CSV/XLSX enviado, para que o
+    usuário escolha, em uma lista suspensa, qual coluna real vira cada
+    variável/campo — sem precisar que a planilha use nomes fixos."""
+
+    lower = filename.lower()
+    if lower.endswith(".xlsx"):
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        ws = wb.active
+        first_row = next(ws.iter_rows(values_only=True), None)
+        if not first_row:
+            return []
+        return [str(h).strip() if h is not None else "" for h in first_row if h is not None and str(h).strip()]
+
+    text = content.decode("utf-8-sig")
+    reader = csv.reader(io.StringIO(text))
+    try:
+        header = next(reader)
+    except StopIteration:
+        return []
+    return [h.strip() for h in header if h and h.strip()]

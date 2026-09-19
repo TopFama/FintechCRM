@@ -6,7 +6,8 @@ import Templates from "./pages/Templates";
 import Faixas from "./pages/Faixas";
 import FaixaWizard from "./pages/FaixaWizard";
 import FaixaDetail from "./pages/FaixaDetail";
-import { IconDashboard, IconLayers, IconLogout, IconPhone, IconTemplate } from "./icons";
+import Relatorios from "./pages/Relatorios";
+import { IconDashboard, IconLayers, IconLogout, IconPhone, IconReport, IconTemplate } from "./icons";
 
 function isAuthenticated() {
   return Boolean(localStorage.getItem("token"));
@@ -42,6 +43,9 @@ function Layout({ children }: { children: JSX.Element }) {
           </NavLink>
           <NavLink to="/faixas" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconLayers /> Faixas de cobrança
+          </NavLink>
+          <NavLink to="/relatorios" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <IconReport /> Relatórios
           </NavLink>
         </nav>
 
@@ -122,6 +126,16 @@ export default function App() {
           <RequireAuth>
             <Layout>
               <FaixaDetail />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/relatorios"
+        element={
+          <RequireAuth>
+            <Layout>
+              <Relatorios />
             </Layout>
           </RequireAuth>
         }

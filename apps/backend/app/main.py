@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from . import models
 from .config import settings
 from .database import Base, SessionLocal, engine
-from .routers import auth, dashboard, faixas, numbers, templates, uploads
+from .routers import auth, dashboard, faixas, numbers, reports, templates, uploads
 from .security import hash_password
 from .worker import start_scheduler
 
@@ -57,6 +57,7 @@ app.include_router(templates.router)
 app.include_router(faixas.router)
 app.include_router(uploads.router)
 app.include_router(dashboard.router)
+app.include_router(reports.router)
 
 
 @app.get("/health")
