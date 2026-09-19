@@ -1,27 +1,111 @@
 # FintechCRM — CRM de Cobrança via WhatsApp
 
-Portal web para gerir cobrança via WhatsApp (API oficial da Meta) sem depender do n8n: o próprio
-backend fala diretamente com a Graph API da Meta para listar/criar templates, listar números,
-enviar mensagens e controlar agendamento/lote de disparo. Os dados vivem num Postgres próprio,
-rodando em container — não há mais dependência do Supabase.
+Portal web da TopFama para gerir cobrança via WhatsApp (API oficial da Meta) sem depender do n8n:
+o próprio backend fala diretamente com a Graph API da Meta para listar/criar templates, listar
+números, enviar mensagens e controlar agendamento/lote de disparo. Os dados vivem num Postgres
+próprio, rodando em container — não há dependência do Supabase.
 
 ## Estrutura (monorepo)
 
 ```
 FintechCRM/
   apps/
-    backend/       # FastAPI + SQLAlchemy + APScheduler (worker de disparo) + cliente Graph API
-      alembic/     # migrations do schema (versionadas, aplicadas automaticamente na subida)
-    frontend/      # React + TypeScript + Vite
+    backend/                    # FastAPI + SQLAlchemy + APScheduler + cliente Graph API
+      app/
+        main.py                 # cria o app, roda migrations e cria o admin na subida
+        config.py                # Settings (pydantic-settings, lê o .env)
+        database.py              # engine/Session/Base do SQLAlchemy
+        models.py                 # todas as tabelas
+        schemas.py                # modelos Pydantic de request/response
+        security.py / deps.py     # hash de senha, JWT, dependência de usuário autenticado
+        meta_client.py             # único ponto de integração com a Graph API da Meta
+        worker.py                  # worker de disparo (APScheduler, dentro do próprio processo)
+        routers/                   # um arquivo por área: auth, numbers, templates, faixas,
+                                    # uploads, dashboard, reports
+        utils/
+          phone.py                 # normalização/validação de telefone (formato 55DD9XXXXXXXX)
+          document.py               # validação de código do cliente (SETA de 8 dígitos ou CPF)
+          spreadsheet.py             # leitura de CSV/XLSX e geração do modelo de planilha
+      alembic/                    # migrations do schema (ver seção Migrations abaixo)
+      requirements.txt
+      Dockerfile
+    frontend/                   # React + TypeScript + Vite
+      src/
+        api.ts                   # único lugar que fala com o backend (fetch + tipos)
+        pages/                    # uma página por rota (Login, Dashboard, Numbers, Templates,
+                                   # Faixas, FaixaWizard, FaixaDetail, Relatorios)
+        styles.css                 # design tokens (CSS vars) e classes utilitárias
+        icons.tsx                   # ícones inline SVG, sem lib externa
+      public/topfama-logo.png       # logo oficial da marca
+      Dockerfile / nginx.conf
   docker-compose.yml
   .env.example
 ```
 
+## Pré-requisitos
+
+- **Docker** e **Docker Compose** — forma recomendada de rodar tudo (backend, frontend e Postgres
+  em containers, sem instalar nada além do Docker).
+- Alternativa sem Docker, para desenvolvimento: **Python 3.12** + **Node.js 20** e um Postgres
+  acessível (local ou remoto) — ver [Rodando sem Docker](#rodando-sem-docker) mais abaixo.
+
+## Configuração do ambiente (`.env`)
+
+Copie `.env.example` para `.env` na raiz do repositório e preencha. Todas as variáveis abaixo são
+lidas pelo backend via `app/config.py` (com esses mesmos defaults quando a variável não é
+definida) ou pelo `docker-compose.yml`/build do frontend.
+
+| Variável | Usada por | Obrigatória | Default | Descrição |
+|---|---|---|---|---|
+| `POSTGRES_USER` | container `db` | não | `fintechcrm` | Usuário do Postgres criado pelo container oficial. |
+| `POSTGRES_PASSWORD` | container `db` | **sim**, em produção | `change-me` | Senha do Postgres — troque antes de expor o sistema. |
+| `POSTGRES_DB` | container `db` | não | `fintechcrm` | Nome do banco criado na primeira subida do container. |
+| `DATABASE_URL` | backend | não | `postgresql+psycopg://fintechcrm:change-me@db:5432/fintechcrm` | String de conexão completa (SQLAlchemy + psycopg 3). Se mudar usuário/senha/banco acima, ajuste aqui também — o backend usa esta variável, não as três de cima diretamente. |
+| `JWT_SECRET` | backend | **sim**, em produção | `change-me-too` | Chave usada para assinar o JWT de login — troque antes de expor o sistema. |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | backend | não | `admin@topfama.com.br` / `change-me-admin` | Credenciais do usuário admin criado automaticamente na primeira subida (só se ainda não existir um usuário com esse email). |
+| `META_ACCESS_TOKEN` | backend | **sim** | *(vazio)* | Token de acesso à Graph API da Meta. Única credencial externa obrigatória — ver passo a passo abaixo. |
+| `META_GRAPH_API_VERSION` | backend | não | `v21.0` | Versão da Graph API usada em todas as chamadas (`app/meta_client.py`). |
+| `VITE_API_URL` | frontend (build) | não | `http://localhost:8000` | URL base da API que o frontend chama — usada só no build do Vite (fica embutida no bundle). |
+
+WABA ID e `phone_number_id` de cada número **não** vão no `.env` — são cadastrados dentro do
+próprio portal, na tela **Números**, depois que o sistema estiver no ar (ficam guardados no
+Postgres, por número).
+
+## Configurando a API da Meta (WhatsApp Business)
+
+Passo a passo para conseguir o `META_ACCESS_TOKEN` e os dados que serão cadastrados depois na
+tela **Números** do portal:
+
+1. **Crie (ou use) um app Meta for Developers** em https://developers.facebook.com/apps, com o
+   produto **WhatsApp** adicionado a ele.
+2. Em **WhatsApp → Configuração da API** (ou **Business Settings** do seu Business Manager),
+   anote:
+   - o **WABA ID** (ID da conta do WhatsApp Business) — vai ser colado na tela **Números** e no
+     campo "WABA ID" da tela **Templates** ao sincronizar.
+   - o **phone_number_id** de cada número que vai disparar mensagens (não é o número de telefone
+     em si, é o ID interno da Meta para aquele número).
+3. **Gere um token de acesso de longa duração** (o token temporário que aparece na tela de teste
+   expira em 24h e não serve para produção):
+   - Em **Business Settings → Usuários → Usuários do sistema**, crie um **System User** (ou use um
+     existente) com papel de Admin.
+   - Em **Adicionar ativos**, dê a esse System User acesso total ao WABA do passo 2.
+   - Gere um novo token para o System User com as permissões `whatsapp_business_messaging` e
+     `whatsapp_business_management`. Tokens de System User podem ser gerados sem expiração — é
+     esse o token que vai para `META_ACCESS_TOKEN`.
+4. Cole o token em `META_ACCESS_TOKEN` no `.env` e suba o sistema (`docker compose up --build`).
+5. Dentro do portal, tela **Números**: cadastre cada número com o WABA ID + `phone_number_id` +
+   número exibido (formato livre, é só rótulo).
+6. Tela **Templates**: use **"Sincronizar templates da Meta"** informando o WABA ID para puxar os
+   templates já aprovados, ou crie um novo template pelo próprio portal (com a opção de já
+   submeter para aprovação).
+
+Sem um `META_ACCESS_TOKEN` válido, as telas de Números/Templates continuam funcionando para
+cadastro manual, mas sincronizar templates, criar template na Meta e disparar mensagens vão
+falhar com erro da Graph API.
+
 ## Como rodar localmente
 
-1. Copie `.env.example` para `.env` e preencha pelo menos `META_ACCESS_TOKEN` (token da API da
-   Meta). WABA ID e `phone_number_id` de cada número **não** vão no `.env` — são cadastrados dentro
-   do próprio portal, na tela **Números**, depois que o sistema estiver no ar.
+1. Copie `.env.example` para `.env` e preencha pelo menos `META_ACCESS_TOKEN` (ver seção acima).
 2. Suba tudo:
 
    ```bash
@@ -31,9 +115,41 @@ FintechCRM/
 3. Acesse:
    - Portal: http://localhost:5173
    - API (docs interativas): http://localhost:8000/docs
+   - Postgres, se precisar inspecionar direto: `localhost:5432` (usuário/senha do `.env`).
 
 4. Login inicial: o backend cria automaticamente um usuário admin na primeira subida, com
    `ADMIN_EMAIL` / `ADMIN_PASSWORD` definidos no `.env`.
+
+Para parar tudo: `docker compose down` (os dados do Postgres e os arquivos de mídia ficam nos
+volumes `postgres-data`/`media-data`, então sobrevivem a um `down`/`up`; use `docker compose down
+-v` para apagar tudo do zero).
+
+### Rodando sem Docker
+
+Útil para iterar mais rápido no backend ou no frontend isoladamente.
+
+**Backend** (precisa de um Postgres acessível — pode ser o do `docker compose up db` sozinho, ou
+qualquer outro):
+
+```bash
+cd apps/backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+export $(grep -v '^#' ../../.env | xargs)   # ou exporte as variáveis manualmente
+uvicorn app.main:app --reload --port 8000
+```
+
+**Frontend**:
+
+```bash
+cd apps/frontend
+npm install
+npm run dev       # sobe em http://localhost:5173, apontando para VITE_API_URL (padrão :8000)
+npm run build     # build de produção (tsc -b && vite build) — bom smoke test de tipos quebrados
+```
+
+Os scripts `npm run dev:frontend` / `npm run build:frontend` no `package.json` da raiz fazem o
+mesmo via npm workspaces, se preferir rodar da raiz do repo.
 
 ## Migrations (Alembic)
 
@@ -81,9 +197,10 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    template pelo portal (com opção de já submeter para análise da Meta e acompanhar o status de
    aprovação depois). Templates com cabeçalho de imagem permitem subir a imagem, reaproveitada em
    todo envio daquele template.
-3. **Faixas de cobrança** — wizard guiado: nome da faixa → template aprovado → número(s) de envio
-   (com rotação automática quando mais de um) → mapeamento de cada variável interna do template
-   para o nome da coluna da planilha.
+3. **Faixas de cobrança** — wizard guiado: nome da faixa (texto livre, ex. "21 A 30" ou
+   "RENEGOCIE") → template aprovado → número(s) de envio (com rotação automática quando mais de
+   um) → nomes de coluna sugeridos para o modelo de planilha (o mapeamento de verdade acontece no
+   upload, veja o próximo passo).
 4. Dentro da faixa: baixe o **modelo de planilha** (sugestão de colunas) ou suba direto a planilha
    que já tiver. O sistema lê o cabeçalho (primeira linha) e mostra um mapeamento em lista suspensa
    — você escolhe qual coluna real vira cada variável do template, o nome, o celular, o valor
@@ -107,6 +224,20 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
 9. **Relatórios** — telefones inválidos (código do cliente + telefone) e envios realizados (código
    do cliente, faixa de atraso, nome, valor cobrado, telefone que cobrou e data/hora), com filtro
    por faixa e exportação em CSV.
+
+## Testes / validação de mudanças
+
+Não existe suíte de testes automatizados formal ainda. Para validar uma mudança antes de subir:
+
+- **Backend**: suba um ambiente virtual (`pip install -r requirements.txt`), aponte `DATABASE_URL`
+  para um Postgres (ou SQLite, para checagens rápidas sem Postgres) e exercite os endpoints
+  relevantes com o `TestClient` do FastAPI (`from fastapi.testclient import TestClient`), que já
+  passa pelo `lifespan` (migrations + criação do admin) igual à aplicação real.
+- **Mudança em `app/models.py`**: gere a migration (`alembic revision --autogenerate`) e valide o
+  ciclo `upgrade head` → `downgrade base` → `upgrade head` contra um Postgres real antes de
+  commitar — ver seção Migrations acima.
+- **Frontend**: `npm run build` (roda `tsc -b && vite build`) já pega a maioria dos erros de tipo
+  e import quebrado.
 
 ## Limitações conhecidas / próximos passos
 
@@ -136,3 +267,9 @@ Este sistema foi desenhado a partir do fluxo `FINTECH - FLUXO DE COBRANÇA` que 
 - Rotação de números por faixa e reserva antes do envio → `app/worker.py`.
 - Schedule Trigger (cron fixo) → `dispatch_configs` (intervalo/lote/janela configuráveis por
   faixa, editáveis pela própria interface, sem precisar editar workflow nenhum).
+
+## Para agentes de IA
+
+Se você é um agente de codificação (Claude Code, Codex, etc.) alterando este repositório, leia
+também o [`AGENTS.md`](./AGENTS.md) na raiz — convenções do projeto, onde fica cada coisa e como
+validar uma mudança antes de considerá-la pronta.
