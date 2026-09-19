@@ -20,6 +20,26 @@ function pickDefault(columns: string[], previous: string | null | undefined): st
   return NO_COLUMN;
 }
 
+const WEEKDAYS = [
+  { value: "1", label: "Seg" },
+  { value: "2", label: "Ter" },
+  { value: "3", label: "Qua" },
+  { value: "4", label: "Qui" },
+  { value: "5", label: "Sex" },
+  { value: "6", label: "Sáb" },
+  { value: "7", label: "Dom" },
+];
+
+function toggleWeekday(scheduleDays: string, value: string): string {
+  const days = new Set(scheduleDays.split(",").filter(Boolean));
+  if (days.has(value)) {
+    days.delete(value);
+  } else {
+    days.add(value);
+  }
+  return WEEKDAYS.map((d) => d.value).filter((v) => days.has(v)).join(",");
+}
+
 export default function FaixaDetail() {
   const { id } = useParams<{ id: string }>();
   const [faixa, setFaixa] = useState<Faixa | null>(null);
@@ -396,11 +416,22 @@ export default function FaixaDetail() {
               </div>
             </div>
             <div className="field">
-              <label>Dias da semana (1=segunda ... 7=domingo, separados por vírgula)</label>
-              <input
-                value={config.schedule_days}
-                onChange={(e) => setConfig({ ...config, schedule_days: e.target.value })}
-              />
+              <label>Dias da semana</label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {WEEKDAYS.map((d) => {
+                  const active = config.schedule_days.split(",").includes(d.value);
+                  return (
+                    <button
+                      key={d.value}
+                      type="button"
+                      className={active ? "small" : "secondary small"}
+                      onClick={() => setConfig({ ...config, schedule_days: toggleWeekday(config.schedule_days, d.value) })}
+                    >
+                      {d.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <div className="form-row">
               <div className="field">
