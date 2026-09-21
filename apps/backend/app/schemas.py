@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -261,3 +262,46 @@ class BlacklistLoteResult(BaseModel):
     adicionados: int
     ja_existiam: int
     invalidos: list[str]
+
+
+# --- Base de cobrança ---
+
+
+class ClienteCobrancaOut(BaseModel):
+    codigo: str
+    nome: str
+    celular: str | None
+    celular_origem: str | None  # de qual campo do SETA veio: telefone2 / telefone1 / telefone3
+    celular_original: str | None
+    cpfcnpj: str | None
+    status: str
+    status_descricao: str
+    loja_cadastro: str | None
+    salario: Decimal | None  # pessoas.faturamento: é o que gera o limite do cliente
+    limite_rotativo: Decimal | None
+    nascimento: date | None
+    cadastro: date | None
+    cluster: str
+    valor_pago: Decimal
+    faixa: str | None
+    dias_atraso: int
+    entra_whatsapp: bool
+    qtd_titulos: int
+    valor_em_aberto: Decimal
+    vencimento_mais_antigo: date
+    lojas: list[str]
+    portadores: list[str]
+    spc_restricao: str | None = None  # sim / nao / indeterminado (só na listagem, para a página)
+    spc_data_consulta: date | None = None
+
+
+class ClientesCobrancaPage(BaseModel):
+    total: int
+    itens: list[ClienteCobrancaOut]
+
+
+class CobrancaRegrasOut(BaseModel):
+    clusters: list[str]
+    faixas: list[str]
+    faixas_whatsapp: dict[str, list[str]]  # cluster -> faixas que recebem WhatsApp
+    primeiro_dia: dict[str, int]  # faixa -> primeiro dia

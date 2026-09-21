@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from . import models
 from .config import settings
 from .database import SessionLocal
-from .routers import auth, blacklist, dashboard, faixas, numbers, reports, seta, templates, uploads
+from .routers import auth, blacklist, cobranca, dashboard, faixas, numbers, reports, seta, templates, uploads
 from .security import hash_password
 from .worker import start_scheduler
 
@@ -96,6 +96,7 @@ app.include_router(dashboard.router)
 app.include_router(reports.router)
 app.include_router(seta.router)
 app.include_router(blacklist.router)
+app.include_router(cobranca.router)
 
 
 @app.get("/health")
