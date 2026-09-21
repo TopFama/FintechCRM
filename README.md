@@ -19,6 +19,7 @@ FintechCRM/
         schemas.py                # modelos Pydantic de request/response
         security.py / deps.py     # hash de senha, JWT, dependência de usuário autenticado
         meta_client.py             # único ponto de integração com a Graph API da Meta
+        seta_client.py             # único ponto de integração com o ERP SETA (Postgres, só leitura)
         worker.py                  # worker de disparo (APScheduler, dentro do próprio processo)
         routers/                   # um arquivo por área: auth, numbers, templates, faixas,
                                     # uploads, dashboard, reports
@@ -65,6 +66,9 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | backend | `ADMIN_PASSWORD` **sim** | `admin@topfama.com.br` / `change-me-admin` | Credenciais do usuário admin criado automaticamente na primeira subida (só se ainda não existir um usuário com esse email). O backend também recusa subir se `ADMIN_PASSWORD` continuar com o valor default. |
 | `META_ACCESS_TOKEN` | backend | **sim** | *(vazio)* | Token de acesso à Graph API da Meta. Única credencial externa obrigatória — ver passo a passo abaixo. |
 | `META_GRAPH_API_VERSION` | backend | não | `v21.0` | Versão da Graph API usada em todas as chamadas (`app/meta_client.py`). |
+| `SETA_DB_HOST` / `SETA_DB_PORT` / `SETA_DB_NAME` | backend | não | *(vazio)* / `5432` / `seta` | Postgres do ERP SETA, usado **só para leitura** (a conexão abre com `default_transaction_read_only=on`). Vazio = integração desligada: o backend sobe normalmente e `GET /seta/status` responde `configurado: false`. |
+| `SETA_DB_USER` / `SETA_DB_PASSWORD` | backend | não | *(vazio)* | Credenciais do SETA. O ideal é um usuário do banco só com `SELECT`. |
+| `SETA_DB_CONNECT_TIMEOUT_SECONDS` / `SETA_DB_STATEMENT_TIMEOUT_SECONDS` | backend | não | `10` / `120` | Tempo máximo para conectar e para cada consulta (o ERP é produção e a tabela de títulos passa de 27 milhões de linhas). |
 | `VITE_API_URL` | frontend (build) | não | `http://localhost:8000` | URL base da API que o frontend chama — usada só no build do Vite (fica embutida no bundle). |
 
 WABA ID e `phone_number_id` de cada número **não** vão no `.env` — são cadastrados dentro do

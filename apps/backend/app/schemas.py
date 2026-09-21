@@ -218,3 +218,17 @@ class DashboardSummary(BaseModel):
     total_telefones_invalidos: int
     por_faixa: list[dict]
     erros_recentes: list[dict]
+
+
+# --- SETA (ERP) ---
+
+
+class SetaStatusOut(BaseModel):
+    configurado: bool
+    conectado: bool
+    banco: str | None = None
+    usuario: str | None = None
+    versao: str | None = None
+    somente_leitura: bool | None = None
+    latencia_ms: int | None = None
+    erro: str | None = None
