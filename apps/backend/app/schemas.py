@@ -232,3 +232,32 @@ class SetaStatusOut(BaseModel):
     somente_leitura: bool | None = None
     latencia_ms: int | None = None
     erro: str | None = None
+
+
+# --- Blacklist ---
+
+
+class BlacklistCreate(BaseModel):
+    documento: str  # código SETA (8 dígitos) ou CPF, com ou sem pontuação
+    motivo: str = ""
+
+
+class BlacklistLoteCreate(BaseModel):
+    documentos: list[str]
+    motivo: str = ""
+
+
+class BlacklistOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tipo: str
+    valor: str
+    motivo: str
+    created_at: datetime
+
+
+class BlacklistLoteResult(BaseModel):
+    adicionados: int
+    ja_existiam: int
+    invalidos: list[str]

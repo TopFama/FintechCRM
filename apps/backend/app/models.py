@@ -240,3 +240,18 @@ class ErrorLog(Base):
     queue_item_id: Mapped[str | None] = mapped_column(ForeignKey("cobranca_fila.id"), nullable=True)
     message: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ClienteBloqueado(Base):
+    """Blacklist: cliente que nunca entra na cobrança, tenha atraso ou não.
+    Identificado pelo código SETA (8 dígitos) ou pelo CPF, sempre só dígitos."""
+
+    __tablename__ = "blacklist_clientes"
+    __table_args__ = (UniqueConstraint("tipo", "valor"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    tipo: Mapped[str] = mapped_column(String)  # "seta" ou "cpf", igual a QueueItem.codigo_tipo
+    valor: Mapped[str] = mapped_column(String, index=True)
+    motivo: Mapped[str] = mapped_column(String, default="")
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
