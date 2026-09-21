@@ -24,7 +24,7 @@ FintechCRM/
                                     # uploads, dashboard, reports
         utils/
           phone.py                 # normalização/validação de telefone (formato 55DD9XXXXXXXX)
-          document.py               # validação de código do cliente (SETA de 8 dígitos ou CPF)
+          document.py               # normalização de código SETA, CPF e nome do cliente
           spreadsheet.py             # leitura de .xlsx e geração do modelo de planilha
       alembic/                    # migrations do schema (ver seção Migrations abaixo)
       requirements.txt
@@ -201,16 +201,23 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    "RENEGOCIE") → template aprovado → número(s) de envio (com rotação automática quando mais de
    um) → nomes de coluna sugeridos para o modelo de planilha (o mapeamento de verdade acontece no
    upload, veja o próximo passo).
-4. Dentro da faixa: baixe o **modelo de planilha** (sugestão de colunas) ou suba direto a planilha
-   que já tiver. O sistema lê o cabeçalho (primeira linha) e mostra um mapeamento em lista suspensa
-   — você escolhe qual coluna real vira cada variável do template, o nome, o celular, o valor
-   cobrado e o **código do cliente** (obrigatório: SETA de 8 dígitos ou CPF válido). Só depois de
-   confirmar o mapeamento a planilha é importada para a fila.
+4. Dentro da faixa: baixe o **modelo de planilha** (sugestão de colunas: Codigo, Nome, CPF,
+   Celular, Valor) ou suba direto a planilha que já tiver. O sistema lê o cabeçalho (primeira
+   linha) e mostra um mapeamento em lista suspensa — você escolhe qual coluna real vira cada
+   variável do template e cada um dos campos obrigatórios de toda planilha:
+   - **Código** — SETA de até 8 dígitos; se vier com menos, completa com zero à esquerda.
+   - **Nome** — se vier o nome completo, usa só o primeiro nome.
+   - **CPF** — formata com pontos e traço (`000.000.000-00`); se faltar dígito, completa com zero
+     à esquerda.
+   - **Celular** — normalizado para `55DD9XXXXXXXX` (ver validação por linha abaixo).
+
+   O valor cobrado é opcional. Só depois de confirmar o mapeamento a planilha é importada para a
+   fila.
 5. Validação por linha: telefone é normalizado para `55DD9XXXXXXXX` (detecta se falta o DDI `55`
    ou o 9º dígito e completa; se tiver menos dígitos que o padrão, a linha vai para o **relatório
-   de telefones inválidos**, com código do cliente e telefone informado). Linhas sem código de
-   cliente válido ou com telefone duplicado na fila são rejeitadas e listadas no resultado do
-   upload.
+   de telefones inválidos**, com código do cliente e telefone informado). Linhas sem código,
+   nome ou CPF válidos, ou com telefone duplicado na fila, são rejeitadas e listadas no resultado
+   do upload.
 6. Configure **intervalo entre rodadas de envio**, **quantidade de cobranças por rodada** e a
    **janela de agendamento** (dias/horário) — ou dispare **"Cobrar esta base agora"** para rodar
    imediatamente, sem esperar o agendamento. A fila da faixa é acompanhada quase em tempo real

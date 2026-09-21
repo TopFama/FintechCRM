@@ -62,6 +62,7 @@ export default function FaixaDetail() {
     celular: NO_COLUMN,
     codigo_cliente: NO_COLUMN,
     nome: NO_COLUMN,
+    cpf: NO_COLUMN,
     valor: NO_COLUMN,
     variables: {},
   });
@@ -120,6 +121,7 @@ export default function FaixaDetail() {
         celular: pickDefault(result.columns, previous?.celular),
         codigo_cliente: pickDefault(result.columns, previous?.codigo_cliente),
         nome: pickDefault(result.columns, previous?.nome),
+        cpf: pickDefault(result.columns, previous?.cpf),
         valor: pickDefault(result.columns, previous?.valor),
         variables: Object.fromEntries(
           (faixa?.template.variables || []).map((v) => [
@@ -146,6 +148,8 @@ export default function FaixaDetail() {
   const mappingComplete =
     Boolean(fieldMap.celular) &&
     Boolean(fieldMap.codigo_cliente) &&
+    Boolean(fieldMap.nome) &&
+    Boolean(fieldMap.cpf) &&
     requiredVariableIds.every((vid) => Boolean(fieldMap.variables[vid]));
 
   async function confirmImport() {
@@ -262,8 +266,33 @@ export default function FaixaDetail() {
 
             <div className="form-row">
               <div className="field">
-                <label>Coluna do código do cliente (SETA de 8 dígitos ou CPF) *</label>
+                <label>Coluna do código (SETA, até 8 dígitos — completa com zero à esquerda) *</label>
                 <select value={fieldMap.codigo_cliente} onChange={(e) => setFieldMap({ ...fieldMap, codigo_cliente: e.target.value })}>
+                  <option value="">Selecione...</option>
+                  {columns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Coluna do nome (usa só o primeiro nome) *</label>
+                <select value={fieldMap.nome} onChange={(e) => setFieldMap({ ...fieldMap, nome: e.target.value })}>
+                  <option value="">Selecione...</option>
+                  {columns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="field">
+                <label>Coluna do CPF (formata com pontos e traço) *</label>
+                <select value={fieldMap.cpf} onChange={(e) => setFieldMap({ ...fieldMap, cpf: e.target.value })}>
                   <option value="">Selecione...</option>
                   {columns.map((c) => (
                     <option key={c} value={c}>
@@ -286,17 +315,6 @@ export default function FaixaDetail() {
             </div>
 
             <div className="form-row">
-              <div className="field">
-                <label>Coluna do nome (opcional)</label>
-                <select value={fieldMap.nome || ""} onChange={(e) => setFieldMap({ ...fieldMap, nome: e.target.value })}>
-                  <option value="">Nenhuma</option>
-                  {columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
               <div className="field">
                 <label>Coluna do valor cobrado (opcional)</label>
                 <select value={fieldMap.valor || ""} onChange={(e) => setFieldMap({ ...fieldMap, valor: e.target.value })}>
@@ -498,6 +516,7 @@ export default function FaixaDetail() {
                 <tr>
                   <th>Código</th>
                   <th>Nome</th>
+                  <th>CPF</th>
                   <th>Celular</th>
                   <th>Valor</th>
                   <th>Status</th>
@@ -509,6 +528,7 @@ export default function FaixaDetail() {
                   <tr key={q.id}>
                     <td className="cell-strong">{q.codigo_cliente}</td>
                     <td>{q.nome || "—"}</td>
+                    <td className="text-muted">{q.cpf || "—"}</td>
                     <td>{q.celular}</td>
                     <td className="text-muted">{q.valor || "—"}</td>
                     <td>

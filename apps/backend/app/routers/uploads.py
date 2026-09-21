@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
-from ..utils.document import validate_client_code
+from ..utils.document import extract_first_name, format_cpf, normalize_seta_code
 from ..utils.phone import is_valid_phone, normalize_phone
 from ..utils.spreadsheet import parse_uploaded_spreadsheet, read_spreadsheet_headers
 
@@ -94,17 +94,29 @@ async def upload_planilha(
     for i, row in enumerate(rows, start=2):  # linha 1 = cabeçalho
         codigo_raw = (row.get(field_mapping.codigo_cliente) or "").strip()
         celular_original = (row.get(field_mapping.celular) or "").strip()
-        nome = (row.get(field_mapping.nome) or "").strip() if field_mapping.nome else ""
+        nome_raw = (row.get(field_mapping.nome) or "").strip()
+        cpf_raw = (row.get(field_mapping.cpf) or "").strip()
         valor = (row.get(field_mapping.valor) or "").strip() if field_mapping.valor else None
 
-        code_result = validate_client_code(codigo_raw)
-        if not code_result:
+        codigo_cliente = normalize_seta_code(codigo_raw)
+        if not codigo_cliente:
             rejected += 1
             reasons.append(
-                f"Linha {i}: código do cliente inválido ({codigo_raw or 'vazio'}) — use SETA de 8 dígitos ou CPF"
+                f"Linha {i}: código SETA inválido ({codigo_raw or 'vazio'}) — use até 8 dígitos numéricos"
             )
             continue
-        codigo_cliente, codigo_tipo = code_result
+
+        if not nome_raw:
+            rejected += 1
+            reasons.append(f"Linha {i}: nome é obrigatório")
+            continue
+        nome = extract_first_name(nome_raw)
+
+        cpf = format_cpf(cpf_raw)
+        if not cpf:
+            rejected += 1
+            reasons.append(f"Linha {i}: CPF inválido ({cpf_raw or 'vazio'}) — use até 11 dígitos numéricos")
+            continue
 
         if not is_valid_phone(celular_original):
             db.add(
@@ -142,8 +154,8 @@ async def upload_planilha(
             models.QueueItem(
                 faixa_id=faixa_id,
                 codigo_cliente=codigo_cliente,
-                codigo_tipo=codigo_tipo,
                 nome=nome,
+                cpf=cpf,
                 valor=valor or None,
                 celular=celular,
                 celular_original=celular_original,

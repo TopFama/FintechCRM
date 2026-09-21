@@ -176,8 +176,8 @@ export interface QueueItem {
   id: string;
   faixa_id: string;
   codigo_cliente: string;
-  codigo_tipo: "seta" | "cpf";
   nome: string;
+  cpf: string;
   valor: string | null;
   celular: string;
   status: "pending" | "reserved" | "sent" | "error" | "invalid_phone";
@@ -193,7 +193,8 @@ export interface UploadColumnsResult {
 export interface UploadFieldMapping {
   celular: string;
   codigo_cliente: string;
-  nome?: string | null;
+  nome: string;
+  cpf: string;
   valor?: string | null;
   variables: Record<string, string>; // template_variable_id -> nome da coluna
 }

@@ -1,34 +1,40 @@
-"""Validação do código de identificação do cliente: código SETA (8 dígitos
-numéricos, uso interno TopFama) ou CPF (com dígitos verificadores)."""
+"""Normalização dos dados de identificação do cliente, obrigatórios em toda
+planilha upada: código SETA, nome e CPF."""
 
 import re
 
-_SETA_RE = re.compile(r"^\d{8}$")
-
-_CPF_INVALID = {d * 11 for d in "0123456789"}
-
-
-def _cpf_check_digit(digits: str, weight_start: int) -> int:
-    total = sum(int(d) * w for d, w in zip(digits, range(weight_start, 1, -1)))
-    remainder = (total * 10) % 11
-    return 0 if remainder == 10 else remainder
+_SETA_DIGITS = 8
+_CPF_DIGITS = 11
 
 
-def is_valid_cpf(digits: str) -> bool:
-    if len(digits) != 11 or not digits.isdigit() or digits in _CPF_INVALID:
-        return False
-    d1 = _cpf_check_digit(digits[:9], 10)
-    d2 = _cpf_check_digit(digits[:9] + str(d1), 11)
-    return digits[-2:] == f"{d1}{d2}"
-
-
-def validate_client_code(raw: str | None) -> tuple[str, str] | None:
-    """Retorna (código_normalizado, tipo) onde tipo é "seta" ou "cpf", ou
-    None se o valor não for um SETA de 8 dígitos nem um CPF válido."""
+def normalize_seta_code(raw: str | None) -> str | None:
+    """Extrai os dígitos do código SETA e completa com zeros à esquerda até
+    8 dígitos. Retorna None se não sobrar dígito nenhum ou se vier com mais
+    de 8 dígitos (não é um SETA válido)."""
 
     digits = re.sub(r"\D", "", str(raw or ""))
-    if _SETA_RE.match(digits):
-        return digits, "seta"
-    if is_valid_cpf(digits):
-        return digits, "cpf"
-    return None
+    if not digits or len(digits) > _SETA_DIGITS:
+        return None
+    return digits.zfill(_SETA_DIGITS)
+
+
+def format_cpf(raw: str | None) -> str | None:
+    """Extrai os dígitos do CPF, completa com zeros à esquerda até 11
+    dígitos e formata como XXX.XXX.XXX-XX. Retorna None se não sobrar
+    dígito nenhum ou se vier com mais de 11 dígitos."""
+
+    digits = re.sub(r"\D", "", str(raw or ""))
+    if not digits or len(digits) > _CPF_DIGITS:
+        return None
+    digits = digits.zfill(_CPF_DIGITS)
+    return f"{digits[0:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:11]}"
+
+
+def extract_first_name(raw: str | None) -> str:
+    """Normaliza um nome completo para só o primeiro nome (planilhas trazem
+    nome completo, mas o disparo usa só o primeiro nome)."""
+
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    return text.split()[0]

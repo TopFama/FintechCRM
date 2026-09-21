@@ -7,7 +7,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-REQUIRED_COLUMNS = ["codigo_cliente", "nome", "celular", "valor"]
+REQUIRED_COLUMNS = ["Codigo", "Nome", "CPF", "Celular", "Valor"]
 
 
 def build_model_columns(variable_internal_names: list[str]) -> list[str]:
