@@ -33,7 +33,7 @@ FintechCRM/
     frontend/                   # React + TypeScript + Vite
       src/
         api.ts                   # único lugar que fala com o backend (fetch + tipos)
-        pages/                    # uma página por rota (Login, Dashboard, Numbers, Templates,
+        pages/                    # uma página por rota (Login, Dashboard, Cobranca, Leads, Blacklist, Templates,
                                    # Faixas, FaixaWizard, FaixaDetail, Relatorios)
         styles.css                 # design tokens (CSS vars) e classes utilitárias
         icons.tsx                   # ícones inline SVG, sem lib externa
@@ -76,7 +76,8 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 
 WABA ID, `phone_number_id` e os **tokens de acesso da Meta** **não** vão no `.env` — são cadastrados dentro do
 próprio portal depois que o sistema estiver no ar: os tokens em **Configurações → Tokens da Meta** (guardados
-cifrados no Postgres) e os números na tela **Números**, onde se escolhe qual token cada um usa.
+cifrados no Postgres), e os números são importados da WABA de cada token no card **Números de WhatsApp**,
+na mesma tela, onde também se informa a inbox do Chatwoot de cada um.
 
 ## Configurando a API da Meta (WhatsApp Business)
 
@@ -87,7 +88,7 @@ ele é cadastrado em **Configurações → Tokens da Meta** e guardado cifrado n
    produto **WhatsApp** adicionado a ele.
 2. Em **WhatsApp → Configuração da API** (ou **Business Settings** do seu Business Manager),
    anote:
-   - o **WABA ID** (ID da conta do WhatsApp Business) — usado ao cadastrar os números na tela **Números**.
+   - o **WABA ID** (ID da conta do WhatsApp Business) — informado junto com o token em **Configurações**.
    - o **phone_number_id** de cada número que vai disparar mensagens (não é o número de telefone
      em si, é o ID interno da Meta para aquele número).
 3. **Gere um token de acesso de longa duração** (o token temporário que aparece na tela de teste
@@ -103,8 +104,9 @@ ele é cadastrado em **Configurações → Tokens da Meta** e guardado cifrado n
    - Cadastre o token com um nome identificador. Ele é cifrado e salvo no banco com `ENCRYPTION_KEY`.
      Você pode testar a conexão com a Meta diretamente no botão "Testar".
 5. **Cadastre e vincule os números**:
-   - Na tela **Números**, cadastre cada número com WABA ID + `phone_number_id` + número exibido
-     e selecione, na lista, o token da Meta cadastrado no passo anterior.
+   - Ao salvar o token (com o WABA ID), o portal lista os números da WABA direto da Meta: marque os que
+     vão disparar e clique em **Importar selecionados**. No card **Números de WhatsApp** informe a inbox do
+     Chatwoot de cada número e desative os que não devem enviar.
 6. Tela **Templates**: use **"Sincronizar templates da Meta"** para puxar os templates já aprovados,
    ou crie um novo template pelo próprio portal (com a opção de já submeter para aprovação).
 

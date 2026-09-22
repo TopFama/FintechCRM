@@ -190,7 +190,7 @@ def _resolve_waba_id(db: Session, waba_id: str | None) -> str:
     if not waba_ids:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            "Cadastre um número de WhatsApp (aba Números) antes de criar um template",
+            "Importe um número de WhatsApp (Configurações → Tokens da Meta) antes de criar um template",
         )
     if len(waba_ids) > 1:
         raise HTTPException(

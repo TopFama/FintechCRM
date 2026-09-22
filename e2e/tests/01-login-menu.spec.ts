@@ -43,7 +43,6 @@ test.describe("01. Login & menu", () => {
       "Cobrança",
       "Leads",
       "Blacklist",
-      "Números",
       "Templates",
       "Faixas de cobrança",
       "Relatórios",

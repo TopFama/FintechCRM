@@ -116,14 +116,16 @@ export default function Templates() {
           <h3>Sincronizar templates da Meta</h3>
         </div>
         <p className="card-subtitle">
-          Puxa os templates já aprovados/pendentes direto da Meta para todos os números de WhatsApp já
-          cadastrados na aba Números — não precisa mais informar o WABA ID na mão.
+          Puxa os templates já aprovados/pendentes direto da Meta para as WABAs dos tokens cadastrados em
+          Configurações — não precisa informar o WABA ID na mão.
         </p>
-        <button onClick={handleSync} disabled={syncing || numbers.length === 0}>
+        <button onClick={handleSync} disabled={syncing}>
           {syncing ? "Sincronizando..." : "Sincronizar"}
         </button>
         {numbers.length === 0 && (
-          <p className="field-hint">Cadastre um número de WhatsApp na aba Números antes de sincronizar.</p>
+          <p className="field-hint">
+            Se ainda não há token da Meta, cadastre um em Configurações → Tokens da Meta antes de sincronizar.
+          </p>
         )}
       </div>
 

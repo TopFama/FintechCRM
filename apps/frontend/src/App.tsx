@@ -1,7 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import Numbers from "./pages/Numbers";
 import Templates from "./pages/Templates";
 import Faixas from "./pages/Faixas";
 import FaixaWizard from "./pages/FaixaWizard";
@@ -15,7 +14,6 @@ import {
   IconDashboard,
   IconLayers,
   IconLogout,
-  IconPhone,
   IconReport,
   IconTemplate,
   IconUsers,
@@ -55,9 +53,6 @@ function Layout({ children }: { children: JSX.Element }) {
           </NavLink>
           <NavLink to="/blacklist" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconBan /> Blacklist
-          </NavLink>
-          <NavLink to="/numeros" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-            <IconPhone /> Números
           </NavLink>
           <NavLink to="/templates" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconTemplate /> Templates
@@ -130,16 +125,6 @@ export default function App() {
           <RequireAuth>
             <Layout>
               <Blacklist />
-            </Layout>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/numeros"
-        element={
-          <RequireAuth>
-            <Layout>
-              <Numbers />
             </Layout>
           </RequireAuth>
         }

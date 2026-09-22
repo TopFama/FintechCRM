@@ -139,7 +139,7 @@ async def importar_numeros(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    """Cadastra na tela Números os números escolhidos da WABA, já com este token."""
+    """Cadastra os números escolhidos da WABA (card Números de WhatsApp), já com este token."""
 
     token = _token_ou_404(db, token_id)
     if not token.waba_id:

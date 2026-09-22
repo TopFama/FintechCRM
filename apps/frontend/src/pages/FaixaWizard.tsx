@@ -132,7 +132,7 @@ export default function FaixaWizard() {
                 </label>
               ))}
               {numbers.length === 0 && (
-                <p className="text-muted">Nenhum número cadastrado ainda — cadastre em "Números" primeiro.</p>
+                <p className="text-muted">Nenhum número ainda — importe os números da WABA em Configurações → Tokens da Meta.</p>
               )}
             </div>
             <div className="actions-row">

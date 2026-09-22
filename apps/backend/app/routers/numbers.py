@@ -15,7 +15,8 @@ def list_numbers(
     return (
         db.query(models.WhatsappNumber)
         .options(selectinload(models.WhatsappNumber.meta_token))
-        .order_by(models.WhatsappNumber.created_at.desc())
+        # números importados juntos têm o mesmo created_at: desempata para a ordem não mudar a cada edição
+        .order_by(models.WhatsappNumber.created_at.desc(), models.WhatsappNumber.display_phone_number)
         .all()
     )
 

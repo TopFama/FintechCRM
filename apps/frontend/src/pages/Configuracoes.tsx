@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, StatusGoogle, StatusSeta } from "../api";
+import NumerosCard from "../components/config/NumerosCard";
 import TokensMetaCard from "../components/config/TokensMetaCard";
 import { IconAlert, IconRefresh } from "../icons";
 
 export default function Configuracoes() {
+  const [versaoNumeros, setVersaoNumeros] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [seta, setSeta] = useState<StatusSeta | null>(null);
@@ -267,7 +269,8 @@ export default function Configuracoes() {
         )}
       </div>
 
-      <TokensMetaCard />
+      <TokensMetaCard onNumerosAlterados={() => setVersaoNumeros((v) => v + 1)} />
+      <NumerosCard versao={versaoNumeros} />
     </div>
   );
 }

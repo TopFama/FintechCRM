@@ -1,13 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { api, MetaToken, NumeroMeta } from "../../api";
 import { IconAlert, IconCheckCircle } from "../../icons";
 
 type Resultado = { ok: boolean; detalhe: string };
 
 // Tokens da Meta: cadastrados só aqui (WABA ID + token), cifrados no banco —
-// nunca no .env. Da WABA de cada token se puxam os números para a tela Números.
-export default function TokensMetaCard() {
+// nunca no .env. Da WABA de cada token se puxam os números (card Números de WhatsApp).
+export default function TokensMetaCard({ onNumerosAlterados }: { onNumerosAlterados?: () => void }) {
   const [tokens, setTokens] = useState<MetaToken[]>([]);
   const [form, setForm] = useState({ nome: "", waba_id: "", token: "" });
   const [salvando, setSalvando] = useState(false);
@@ -76,6 +75,7 @@ export default function TokensMetaCard() {
       if (r.vinculados) partes.push(`${r.vinculados} já cadastrado(s) agora ligado(s) a este token`);
       if (r.ignorados) partes.push(`${r.ignorados} já usa(m) outro token e ficou(aram) como estava(m)`);
       carregarTokens();
+      onNumerosAlterados?.();
       await abrirNumeros(abertoId);
       setResultadoNumeros({ ok: true, detalhe: partes.join("; ") + "." });
     } catch (err) {
@@ -148,7 +148,7 @@ export default function TokensMetaCard() {
           <h3>Tokens da Meta</h3>
           <div className="card-subtitle">
             Cadastre o token de um usuário do sistema da Meta com a WABA que ele acessa; os números dessa WABA podem ser
-            importados direto para a tela <Link to="/numeros">Números</Link>.
+            importados para o card Números de WhatsApp, logo abaixo.
           </div>
         </div>
       </div>

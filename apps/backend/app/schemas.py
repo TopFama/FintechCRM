@@ -58,7 +58,7 @@ class NumeroMetaOut(BaseModel):
     verified_name: str | None = None
     quality_rating: str | None = None
     status: str | None = None
-    cadastrado: bool  # já existe na tela Números (mesmo phone_number_id)
+    cadastrado: bool  # já existe entre os números do portal (mesmo phone_number_id)
     vinculado_a_este_token: bool
 
 

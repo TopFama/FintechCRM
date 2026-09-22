@@ -39,8 +39,8 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
 - `api.ts` — único lugar que fala com o backend: wrapper de `fetch` + todos os tipos TypeScript
   espelhando os schemas do backend. Endpoint novo no backend → método novo aqui, não `fetch` direto
   numa página.
-- `pages/` — uma página por rota (`Login`, `Dashboard`, `Numbers`, `Templates`, `Faixas`,
-  `FaixaWizard`, `FaixaDetail`, `Relatorios`).
+- `pages/` — uma página por rota (`Login`, `Dashboard`, `Cobranca`, `Leads`, `Blacklist`, `Templates`, `Faixas`,
+  `FaixaWizard`, `FaixaDetail`, `Relatorios`, `Configuracoes`).
 - `styles.css` — todo o design vive aqui: tokens em `:root` (cores, espaçamento, sombra) e classes
   utilitárias reaproveitadas entre páginas (`.card`, `.badge`, `.form-row`, `.stat`, etc.). Não é
   CSS Modules nem styled-components.
