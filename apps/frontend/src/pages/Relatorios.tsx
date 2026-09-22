@@ -1,22 +1,48 @@
 import { useEffect, useState } from "react";
 import { api, DispatchReportItem, Faixa, InvalidPhoneRecord } from "../api";
+import SortableTh from "../components/SortableTh";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
+import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
 
 type Tab = "invalidos" | "envios";
+type ColunaInvalido = "codigo_cliente" | "celular_original" | "celular_normalizado" | "motivo" | "created_at";
+type ColunaEnvio = "codigo_cliente" | "faixa" | "nome" | "valor" | "telefone" | "enviado_em";
 
 export default function Relatorios() {
   const [tab, setTab] = useState<Tab>("invalidos");
   const [faixas, setFaixas] = useState<Faixa[]>([]);
   const [faixaId, setFaixaId] = useState<string>("");
+  const [nomesFaixa, setNomesFaixa] = useState<string[]>([]);
   const [invalidPhones, setInvalidPhones] = useState<InvalidPhoneRecord[]>([]);
   const [dispatchReport, setDispatchReport] = useState<DispatchReportItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const invalidosSort = useSort<ColunaInvalido>();
+  const enviosSort = useSort<ColunaEnvio>();
+  const ordemFaixa = ordemFaixaFn(nomesFaixa);
 
   useEffect(() => {
     api.listFaixas().then(setFaixas).catch(() => undefined);
+    api.regrasCobranca().then((r) => setNomesFaixa(r.faixas)).catch(() => undefined);
   }, []);
+
+  const invalidPhonesOrdenado = ordenarPor(
+    invalidPhones,
+    invalidosSort.sortKey ? (r: InvalidPhoneRecord) => r[invalidosSort.sortKey as ColunaInvalido] : null,
+    invalidosSort.sortDir
+  );
+  const dispatchReportOrdenado = ordenarPor(
+    dispatchReport,
+    enviosSort.sortKey === "faixa"
+      ? (r: DispatchReportItem) => ordemFaixa(r.faixa)
+      : enviosSort.sortKey === "valor"
+      ? (r: DispatchReportItem) => (r.valor != null ? Number(r.valor) : null)
+      : enviosSort.sortKey
+      ? (r: DispatchReportItem) => r[enviosSort.sortKey as ColunaEnvio]
+      : null,
+    enviosSort.sortDir
+  );
 
   function load() {
     setLoading(true);
@@ -98,15 +124,28 @@ export default function Relatorios() {
               <table>
                 <thead>
                   <tr>
-                    <th>Código do cliente</th>
-                    <th>Telefone informado</th>
-                    <th>Normalizado</th>
-                    <th>Motivo</th>
-                    <th>Quando</th>
+                    {(
+                      [
+                        ["codigo_cliente", "Código do cliente"],
+                        ["celular_original", "Telefone informado"],
+                        ["celular_normalizado", "Normalizado"],
+                        ["motivo", "Motivo"],
+                        ["created_at", "Quando"],
+                      ] as [ColunaInvalido, string][]
+                    ).map(([coluna, rotulo]) => (
+                      <SortableTh
+                        key={coluna}
+                        active={invalidosSort.sortKey === coluna}
+                        dir={invalidosSort.sortDir}
+                        onSort={() => invalidosSort.toggleSort(coluna)}
+                      >
+                        {rotulo}
+                      </SortableTh>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {invalidPhones.map((r) => (
+                  {invalidPhonesOrdenado.map((r) => (
                     <tr key={r.id}>
                       <td className="cell-strong">{r.codigo_cliente}</td>
                       <td>{r.celular_original}</td>
@@ -130,16 +169,29 @@ export default function Relatorios() {
             <table>
               <thead>
                 <tr>
-                  <th>Código do cliente</th>
-                  <th>Faixa de atraso</th>
-                  <th>Nome</th>
-                  <th>Valor cobrado</th>
-                  <th>Telefone que cobrou</th>
-                  <th>Data/hora</th>
+                  {(
+                    [
+                      ["codigo_cliente", "Código do cliente"],
+                      ["faixa", "Faixa de atraso"],
+                      ["nome", "Nome"],
+                      ["valor", "Valor cobrado"],
+                      ["telefone", "Telefone que cobrou"],
+                      ["enviado_em", "Data/hora"],
+                    ] as [ColunaEnvio, string][]
+                  ).map(([coluna, rotulo]) => (
+                    <SortableTh
+                      key={coluna}
+                      active={enviosSort.sortKey === coluna}
+                      dir={enviosSort.sortDir}
+                      onSort={() => enviosSort.toggleSort(coluna)}
+                    >
+                      {rotulo}
+                    </SortableTh>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {dispatchReport.map((r, i) => (
+                {dispatchReportOrdenado.map((r, i) => (
                   <tr key={i}>
                     <td className="cell-strong">{r.codigo_cliente}</td>
                     <td>{r.faixa}</td>

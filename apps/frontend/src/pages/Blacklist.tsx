@@ -1,12 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, Bloqueado } from "../api";
 import { formatCpf, formatDataHora } from "../format";
+import SortableTh from "../components/SortableTh";
 import { IconAlert, IconBan } from "../icons";
+import { ordenarPor, useSort } from "../sort";
+
+type ColunaBloqueado = "tipo" | "valor" | "motivo" | "created_at";
 
 export default function Blacklist() {
   const [lista, setLista] = useState<Bloqueado[]>([]);
   const [busca, setBusca] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const listaSort = useSort<ColunaBloqueado>();
+  const listaOrdenada = ordenarPor(
+    lista,
+    listaSort.sortKey ? (item: Bloqueado) => item[listaSort.sortKey as ColunaBloqueado] : null,
+    listaSort.sortDir
+  );
 
   // Formulário individual
   const [doc, setDoc] = useState("");
@@ -247,15 +257,28 @@ export default function Blacklist() {
             <table>
               <thead>
                 <tr>
-                  <th scope="col">Tipo</th>
-                  <th scope="col">Documento</th>
-                  <th scope="col">Motivo</th>
-                  <th scope="col">Adicionado em</th>
+                  <SortableTh scope="col" active={listaSort.sortKey === "tipo"} dir={listaSort.sortDir} onSort={() => listaSort.toggleSort("tipo")}>
+                    Tipo
+                  </SortableTh>
+                  <SortableTh scope="col" active={listaSort.sortKey === "valor"} dir={listaSort.sortDir} onSort={() => listaSort.toggleSort("valor")}>
+                    Documento
+                  </SortableTh>
+                  <SortableTh scope="col" active={listaSort.sortKey === "motivo"} dir={listaSort.sortDir} onSort={() => listaSort.toggleSort("motivo")}>
+                    Motivo
+                  </SortableTh>
+                  <SortableTh
+                    scope="col"
+                    active={listaSort.sortKey === "created_at"}
+                    dir={listaSort.sortDir}
+                    onSort={() => listaSort.toggleSort("created_at")}
+                  >
+                    Adicionado em
+                  </SortableTh>
                   <th scope="col"></th>
                 </tr>
               </thead>
               <tbody>
-                {lista.map((item) => (
+                {listaOrdenada.map((item) => (
                   <tr key={item.id}>
                     <td>
                       <span className="badge draft">{tipoLabel(item.tipo)}</span>

@@ -3,8 +3,10 @@ import { api, DashboardSummary } from "../api";
 import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
+import SortableTh from "../components/SortableTh";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { IconAlert, IconBolt, IconCheckCircle, IconInbox, IconPhone } from "../icons";
+import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -31,7 +33,7 @@ export default function Dashboard() {
         </div>
       )}
       {!summary && !error && <div className="loading-state">Carregando resumo da fila...</div>}
-      {summary && <ResumoFila summary={summary} />}
+      {summary && <ResumoFila summary={summary} nomesFaixa={opcoes.regras?.faixas} />}
 
       <MatrizCobrancaCard opcoes={opcoes} />
       <EfetividadeCard opcoes={opcoes} />
@@ -40,7 +42,30 @@ export default function Dashboard() {
   );
 }
 
-function ResumoFila({ summary }: { summary: DashboardSummary }) {
+function ResumoFila({ summary, nomesFaixa }: { summary: DashboardSummary; nomesFaixa: string[] | undefined }) {
+  const ordemFaixa = ordemFaixaFn(nomesFaixa);
+  const porFaixaSort = useSort<"faixa" | "pending" | "sent" | "error">("faixa");
+  const porFaixaOrdenado = ordenarPor(
+    summary.por_faixa,
+    porFaixaSort.sortKey === "faixa"
+      ? (row) => ordemFaixa(String(row.faixa))
+      : porFaixaSort.sortKey
+      ? (row) => Number(row[porFaixaSort.sortKey as "pending" | "sent" | "error"] ?? 0)
+      : null,
+    porFaixaSort.sortDir
+  );
+
+  const errosSort = useSort<"quando" | "mensagem">();
+  const errosOrdenado = ordenarPor(
+    summary.erros_recentes,
+    errosSort.sortKey === "quando"
+      ? (row) => String(row.created_at)
+      : errosSort.sortKey === "mensagem"
+      ? (row) => String(row.message)
+      : null,
+    errosSort.sortDir
+  );
+
   return (
     <>
       <div className="stat-grid">
@@ -97,14 +122,38 @@ function ResumoFila({ summary }: { summary: DashboardSummary }) {
             <table>
               <thead>
                 <tr>
-                  <th>Faixa</th>
-                  <th>Pendente</th>
-                  <th>Enviado</th>
-                  <th>Erro</th>
+                  <SortableTh
+                    active={porFaixaSort.sortKey === "faixa"}
+                    dir={porFaixaSort.sortDir}
+                    onSort={() => porFaixaSort.toggleSort("faixa")}
+                  >
+                    Faixa
+                  </SortableTh>
+                  <SortableTh
+                    active={porFaixaSort.sortKey === "pending"}
+                    dir={porFaixaSort.sortDir}
+                    onSort={() => porFaixaSort.toggleSort("pending")}
+                  >
+                    Pendente
+                  </SortableTh>
+                  <SortableTh
+                    active={porFaixaSort.sortKey === "sent"}
+                    dir={porFaixaSort.sortDir}
+                    onSort={() => porFaixaSort.toggleSort("sent")}
+                  >
+                    Enviado
+                  </SortableTh>
+                  <SortableTh
+                    active={porFaixaSort.sortKey === "error"}
+                    dir={porFaixaSort.sortDir}
+                    onSort={() => porFaixaSort.toggleSort("error")}
+                  >
+                    Erro
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {summary.por_faixa.map((row, i) => (
+                {porFaixaOrdenado.map((row, i) => (
                   <tr key={i}>
                     <td className="cell-strong">{String(row.faixa)}</td>
                     <td>{String(row.pending ?? 0)}</td>
@@ -133,12 +182,24 @@ function ResumoFila({ summary }: { summary: DashboardSummary }) {
             <table>
               <thead>
                 <tr>
-                  <th>Quando</th>
-                  <th>Mensagem</th>
+                  <SortableTh
+                    active={errosSort.sortKey === "quando"}
+                    dir={errosSort.sortDir}
+                    onSort={() => errosSort.toggleSort("quando")}
+                  >
+                    Quando
+                  </SortableTh>
+                  <SortableTh
+                    active={errosSort.sortKey === "mensagem"}
+                    dir={errosSort.sortDir}
+                    onSort={() => errosSort.toggleSort("mensagem")}
+                  >
+                    Mensagem
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {summary.erros_recentes.map((row, i) => (
+                {errosOrdenado.map((row, i) => (
                   <tr key={i}>
                     <td className="text-muted">{new Date(String(row.created_at)).toLocaleString("pt-BR")}</td>
                     <td>{String(row.message)}</td>

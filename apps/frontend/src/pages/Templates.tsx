@@ -1,9 +1,19 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
 import { api, CampoCliente, Template, WhatsappNumber } from "../api";
+import SortableTh from "../components/SortableTh";
 import { IconAlert, IconEye, IconPlus, IconTemplate } from "../icons";
+import { ordenarPor, useSort } from "../sort";
+
+type ColunaTemplate = "name" | "meta_template_name" | "status";
 
 export default function Templates() {
   const [templates, setTemplates] = useState<Template[]>([]);
+  const templatesSort = useSort<ColunaTemplate>();
+  const templatesOrdenados = ordenarPor(
+    templates,
+    templatesSort.sortKey ? (t: Template) => t[templatesSort.sortKey as ColunaTemplate] : null,
+    templatesSort.sortDir
+  );
   const [numbers, setNumbers] = useState<WhatsappNumber[]>([]);
   const [campos, setCampos] = useState<CampoCliente[]>([]);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -269,16 +279,26 @@ export default function Templates() {
             <table>
               <thead>
                 <tr>
-                  <th>Nome</th>
-                  <th>Template (Meta)</th>
-                  <th>Status</th>
+                  <SortableTh active={templatesSort.sortKey === "name"} dir={templatesSort.sortDir} onSort={() => templatesSort.toggleSort("name")}>
+                    Nome
+                  </SortableTh>
+                  <SortableTh
+                    active={templatesSort.sortKey === "meta_template_name"}
+                    dir={templatesSort.sortDir}
+                    onSort={() => templatesSort.toggleSort("meta_template_name")}
+                  >
+                    Template (Meta)
+                  </SortableTh>
+                  <SortableTh active={templatesSort.sortKey === "status"} dir={templatesSort.sortDir} onSort={() => templatesSort.toggleSort("status")}>
+                    Status
+                  </SortableTh>
                   <th>Variáveis</th>
                   <th>Imagem</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {templates.map((t) => (
+                {templatesOrdenados.map((t) => (
                   <Fragment key={t.id}>
                     <tr>
                       <td className="cell-strong">{t.name}</td>

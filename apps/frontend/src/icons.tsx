@@ -214,6 +214,30 @@ export function IconEye(props: IconProps) {
   );
 }
 
+export function IconSort(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M7 9l5-5 5 5M7 15l5 5 5-5" />
+    </svg>
+  );
+}
+
+export function IconSortUp(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M12 19V5M6 10l6-6 6 6" />
+    </svg>
+  );
+}
+
+export function IconSortDown(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M12 5v14M6 14l6 6 6-6" />
+    </svg>
+  );
+}
+
 export function IconSettings(props: IconProps) {
   return (
     <svg {...base} {...props}>

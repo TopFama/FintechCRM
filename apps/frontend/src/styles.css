@@ -340,6 +340,25 @@ td {
   font-size: 13.5px;
 }
 
+.th-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.th-sortable:hover {
+  color: var(--color-primary);
+}
+
+.th-sortable-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.th-sortable-icon-idle {
+  opacity: 0.35;
+}
+
 tbody tr {
   transition: background var(--transition);
 }

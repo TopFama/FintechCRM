@@ -24,6 +24,11 @@ import {
   IconUpload,
   IconUsers,
 } from "../icons";
+import SortableTh from "../components/SortableTh";
+import { ordenarPor, useSort } from "../sort";
+
+type ColunaFila = "codigo_cliente" | "nome" | "cpf" | "celular" | "valor" | "status" | "error_message";
+type ColunaLeadFaixa = "nome" | "celular" | "cluster" | "dias_atraso" | "valor_cobrar" | "status";
 
 const QUEUE_POLL_MS = 4000;
 
@@ -58,6 +63,16 @@ export default function FaixaDetail() {
   const { id } = useParams<{ id: string }>();
   const [faixa, setFaixa] = useState<Faixa | null>(null);
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const filaSort = useSort<ColunaFila>();
+  const filaOrdenada = ordenarPor(
+    queue,
+    filaSort.sortKey === "valor"
+      ? (q: QueueItem) => (q.valor != null ? Number(q.valor) : null)
+      : filaSort.sortKey
+      ? (q: QueueItem) => q[filaSort.sortKey as ColunaFila]
+      : null,
+    filaSort.sortDir
+  );
   const [error, setError] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [config, setConfig] = useState<DispatchConfig | null>(null);
@@ -83,6 +98,16 @@ export default function FaixaDetail() {
   // Leads gerados (Cobrança → Leads) para esta mesma faixa de atraso, só
   // pra dar visibilidade de quem existe antes de decidir subir a planilha.
   const [leads, setLeads] = useState<Lead[]>([]);
+  const leadsFaixaSort = useSort<ColunaLeadFaixa>();
+  const leadsOrdenados = ordenarPor(
+    leads,
+    leadsFaixaSort.sortKey === "valor_cobrar"
+      ? (l: Lead) => Number(l.valor_cobrar)
+      : leadsFaixaSort.sortKey
+      ? (l: Lead) => l[leadsFaixaSort.sortKey as ColunaLeadFaixa]
+      : null,
+    leadsFaixaSort.sortDir
+  );
   const [leadsTotal, setLeadsTotal] = useState(0);
   const [leadsLoading, setLeadsLoading] = useState(false);
 
@@ -798,17 +823,25 @@ export default function FaixaDetail() {
             <table>
               <thead>
                 <tr>
-                  <th>Código</th>
-                  <th>Nome</th>
-                  <th>CPF</th>
-                  <th>Celular</th>
-                  <th>Valor</th>
-                  <th>Status</th>
-                  <th>Erro</th>
+                  {(
+                    [
+                      ["codigo_cliente", "Código"],
+                      ["nome", "Nome"],
+                      ["cpf", "CPF"],
+                      ["celular", "Celular"],
+                      ["valor", "Valor"],
+                      ["status", "Status"],
+                      ["error_message", "Erro"],
+                    ] as [ColunaFila, string][]
+                  ).map(([coluna, rotulo]) => (
+                    <SortableTh key={coluna} active={filaSort.sortKey === coluna} dir={filaSort.sortDir} onSort={() => filaSort.toggleSort(coluna)}>
+                      {rotulo}
+                    </SortableTh>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {queue.map((q) => (
+                {filaOrdenada.map((q) => (
                   <tr key={q.id}>
                     <td className="cell-strong">{q.codigo_cliente}</td>
                     <td>{q.nome || "—"}</td>
@@ -852,16 +885,29 @@ export default function FaixaDetail() {
               <table>
                 <thead>
                   <tr>
-                    <th>Nome</th>
-                    <th>Celular</th>
-                    <th>Cluster</th>
-                    <th>Dias de atraso</th>
-                    <th>Valor a cobrar</th>
-                    <th>Status</th>
+                    {(
+                      [
+                        ["nome", "Nome"],
+                        ["celular", "Celular"],
+                        ["cluster", "Cluster"],
+                        ["dias_atraso", "Dias de atraso"],
+                        ["valor_cobrar", "Valor a cobrar"],
+                        ["status", "Status"],
+                      ] as [ColunaLeadFaixa, string][]
+                    ).map(([coluna, rotulo]) => (
+                      <SortableTh
+                        key={coluna}
+                        active={leadsFaixaSort.sortKey === coluna}
+                        dir={leadsFaixaSort.sortDir}
+                        onSort={() => leadsFaixaSort.toggleSort(coluna)}
+                      >
+                        {rotulo}
+                      </SortableTh>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {leads.map((l) => (
+                  {leadsOrdenados.map((l) => (
                     <tr key={l.id}>
                       <td className="cell-strong">{l.nome || "—"}</td>
                       <td>{l.celular || "—"}</td>

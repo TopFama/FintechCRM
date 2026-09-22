@@ -11,7 +11,22 @@ import {
 import { formatBRL, formatCpf, formatData, formatDataHora } from "../format";
 import MultiSelect from "../components/MultiSelect";
 import Paginacao from "../components/Paginacao";
+import SortableTh from "../components/SortableTh";
 import { IconAlert, IconList } from "../icons";
+import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
+
+type ColunaLead =
+  | "codigo_cliente"
+  | "cpf"
+  | "nome"
+  | "vencimento_mais_antigo"
+  | "valor_cobrar"
+  | "qtd_parcelas"
+  | "dias_atraso"
+  | "faixa"
+  | "cluster"
+  | "status"
+  | "cobrado_em";
 
 const LIMIT = 50;
 
@@ -43,6 +58,37 @@ export default function Leads() {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [carregando, setCarregando] = useState(false);
+  const leadsSort = useSort<ColunaLead>();
+  const ordemFaixa = ordemFaixaFn(regras?.faixas);
+  function valorOrdenacaoLead(l: Lead): string | number | null {
+    switch (leadsSort.sortKey) {
+      case "codigo_cliente":
+        return l.codigo_cliente;
+      case "cpf":
+        return l.cpf;
+      case "nome":
+        return l.nome;
+      case "vencimento_mais_antigo":
+        return l.vencimento_mais_antigo;
+      case "valor_cobrar":
+        return Number(l.valor_cobrar);
+      case "qtd_parcelas":
+        return l.qtd_parcelas;
+      case "dias_atraso":
+        return l.dias_atraso;
+      case "faixa":
+        return ordemFaixa(l.faixa);
+      case "cluster":
+        return l.cluster;
+      case "status":
+        return l.status;
+      case "cobrado_em":
+        return l.cobrado_em;
+      default:
+        return null;
+    }
+  }
+  const leadsOrdenados = ordenarPor(leads, leadsSort.sortKey ? valorOrdenacaoLead : null, leadsSort.sortDir);
   const [erro, setErro] = useState<string | null>(null);
 
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
@@ -438,21 +484,35 @@ export default function Leads() {
                         aria-label="Selecionar todos da página"
                       />
                     </th>
-                    <th scope="col">Código</th>
-                    <th scope="col">CPF</th>
-                    <th scope="col">Nome</th>
-                    <th scope="col">Vencimento</th>
-                    <th scope="col">Valor</th>
-                    <th scope="col">Parcelas</th>
-                    <th scope="col">Atraso</th>
-                    <th scope="col">Faixa</th>
-                    <th scope="col">Cluster</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Enviado em</th>
+                    {(
+                      [
+                        ["codigo_cliente", "Código"],
+                        ["cpf", "CPF"],
+                        ["nome", "Nome"],
+                        ["vencimento_mais_antigo", "Vencimento"],
+                        ["valor_cobrar", "Valor"],
+                        ["qtd_parcelas", "Parcelas"],
+                        ["dias_atraso", "Atraso"],
+                        ["faixa", "Faixa"],
+                        ["cluster", "Cluster"],
+                        ["status", "Status"],
+                        ["cobrado_em", "Enviado em"],
+                      ] as [ColunaLead, string][]
+                    ).map(([coluna, rotulo]) => (
+                      <SortableTh
+                        key={coluna}
+                        scope="col"
+                        active={leadsSort.sortKey === coluna}
+                        dir={leadsSort.sortDir}
+                        onSort={() => leadsSort.toggleSort(coluna)}
+                      >
+                        {rotulo}
+                      </SortableTh>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {leads.map((l) => (
+                  {leadsOrdenados.map((l) => (
                     <tr key={l.id}>
                       <td>
                         <input

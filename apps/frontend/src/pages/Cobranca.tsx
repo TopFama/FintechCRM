@@ -4,8 +4,12 @@ import { api, ClienteCobranca, FiltrosCobranca, mensagemErroSeta } from "../api"
 import { formatBRL, formatCpf, formatData } from "../format";
 import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../components/BarraFiltrosCobranca";
 import Paginacao from "../components/Paginacao";
+import SortableTh from "../components/SortableTh";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { IconAlert } from "../icons";
+import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
+
+type ColunaCliente = "codigo" | "cpfcnpj" | "nome" | "vencimento_mais_antigo" | "valor_cobrar" | "qtd_parcelas_cobranca" | "dias_atraso" | "faixa" | "cluster";
 
 const LIMIT = 50;
 
@@ -33,6 +37,33 @@ export default function Cobranca() {
   const [clientesErro, setClientesErro] = useState<string | null>(null);
   const [clientesCarregando, setClientesCarregando] = useState(false);
   const [offset, setOffset] = useState(0);
+  const clientesSort = useSort<ColunaCliente>();
+  const ordemFaixa = ordemFaixaFn(opcoes.regras?.faixas);
+  function valorOrdenacaoCliente(c: ClienteCobranca): string | number | null {
+    switch (clientesSort.sortKey) {
+      case "codigo":
+        return c.codigo;
+      case "cpfcnpj":
+        return c.cpfcnpj;
+      case "nome":
+        return c.nome;
+      case "vencimento_mais_antigo":
+        return c.vencimento_mais_antigo;
+      case "valor_cobrar":
+        return Number(c.valor_cobrar);
+      case "qtd_parcelas_cobranca":
+        return c.qtd_parcelas_cobranca;
+      case "dias_atraso":
+        return c.dias_atraso;
+      case "faixa":
+        return ordemFaixa(c.faixa);
+      case "cluster":
+        return c.cluster;
+      default:
+        return null;
+    }
+  }
+  const clientesOrdenados = ordenarPor(clientes, clientesSort.sortKey ? valorOrdenacaoCliente : null, clientesSort.sortDir);
 
   const [gerandoLeads, setGerandoLeads] = useState(false);
   const [leadsResultado, setLeadsResultado] = useState<{
@@ -179,19 +210,33 @@ export default function Cobranca() {
               <table>
                 <thead>
                   <tr>
-                    <th scope="col">Código</th>
-                    <th scope="col">CPF</th>
-                    <th scope="col">Nome</th>
-                    <th scope="col">Vencimento</th>
-                    <th scope="col">Valor</th>
-                    <th scope="col">Parcelas</th>
-                    <th scope="col">Atraso</th>
-                    <th scope="col">Faixa</th>
-                    <th scope="col">Cluster</th>
+                    {(
+                      [
+                        ["codigo", "Código"],
+                        ["cpfcnpj", "CPF"],
+                        ["nome", "Nome"],
+                        ["vencimento_mais_antigo", "Vencimento"],
+                        ["valor_cobrar", "Valor"],
+                        ["qtd_parcelas_cobranca", "Parcelas"],
+                        ["dias_atraso", "Atraso"],
+                        ["faixa", "Faixa"],
+                        ["cluster", "Cluster"],
+                      ] as [ColunaCliente, string][]
+                    ).map(([coluna, rotulo]) => (
+                      <SortableTh
+                        key={coluna}
+                        scope="col"
+                        active={clientesSort.sortKey === coluna}
+                        dir={clientesSort.sortDir}
+                        onSort={() => clientesSort.toggleSort(coluna)}
+                      >
+                        {rotulo}
+                      </SortableTh>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {clientes.map((c) => (
+                  {clientesOrdenados.map((c) => (
                     <tr key={c.codigo}>
                       <td className="cell-strong">{c.codigo}</td>
                       <td className="text-muted">{formatCpf(c.cpfcnpj)}</td>
