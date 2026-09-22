@@ -1,30 +1,38 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, CampoCliente, ChatwootTestResult, StatusChatwoot, StatusGoogle, StatusSeta, Template, WhatsappNumber } from "../api";
+import { api, CampoCliente, ChatwootTestResult, pareceAdmin, StatusChatwoot, StatusGoogle, StatusSeta, Template, WhatsappNumber } from "../api";
 import DisparoCard from "../components/config/DisparoCard";
 import NumerosCard from "../components/config/NumerosCard";
 import RegrasCobrancaCard from "../components/config/RegrasCobrancaCard";
 import TemplatesCard from "../components/config/TemplatesCard";
 import TokensMetaCard from "../components/config/TokensMetaCard";
+import UsuariosCard from "../components/config/UsuariosCard";
 import { IconAlert, IconRefresh } from "../icons";
 
-type Aba = "integracoes" | "templates" | "disparo";
+type Aba = "conexoes" | "templates" | "horario" | "usuarios";
 
 const ABAS: { valor: Aba; rotulo: string }[] = [
-  { valor: "integracoes", rotulo: "Integrações" },
   { valor: "templates", rotulo: "Templates" },
-  { valor: "disparo", rotulo: "Disparo" },
+  { valor: "conexoes", rotulo: "Conexões" },
+  { valor: "horario", rotulo: "Horário" },
 ];
+
+const ABAS_VALIDAS: Aba[] = ["conexoes", "templates", "horario", "usuarios"];
 
 export default function Configuracoes() {
   const [versaoNumeros, setVersaoNumeros] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
   const abaParam = searchParams.get("aba");
-  const aba: Aba = abaParam === "templates" || abaParam === "disparo" ? abaParam : "integracoes";
+  const admin = pareceAdmin();
+  const aba: Aba =
+    abaParam && ABAS_VALIDAS.includes(abaParam as Aba) && (abaParam !== "usuarios" || admin)
+      ? (abaParam as Aba)
+      : "conexoes";
+  const abas = admin ? [...ABAS, { valor: "usuarios" as Aba, rotulo: "Usuários" }] : ABAS;
 
   function irParaAba(novaAba: Aba) {
     const next = new URLSearchParams(searchParams);
-    if (novaAba === "integracoes") {
+    if (novaAba === "conexoes") {
       next.delete("aba");
     } else {
       next.set("aba", novaAba);
@@ -222,12 +230,12 @@ export default function Configuracoes() {
       <div className="page-header">
         <div>
           <h2>Configurações</h2>
-          <div className="subtitle">Integrações, templates e regras de disparo do sistema</div>
+          <div className="subtitle">Templates, conexões e horário de disparo do sistema</div>
         </div>
       </div>
 
       <div className="tabs" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {ABAS.map((a) => (
+        {abas.map((a) => (
           <button
             key={a.valor}
             type="button"
@@ -240,9 +248,10 @@ export default function Configuracoes() {
       </div>
 
       {aba === "templates" && <TemplatesCard />}
-      {aba === "disparo" && <DisparoCard />}
+      {aba === "horario" && <DisparoCard />}
+      {aba === "usuarios" && admin && <UsuariosCard />}
 
-      {aba === "integracoes" && (
+      {aba === "conexoes" && (
         <>
       {/* ERP SETA */}
       <div className="card">

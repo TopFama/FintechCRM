@@ -410,7 +410,7 @@ export default function FaixaDetail() {
         <p className="card-subtitle" style={{ marginTop: 0 }}>
           Cada número pode cobrar com um template próprio, em paralelo (WABAs diferentes) — a fila é compartilhada
           entre eles, então nenhum cliente é cobrado duas vezes. O agendamento de cada um (dias, horário, intervalo)
-          fica em <Link to="/configuracoes?aba=disparo">Configurações → Disparo</Link>.
+          fica em <Link to="/configuracoes?aba=horario">Configurações → Horário</Link>.
         </p>
 
         {envioMsg && (

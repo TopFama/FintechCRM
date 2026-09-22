@@ -19,7 +19,7 @@ DispatchConfig antigo (compartilhado por faixa); FaixaVariableMapping
 existente ganha o template_id da faixa (só havia um).
 
 Revision ID: 02887e88dfea
-Revises: f1a2b3c4d5e6
+Revises: 657a127e9ad1
 Create Date: 2026-09-22 19:10:00.000000
 
 """
@@ -30,7 +30,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = '02887e88dfea'
-down_revision: Union[str, None] = 'f1a2b3c4d5e6'
+down_revision: Union[str, None] = '657a127e9ad1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

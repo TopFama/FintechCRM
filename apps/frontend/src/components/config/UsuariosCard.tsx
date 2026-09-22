@@ -1,13 +1,15 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, Usuario } from "../api";
-import { formatDataHora } from "../format";
-import SortableTh from "../components/SortableTh";
-import { IconAlert, IconUserShield } from "../icons";
-import { ordenarPor, useSort } from "../sort";
+import { api, Usuario } from "../../api";
+import { formatDataHora } from "../../format";
+import SortableTh from "../SortableTh";
+import { IconAlert, IconUserShield } from "../../icons";
+import { ordenarPor, useSort } from "../../sort";
 
 type ColunaUsuario = "email" | "is_admin" | "created_at";
 
-export default function Usuarios() {
+// Quem pode entrar no portal — só visível pra quem é admin (a permissão de
+// verdade é sempre checada no backend, isso aqui só evita mostrar a UI).
+export default function UsuariosCard() {
   const [lista, setLista] = useState<Usuario[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [erroTabela, setErroTabela] = useState<string | null>(null);
@@ -70,14 +72,7 @@ export default function Usuarios() {
   }
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h2>Usuários</h2>
-          <div className="subtitle">Quem pode entrar no portal — só o admin gerencia esta lista</div>
-        </div>
-      </div>
-
+    <>
       <div className="card">
         <div className="card-header">
           <h3>Criar usuário</h3>
@@ -193,6 +188,6 @@ export default function Usuarios() {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
