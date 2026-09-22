@@ -19,18 +19,18 @@ os.environ.setdefault(
     "DATABASE_URL", "postgresql+psycopg://postgres:t@localhost:15432/agy_k"
 )
 
-from app.models import DispatchConfig
+from app.models import GlobalDispatchConfig
 from app.worker import _within_schedule_window
 
 
-def _config(**overrides) -> DispatchConfig:
+def _config(**overrides) -> GlobalDispatchConfig:
     defaults = dict(
         schedule_days="1,2,3,4,5",
         schedule_start="08:00",
         schedule_end="18:30",
     )
     defaults.update(overrides)
-    return DispatchConfig(**defaults)
+    return GlobalDispatchConfig(**defaults)
 
 
 # Terça-feira 22/09/2026. 21:00 UTC == 18:00 em America/Sao_Paulo (UTC-3):

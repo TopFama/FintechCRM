@@ -294,14 +294,29 @@ class DispatchConfig(Base):
     faixa_envio_id: Mapped[str] = mapped_column(ForeignKey("faixa_envios.id", ondelete="CASCADE"), unique=True)
     interval_seconds: Mapped[int] = mapped_column(Integer, default=5)
     batch_size: Mapped[int] = mapped_column(Integer, default=3)
-    schedule_days: Mapped[str] = mapped_column(String, default="1,2,3,4,5")
-    schedule_start: Mapped[str] = mapped_column(String, default="08:00")
-    schedule_end: Mapped[str] = mapped_column(String, default="18:30")
     active: Mapped[bool] = mapped_column(Boolean, default=False)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     force_run: Mapped[bool] = mapped_column(Boolean, default=False)
 
     envio: Mapped[FaixaEnvio] = relationship(back_populates="dispatch_config")
+
+
+class GlobalDispatchConfig(Base):
+    """Configuração única (singleton, id fixo) de janela de disparo — antes era
+    por FaixaEnvio, virou global porque não fazia sentido dois envios da mesma
+    operação atirarem em horários diferentes. Também guarda a extração
+    automática de leads pouco antes do disparo começar (opcional), pra reduzir
+    a chance de cobrar quem já pagou mais cedo no mesmo dia."""
+
+    __tablename__ = "global_dispatch_config"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: "global")
+    schedule_days: Mapped[str] = mapped_column(String, default="1,2,3,4,5")
+    schedule_start: Mapped[str] = mapped_column(String, default="08:00")
+    schedule_end: Mapped[str] = mapped_column(String, default="18:30")
+    leads_auto_extract: Mapped[bool] = mapped_column(Boolean, default=False)
+    leads_auto_extract_minutos_antes: Mapped[int] = mapped_column(Integer, default=15)
+    leads_auto_extract_last_run: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class ErrorLog(Base):

@@ -258,9 +258,6 @@ class DispatchConfigOut(BaseModel):
 
     interval_seconds: int
     batch_size: int
-    schedule_days: str
-    schedule_start: str
-    schedule_end: str
     active: bool
     last_run_at: datetime | None = None
 
@@ -268,10 +265,26 @@ class DispatchConfigOut(BaseModel):
 class DispatchConfigUpdate(BaseModel):
     interval_seconds: int = 5
     batch_size: int = 3
+    active: bool = True
+
+
+class GlobalDispatchConfigOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    schedule_days: str
+    schedule_start: str
+    schedule_end: str
+    leads_auto_extract: bool
+    leads_auto_extract_minutos_antes: int
+    leads_auto_extract_last_run: date | None = None
+
+
+class GlobalDispatchConfigUpdate(BaseModel):
     schedule_days: str = "1,2,3,4,5"
     schedule_start: str = "08:00"
     schedule_end: str = "18:30"
-    active: bool = True
+    leads_auto_extract: bool = False
+    leads_auto_extract_minutos_antes: int = 15
 
 
 class FaixaEnvioCreate(BaseModel):

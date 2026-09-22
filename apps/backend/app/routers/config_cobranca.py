@@ -2,6 +2,7 @@
 matriz WhatsApp e parâmetros de multa/juros."""
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -233,3 +234,49 @@ def put_parametros(
     params.dias_min_juros = body.dias_min_juros
     db.commit()
     return _ler_config(db)
+
+
+def _ler_config_disparo(db: Session) -> models.GlobalDispatchConfig:
+    config = db.query(models.GlobalDispatchConfig).filter(models.GlobalDispatchConfig.id == "global").first()
+    if config is None:
+        config = models.GlobalDispatchConfig(id="global")
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    return config
+
+
+@router.get("/disparo", response_model=schemas.GlobalDispatchConfigOut)
+def get_config_disparo(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+    return _ler_config_disparo(db)
+
+
+@router.put("/disparo", response_model=schemas.GlobalDispatchConfigOut)
+def put_config_disparo(
+    body: schemas.GlobalDispatchConfigUpdate,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    dias_validos = {"1", "2", "3", "4", "5", "6", "7"}
+    dias = [d.strip() for d in body.schedule_days.split(",") if d.strip()]
+    if not dias or any(d not in dias_validos for d in dias):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "schedule_days deve conter dias de 1 (segunda) a 7 (domingo)")
+    try:
+        inicio = datetime.strptime(body.schedule_start, "%H:%M")
+        fim = datetime.strptime(body.schedule_end, "%H:%M")
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "schedule_start/schedule_end devem estar no formato HH:MM") from exc
+    if fim <= inicio:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "schedule_end deve ser depois de schedule_start")
+    if not (0 <= body.leads_auto_extract_minutos_antes <= 240):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "leads_auto_extract_minutos_antes deve estar entre 0 e 240")
+
+    config = _ler_config_disparo(db)
+    config.schedule_days = ",".join(dias)
+    config.schedule_start = body.schedule_start
+    config.schedule_end = body.schedule_end
+    config.leads_auto_extract = body.leads_auto_extract
+    config.leads_auto_extract_minutos_antes = body.leads_auto_extract_minutos_antes
+    db.commit()
+    db.refresh(config)
+    return config

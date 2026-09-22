@@ -222,6 +222,12 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
+  getGlobalDispatchConfig: () => request<GlobalDispatchConfig>("/config/cobranca/disparo"),
+  updateGlobalDispatchConfig: (payload: Omit<GlobalDispatchConfig, "leads_auto_extract_last_run">) =>
+    request<GlobalDispatchConfig>("/config/cobranca/disparo", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   dispatchNow: (id: string) => request(`/faixas/${id}/dispatch-now`, { method: "POST" }),
   excluirFaixa: (id: string) => request<void>(`/faixas/${id}`, { method: "DELETE" }),
   // Exige o mesmo Bearer token das outras rotas, então baixa como blob
@@ -455,11 +461,20 @@ export interface FaixaVariableMappingIn {
 export interface DispatchConfig {
   interval_seconds: number;
   batch_size: number;
+  active: boolean;
+  last_run_at: string | null;
+}
+
+// Horário de disparo (dias/janela) é global — vale pra todo envio de toda
+// faixa. A extração automática de leads (opcional) roda pouco antes do
+// início da janela, pra evitar cobrar quem já pagou mais cedo no mesmo dia.
+export interface GlobalDispatchConfig {
   schedule_days: string;
   schedule_start: string;
   schedule_end: string;
-  active: boolean;
-  last_run_at: string | null;
+  leads_auto_extract: boolean;
+  leads_auto_extract_minutos_antes: number;
+  leads_auto_extract_last_run: string | null;
 }
 
 // Um par (número, template) atribuído a uma faixa, com disparo próprio —
