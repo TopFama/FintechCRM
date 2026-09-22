@@ -62,11 +62,16 @@ class ChatwootClient:
     async def buscar_ou_criar_contato(self, inbox_id: int, celular: str, nome: str) -> tuple[str, str]:
         """Retorna (contact_id, source_id) do contato com esse celular nessa
         inbox — source_id é o identificador do "contact_inbox" (canal
-        específico do contato), exigido pra criar a conversa."""
+        específico do contato), exigido pra criar a conversa.
 
-        busca = await self._request("GET", "contacts/search", params={"q": celular})
+        `celular` chega aqui no formato interno do sistema (só dígitos,
+        55DDD9XXXXXXXX — ver utils/phone.py); a API do Chatwoot exige E.164
+        (com "+") no campo phone_number, senão responde 422."""
+
+        celular_e164 = f"+{celular}"
+        busca = await self._request("GET", "contacts/search", params={"q": celular_e164})
         for contato in busca.get("payload", []):
-            if contato.get("phone_number") == celular:
+            if contato.get("phone_number") == celular_e164:
                 for contact_inbox in contato.get("contact_inboxes", []):
                     if contact_inbox.get("inbox", {}).get("id") == inbox_id:
                         return str(contato["id"]), str(contact_inbox["source_id"])
@@ -74,7 +79,7 @@ class ChatwootClient:
         criado = await self._request(
             "POST",
             "contacts",
-            json={"inbox_id": inbox_id, "name": nome or celular, "phone_number": celular},
+            json={"inbox_id": inbox_id, "name": nome or celular_e164, "phone_number": celular_e164},
         )
         payload = criado.get("payload", criado)
         contato_id = str(payload["contact"]["id"])
