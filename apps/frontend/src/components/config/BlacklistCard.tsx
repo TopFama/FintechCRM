@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, Bloqueado } from "../api";
-import { formatCpf, formatDataHora } from "../format";
-import SortableTh from "../components/SortableTh";
-import { IconAlert, IconBan } from "../icons";
-import { ordenarPor, useSort } from "../sort";
+import { api, Bloqueado } from "../../api";
+import { formatCpf, formatDataHora } from "../../format";
+import SortableTh from "../SortableTh";
+import { IconAlert, IconBan } from "../../icons";
+import { ordenarPor, useSort } from "../../sort";
 
 type ColunaBloqueado = "tipo" | "valor" | "motivo" | "created_at";
 
-export default function Blacklist() {
+export default function BlacklistCard() {
   const [lista, setLista] = useState<Bloqueado[]>([]);
   const [busca, setBusca] = useState("");
   const [carregando, setCarregando] = useState(false);
@@ -123,13 +123,6 @@ export default function Blacklist() {
 
   return (
     <div>
-      <div className="page-header">
-        <div>
-          <h2>Blacklist</h2>
-          <div className="subtitle">Clientes bloqueados — nunca entram na cobrança</div>
-        </div>
-      </div>
-
       {/* Adicionar individualmente */}
       <div className="card">
         <div className="card-header">

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, CampoCliente, ChatwootTestResult, pareceAdmin, StatusChatwoot, StatusGoogle, StatusSeta, Template, WhatsappNumber } from "../api";
+import BlacklistCard from "../components/config/BlacklistCard";
 import DisparoCard from "../components/config/DisparoCard";
 import NumerosCard from "../components/config/NumerosCard";
 import RegrasCobrancaCard from "../components/config/RegrasCobrancaCard";
@@ -9,15 +10,16 @@ import TokensMetaCard from "../components/config/TokensMetaCard";
 import UsuariosCard from "../components/config/UsuariosCard";
 import { IconAlert, IconRefresh } from "../icons";
 
-type Aba = "conexoes" | "templates" | "horario" | "usuarios";
+type Aba = "conexoes" | "templates" | "horario" | "blacklist" | "usuarios";
 
 const ABAS: { valor: Aba; rotulo: string }[] = [
   { valor: "templates", rotulo: "Templates" },
   { valor: "conexoes", rotulo: "Conexões" },
   { valor: "horario", rotulo: "Horário" },
+  { valor: "blacklist", rotulo: "Blacklist" },
 ];
 
-const ABAS_VALIDAS: Aba[] = ["conexoes", "templates", "horario", "usuarios"];
+const ABAS_VALIDAS: Aba[] = ["conexoes", "templates", "horario", "blacklist", "usuarios"];
 
 export default function Configuracoes() {
   const [versaoNumeros, setVersaoNumeros] = useState(0);
@@ -230,7 +232,7 @@ export default function Configuracoes() {
       <div className="page-header">
         <div>
           <h2>Configurações</h2>
-          <div className="subtitle">Templates, conexões e horário de disparo do sistema</div>
+          <div className="subtitle">Templates, conexões, horário de disparo e blacklist do sistema</div>
         </div>
       </div>
 
@@ -249,6 +251,7 @@ export default function Configuracoes() {
 
       {aba === "templates" && <TemplatesCard />}
       {aba === "horario" && <DisparoCard />}
+      {aba === "blacklist" && <BlacklistCard />}
       {aba === "usuarios" && admin && <UsuariosCard />}
 
       {aba === "conexoes" && (
