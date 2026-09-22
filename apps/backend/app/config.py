@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = "*"
 
     dispatch_worker_interval_seconds: int = 5
+    # Fuso horário usado para interpretar a janela de agendamento (dias/hora
+    # início/fim) configurada em cada disparo — o servidor roda em UTC, mas
+    # quem configura a janela pensa em horário de Brasília.
+    business_timezone: str = "America/Sao_Paulo"
 
     # Cache dos relatórios pesados do SETA (ver app/cache.py).
     redis_url: str = "redis://redis:6379/0"

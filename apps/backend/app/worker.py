@@ -9,6 +9,7 @@ agora ("cobrar base específica sob demanda").
 import asyncio
 import logging
 from datetime import datetime, time as dt_time
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session, selectinload
@@ -24,13 +25,23 @@ _WEEKDAY_MAP = {  # Python Monday=0 .. Sunday=6  ->  1..7 como usado em schedule
     0: "1", 1: "2", 2: "3", 3: "4", 4: "5", 5: "6", 6: "7",
 }
 
+_BUSINESS_TZ = ZoneInfo(settings.business_timezone)
 
-def _within_schedule_window(config: models.DispatchConfig, now: datetime) -> bool:
-    if _WEEKDAY_MAP[now.weekday()] not in config.schedule_days.split(","):
+
+def _within_schedule_window(config: models.DispatchConfig, now_utc: datetime) -> bool:
+    """`now_utc` é UTC (relógio do servidor); a janela configurada
+    (schedule_start/end, dias da semana) é pensada no horário de quem opera
+    o sistema (BUSINESS_TIMEZONE), então a comparação precisa ser feita
+    depois de converter — comparar direto em UTC faz a janela "fechar" 3h
+    mais cedo (ou mais tarde) do horário real de Brasília, deixando cliente
+    na fila sem disparar mesmo "dentro do horário configurado"."""
+
+    local_now = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(_BUSINESS_TZ)
+    if _WEEKDAY_MAP[local_now.weekday()] not in config.schedule_days.split(","):
         return False
     start = dt_time.fromisoformat(config.schedule_start)
     end = dt_time.fromisoformat(config.schedule_end)
-    return start <= now.time() <= end
+    return start <= local_now.time() <= end
 
 
 def _due(config: models.DispatchConfig, now: datetime) -> bool:
