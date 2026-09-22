@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from .. import cobranca_base, models, schemas, seta_client
-from ..cobranca_regras import FAIXAS, FAIXAS_WHATSAPP, NOMES_CLUSTER, NOMES_FAIXA
+from ..cobranca_regras import FAIXAS, FAIXAS_WHATSAPP, NOMES_CLUSTER, NOMES_FAIXA, NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
 from ..utils.spc import parse_spc
@@ -19,6 +19,7 @@ def regras(_user: models.User = Depends(get_current_user)):
         faixas=NOMES_FAIXA,
         faixas_whatsapp={c: [f for f in NOMES_FAIXA if f in FAIXAS_WHATSAPP[c]] for c in NOMES_CLUSTER},
         primeiro_dia={nome: dmin for nome, dmin, _ in FAIXAS},
+        faixas_compra=NOMES_FAIXA_COMPRA,
     )
 
 
@@ -37,6 +38,7 @@ def listar_clientes(
     somente_regra_whatsapp: bool = Query(True, description="Aplica a matriz cluster × faixa do WhatsApp"),
     faixa: list[str] | None = Query(None),
     cluster: list[str] | None = Query(None),
+    faixa_compra: list[str] | None = Query(None, description="Quantidade de compras no crediário: 1 a 9 ou 10+"),
     loja: list[str] | None = Query(None, description="Código de 2 caracteres da loja do título (ft.empresa)"),
     portador: list[str] | None = Query(None, description="001 TopFama, 114 SYSCO, 216 MJ"),
     status_cliente: list[str] | None = Query(None, description="E, A ou B"),
@@ -51,6 +53,7 @@ def listar_clientes(
         somente_regra_whatsapp=somente_regra_whatsapp,
         faixas=faixa,
         clusters=cluster,
+        faixas_compra=faixa_compra,
         lojas=loja,
         portadores=portador,
         status_cliente=status_cliente,

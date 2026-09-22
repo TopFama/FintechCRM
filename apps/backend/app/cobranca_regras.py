@@ -105,3 +105,17 @@ FAIXAS_WHATSAPP: dict[str, frozenset[str]] = {
 
 def entra_no_whatsapp(cluster: str, faixa: str | None) -> bool:
     return faixa is not None and faixa in FAIXAS_WHATSAPP.get(cluster, frozenset())
+
+
+# --- Faixa de compra: quantidade de compras no crediário ---------------------
+
+NOMES_FAIXA_COMPRA = [str(n) for n in range(1, 10)] + ["10+"]
+
+
+def faixa_de_compra(qtd_compras: int) -> str | None:
+    """1 a 9 compras, depois "10+". Quem não tem nenhuma compra de crediário
+    validada (ex.: só tem parcelas de reparcelamento) fica sem faixa (None)."""
+
+    if qtd_compras < 1:
+        return None
+    return str(qtd_compras) if qtd_compras < 10 else "10+"

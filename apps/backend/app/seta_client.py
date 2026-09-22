@@ -106,6 +106,10 @@ PORTADOR_MJ = "216"
 # não conta para o cluster de valor pago.
 DESCRICAO_SEGURO = "SEGURO TOPFAMA"
 
+# Condição de pagamento "A PRAZO ATIVO": crediário (condicoes.tipo = '4'), mas
+# não conta como compra na faixa de compra.
+CONDICAO_IGNORADA = "130"
+
 # Datas de `pessoas` fora da janela 1900..hoje são lixo de cadastro (0001 BC,
 # 9999, futuro) e viram NULL.
 _SQL_BASE_COBRANCA = r"""
@@ -166,10 +170,31 @@ pagos AS (
        AND ft.auxiliar LIKE 'VE%'
        AND trim(ft.descricao) <> :descricao_seguro
      GROUP BY ft.pessoa
+),
+compras AS (
+    SELECT v.cliente AS pessoa, count(*) AS qtd_compras, max(v.data) AS ultima_compra
+      FROM vendas v
+      JOIN condicoes c ON c.codigo = v.condicoes
+      JOIN base b ON b.pessoa = v.cliente
+     WHERE v.status = 'S'
+       AND c.tipo = '4'
+       AND c.codigo <> :condicao_ignorada
+       AND EXISTS (
+           SELECT 1
+             FROM financeiro_titulos ft
+            WHERE ft.auxiliar = CAST('VE' || v.codigo AS char(10))
+              AND ft.rp = 'R'
+              AND ft.tipo IN ('4', '5')
+       )
+     GROUP BY v.cliente
 )
-SELECT b.*, COALESCE(g.valor_pago, 0) AS valor_pago
+SELECT b.*,
+       COALESCE(g.valor_pago, 0)  AS valor_pago,
+       COALESCE(k.qtd_compras, 0) AS qtd_compras,
+       k.ultima_compra
   FROM base b
   LEFT JOIN pagos g ON g.pessoa = b.pessoa
+  LEFT JOIN compras k ON k.pessoa = b.pessoa
 """
 
 
@@ -216,6 +241,9 @@ def buscar_base_cobranca(
     - `lojas` (`ft.empresa`) e `portadores` restringem **quais parcelas** contam:
       dias, valor e quantidade são calculados só sobre elas.
     - `valor_pago` soma parcelas pagas de venda (auxiliar `VE…`), sem seguro.
+    - `qtd_compras` conta vendas finalizadas (`status = 'S'`) de condição de
+      crediário (tipo 4, menos a 130), só se a venda tem parcela `VE`+código
+      de tipo 4/5 — é o que confirma que foi crediário de verdade.
     - blacklist e o código ignorado ficam de fora, com ou sem atraso."""
 
     from .cobranca_regras import CODIGO_CLIENTE_IGNORADO
@@ -226,6 +254,7 @@ def buscar_base_cobranca(
         "bl_codigos": bloqueados_codigos or [],
         "bl_cpfs": bloqueados_cpfs or [],
         "descricao_seguro": DESCRICAO_SEGURO,
+        "condicao_ignorada": CONDICAO_IGNORADA,
     }
     expanding: list[str] = []
     filtro_loja = filtro_portador = filtro_status = ""

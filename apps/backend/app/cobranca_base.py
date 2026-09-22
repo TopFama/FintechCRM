@@ -12,7 +12,9 @@ from .cobranca_regras import (
     NOMES_CLUSTER,
     NOMES_FAIXA,
     cluster_por_valor_pago,
+    NOMES_FAIXA_COMPRA,
     entra_no_whatsapp,
+    faixa_de_compra,
     faixa_por_dias,
 )
 from .routers.blacklist import codigos_bloqueados
@@ -36,6 +38,7 @@ def buscar_base(
     somente_regra_whatsapp: bool = True,
     faixas: list[str] | None = None,
     clusters: list[str] | None = None,
+    faixas_compra: list[str] | None = None,
     lojas: list[str] | None = None,
     portadores: list[str] | None = None,
     status_cliente: list[str] | None = None,
@@ -48,10 +51,12 @@ def buscar_base(
     - `somente_regra_whatsapp`: aplica a matriz cluster × faixa da operação.
       Desligado, devolve todos (cada linha carrega `entra_whatsapp`).
     - `faixas` / `clusters`: restringem a essas faixas/clusters.
+    - `faixas_compra`: restringe pela quantidade de compras no crediário (1 a 9, 10+).
     """
 
     _validar(faixas, NOMES_FAIXA, "Faixa")
     _validar(clusters, NOMES_CLUSTER, "Cluster")
+    _validar(faixas_compra, NOMES_FAIXA_COMPRA, "Faixa de compra")
 
     if faixas:
         faixas_sel = list(faixas)
@@ -82,17 +87,20 @@ def buscar_base(
         faixa = faixa_por_dias(r["dias_atraso"])
         cluster = cluster_por_valor_pago(r["valor_pago"])
         entra = entra_no_whatsapp(cluster, faixa)
+        compra = faixa_de_compra(r["qtd_compras"])
         if clusters and cluster not in clusters:
+            continue
+        if faixas_compra and compra not in faixas_compra:
             continue
         if somente_regra_whatsapp and not entra:
             continue
-        resultado.append(_montar_cliente(r, faixa, cluster, entra))
+        resultado.append(_montar_cliente(r, faixa, cluster, entra, compra))
 
     resultado.sort(key=lambda c: (-c["dias_atraso"], -c["valor_em_aberto"], c["codigo"]))
     return resultado
 
 
-def _montar_cliente(r: dict, faixa: str | None, cluster: str, entra: bool) -> dict:
+def _montar_cliente(r: dict, faixa: str | None, cluster: str, entra: bool, faixa_compra: str | None) -> dict:
     celular, origem = escolher_telefone(telefone2=r["telefone2"], telefone1=r["telefone1"], telefone3=r["telefone3"])
     # Para relatório de telefone inválido: o primeiro campo que tinha algum dígito.
     celular_original = next(
@@ -115,6 +123,9 @@ def _montar_cliente(r: dict, faixa: str | None, cluster: str, entra: bool) -> di
         "cadastro": r["cadastro"],
         "cluster": cluster,
         "valor_pago": r["valor_pago"],
+        "qtd_compras": r["qtd_compras"],
+        "faixa_compra": faixa_compra,
+        "ultima_compra": r["ultima_compra"],
         "faixa": faixa,
         "dias_atraso": r["dias_atraso"],
         "entra_whatsapp": entra,

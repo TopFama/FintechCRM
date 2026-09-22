@@ -283,6 +283,9 @@ class ClienteCobrancaOut(BaseModel):
     cadastro: date | None
     cluster: str
     valor_pago: Decimal
+    qtd_compras: int
+    faixa_compra: str | None  # 1 a 9 ou 10+; None = sem compra de crediário validada
+    ultima_compra: date | None
     faixa: str | None
     dias_atraso: int
     entra_whatsapp: bool
@@ -305,3 +308,4 @@ class CobrancaRegrasOut(BaseModel):
     faixas: list[str]
     faixas_whatsapp: dict[str, list[str]]  # cluster -> faixas que recebem WhatsApp
     primeiro_dia: dict[str, int]  # faixa -> primeiro dia
+    faixas_compra: list[str]
