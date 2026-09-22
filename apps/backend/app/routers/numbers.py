@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
@@ -100,13 +100,20 @@ def update_number(
 
 
 @router.delete("/{number_id}", status_code=status.HTTP_204_NO_CONTENT)
-def deactivate_number(
+def delete_number(
     number_id: str,
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
+    """Exclui o número de vez (pra só parar de enviar por ele, sem perder o
+    cadastro, use o PATCH com active=false). Tira ele da rotação de qualquer
+    faixa (faixa_numbers em cascata) e preserva o histórico de envio,
+    perdendo só a referência de qual número mandou (cobranca_fila em SET
+    NULL) — ver models.WhatsappNumber."""
+
     number = db.get(models.WhatsappNumber, number_id)
     if not number:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Número não encontrado")
-    number.active = False
+    db.delete(number)
     db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

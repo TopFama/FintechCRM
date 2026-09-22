@@ -108,7 +108,11 @@ export default function TokensMetaCard({ onNumerosAlterados }: { onNumerosAltera
   }
 
   async function excluir(token: MetaToken) {
-    if (!window.confirm(`Deseja realmente excluir o token "${token.nome}"?`)) return;
+    const aviso =
+      token.numeros_vinculados > 0
+        ? `Excluir o token "${token.nome}" também exclui ${token.numeros_vinculados} número(s) vinculado(s) a ele. Deseja continuar?`
+        : `Deseja realmente excluir o token "${token.nome}"?`;
+    if (!window.confirm(aviso)) return;
     setErro(null);
     try {
       await api.excluirTokenMeta(token.id);

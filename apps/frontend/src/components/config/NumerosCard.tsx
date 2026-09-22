@@ -56,6 +56,22 @@ export default function NumerosCard({ versao }: { versao: number }) {
     }
   }
 
+  async function excluir(n: WhatsappNumber) {
+    if (
+      !window.confirm(
+        `Excluir o número "${n.label || n.display_phone_number}"? Ele sai de qualquer faixa que o usava. Pra só parar de enviar por ele, use "Editar" e marque como inativo em vez de excluir.`
+      )
+    )
+      return;
+    setErro(null);
+    try {
+      await api.excluirNumero(n.id);
+      carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Erro ao excluir o número");
+    }
+  }
+
   return (
     <div className="card">
       <div className="card-header">
@@ -173,7 +189,10 @@ export default function NumerosCard({ versao }: { versao: number }) {
                     <td>
                       <span className={`status-pill ${n.active ? "on" : "off"}`}>{n.active ? "Sim" : "Não"}</span>
                     </td>
-                    <td>
+                    <td style={{ display: "flex", gap: 6 }}>
+                      <button type="button" className="danger small" onClick={() => excluir(n)}>
+                        Excluir
+                      </button>
                       <button type="button" className="secondary small" onClick={() => editar(n)}>
                         Editar
                       </button>

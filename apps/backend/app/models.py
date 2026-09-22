@@ -47,7 +47,10 @@ class MetaToken(Base):
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    numeros: Mapped[list["WhatsappNumber"]] = relationship(back_populates="meta_token")
+    # passive_deletes: sem isso, o SQLAlchemy carrega os números e desvincula
+    # (seta meta_token_id = NULL) em vez de deixar o ON DELETE CASCADE do
+    # banco excluí-los de verdade (ver WhatsappNumber.meta_token_id).
+    numeros: Mapped[list["WhatsappNumber"]] = relationship(back_populates="meta_token", passive_deletes=True)
 
     @property
     def numeros_vinculados(self) -> int:
@@ -64,8 +67,10 @@ class WhatsappNumber(Base):
     label: Mapped[str] = mapped_column(String, default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # CASCADE: excluir o token cadastrado (Configurações) leva junto os números
+    # que dependiam dele.
     meta_token_id: Mapped[str | None] = mapped_column(
-        ForeignKey("meta_tokens.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("meta_tokens.id", ondelete="CASCADE"), nullable=True
     )
     chatwoot_inbox_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -167,7 +172,9 @@ class FaixaNumber(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     faixa_id: Mapped[str] = mapped_column(ForeignKey("faixas.id"))
-    whatsapp_number_id: Mapped[str] = mapped_column(ForeignKey("whatsapp_numbers.id"))
+    # CASCADE: excluir o número (Configurações) tira ele da rotação de qualquer
+    # faixa que o usava, sem precisar excluir a faixa.
+    whatsapp_number_id: Mapped[str] = mapped_column(ForeignKey("whatsapp_numbers.id", ondelete="CASCADE"))
 
     faixa: Mapped[Faixa] = relationship(back_populates="numbers")
     whatsapp_number: Mapped[WhatsappNumber] = relationship()
@@ -209,8 +216,10 @@ class QueueItem(Base):
     celular_original: Mapped[str] = mapped_column(String)
     variables_json: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[QueueStatus] = mapped_column(Enum(QueueStatus), default=QueueStatus.pending, index=True)
+    # SET NULL: excluir o número não apaga o histórico de envio, só perde a
+    # referência de qual número específico mandou.
     whatsapp_number_id: Mapped[str | None] = mapped_column(
-        ForeignKey("whatsapp_numbers.id"), nullable=True
+        ForeignKey("whatsapp_numbers.id", ondelete="SET NULL"), nullable=True
     )
     whatsapp_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

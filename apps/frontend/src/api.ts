@@ -101,6 +101,7 @@ export const api = {
     }
   ) =>
     request<WhatsappNumber>(`/numbers/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  excluirNumero: (id: string) => request<void>(`/numbers/${id}`, { method: "DELETE" }),
 
   listarTokensMeta: () => request<MetaToken[]>("/meta-tokens"),
   criarTokenMeta: (payload: { nome: string; token: string; waba_id: string }) =>

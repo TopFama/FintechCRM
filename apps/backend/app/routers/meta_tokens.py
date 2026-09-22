@@ -221,17 +221,8 @@ def delete_meta_token(
     if not token:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Token não encontrado")
 
-    numeros_vinculados = (
-        db.query(models.WhatsappNumber)
-        .filter(models.WhatsappNumber.meta_token_id == token_id)
-        .count()
-    )
-    if numeros_vinculados > 0:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"Token não pode ser excluído: usado por {numeros_vinculados} número(s)",
-        )
-
+    # Números vinculados a este token são excluídos junto (CASCADE em
+    # WhatsappNumber.meta_token_id — ver models.py).
     db.delete(token)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
