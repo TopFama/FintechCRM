@@ -18,6 +18,7 @@ import {
   IconBolt,
   IconCheckCircle,
   IconDownload,
+  IconEye,
   IconInbox,
   IconRefresh,
   IconUpload,
@@ -77,6 +78,7 @@ export default function FaixaDetail() {
   const [editMappings, setEditMappings] = useState<Record<string, { fonte_tipo: "coluna" | "campo_cliente"; valor: string }>>({});
   const [salvandoFaixa, setSalvandoFaixa] = useState(false);
   const [faixaSalvaMsg, setFaixaSalvaMsg] = useState<string | null>(null);
+  const [mostrarPreview, setMostrarPreview] = useState(false);
 
   // Leads gerados (Cobrança → Leads) para esta mesma faixa de atraso, só
   // pra dar visibilidade de quem existe antes de decidir subir a planilha.
@@ -298,6 +300,20 @@ export default function FaixaDetail() {
 
   const templateEmEdicao = templates.find((t) => t.id === editTemplateId) || null;
 
+  function renderizarPreviewFaixa(t: Template): string {
+    return t.body_text.replace(/\{\{(\d+)\}\}/g, (match, pos) => {
+      const variavel = t.variables.find((v) => v.position === Number(pos));
+      if (!variavel) return match;
+      const m = editMappings[variavel.id];
+      if (!m) return `[${variavel.internal_name}]`;
+      if (m.fonte_tipo === "campo_cliente") {
+        const campo = campos.find((c) => c.campo === m.valor);
+        return campo ? campo.exemplo : `${match} (campo não escolhido)`;
+      }
+      return `[${m.valor || variavel.internal_name}]`;
+    });
+  }
+
   async function salvarConfigFaixa() {
     if (!id) return;
     setError(null);
@@ -371,15 +387,50 @@ export default function FaixaDetail() {
         )}
         <div className="field">
           <label>Template aprovado</label>
-          <select value={editTemplateId} onChange={(e) => selecionarTemplateEdicao(e.target.value)}>
-            <option value="">Sem template</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({t.status})
-              </option>
-            ))}
-          </select>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <select
+              value={editTemplateId}
+              onChange={(e) => selecionarTemplateEdicao(e.target.value)}
+              style={{ flex: 1, minWidth: 0 }}
+            >
+              <option value="">Sem template</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.status})
+                </option>
+              ))}
+            </select>
+            {templateEmEdicao && (
+              <button
+                type="button"
+                className="secondary small"
+                style={{ flexShrink: 0 }}
+                onClick={() => setMostrarPreview((atual) => !atual)}
+              >
+                <IconEye width={14} height={14} /> {mostrarPreview ? "Fechar" : "Pré-visualizar"}
+              </button>
+            )}
+          </div>
         </div>
+
+        {templateEmEdicao && mostrarPreview && (
+          <div className="template-preview">
+            <div className="template-preview-bubble">
+              {templateEmEdicao.header_type === "image" && templateEmEdicao.image_url && (
+                <img
+                  src={templateEmEdicao.image_url}
+                  alt="Cabeçalho do template"
+                  style={{ width: "100%", maxWidth: 280, borderRadius: 8, marginBottom: 10, display: "block" }}
+                />
+              )}
+              {renderizarPreviewFaixa(templateEmEdicao)}
+            </div>
+            <p className="field-hint">
+              Valores entre colchetes vêm de "Coluna da planilha" (só o nome sugerido — o valor real é o da planilha
+              subida); os demais usam o exemplo do campo do cliente escolhido.
+            </p>
+          </div>
+        )}
 
         <label style={{ marginBottom: 8, display: "block" }}>Números de envio</label>
         <div className="option-list">
