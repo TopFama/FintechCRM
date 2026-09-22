@@ -137,6 +137,7 @@ export const api = {
   updateDispatchConfig: (id: string, payload: unknown) =>
     request(`/faixas/${id}/dispatch-config`, { method: "PUT", body: JSON.stringify(payload) }),
   dispatchNow: (id: string) => request(`/faixas/${id}/dispatch-now`, { method: "POST" }),
+  excluirFaixa: (id: string) => request<void>(`/faixas/${id}`, { method: "DELETE" }),
   // Exige o mesmo Bearer token das outras rotas, então baixa como blob
   // autenticado em vez de um <a href> simples (que não manda o header).
   downloadSpreadsheetModel: (id: string, faixaName: string) =>

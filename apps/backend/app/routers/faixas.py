@@ -19,7 +19,12 @@ def _full_query(db: Session):
 
 @router.get("", response_model=list[schemas.FaixaOut])
 def list_faixas(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
-    return _full_query(db).order_by(models.Faixa.created_at.desc()).all()
+    return (
+        _full_query(db)
+        .filter(models.Faixa.active.is_(True))
+        .order_by(models.Faixa.created_at.desc())
+        .all()
+    )
 
 
 @router.get("/{faixa_id}", response_model=schemas.FaixaOut)
@@ -126,6 +131,25 @@ def update_dispatch_config(
     db.commit()
     db.refresh(config)
     return config
+
+
+@router.delete("/{faixa_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_faixa(
+    faixa_id: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)
+):
+    """Exclusão lógica: preserva o histórico de envios/relatórios já ligados a
+    esta faixa (cobranca_fila, telefones_invalidos etc. referenciam faixa_id),
+    só tira a faixa da lista e para qualquer disparo agendado nela."""
+
+    faixa = db.query(models.Faixa).filter(models.Faixa.id == faixa_id).first()
+    if not faixa:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Faixa não encontrada")
+    faixa.active = False
+    config = db.query(models.DispatchConfig).filter(models.DispatchConfig.faixa_id == faixa_id).first()
+    if config:
+        config.active = False
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{faixa_id}/dispatch-now", status_code=status.HTTP_202_ACCEPTED)
