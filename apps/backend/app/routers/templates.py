@@ -19,6 +19,12 @@ from ..worker import montar_parametros_envio
 router = APIRouter(prefix="/templates", tags=["templates"])
 logger = logging.getLogger(__name__)
 
+# Cabeçalho de imagem do template: só o que a Meta aceita como header de mídia
+# de template, e um teto de tamanho (o arquivo fica em /media, servido
+# publicamente sem autenticação).
+_EXTENSOES_IMAGEM_PERMITIDAS = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
+_TAMANHO_MAXIMO_IMAGEM_BYTES = 5 * 1024 * 1024
+
 
 def _with_variables(query):
     return query.options(selectinload(models.Template.variables))
@@ -346,11 +352,21 @@ async def upload_template_image(
             "Este template não tem cabeçalho de imagem habilitado — a opção de mídia só existe para templates com cabeçalho de imagem na Meta",
         )
 
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    content_type_esperado = _EXTENSOES_IMAGEM_PERMITIDAS.get(ext)
+    if not content_type_esperado or (file.content_type and file.content_type != content_type_esperado):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Formato de imagem não suportado — envie .jpg ou .png",
+        )
+
+    content = await file.read()
+    if len(content) > _TAMANHO_MAXIMO_IMAGEM_BYTES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Imagem maior que o limite de 5 MB")
+
     os.makedirs(settings.media_dir, exist_ok=True)
-    ext = os.path.splitext(file.filename or "")[1] or ".jpg"
     stored_name = f"{template.id}{ext}"
     dest_path = os.path.join(settings.media_dir, stored_name)
-    content = await file.read()
     with open(dest_path, "wb") as f:
         f.write(content)
 

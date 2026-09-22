@@ -39,6 +39,11 @@ class Settings(BaseSettings):
 
     media_dir: str = "/app/media"
 
+    # Origens liberadas no CORS, separadas por vírgula. "*" (padrão) mantém o
+    # comportamento atual para não quebrar quem já está rodando; em produção,
+    # configure com o(s) domínio(s) real(is) do frontend.
+    cors_allowed_origins: str = "*"
+
     dispatch_worker_interval_seconds: int = 5
 
     # Cache dos relatórios pesados do SETA (ver app/cache.py).

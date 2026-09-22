@@ -20,6 +20,15 @@ from ..variaveis_template import (
 
 router = APIRouter(prefix="/faixas", tags=["uploads"])
 
+_TAMANHO_MAXIMO_PLANILHA_BYTES = 20 * 1024 * 1024
+
+
+async def _ler_planilha_limitada(file: UploadFile) -> bytes:
+    content = await file.read()
+    if len(content) > _TAMANHO_MAXIMO_PLANILHA_BYTES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Planilha maior que o limite de 20 MB")
+    return content
+
 
 def _load_faixa(db: Session, faixa_id: str) -> models.Faixa:
     faixa = (
@@ -47,7 +56,7 @@ async def read_upload_columns(
     lista suspensa qual coluna alimenta cada variável/campo."""
 
     _load_faixa(db, faixa_id)
-    content = await file.read()
+    content = await _ler_planilha_limitada(file)
     try:
         columns = read_spreadsheet_headers(file.filename or "planilha.xlsx", content)
     except Exception as exc:  # noqa: BLE001 - erro de parsing vira 400 explícito
@@ -83,7 +92,7 @@ async def upload_planilha(
             status.HTTP_400_BAD_REQUEST, f"Faltando coluna mapeada para a(s) variável(is): {names}"
         )
 
-    content = await file.read()
+    content = await _ler_planilha_limitada(file)
     filename = file.filename or "planilha.xlsx"
     try:
         headers = read_spreadsheet_headers(filename, content)

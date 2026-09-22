@@ -106,9 +106,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="FintechCRM — Cobrança via WhatsApp", lifespan=lifespan)
 
+_cors_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()]
+if not _cors_origins:
+    _cors_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
     # sem isso o navegador esconde o nome do arquivo das exportações .xlsx
