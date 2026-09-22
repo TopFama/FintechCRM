@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from .models import QueueStatus, TemplateHeaderType, TemplateStatus
 
@@ -325,3 +325,55 @@ class RelatorioCobrancaOut(BaseModel):
     faixas: list[str]
     quantidade: MatrizQuantidadeOut
     quantidade_com_restricao_spc: MatrizQuantidadeOut
+
+
+# --- Leads ---
+
+
+class LeadOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    codigo_cliente: str
+    nome: str
+    cpf: str | None
+    celular: str | None
+    celular_origem: str | None
+    cluster: str
+    faixa: str
+    faixa_compra: str | None
+    qtd_compras: int
+    dias_atraso: int
+    qtd_parcelas: int
+    valor_em_aberto: Decimal
+    valor_cobrar: Decimal
+    vencimento_mais_antigo: date
+    lojas: list[str]
+    portadores: list[str]
+    status_cliente: str
+    spc_restricao: str
+    spc_data_consulta: date | None
+    status: str
+    cobrado_em: datetime | None
+    created_at: datetime
+
+    @field_validator("lojas", "portadores", mode="before")
+    @classmethod
+    def _dividir(cls, valor):
+        # no banco fica como ",49,12," (ver models.Lead)
+        return [v for v in valor.split(",") if v] if isinstance(valor, str) else valor
+
+
+class LeadsPage(BaseModel):
+    total: int
+    itens: list[LeadOut]
+
+
+class LeadsGerarResult(BaseModel):
+    criados: int
+    ja_existiam: int
+    sem_celular: int  # entre os criados: sem telefone válido em nenhum dos campos
+
+
+class LeadsMarcarCobrados(BaseModel):
+    ids: list[str]

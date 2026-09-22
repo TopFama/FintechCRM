@@ -1,14 +1,17 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
     Integer,
     JSON,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -255,3 +258,41 @@ class ClienteBloqueado(Base):
     motivo: Mapped[str] = mapped_column(String, default="")
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Lead(Base):
+    """Retrato de um cliente da base de cobrança no momento em que virou lead
+    (faixa, cluster, valor a cobrar, telefone escolhido…). Os dados do cliente
+    vêm do SETA e não são atualizados depois; gerar de novo para o mesmo
+    cliente/faixa/parcela não duplica."""
+
+    __tablename__ = "leads"
+    __table_args__ = (UniqueConstraint("codigo_cliente", "faixa", "vencimento_mais_antigo"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    codigo_cliente: Mapped[str] = mapped_column(String, index=True)  # código SETA de 8 dígitos
+    nome: Mapped[str] = mapped_column(String, default="")
+    cpf: Mapped[str | None] = mapped_column(String, nullable=True)
+    celular: Mapped[str | None] = mapped_column(String, nullable=True)  # 55DD9XXXXXXXX; None = sem telefone válido
+    celular_origem: Mapped[str | None] = mapped_column(String, nullable=True)
+    celular_original: Mapped[str | None] = mapped_column(String, nullable=True)
+    cluster: Mapped[str] = mapped_column(String, index=True)
+    faixa: Mapped[str] = mapped_column(String, index=True)
+    faixa_compra: Mapped[str | None] = mapped_column(String, nullable=True)
+    qtd_compras: Mapped[int] = mapped_column(Integer, default=0)
+    dias_atraso: Mapped[int] = mapped_column(Integer)
+    qtd_parcelas: Mapped[int] = mapped_column(Integer, default=0)
+    valor_em_aberto: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    valor_cobrar: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    vencimento_mais_antigo: Mapped[date] = mapped_column(Date)
+    # Delimitadas por vírgula nas duas pontas (",49,12,") para filtrar com LIKE
+    # em qualquer banco; ver schemas.LeadOut.
+    lojas: Mapped[str] = mapped_column(String, default=",")
+    portadores: Mapped[str] = mapped_column(String, default=",")
+    status_cliente: Mapped[str] = mapped_column(String, default="")
+    spc_restricao: Mapped[str] = mapped_column(String, default="indeterminado")
+    spc_data_consulta: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="novo", index=True)  # "novo" ou "cobrado"
+    cobrado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
