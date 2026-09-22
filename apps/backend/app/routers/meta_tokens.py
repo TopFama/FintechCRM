@@ -59,14 +59,15 @@ async def create_meta_token(
         )
     waba_id = _waba_valida(payload.waba_id)
 
-    # Verifica se já existe algum token cadastrado com o mesmo valor decifrado
-    existing_tokens = db.query(models.MetaToken).all()
+    # Mesmo token pode dar acesso a mais de uma WABA (ex.: token de system user
+    # com múltiplas WABAs) — só bloqueia duplicidade quando é a mesma WABA.
+    existing_tokens = db.query(models.MetaToken).filter(models.MetaToken.waba_id == waba_id).all()
     for existing in existing_tokens:
         decrypted = crypto.decifrar(existing.token_cifrado)
         if decrypted == token_raw:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
-                "Já existe um token cadastrado com este mesmo valor",
+                "Já existe um token cadastrado com este mesmo valor para esta WABA",
             )
 
     # Só grava se a Meta aceitar o token para essa WABA
