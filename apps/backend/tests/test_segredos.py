@@ -41,7 +41,7 @@ try:
     _cleanup_db.query(models.ErrorLog).delete()
     _cleanup_db.query(models.QueueItem).delete()
     _cleanup_db.query(models.DispatchConfig).delete()
-    _cleanup_db.query(models.FaixaNumber).delete()
+    _cleanup_db.query(models.FaixaEnvio).delete()
     _cleanup_db.query(models.Faixa).delete()
     _cleanup_db.query(models.TemplateVariable).delete()
     _cleanup_db.query(models.Template).delete()
@@ -319,16 +319,19 @@ try:
 
     faixa_worker_ok = models.Faixa(
         name="Faixa Worker OK",
-        template_id=tpl_worker.id,
         active=True,
     )
     db.add(faixa_worker_ok)
     db.commit()
 
-    db.add(models.FaixaNumber(faixa_id=faixa_worker_ok.id, whatsapp_number_id=num_worker_ok.id))
+    envio_worker_ok = models.FaixaEnvio(
+        faixa_id=faixa_worker_ok.id, whatsapp_number_id=num_worker_ok.id, template_id=tpl_worker.id
+    )
+    db.add(envio_worker_ok)
+    db.commit()
     db.add(
         models.DispatchConfig(
-            faixa_id=faixa_worker_ok.id,
+            faixa_envio_id=envio_worker_ok.id,
             active=True,
             force_run=True,
             batch_size=10,
@@ -374,16 +377,19 @@ try:
 
     faixa_no_token = models.Faixa(
         name="Faixa Sem Token",
-        template_id=tpl_worker.id,
         active=True,
     )
     db.add(faixa_no_token)
     db.commit()
 
-    db.add(models.FaixaNumber(faixa_id=faixa_no_token.id, whatsapp_number_id=num_sem_tok.id))
+    envio_no_token = models.FaixaEnvio(
+        faixa_id=faixa_no_token.id, whatsapp_number_id=num_sem_tok.id, template_id=tpl_worker.id
+    )
+    db.add(envio_no_token)
+    db.commit()
     db.add(
         models.DispatchConfig(
-            faixa_id=faixa_no_token.id,
+            faixa_envio_id=envio_no_token.id,
             active=True,
             force_run=True,
             batch_size=10,

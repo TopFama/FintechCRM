@@ -185,12 +185,31 @@ export const api = {
     request<{ criadas: string[]; ja_existentes: string[] }>("/faixas/sincronizar-faixas-atraso", {
       method: "POST",
     }),
-  atualizarFaixa: (
-    id: string,
-    payload: { template_id: string | null; whatsapp_number_ids: string[]; variable_mappings: FaixaVariableMappingIn[] }
-  ) => request<Faixa>(`/faixas/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
-  updateDispatchConfig: (id: string, payload: unknown) =>
-    request(`/faixas/${id}/dispatch-config`, { method: "PUT", body: JSON.stringify(payload) }),
+  adicionarEnvio: (
+    faixaId: string,
+    payload: { whatsapp_number_id: string; template_id: string; variable_mappings: FaixaVariableMappingIn[] }
+  ) => request<FaixaEnvio>(`/faixas/${faixaId}/envios`, { method: "POST", body: JSON.stringify(payload) }),
+  atualizarEnvio: (
+    faixaId: string,
+    envioId: string,
+    payload: {
+      whatsapp_number_id: string;
+      template_id: string;
+      active: boolean;
+      variable_mappings: FaixaVariableMappingIn[];
+    }
+  ) =>
+    request<FaixaEnvio>(`/faixas/${faixaId}/envios/${envioId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  excluirEnvio: (faixaId: string, envioId: string) =>
+    request<void>(`/faixas/${faixaId}/envios/${envioId}`, { method: "DELETE" }),
+  updateDispatchConfig: (faixaId: string, envioId: string, payload: unknown) =>
+    request(`/faixas/${faixaId}/envios/${envioId}/dispatch-config`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   dispatchNow: (id: string) => request(`/faixas/${id}/dispatch-now`, { method: "POST" }),
   excluirFaixa: (id: string) => request<void>(`/faixas/${id}`, { method: "DELETE" }),
   // Exige o mesmo Bearer token das outras rotas, então baixa como blob
@@ -400,6 +419,7 @@ export interface Template {
 
 export interface FaixaVariableMapping {
   id: string;
+  template_id: string;
   template_variable_id: string;
   fonte_tipo: "coluna" | "campo_cliente" | "expressao";
   column_name: string | null;
@@ -423,15 +443,28 @@ export interface DispatchConfig {
   last_run_at: string | null;
 }
 
+// Um par (número, template) atribuído a uma faixa, com disparo próprio —
+// uma faixa pode ter vários, cada um cobrando em paralelo (números de WABAs
+// diferentes), distribuindo os envios e sem cobrar o mesmo cliente duas vezes
+// (a fila é compartilhada por faixa; cada item só é reservado por um envio).
+export interface FaixaEnvio {
+  id: string;
+  whatsapp_number_id: string;
+  whatsapp_number: WhatsappNumber;
+  template_id: string;
+  template: Template;
+  active: boolean;
+  created_at: string;
+  dispatch_config: DispatchConfig | null;
+}
+
 export interface Faixa {
   id: string;
   name: string;
-  template_id: string | null;
   active: boolean;
-  template: Template | null;
-  numbers: { whatsapp_number_id: string }[];
+  created_at: string;
+  envios: FaixaEnvio[];
   variable_mappings: FaixaVariableMapping[];
-  dispatch_config: DispatchConfig | null;
   upload_field_mapping: Partial<UploadFieldMapping>;
 }
 

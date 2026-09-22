@@ -61,10 +61,21 @@ def montar_parametros_envio(template: models.Template, variables_json: dict) -> 
     """Body params (na ordem das variáveis do template) e link da imagem de
     cabeçalho, a partir de um dict variavel.internal_name -> valor. Usado no
     disparo de verdade (variables_json de QueueItem) e no teste de envio
-    manual (Templates → Testar envio)."""
+    manual (Templates → Testar envio).
+
+    Uma faixa com um único template ativo grava `variables_json` "achatado"
+    (internal_name -> valor, formato de sempre). Uma faixa com mais de um
+    template ativo (vários pares número+template, ver FaixaEnvio) grava por
+    template — `{template_id: {internal_name: valor}}` — já que cada item
+    da fila pode acabar sendo enviado por qualquer um dos envios ativos da
+    faixa; aqui resolve pra qual formato veio e usa o dict certo."""
+
+    dados = variables_json or {}
+    if dados and all(isinstance(v, dict) for v in dados.values()):
+        dados = dados.get(template.id, {})
 
     ordered_variables = sorted(template.variables, key=lambda v: v.position)
-    body_params = [str(variables_json.get(v.internal_name, "")) for v in ordered_variables]
+    body_params = [str(dados.get(v.internal_name, "")) for v in ordered_variables]
 
     header_image_link = None
     if template.header_type == models.TemplateHeaderType.image and template.image_url:
@@ -74,39 +85,28 @@ def montar_parametros_envio(template: models.Template, variables_json: dict) -> 
     return body_params, header_image_link
 
 
-async def _send_one(faixa: models.Faixa, item: models.QueueItem, db: Session) -> None:
-    if not faixa.template:
-        item.status = models.QueueStatus.error
-        item.error_message = "Faixa sem template atribuído"
-        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
-        return
-
-    if not faixa.numbers:
-        item.status = models.QueueStatus.error
-        item.error_message = "Faixa sem número de envio configurado"
-        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
-        return
-
-    number_entry = faixa.numbers[faixa.last_number_index % len(faixa.numbers)]
-    faixa.last_number_index = (faixa.last_number_index + 1) % len(faixa.numbers)
-    number = number_entry.whatsapp_number
+async def _send_one(envio: models.FaixaEnvio, item: models.QueueItem, db: Session) -> None:
+    number = envio.whatsapp_number
+    template = envio.template
     item.whatsapp_number_id = number.id
+    item.reserved_by = envio.id
 
-    body_params, header_image_link = montar_parametros_envio(faixa.template, item.variables_json)
+    body_params, header_image_link = montar_parametros_envio(template, item.variables_json)
 
     # Número com inbox do Chatwoot vinculada (Configurações) envia por lá;
     # os demais seguem direto pela Graph API da Meta, como sempre.
     if number.chatwoot_inbox_id:
-        await _send_via_chatwoot(faixa, item, db, number, body_params, header_image_link)
+        await _send_via_chatwoot(envio, item, db, number, template, body_params, header_image_link)
     else:
-        await _send_via_meta(faixa, item, db, number, body_params, header_image_link)
+        await _send_via_meta(envio, item, db, number, template, body_params, header_image_link)
 
 
 async def _send_via_meta(
-    faixa: models.Faixa,
+    envio: models.FaixaEnvio,
     item: models.QueueItem,
     db: Session,
     number: models.WhatsappNumber,
+    template: models.Template,
     body_params: list[str],
     header_image_link: str | None,
 ) -> None:
@@ -115,7 +115,7 @@ async def _send_via_meta(
     except MetaTokenConfigError as exc:
         item.status = models.QueueStatus.error
         item.error_message = str(exc)
-        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
+        db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
         logger.warning("Falha ao obter token da Meta para envio %s: %s", item.id, exc)
         return
 
@@ -124,8 +124,8 @@ async def _send_via_meta(
         result = await client.send_template_message(
             phone_number_id=number.phone_number_id,
             to=item.celular,
-            template_name=faixa.template.meta_template_name,
-            language_code=faixa.template.language,
+            template_name=template.meta_template_name,
+            language_code=template.language,
             body_params=body_params,
             header_image_link=header_image_link,
         )
@@ -137,20 +137,21 @@ async def _send_via_meta(
     except MetaAPIError as exc:
         item.status = models.QueueStatus.error
         item.error_message = str(exc)
-        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=str(exc)))
+        db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=str(exc)))
         logger.warning("Falha ao enviar cobrança %s: %s", item.id, exc)
     except Exception as exc:  # noqa: BLE001 - qualquer falha de rede/config não pode travar o item em "reserved"
         item.status = models.QueueStatus.error
         item.error_message = f"Falha inesperada ao enviar: {exc}"
-        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
+        db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
         logger.exception("Falha inesperada ao enviar cobrança %s", item.id)
 
 
 async def _send_via_chatwoot(
-    faixa: models.Faixa,
+    envio: models.FaixaEnvio,
     item: models.QueueItem,
     db: Session,
     number: models.WhatsappNumber,
+    template: models.Template,
     body_params: list[str],
     header_image_link: str | None,
 ) -> None:
@@ -159,7 +160,7 @@ async def _send_via_chatwoot(
     except chatwoot_client.ChatwootConfigError as exc:
         item.status = models.QueueStatus.error
         item.error_message = str(exc)
-        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
+        db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
         logger.warning("Falha ao obter configuração do Chatwoot para envio %s: %s", item.id, exc)
         return
 
@@ -170,10 +171,10 @@ async def _send_via_chatwoot(
         conversation_id = await client.buscar_ou_criar_conversa(number.chatwoot_inbox_id, contact_id, source_id)
         await client.enviar_mensagem_template(
             conversation_id,
-            faixa.template.body_text,
-            template_name=faixa.template.meta_template_name,
-            category=faixa.template.category,
-            language=faixa.template.language,
+            template.body_text,
+            template_name=template.meta_template_name,
+            category=template.category,
+            language=template.language,
             body_params=body_params,
             header_image_url=header_image_link,
         )
@@ -182,27 +183,35 @@ async def _send_via_chatwoot(
     except chatwoot_client.ChatwootAPIError as exc:
         item.status = models.QueueStatus.error
         item.error_message = str(exc)
-        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=str(exc)))
+        db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=str(exc)))
         logger.warning("Falha ao enviar cobrança %s via Chatwoot: %s", item.id, exc)
     except Exception as exc:  # noqa: BLE001 - qualquer falha de rede/config não pode travar o item em "reserved"
         item.status = models.QueueStatus.error
         item.error_message = f"Falha inesperada ao enviar via Chatwoot: {exc}"
-        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
+        db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
         logger.exception("Falha inesperada ao enviar cobrança %s via Chatwoot", item.id)
 
 
 async def run_dispatch_cycle() -> None:
+    """Varre todo FaixaEnvio (par número+template) com disparo devido.
+    Envios da mesma faixa disputam a mesma fila (QueueItem.faixa_id): cada
+    ciclo reserva o lote de um envio (marca status=reserved e comita) antes
+    de processar o próximo envio, então dois envios da mesma faixa nunca
+    pegam o mesmo item — sem isso, dois números diferentes poderiam cobrar
+    o mesmo cliente na mesma passada."""
+
     db: Session = SessionLocal()
     try:
         configs = (
             db.query(models.DispatchConfig)
+            .join(models.FaixaEnvio)
+            .join(models.Faixa)
+            .filter(models.Faixa.active.is_(True), models.FaixaEnvio.active.is_(True))
             .options(
-                selectinload(models.DispatchConfig.faixa).selectinload(models.Faixa.numbers).selectinload(
-                    models.FaixaNumber.whatsapp_number
-                ).selectinload(
+                selectinload(models.DispatchConfig.envio).selectinload(models.FaixaEnvio.whatsapp_number).selectinload(
                     models.WhatsappNumber.meta_token
                 ),
-                selectinload(models.DispatchConfig.faixa).selectinload(models.Faixa.template).selectinload(
+                selectinload(models.DispatchConfig.envio).selectinload(models.FaixaEnvio.template).selectinload(
                     models.Template.variables
                 ),
             )
@@ -214,12 +223,12 @@ async def run_dispatch_cycle() -> None:
             if not _due(config, now):
                 continue
 
-            faixa = config.faixa
+            envio = config.envio
             try:
                 pending_items = (
                     db.query(models.QueueItem)
                     .filter(
-                        models.QueueItem.faixa_id == faixa.id,
+                        models.QueueItem.faixa_id == envio.faixa_id,
                         models.QueueItem.status == models.QueueStatus.pending,
                     )
                     .order_by(models.QueueItem.created_at.asc())
@@ -232,11 +241,11 @@ async def run_dispatch_cycle() -> None:
                 db.commit()
 
                 for item in pending_items:
-                    await _send_one(faixa, item, db)
+                    await _send_one(envio, item, db)
                     db.commit()
-            except Exception:  # noqa: BLE001 - uma faixa com problema não pode travar as demais
+            except Exception:  # noqa: BLE001 - um envio com problema não pode travar os demais
                 db.rollback()
-                logger.exception("Falha ao processar disparo da faixa %s", faixa.id)
+                logger.exception("Falha ao processar disparo do envio %s (faixa %s)", envio.id, envio.faixa_id)
             finally:
                 config.last_run_at = now
                 config.force_run = False

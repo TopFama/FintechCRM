@@ -144,12 +144,7 @@ class Faixa(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String, unique=True, index=True)
-    # Nullable: uma faixa sincronizada a partir de uma faixa de atraso (ver
-    # POST /faixas/sincronizar-faixas-atraso) nasce sem template — o disparo
-    # fica pausado até alguém atribuir um template e os números em "Faixas".
-    template_id: Mapped[str | None] = mapped_column(ForeignKey("templates.id"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    last_number_index: Mapped[int] = mapped_column(Integer, default=0)
     # Último mapeamento coluna-da-planilha -> campo usado num upload, guardado só
     # para pré-preencher os selects na próxima vez (a planilha real pode ter
     # cabeçalhos diferentes a cada upload, então o mapeamento é reconferido
@@ -157,44 +152,66 @@ class Faixa(Base):
     upload_field_mapping: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    template: Mapped[Template | None] = relationship()
-    numbers: Mapped[list["FaixaNumber"]] = relationship(
+    # Cada envio é um par (número, template) com disparo próprio — uma faixa
+    # sincronizada a partir de uma faixa de atraso (ver POST
+    # /faixas/sincronizar-faixas-atraso) nasce sem nenhum envio, e o disparo
+    # fica pausado até alguém atribuir ao menos um em "Faixas".
+    envios: Mapped[list["FaixaEnvio"]] = relationship(
         back_populates="faixa", cascade="all, delete-orphan"
     )
     variable_mappings: Mapped[list["FaixaVariableMapping"]] = relationship(
         back_populates="faixa", cascade="all, delete-orphan"
     )
-    dispatch_config: Mapped["DispatchConfig | None"] = relationship(
-        back_populates="faixa", uselist=False, cascade="all, delete-orphan"
-    )
 
 
-class FaixaNumber(Base):
-    __tablename__ = "faixa_numbers"
+class FaixaEnvio(Base):
+    """Um par (número de WhatsApp, template) atribuído a uma faixa — o que
+    antes era 'a faixa tem um template e uma lista de números' virou 'a
+    faixa tem vários desses pares', cada um com seu próprio agendamento
+    (DispatchConfig), pensado pra WABAs diferentes cobrando em paralelo.
+    Todos os envios ativos de uma faixa disputam a mesma fila (QueueItem):
+    cada item só é reservado por um envio (ver worker.run_dispatch_cycle),
+    então nenhum cliente é cobrado duas vezes por números diferentes."""
+
+    __tablename__ = "faixa_envios"
     __table_args__ = (UniqueConstraint("faixa_id", "whatsapp_number_id"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     faixa_id: Mapped[str] = mapped_column(ForeignKey("faixas.id"))
-    # CASCADE: excluir o número (Configurações) tira ele da rotação de qualquer
-    # faixa que o usava, sem precisar excluir a faixa.
+    # CASCADE: excluir o número (Configurações) tira ele da faixa, sem
+    # precisar excluir a faixa nem os demais envios.
     whatsapp_number_id: Mapped[str] = mapped_column(ForeignKey("whatsapp_numbers.id", ondelete="CASCADE"))
+    template_id: Mapped[str] = mapped_column(ForeignKey("templates.id"))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    faixa: Mapped[Faixa] = relationship(back_populates="numbers")
+    faixa: Mapped[Faixa] = relationship(back_populates="envios")
     whatsapp_number: Mapped[WhatsappNumber] = relationship()
+    template: Mapped[Template] = relationship()
+    dispatch_config: Mapped["DispatchConfig | None"] = relationship(
+        back_populates="envio", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class FaixaVariableMapping(Base):
+    """Mapeamento variável -> fonte, por par (faixa, template): uma faixa com
+    mais de um template ativo (um por FaixaEnvio) tem um conjunto de
+    mapeamentos por template, todos compartilhados entre os envios que usam
+    aquele template nessa faixa."""
+
     __tablename__ = "faixa_variable_mappings"
-    __table_args__ = (UniqueConstraint("faixa_id", "template_variable_id"),)
+    __table_args__ = (UniqueConstraint("faixa_id", "template_id", "template_variable_id"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     faixa_id: Mapped[str] = mapped_column(ForeignKey("faixas.id"))
+    template_id: Mapped[str] = mapped_column(ForeignKey("templates.id"))
     template_variable_id: Mapped[str] = mapped_column(ForeignKey("template_variables.id"))
     fonte_tipo: Mapped[str] = mapped_column(String, default="coluna", server_default="coluna")
     column_name: Mapped[str | None] = mapped_column(String, nullable=True)
     expressao: Mapped[str | None] = mapped_column(String, nullable=True)
 
     faixa: Mapped[Faixa] = relationship(back_populates="variable_mappings")
+    template: Mapped[Template] = relationship()
     template_variable: Mapped[TemplateVariable] = relationship()
 
 
@@ -271,7 +288,7 @@ class DispatchConfig(Base):
     __tablename__ = "dispatch_configs"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
-    faixa_id: Mapped[str] = mapped_column(ForeignKey("faixas.id"), unique=True)
+    faixa_envio_id: Mapped[str] = mapped_column(ForeignKey("faixa_envios.id", ondelete="CASCADE"), unique=True)
     interval_seconds: Mapped[int] = mapped_column(Integer, default=5)
     batch_size: Mapped[int] = mapped_column(Integer, default=3)
     schedule_days: Mapped[str] = mapped_column(String, default="1,2,3,4,5")
@@ -281,7 +298,7 @@ class DispatchConfig(Base):
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     force_run: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    faixa: Mapped[Faixa] = relationship(back_populates="dispatch_config")
+    envio: Mapped[FaixaEnvio] = relationship(back_populates="dispatch_config")
 
 
 class ErrorLog(Base):

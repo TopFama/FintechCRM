@@ -63,7 +63,7 @@ export default function Faixas() {
       <div className="page-header">
         <div>
           <h2>Faixas de cobrança</h2>
-          <div className="subtitle">Cada faixa liga um nome de cobrança a um template e a um ou mais números</div>
+          <div className="subtitle">Cada faixa liga um nome de cobrança a um ou mais pares de número e template</div>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <button type="button" className="secondary" onClick={handleSincronizar} disabled={sincronizando}>
@@ -102,7 +102,10 @@ export default function Faixas() {
           </div>
         ) : (
           <div className="faixa-list">
-            {faixas.map((f) => (
+            {faixas.map((f) => {
+              const nomesTemplates = [...new Set(f.envios.map((e) => e.template.name))];
+              const algumAgendado = f.envios.some((e) => e.dispatch_config?.active);
+              return (
               <div className="faixa-row" key={f.id}>
                 <Link to={`/faixas/${f.id}`} style={{ display: "flex", alignItems: "center", flex: 1, minWidth: 0, gap: 16, textDecoration: "none", color: "inherit" }}>
                   <div className="faixa-row-main">
@@ -111,13 +114,17 @@ export default function Faixas() {
                     </div>
                     <div style={{ minWidth: 0 }}>
                       <div className="faixa-row-title">{f.name}</div>
-                      <div className="faixa-row-sub">Template: {f.template?.name || "—"}</div>
+                      <div className="faixa-row-sub">
+                        {f.envios.length === 0
+                          ? "Sem número/template atribuído"
+                          : `${nomesTemplates.join(", ")} · ${f.envios.length} número(s)`}
+                      </div>
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 14, flexShrink: 0, marginLeft: "auto" }}>
-                    {!f.template_id && <span className="badge rejected">Configurar template</span>}
-                    <span className={`status-pill ${f.dispatch_config?.active ? "on" : "off"}`}>
-                      {f.dispatch_config?.active ? "Agendado" : "Pausado"}
+                    {f.envios.length === 0 && <span className="badge rejected">Configurar template</span>}
+                    <span className={`status-pill ${algumAgendado ? "on" : "off"}`}>
+                      {algumAgendado ? "Agendado" : "Pausado"}
                     </span>
                     <IconArrowRight className="text-faint" />
                   </div>
@@ -133,7 +140,8 @@ export default function Faixas() {
                   <IconTrash width={15} height={15} />
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

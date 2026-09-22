@@ -1,14 +1,36 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, CampoCliente, ChatwootTestResult, StatusChatwoot, StatusGoogle, StatusSeta, Template, WhatsappNumber } from "../api";
+import DisparoCard from "../components/config/DisparoCard";
 import NumerosCard from "../components/config/NumerosCard";
 import RegrasCobrancaCard from "../components/config/RegrasCobrancaCard";
+import TemplatesCard from "../components/config/TemplatesCard";
 import TokensMetaCard from "../components/config/TokensMetaCard";
 import { IconAlert, IconRefresh } from "../icons";
+
+type Aba = "integracoes" | "templates" | "disparo";
+
+const ABAS: { valor: Aba; rotulo: string }[] = [
+  { valor: "integracoes", rotulo: "Integrações" },
+  { valor: "templates", rotulo: "Templates" },
+  { valor: "disparo", rotulo: "Disparo" },
+];
 
 export default function Configuracoes() {
   const [versaoNumeros, setVersaoNumeros] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
+  const abaParam = searchParams.get("aba");
+  const aba: Aba = abaParam === "templates" || abaParam === "disparo" ? abaParam : "integracoes";
+
+  function irParaAba(novaAba: Aba) {
+    const next = new URLSearchParams(searchParams);
+    if (novaAba === "integracoes") {
+      next.delete("aba");
+    } else {
+      next.set("aba", novaAba);
+    }
+    setSearchParams(next, { replace: true });
+  }
 
   const [seta, setSeta] = useState<StatusSeta | null>(null);
   const [setaCarregando, setSetaCarregando] = useState(false);
@@ -200,10 +222,28 @@ export default function Configuracoes() {
       <div className="page-header">
         <div>
           <h2>Configurações</h2>
-          <div className="subtitle">Status das integrações do sistema</div>
+          <div className="subtitle">Integrações, templates e regras de disparo do sistema</div>
         </div>
       </div>
 
+      <div className="tabs" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {ABAS.map((a) => (
+          <button
+            key={a.valor}
+            type="button"
+            className={aba === a.valor ? "small" : "secondary small"}
+            onClick={() => irParaAba(a.valor)}
+          >
+            {a.rotulo}
+          </button>
+        ))}
+      </div>
+
+      {aba === "templates" && <TemplatesCard />}
+      {aba === "disparo" && <DisparoCard />}
+
+      {aba === "integracoes" && (
+        <>
       {/* ERP SETA */}
       <div className="card">
         <div className="card-header">
@@ -536,6 +576,8 @@ export default function Configuracoes() {
       <TokensMetaCard onNumerosAlterados={() => setVersaoNumeros((v) => v + 1)} />
       <NumerosCard versao={versaoNumeros} />
       <RegrasCobrancaCard />
+        </>
+      )}
     </div>
   );
 }

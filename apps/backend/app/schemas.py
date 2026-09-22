@@ -203,31 +203,21 @@ class FaixaVariableMappingIn(BaseModel):
 
 
 class FaixaCreate(BaseModel):
+    """Cria a faixa e, quando um template_id é informado, já atribui o
+    primeiro envio (par número+template) — o wizard de criação sempre
+    envia isso; sincronizar-faixas-atraso cria só o nome. Mais
+    números/templates depois entram por POST /faixas/{id}/envios."""
+
     name: str
-    template_id: str
-    whatsapp_number_ids: list[str]
-    variable_mappings: list[FaixaVariableMappingIn]
-
-
-class FaixaUpdate(BaseModel):
-    """Reatribuição de template/números/variáveis de uma faixa já existente
-    (o nome não muda: continua ligado à faixa de atraso que a originou,
-    quando for o caso). template_id None deixa a faixa sem template — o
-    disparo fica pausado até alguém completar a configuração."""
-
     template_id: str | None = None
     whatsapp_number_ids: list[str] = []
     variable_mappings: list[FaixaVariableMappingIn] = []
 
-
-class FaixaVariableMappingOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    template_variable_id: str
-    fonte_tipo: str = "coluna"
-    column_name: str | None = None
-    expressao: str | None = None
+    @model_validator(mode="after")
+    def validar_envio_inicial(self) -> "FaixaCreate":
+        if self.template_id and not self.whatsapp_number_ids:
+            raise ValueError("Selecione ao menos um número de envio para o template")
+        return self
 
 
 class DispatchConfigOut(BaseModel):
@@ -251,10 +241,47 @@ class DispatchConfigUpdate(BaseModel):
     active: bool = True
 
 
-class FaixaNumberOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class FaixaEnvioCreate(BaseModel):
+    """Um novo par (número, template) para uma faixa já existente.
+    variable_mappings só é obrigatório na primeira vez que esse template é
+    usado nesta faixa — se já existir mapeamento salvo (outro envio já usa
+    o mesmo template aqui), pode vir vazio para reaproveitar; se vier
+    preenchido, substitui o mapeamento salvo desse (faixa, template)."""
 
     whatsapp_number_id: str
+    template_id: str
+    variable_mappings: list[FaixaVariableMappingIn] = []
+
+
+class FaixaEnvioUpdate(BaseModel):
+    whatsapp_number_id: str
+    template_id: str
+    active: bool = True
+    variable_mappings: list[FaixaVariableMappingIn] = []
+
+
+class FaixaVariableMappingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    template_id: str
+    template_variable_id: str
+    fonte_tipo: str = "coluna"
+    column_name: str | None = None
+    expressao: str | None = None
+
+
+class FaixaEnvioOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    whatsapp_number_id: str
+    whatsapp_number: WhatsappNumberOut
+    template_id: str
+    template: TemplateOut
+    active: bool
+    created_at: datetime
+    dispatch_config: DispatchConfigOut | None = None
 
 
 class FaixaOut(BaseModel):
@@ -262,13 +289,10 @@ class FaixaOut(BaseModel):
 
     id: str
     name: str
-    template_id: str | None
     active: bool
     created_at: datetime
-    template: TemplateOut | None
-    numbers: list[FaixaNumberOut] = []
+    envios: list[FaixaEnvioOut] = []
     variable_mappings: list[FaixaVariableMappingOut] = []
-    dispatch_config: DispatchConfigOut | None = None
     upload_field_mapping: dict = {}
 
 

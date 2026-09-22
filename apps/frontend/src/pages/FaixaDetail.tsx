@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   api,
   CampoCliente,
-  DispatchConfig,
   Faixa,
+  FaixaEnvio,
   FaixaVariableMappingIn,
   Lead,
   QueueItem,
@@ -15,12 +15,13 @@ import {
 } from "../api";
 import {
   IconAlert,
-  IconBolt,
   IconCheckCircle,
   IconDownload,
   IconEye,
   IconInbox,
+  IconPlus,
   IconRefresh,
+  IconTrash,
   IconUpload,
   IconUsers,
 } from "../icons";
@@ -29,6 +30,7 @@ import { ordenarPor, useSort } from "../sort";
 
 type ColunaFila = "codigo_cliente" | "nome" | "cpf" | "celular" | "valor" | "status" | "error_message";
 type ColunaLeadFaixa = "nome" | "celular" | "cluster" | "dias_atraso" | "valor_cobrar" | "status";
+type MapeamentoEdicao = { fonte_tipo: "coluna" | "campo_cliente"; valor: string };
 
 const QUEUE_POLL_MS = 4000;
 
@@ -37,26 +39,6 @@ const NO_COLUMN = "";
 function pickDefault(columns: string[], previous: string | null | undefined): string {
   if (previous && columns.includes(previous)) return previous;
   return NO_COLUMN;
-}
-
-const WEEKDAYS = [
-  { value: "1", label: "Seg" },
-  { value: "2", label: "Ter" },
-  { value: "3", label: "Qua" },
-  { value: "4", label: "Qui" },
-  { value: "5", label: "Sex" },
-  { value: "6", label: "Sáb" },
-  { value: "7", label: "Dom" },
-];
-
-function toggleWeekday(scheduleDays: string, value: string): string {
-  const days = new Set(scheduleDays.split(",").filter(Boolean));
-  if (days.has(value)) {
-    days.delete(value);
-  } else {
-    days.add(value);
-  }
-  return WEEKDAYS.map((d) => d.value).filter((v) => days.has(v)).join(",");
 }
 
 export default function FaixaDetail() {
@@ -75,25 +57,26 @@ export default function FaixaDetail() {
   );
   const [error, setError] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
-  const [config, setConfig] = useState<DispatchConfig | null>(null);
-  const [savingConfig, setSavingConfig] = useState(false);
-  const [dispatchMessage, setDispatchMessage] = useState<string | null>(null);
   const [lastQueueUpdate, setLastQueueUpdate] = useState<Date | null>(null);
   const [downloadingModel, setDownloadingModel] = useState(false);
 
-  // Configuração da faixa: template, números de envio e mapeamento de
-  // variáveis — o que o wizard define na criação, mas também pode ser
-  // reatribuído depois aqui (ex.: faixa criada por "Sincronizar com faixas
-  // de atraso", que nasce sem nada disso).
+  // Números e templates atribuídos à faixa — cada par (FaixaEnvio) cobra em
+  // paralelo, com seu próprio agendamento (configurado em Configurações →
+  // Disparo). Aqui só se atribui/edita/remove o par número+template e o
+  // mapeamento de variáveis dele.
   const [templates, setTemplates] = useState<Template[]>([]);
   const [numbers, setNumbers] = useState<WhatsappNumber[]>([]);
   const [campos, setCampos] = useState<CampoCliente[]>([]);
-  const [editTemplateId, setEditTemplateId] = useState("");
-  const [editNumberIds, setEditNumberIds] = useState<string[]>([]);
-  const [editMappings, setEditMappings] = useState<Record<string, { fonte_tipo: "coluna" | "campo_cliente"; valor: string }>>({});
-  const [salvandoFaixa, setSalvandoFaixa] = useState(false);
-  const [faixaSalvaMsg, setFaixaSalvaMsg] = useState<string | null>(null);
-  const [mostrarPreview, setMostrarPreview] = useState(false);
+  const [mostrarFormEnvio, setMostrarFormEnvio] = useState(false);
+  const [envioEditandoId, setEnvioEditandoId] = useState<string | null>(null);
+  const [formNumberId, setFormNumberId] = useState("");
+  const [formTemplateId, setFormTemplateId] = useState("");
+  const [formAtivo, setFormAtivo] = useState(true);
+  const [formMappings, setFormMappings] = useState<Record<string, MapeamentoEdicao>>({});
+  const [mostrarPreviewEnvio, setMostrarPreviewEnvio] = useState(false);
+  const [salvandoEnvio, setSalvandoEnvio] = useState(false);
+  const [excluindoEnvioId, setExcluindoEnvioId] = useState<string | null>(null);
+  const [envioMsg, setEnvioMsg] = useState<string | null>(null);
 
   // Leads gerados (Cobrança → Leads) para esta mesma faixa de atraso, só
   // pra dar visibilidade de quem existe antes de decidir subir a planilha.
@@ -133,20 +116,7 @@ export default function FaixaDetail() {
     if (!id) return;
     api
       .getFaixa(id)
-      .then((f) => {
-        setFaixa(f);
-        setConfig(f.dispatch_config);
-        setEditTemplateId(f.template_id || "");
-        setEditNumberIds(f.numbers.map((n) => n.whatsapp_number_id));
-        const mapeamentos: Record<string, { fonte_tipo: "coluna" | "campo_cliente"; valor: string }> = {};
-        for (const m of f.variable_mappings) {
-          mapeamentos[m.template_variable_id] = {
-            fonte_tipo: m.fonte_tipo === "campo_cliente" ? "campo_cliente" : "coluna",
-            valor: m.column_name || "",
-          };
-        }
-        setEditMappings(mapeamentos);
-      })
+      .then(setFaixa)
       .catch((e) => setError(e.message));
   }
 
@@ -199,6 +169,18 @@ export default function FaixaDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Templates distintos entre os envios ATIVOS — o que a planilha subida
+  // precisa alimentar, já que qualquer um pode processar um item da fila.
+  const templatesAtivos = useMemo(() => {
+    const porId = new Map<string, Template>();
+    (faixa?.envios || []).forEach((e) => {
+      if (e.active) porId.set(e.template_id, e.template);
+    });
+    return Array.from(porId.values());
+  }, [faixa]);
+
+  const algumAgendado = (faixa?.envios || []).some((e) => e.dispatch_config?.active);
+
   async function handlePickFile(file: File) {
     setError(null);
     setUploadResult(null);
@@ -209,6 +191,7 @@ export default function FaixaDetail() {
       const result = await api.uploadColumns(id!, file);
       setColumns(result.columns);
       const previous = faixa?.upload_field_mapping;
+      const variableIds = templatesAtivos.flatMap((t) => t.variables.map((v) => v.id));
       setFieldMap({
         celular: pickDefault(result.columns, previous?.celular),
         codigo_cliente: pickDefault(result.columns, previous?.codigo_cliente),
@@ -216,10 +199,7 @@ export default function FaixaDetail() {
         cpf: pickDefault(result.columns, previous?.cpf),
         valor: pickDefault(result.columns, previous?.valor),
         variables: Object.fromEntries(
-          (faixa?.template?.variables || []).map((v) => [
-            v.id,
-            pickDefault(result.columns, previous?.variables?.[v.id]),
-          ])
+          variableIds.map((vid) => [vid, pickDefault(result.columns, previous?.variables?.[vid])])
         ),
       });
     } catch (err) {
@@ -236,7 +216,7 @@ export default function FaixaDetail() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  const requiredVariableIds = faixa?.template?.variables.map((v) => v.id) || [];
+  const requiredVariableIds = templatesAtivos.flatMap((t) => t.variables.map((v) => v.id));
   const mappingComplete =
     Boolean(fieldMap.celular) &&
     Boolean(fieldMap.codigo_cliente) &&
@@ -261,20 +241,6 @@ export default function FaixaDetail() {
     }
   }
 
-  async function saveConfig() {
-    if (!id || !config) return;
-    setError(null);
-    setSavingConfig(true);
-    try {
-      await api.updateDispatchConfig(id, config);
-      loadFaixa();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao salvar configuração");
-    } finally {
-      setSavingConfig(false);
-    }
-  }
-
   async function handleDownloadModel() {
     if (!id || !faixa) return;
     setError(null);
@@ -288,48 +254,63 @@ export default function FaixaDetail() {
     }
   }
 
-  async function dispatchNow() {
-    if (!id) return;
-    setError(null);
-    setDispatchMessage(null);
-    try {
-      await api.dispatchNow(id);
-      setDispatchMessage("Disparo agendado — o worker vai processar na próxima varredura.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao disparar agora");
-    }
-  }
-
-  function selecionarTemplateEdicao(templateId: string) {
-    setEditTemplateId(templateId);
+  function mapeamentosParaEdicao(templateId: string): Record<string, MapeamentoEdicao> {
     const template = templates.find((t) => t.id === templateId);
-    if (!template) {
-      setEditMappings({});
-      return;
+    if (!template) return {};
+    const existentes = faixa?.variable_mappings.filter((m) => m.template_id === templateId) || [];
+    const result: Record<string, MapeamentoEdicao> = {};
+    for (const v of template.variables) {
+      const existente = existentes.find((m) => m.template_variable_id === v.id);
+      result[v.id] = existente
+        ? { fonte_tipo: existente.fonte_tipo === "campo_cliente" ? "campo_cliente" : "coluna", valor: existente.column_name || "" }
+        : { fonte_tipo: "coluna", valor: v.internal_name };
     }
-    // Mudou de template: o mapeamento antigo não serve mais (variáveis são
-    // outras), então recomeça com a sugestão padrão (nome interno da
-    // variável como coluna, igual ao passo 3 do assistente de nova faixa).
-    if (templateId !== faixa?.template_id) {
-      const mapeamentos: Record<string, { fonte_tipo: "coluna" | "campo_cliente"; valor: string }> = {};
-      for (const v of template.variables) {
-        mapeamentos[v.id] = { fonte_tipo: "coluna", valor: v.internal_name };
-      }
-      setEditMappings(mapeamentos);
-    }
+    return result;
   }
 
-  function toggleEditNumber(numberId: string) {
-    setEditNumberIds((prev) => (prev.includes(numberId) ? prev.filter((n) => n !== numberId) : [...prev, numberId]));
+  function abrirNovoEnvio() {
+    setEnvioEditandoId(null);
+    setFormNumberId("");
+    setFormTemplateId("");
+    setFormAtivo(true);
+    setFormMappings({});
+    setMostrarPreviewEnvio(false);
+    setEnvioMsg(null);
+    setMostrarFormEnvio(true);
   }
 
-  const templateEmEdicao = templates.find((t) => t.id === editTemplateId) || null;
+  function abrirEditarEnvio(envio: FaixaEnvio) {
+    setEnvioEditandoId(envio.id);
+    setFormNumberId(envio.whatsapp_number_id);
+    setFormTemplateId(envio.template_id);
+    setFormAtivo(envio.active);
+    setFormMappings(mapeamentosParaEdicao(envio.template_id));
+    setMostrarPreviewEnvio(false);
+    setEnvioMsg(null);
+    setMostrarFormEnvio(true);
+  }
 
-  function renderizarPreviewFaixa(t: Template): string {
+  function selecionarTemplateForm(templateId: string) {
+    setFormTemplateId(templateId);
+    setFormMappings(mapeamentosParaEdicao(templateId));
+  }
+
+  function cancelarFormEnvio() {
+    setMostrarFormEnvio(false);
+    setEnvioEditandoId(null);
+  }
+
+  const templateDoForm = templates.find((t) => t.id === formTemplateId) || null;
+
+  const numerosDisponiveis = numbers.filter(
+    (n) => n.id === formNumberId || !faixa?.envios.some((e) => e.whatsapp_number_id === n.id && e.id !== envioEditandoId)
+  );
+
+  function renderizarPreviewForm(t: Template): string {
     return t.body_text.replace(/\{\{(\d+)\}\}/g, (match, pos) => {
       const variavel = t.variables.find((v) => v.position === Number(pos));
       if (!variavel) return match;
-      const m = editMappings[variavel.id];
+      const m = formMappings[variavel.id];
       if (!m) return `[${variavel.internal_name}]`;
       if (m.fonte_tipo === "campo_cliente") {
         const campo = campos.find((c) => c.campo === m.valor);
@@ -339,34 +320,57 @@ export default function FaixaDetail() {
     });
   }
 
-  async function salvarConfigFaixa() {
-    if (!id) return;
+  async function salvarEnvio() {
+    if (!id || !formNumberId || !formTemplateId || !templateDoForm) return;
     setError(null);
-    setFaixaSalvaMsg(null);
-    setSalvandoFaixa(true);
+    setSalvandoEnvio(true);
     try {
-      const variable_mappings: FaixaVariableMappingIn[] = editTemplateId
-        ? (templateEmEdicao?.variables || []).map((v) => {
-            const m = editMappings[v.id] || { fonte_tipo: "coluna" as const, valor: v.internal_name };
-            return {
-              template_variable_id: v.id,
-              fonte_tipo: m.fonte_tipo,
-              column_name: m.valor,
-            };
-          })
-        : [];
-      const atualizada = await api.atualizarFaixa(id, {
-        template_id: editTemplateId || null,
-        whatsapp_number_ids: editNumberIds,
-        variable_mappings,
+      const variable_mappings: FaixaVariableMappingIn[] = templateDoForm.variables.map((v) => {
+        const m = formMappings[v.id] || { fonte_tipo: "coluna" as const, valor: v.internal_name };
+        return { template_variable_id: v.id, fonte_tipo: m.fonte_tipo, column_name: m.valor };
       });
-      setFaixa(atualizada);
-      setConfig(atualizada.dispatch_config);
-      setFaixaSalvaMsg("Configuração da faixa salva");
+      if (envioEditandoId) {
+        await api.atualizarEnvio(id, envioEditandoId, {
+          whatsapp_number_id: formNumberId,
+          template_id: formTemplateId,
+          active: formAtivo,
+          variable_mappings,
+        });
+      } else {
+        await api.adicionarEnvio(id, {
+          whatsapp_number_id: formNumberId,
+          template_id: formTemplateId,
+          variable_mappings,
+        });
+      }
+      setMostrarFormEnvio(false);
+      setEnvioEditandoId(null);
+      setEnvioMsg(envioEditandoId ? "Envio atualizado" : "Envio adicionado");
+      loadFaixa();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao salvar a configuração da faixa");
+      setError(err instanceof Error ? err.message : "Erro ao salvar envio");
     } finally {
-      setSalvandoFaixa(false);
+      setSalvandoEnvio(false);
+    }
+  }
+
+  async function handleExcluirEnvio(envio: FaixaEnvio) {
+    if (!id) return;
+    if (
+      !window.confirm(
+        `Remover ${envio.whatsapp_number.label || envio.whatsapp_number.display_phone_number} (${envio.template.name}) desta faixa?`
+      )
+    )
+      return;
+    setError(null);
+    setExcluindoEnvioId(envio.id);
+    try {
+      await api.excluirEnvio(id, envio.id);
+      loadFaixa();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao remover envio");
+    } finally {
+      setExcluindoEnvioId(null);
     }
   }
 
@@ -380,11 +384,13 @@ export default function FaixaDetail() {
       <div className="page-header">
         <div>
           <h2>{faixa.name}</h2>
-          <div className="subtitle">Template: {faixa.template?.name}</div>
+          <div className="subtitle">
+            {faixa.envios.length === 0
+              ? "Sem número/template atribuído"
+              : `${templatesAtivos.length} template(s) ativo(s) · ${faixa.envios.length} número(s)`}
+          </div>
         </div>
-        <span className={`status-pill ${config?.active ? "on" : "off"}`}>
-          {config?.active ? "Agendado" : "Pausado"}
-        </span>
+        <span className={`status-pill ${algumAgendado ? "on" : "off"}`}>{algumAgendado ? "Agendado" : "Pausado"}</span>
       </div>
 
       {error && (
@@ -396,413 +402,396 @@ export default function FaixaDetail() {
 
       <div className="card">
         <div className="card-header">
-          <h3>Template, números e variáveis</h3>
-        </div>
-        {!faixa.template_id && (
-          <p className="card-subtitle" style={{ marginTop: 0 }}>
-            Esta faixa ainda não tem template atribuído — atribua um abaixo para poder subir a planilha e ligar o
-            disparo.
-          </p>
-        )}
-        {faixaSalvaMsg && (
-          <div className="success-box" style={{ marginBottom: 16 }}>
-            <IconCheckCircle width={16} height={16} />
-            <span>{faixaSalvaMsg}</span>
-          </div>
-        )}
-        <div className="field">
-          <label>Template aprovado</label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <select
-              value={editTemplateId}
-              onChange={(e) => selecionarTemplateEdicao(e.target.value)}
-              style={{ flex: 1, minWidth: 0 }}
-            >
-              <option value="">Sem template</option>
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.status})
-                </option>
-              ))}
-            </select>
-            {templateEmEdicao && (
-              <button
-                type="button"
-                className="secondary small"
-                style={{ flexShrink: 0 }}
-                onClick={() => setMostrarPreview((atual) => !atual)}
-              >
-                <IconEye width={14} height={14} /> {mostrarPreview ? "Fechar" : "Pré-visualizar"}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {templateEmEdicao && mostrarPreview && (
-          <div className="template-preview">
-            <div className="template-preview-bubble">
-              {templateEmEdicao.header_type === "image" && templateEmEdicao.image_url && (
-                <img
-                  src={templateEmEdicao.image_url}
-                  alt="Cabeçalho do template"
-                  style={{ width: "100%", maxWidth: 280, borderRadius: 8, marginBottom: 10, display: "block" }}
-                />
-              )}
-              {renderizarPreviewFaixa(templateEmEdicao)}
-            </div>
-            <p className="field-hint">
-              Valores entre colchetes vêm de "Coluna da planilha" (só o nome sugerido — o valor real é o da planilha
-              subida); os demais usam o exemplo do campo do cliente escolhido.
-            </p>
-          </div>
-        )}
-
-        <label style={{ marginBottom: 8, display: "block" }}>Números de envio</label>
-        <div className="option-list">
-          {numbers.map((n) => (
-            <label key={n.id} className={`option-item${editNumberIds.includes(n.id) ? " checked" : ""}`}>
-              <input type="checkbox" checked={editNumberIds.includes(n.id)} onChange={() => toggleEditNumber(n.id)} />
-              {n.label || n.display_phone_number} ({n.display_phone_number})
-            </label>
-          ))}
-          {numbers.length === 0 && (
-            <p className="text-muted">Nenhum número ainda — importe os números da WABA em Configurações.</p>
-          )}
-        </div>
-
-        {templateEmEdicao && templateEmEdicao.variables.length > 0 && (
-          <>
-            <label style={{ marginBottom: 8, marginTop: 16, display: "block" }}>Variáveis do template</label>
-            <div className="form-row" style={{ flexWrap: "wrap" }}>
-              {templateEmEdicao.variables.map((v) => {
-                const m = editMappings[v.id] || { fonte_tipo: "coluna" as const, valor: v.internal_name };
-                return (
-                  <div className="field" key={v.id} style={{ minWidth: 260 }}>
-                    <label>{`{{${v.position}}}`} ({v.internal_name})</label>
-                    <div style={{ display: "flex", gap: 6, minWidth: 0 }}>
-                      <select
-                        value={m.fonte_tipo}
-                        onChange={(e) =>
-                          setEditMappings((atual) => ({
-                            ...atual,
-                            [v.id]: {
-                              fonte_tipo: e.target.value as "coluna" | "campo_cliente",
-                              valor: e.target.value === "campo_cliente" ? campos[0]?.campo || "" : v.internal_name,
-                            },
-                          }))
-                        }
-                        style={{ flex: "0 0 auto" }}
-                      >
-                        <option value="coluna">Coluna da planilha</option>
-                        <option value="campo_cliente">Campo do cliente</option>
-                      </select>
-                      {m.fonte_tipo === "campo_cliente" ? (
-                        <select
-                          value={m.valor}
-                          onChange={(e) =>
-                            setEditMappings((atual) => ({ ...atual, [v.id]: { ...m, valor: e.target.value } }))
-                          }
-                          style={{ flex: 1, minWidth: 0 }}
-                        >
-                          {campos.map((c) => (
-                            <option key={c.campo} value={c.campo}>
-                              {c.rotulo}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          value={m.valor}
-                          onChange={(e) =>
-                            setEditMappings((atual) => ({ ...atual, [v.id]: { ...m, valor: e.target.value } }))
-                          }
-                          placeholder="nome de coluna sugerido"
-                          style={{ flex: 1, minWidth: 0 }}
-                        />
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <p className="field-hint">
-              "Coluna da planilha" só define o nome sugerido — ao subir a planilha, você escolhe a coluna real. "Campo
-              do cliente" usa um valor fixo do cadastro, sem precisar de planilha.
-            </p>
-          </>
-        )}
-
-        <div className="actions-row">
-          <button type="button" onClick={salvarConfigFaixa} disabled={salvandoFaixa}>
-            {salvandoFaixa ? "Salvando..." : "Salvar configuração da faixa"}
+          <h3>Números e templates desta faixa</h3>
+          <button type="button" className="secondary small" onClick={abrirNovoEnvio}>
+            <IconPlus width={16} height={16} /> Adicionar número e template
           </button>
         </div>
-      </div>
-
-      {faixa.template && (
-      <div className="card">
-        <div className="card-header">
-          <h3>Subir planilha e mapear colunas</h3>
-          <button className="ghost small" onClick={handleDownloadModel} disabled={downloadingModel}>
-            <IconDownload width={16} height={16} /> {downloadingModel ? "Baixando..." : "Baixar modelo sugerido (.xlsx)"}
-          </button>
-        </div>
-        <p className="card-subtitle">
-          Suba a planilha com a base de clientes desta faixa. O sistema lê o cabeçalho (primeira linha) e você
-          escolhe, em uma lista suspensa, qual coluna alimenta cada campo — não precisa usar os nomes do modelo.
+        <p className="card-subtitle" style={{ marginTop: 0 }}>
+          Cada número pode cobrar com um template próprio, em paralelo (WABAs diferentes) — a fila é compartilhada
+          entre eles, então nenhum cliente é cobrado duas vezes. O agendamento de cada um (dias, horário, intervalo)
+          fica em <Link to="/configuracoes?aba=disparo">Configurações → Disparo</Link>.
         </p>
 
-        {!columns && (
-          <label className="dropzone">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx"
-              onChange={(e) => e.target.files && handlePickFile(e.target.files[0])}
-            />
-            <IconUpload width={26} height={26} />
-            <div className="dz-title">{loadingColumns ? "Lendo colunas da planilha..." : "Clique ou arraste a planilha aqui"}</div>
-            <div className="dz-hint">.xlsx</div>
-          </label>
+        {envioMsg && (
+          <div className="success-box" style={{ marginBottom: 16 }}>
+            <IconCheckCircle width={16} height={16} />
+            <span>{envioMsg}</span>
+          </div>
         )}
 
-        {columns && (
-          <div>
-            <p className="card-subtitle" style={{ marginTop: 0 }}>
-              Arquivo: <strong>{pendingFile?.name}</strong> — {columns.length} coluna(s) encontrada(s)
-            </p>
+        {faixa.envios.length === 0 && !mostrarFormEnvio && (
+          <p className="text-muted">Nenhum número/template atribuído ainda — adicione um acima para poder subir a planilha e ligar o disparo.</p>
+        )}
 
-            <div className="form-row">
-              <div className="field">
-                <label>Coluna do código (SETA, até 8 dígitos — completa com zero à esquerda) *</label>
-                <select value={fieldMap.codigo_cliente} onChange={(e) => setFieldMap({ ...fieldMap, codigo_cliente: e.target.value })}>
-                  <option value="">Selecione...</option>
-                  {columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>Coluna do nome (usa só o primeiro nome) *</label>
-                <select value={fieldMap.nome} onChange={(e) => setFieldMap({ ...fieldMap, nome: e.target.value })}>
-                  <option value="">Selecione...</option>
-                  {columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="form-row">
-              <div className="field">
-                <label>Coluna do CPF (formata com pontos e traço) *</label>
-                <select value={fieldMap.cpf} onChange={(e) => setFieldMap({ ...fieldMap, cpf: e.target.value })}>
-                  <option value="">Selecione...</option>
-                  {columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>Coluna do celular *</label>
-                <select value={fieldMap.celular} onChange={(e) => setFieldMap({ ...fieldMap, celular: e.target.value })}>
-                  <option value="">Selecione...</option>
-                  {columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="form-row">
-              <div className="field">
-                <label>Coluna do valor cobrado (opcional)</label>
-                <select value={fieldMap.valor || ""} onChange={(e) => setFieldMap({ ...fieldMap, valor: e.target.value })}>
-                  <option value="">Nenhuma</option>
-                  {columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {faixa.template.variables.length > 0 && (
-              <>
-                <label style={{ marginBottom: 8 }}>Variáveis do template</label>
-                <div className="form-row" style={{ flexWrap: "wrap" }}>
-                  {faixa.template.variables.map((v) => (
-                    <div className="field" key={v.id} style={{ minWidth: 220 }}>
-                      <label>{v.internal_name} *</label>
-                      <select
-                        value={fieldMap.variables[v.id] || ""}
-                        onChange={(e) =>
-                          setFieldMap({ ...fieldMap, variables: { ...fieldMap.variables, [v.id]: e.target.value } })
-                        }
+        {faixa.envios.length > 0 && (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Número</th>
+                  <th>Template</th>
+                  <th>Status</th>
+                  <th>Agendamento</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {faixa.envios.map((e) => (
+                  <tr key={e.id}>
+                    <td className="cell-strong">{e.whatsapp_number.label || e.whatsapp_number.display_phone_number}</td>
+                    <td>{e.template.name}</td>
+                    <td>
+                      <span className={`badge ${e.active ? "approved" : "rejected"}`}>{e.active ? "ativo" : "inativo"}</span>
+                    </td>
+                    <td>
+                      <span className={`status-pill ${e.dispatch_config?.active ? "on" : "off"}`}>
+                        {e.dispatch_config?.active ? "agendado" : "pausado"}
+                      </span>
+                    </td>
+                    <td style={{ display: "flex", gap: 8 }}>
+                      <button type="button" className="secondary small" onClick={() => abrirEditarEnvio(e)}>
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className="danger small"
+                        disabled={excluindoEnvioId === e.id}
+                        onClick={() => handleExcluirEnvio(e)}
                       >
-                        <option value="">Selecione...</option>
-                        {columns.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        <IconTrash width={14} height={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {mostrarFormEnvio && (
+          <div className="sub-card" style={{ marginTop: 16 }}>
+            <h4>{envioEditandoId ? "Editar envio" : "Novo envio"}</h4>
+            <div className="form-row">
+              <div className="field">
+                <label>Número de envio</label>
+                <select value={formNumberId} onChange={(e) => setFormNumberId(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  {numerosDisponiveis.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.label || n.display_phone_number} ({n.display_phone_number})
+                    </option>
                   ))}
+                </select>
+                {numbers.length === 0 && (
+                  <p className="field-hint">Nenhum número ainda — importe os números da WABA em Configurações.</p>
+                )}
+              </div>
+              <div className="field">
+                <label>Template aprovado</label>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <select value={formTemplateId} onChange={(e) => selecionarTemplateForm(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
+                    <option value="">Selecione...</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.status})
+                      </option>
+                    ))}
+                  </select>
+                  {templateDoForm && (
+                    <button
+                      type="button"
+                      className="secondary small"
+                      style={{ flexShrink: 0 }}
+                      onClick={() => setMostrarPreviewEnvio((atual) => !atual)}
+                    >
+                      <IconEye width={14} height={14} /> {mostrarPreviewEnvio ? "Fechar" : "Pré-visualizar"}
+                    </button>
+                  )}
                 </div>
+              </div>
+            </div>
+
+            {envioEditandoId && (
+              <div className="field">
+                <label className="checkbox-row">
+                  <input type="checkbox" checked={formAtivo} onChange={(e) => setFormAtivo(e.target.checked)} />
+                  Envio ativo (entra na fila e no disparo)
+                </label>
+              </div>
+            )}
+
+            {templateDoForm && mostrarPreviewEnvio && (
+              <div className="template-preview">
+                <div className="template-preview-bubble">
+                  {templateDoForm.header_type === "image" && templateDoForm.image_url && (
+                    <img
+                      src={templateDoForm.image_url}
+                      alt="Cabeçalho do template"
+                      style={{ width: "100%", maxWidth: 280, borderRadius: 8, marginBottom: 10, display: "block" }}
+                    />
+                  )}
+                  {renderizarPreviewForm(templateDoForm)}
+                </div>
+                <p className="field-hint">
+                  Valores entre colchetes vêm de "Coluna da planilha" (só o nome sugerido — o valor real é o da
+                  planilha subida); os demais usam o exemplo do campo do cliente escolhido.
+                </p>
+              </div>
+            )}
+
+            {templateDoForm && templateDoForm.variables.length > 0 && (
+              <>
+                <label style={{ marginBottom: 8, marginTop: 16, display: "block" }}>Variáveis do template</label>
+                <div className="form-row" style={{ flexWrap: "wrap" }}>
+                  {templateDoForm.variables.map((v) => {
+                    const m = formMappings[v.id] || { fonte_tipo: "coluna" as const, valor: v.internal_name };
+                    return (
+                      <div className="field" key={v.id} style={{ minWidth: 260 }}>
+                        <label>
+                          {`{{${v.position}}}`} ({v.internal_name})
+                        </label>
+                        <div style={{ display: "flex", gap: 6, minWidth: 0 }}>
+                          <select
+                            value={m.fonte_tipo}
+                            onChange={(e) =>
+                              setFormMappings((atual) => ({
+                                ...atual,
+                                [v.id]: {
+                                  fonte_tipo: e.target.value as "coluna" | "campo_cliente",
+                                  valor: e.target.value === "campo_cliente" ? campos[0]?.campo || "" : v.internal_name,
+                                },
+                              }))
+                            }
+                            style={{ flex: "0 0 auto" }}
+                          >
+                            <option value="coluna">Coluna da planilha</option>
+                            <option value="campo_cliente">Campo do cliente</option>
+                          </select>
+                          {m.fonte_tipo === "campo_cliente" ? (
+                            <select
+                              value={m.valor}
+                              onChange={(e) => setFormMappings((atual) => ({ ...atual, [v.id]: { ...m, valor: e.target.value } }))}
+                              style={{ flex: 1, minWidth: 0 }}
+                            >
+                              {campos.map((c) => (
+                                <option key={c.campo} value={c.campo}>
+                                  {c.rotulo}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              value={m.valor}
+                              onChange={(e) => setFormMappings((atual) => ({ ...atual, [v.id]: { ...m, valor: e.target.value } }))}
+                              placeholder="nome de coluna sugerido"
+                              style={{ flex: 1, minWidth: 0 }}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="field-hint">
+                  "Coluna da planilha" só define o nome sugerido — ao subir a planilha, você escolhe a coluna real.
+                  "Campo do cliente" usa um valor fixo do cadastro, sem precisar de planilha.
+                </p>
               </>
             )}
 
             <div className="actions-row">
-              <button className="secondary" onClick={cancelMapping} disabled={importing}>
+              <button type="button" className="secondary" onClick={cancelarFormEnvio} disabled={salvandoEnvio}>
                 Cancelar
               </button>
-              <button onClick={confirmImport} disabled={!mappingComplete || importing}>
-                {importing ? "Importando..." : "Confirmar e importar"}
+              <button type="button" onClick={salvarEnvio} disabled={!formNumberId || !formTemplateId || salvandoEnvio}>
+                {salvandoEnvio ? "Salvando..." : "Salvar envio"}
               </button>
             </div>
           </div>
         )}
+      </div>
 
-        {uploadResult && (
-          <>
-            <div className="upload-summary">
-              <div className="item">
-                <span className="num" style={{ color: "var(--color-success)" }}>
-                  {uploadResult.accepted_count}
-                </span>
-                aceitos
+      {templatesAtivos.length > 0 && (
+        <div className="card">
+          <div className="card-header">
+            <h3>Subir planilha e mapear colunas</h3>
+            <button className="ghost small" onClick={handleDownloadModel} disabled={downloadingModel}>
+              <IconDownload width={16} height={16} /> {downloadingModel ? "Baixando..." : "Baixar modelo sugerido (.xlsx)"}
+            </button>
+          </div>
+          <p className="card-subtitle">
+            Suba a planilha com a base de clientes desta faixa. O sistema lê o cabeçalho (primeira linha) e você
+            escolhe, em uma lista suspensa, qual coluna alimenta cada campo — não precisa usar os nomes do modelo.
+          </p>
+
+          {!columns && (
+            <label className="dropzone">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx"
+                onChange={(e) => e.target.files && handlePickFile(e.target.files[0])}
+              />
+              <IconUpload width={26} height={26} />
+              <div className="dz-title">{loadingColumns ? "Lendo colunas da planilha..." : "Clique ou arraste a planilha aqui"}</div>
+              <div className="dz-hint">.xlsx</div>
+            </label>
+          )}
+
+          {columns && (
+            <div>
+              <p className="card-subtitle" style={{ marginTop: 0 }}>
+                Arquivo: <strong>{pendingFile?.name}</strong> — {columns.length} coluna(s) encontrada(s)
+              </p>
+
+              <div className="form-row">
+                <div className="field">
+                  <label>Coluna do código (SETA, até 8 dígitos — completa com zero à esquerda) *</label>
+                  <select value={fieldMap.codigo_cliente} onChange={(e) => setFieldMap({ ...fieldMap, codigo_cliente: e.target.value })}>
+                    <option value="">Selecione...</option>
+                    {columns.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Coluna do nome (usa só o primeiro nome) *</label>
+                  <select value={fieldMap.nome} onChange={(e) => setFieldMap({ ...fieldMap, nome: e.target.value })}>
+                    <option value="">Selecione...</option>
+                    {columns.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="item">
-                <span className="num" style={{ color: "var(--color-danger)" }}>
-                  {uploadResult.rejected_count}
-                </span>
-                rejeitados
+
+              <div className="form-row">
+                <div className="field">
+                  <label>Coluna do CPF (formata com pontos e traço) *</label>
+                  <select value={fieldMap.cpf} onChange={(e) => setFieldMap({ ...fieldMap, cpf: e.target.value })}>
+                    <option value="">Selecione...</option>
+                    {columns.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Coluna do celular *</label>
+                  <select value={fieldMap.celular} onChange={(e) => setFieldMap({ ...fieldMap, celular: e.target.value })}>
+                    <option value="">Selecione...</option>
+                    {columns.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="field">
+                  <label>Coluna do valor cobrado (opcional)</label>
+                  <select value={fieldMap.valor || ""} onChange={(e) => setFieldMap({ ...fieldMap, valor: e.target.value })}>
+                    <option value="">Nenhuma</option>
+                    {columns.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {templatesAtivos.some((t) => t.variables.length > 0) && (
+                <>
+                  <label style={{ marginBottom: 8 }}>Variáveis dos templates ativos</label>
+                  <div className="form-row" style={{ flexWrap: "wrap" }}>
+                    {templatesAtivos.flatMap((t) =>
+                      t.variables.map((v) => (
+                        <div className="field" key={v.id} style={{ minWidth: 220 }}>
+                          <label>
+                            {t.name}: {v.internal_name} *
+                          </label>
+                          <select
+                            value={fieldMap.variables[v.id] || ""}
+                            onChange={(e) => setFieldMap({ ...fieldMap, variables: { ...fieldMap.variables, [v.id]: e.target.value } })}
+                          >
+                            <option value="">Selecione...</option>
+                            {columns.map((c) => (
+                              <option key={c} value={c}>
+                                {c}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+
+              <div className="actions-row">
+                <button className="secondary" onClick={cancelMapping} disabled={importing}>
+                  Cancelar
+                </button>
+                <button onClick={confirmImport} disabled={!mappingComplete || importing}>
+                  {importing ? "Importando..." : "Confirmar e importar"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {uploadResult && (
+            <>
+              <div className="upload-summary">
+                <div className="item">
+                  <span className="num" style={{ color: "var(--color-success)" }}>
+                    {uploadResult.accepted_count}
+                  </span>
+                  aceitos
+                </div>
+                <div className="item">
+                  <span className="num" style={{ color: "var(--color-danger)" }}>
+                    {uploadResult.rejected_count}
+                  </span>
+                  rejeitados
+                </div>
+                {uploadResult.invalid_phone_count > 0 && (
+                  <div className="item">
+                    <span className="num" style={{ color: "var(--color-warning)" }}>
+                      {uploadResult.invalid_phone_count}
+                    </span>
+                    telefone(s) inválido(s)
+                  </div>
+                )}
+                <div className="item">
+                  <span className="num">{uploadResult.row_count}</span>
+                  linhas na planilha
+                </div>
               </div>
               {uploadResult.invalid_phone_count > 0 && (
-                <div className="item">
-                  <span className="num" style={{ color: "var(--color-warning)" }}>
-                    {uploadResult.invalid_phone_count}
-                  </span>
-                  telefone(s) inválido(s)
-                </div>
+                <p className="field-hint">
+                  <Link to="/relatorios">Ver no relatório de telefones inválidos →</Link>
+                </p>
               )}
-              <div className="item">
-                <span className="num">{uploadResult.row_count}</span>
-                linhas na planilha
-              </div>
-            </div>
-            {uploadResult.invalid_phone_count > 0 && (
-              <p className="field-hint">
-                <Link to="/relatorios">Ver no relatório de telefones inválidos →</Link>
-              </p>
-            )}
-            {uploadResult.rejected_reasons.length > 0 && (
-              <ul style={{ fontSize: 13, color: "var(--color-danger)", marginTop: 10 }}>
-                {uploadResult.rejected_reasons.map((r, i) => (
-                  <li key={i}>{r}</li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-      </div>
-      )}
-
-      <div className="card">
-        <div className="card-header">
-          <h3>Disparo e controles de execução</h3>
+              {uploadResult.rejected_reasons.length > 0 && (
+                <ul style={{ fontSize: 13, color: "var(--color-danger)", marginTop: 10 }}>
+                  {uploadResult.rejected_reasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
         </div>
-        {config && (
-          <>
-            <div className="form-row">
-              <div className="field">
-                <label>Intervalo entre rodadas (segundos)</label>
-                <input
-                  type="number"
-                  value={config.interval_seconds}
-                  onChange={(e) => setConfig({ ...config, interval_seconds: Number(e.target.value) })}
-                />
-              </div>
-              <div className="field">
-                <label>Cobranças por rodada</label>
-                <input
-                  type="number"
-                  value={config.batch_size}
-                  onChange={(e) => setConfig({ ...config, batch_size: Number(e.target.value) })}
-                />
-              </div>
-            </div>
-            <div className="field">
-              <label>Dias da semana</label>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {WEEKDAYS.map((d) => {
-                  const active = config.schedule_days.split(",").includes(d.value);
-                  return (
-                    <button
-                      key={d.value}
-                      type="button"
-                      className={active ? "small" : "secondary small"}
-                      onClick={() => setConfig({ ...config, schedule_days: toggleWeekday(config.schedule_days, d.value) })}
-                    >
-                      {d.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label>Início da janela</label>
-                <input
-                  value={config.schedule_start}
-                  onChange={(e) => setConfig({ ...config, schedule_start: e.target.value })}
-                />
-              </div>
-              <div className="field">
-                <label>Fim da janela</label>
-                <input
-                  value={config.schedule_end}
-                  onChange={(e) => setConfig({ ...config, schedule_end: e.target.value })}
-                />
-              </div>
-            </div>
-            <div className="field">
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={config.active}
-                  onChange={(e) => setConfig({ ...config, active: e.target.checked })}
-                />
-                Agendamento ativo
-              </label>
-            </div>
-            {dispatchMessage && (
-              <div className="success-box">
-                <IconCheckCircle width={16} height={16} />
-                <span>{dispatchMessage}</span>
-              </div>
-            )}
-            <div className="actions-row">
-              <button onClick={saveConfig} disabled={savingConfig}>
-                {savingConfig ? "Salvando..." : "Salvar configuração"}
-              </button>
-              <button className="secondary" onClick={dispatchNow}>
-                <IconBolt width={16} height={16} /> Cobrar esta base agora
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+      )}
 
       <div className="card">
         <div className="card-header">

@@ -11,10 +11,12 @@ router = APIRouter(prefix="/faixas", tags=["faixas"])
 
 def _full_query(db: Session):
     return db.query(models.Faixa).options(
-        selectinload(models.Faixa.template).selectinload(models.Template.variables),
-        selectinload(models.Faixa.numbers),
+        selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.whatsapp_number),
+        selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.template).selectinload(
+            models.Template.variables
+        ),
+        selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.dispatch_config),
         selectinload(models.Faixa.variable_mappings),
-        selectinload(models.Faixa.dispatch_config),
     )
 
 
@@ -26,6 +28,61 @@ def _validar_mapeamento_variaveis(template: models.Template, variable_mappings: 
             status.HTTP_400_BAD_REQUEST,
             "Toda variável do template precisa de uma coluna de planilha mapeada",
         )
+
+
+def _salvar_mapeamento(
+    db: Session, faixa_id: str, template: models.Template, variable_mappings: list
+) -> None:
+    """Substitui o mapeamento de variáveis do par (faixa, template) — usado
+    por todos os envios dessa faixa que usam esse template."""
+
+    _validar_mapeamento_variaveis(template, variable_mappings)
+    db.query(models.FaixaVariableMapping).filter(
+        models.FaixaVariableMapping.faixa_id == faixa_id,
+        models.FaixaVariableMapping.template_id == template.id,
+    ).delete()
+    for mapping in variable_mappings:
+        db.add(
+            models.FaixaVariableMapping(
+                faixa_id=faixa_id,
+                template_id=template.id,
+                template_variable_id=mapping.template_variable_id,
+                fonte_tipo=mapping.fonte_tipo,
+                column_name=mapping.column_name,
+                expressao=mapping.expressao,
+            )
+        )
+
+
+def _tem_mapeamento(db: Session, faixa_id: str, template_id: str) -> bool:
+    return (
+        db.query(models.FaixaVariableMapping.id)
+        .filter(
+            models.FaixaVariableMapping.faixa_id == faixa_id,
+            models.FaixaVariableMapping.template_id == template_id,
+        )
+        .first()
+        is not None
+    )
+
+
+def _get_template(db: Session, template_id: str) -> models.Template:
+    template = (
+        db.query(models.Template)
+        .options(selectinload(models.Template.variables))
+        .filter(models.Template.id == template_id)
+        .first()
+    )
+    if not template:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
+    return template
+
+
+def _get_faixa(db: Session, faixa_id: str) -> models.Faixa:
+    faixa = db.query(models.Faixa).filter(models.Faixa.id == faixa_id).first()
+    if not faixa:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Faixa não encontrada")
+    return faixa
 
 
 @router.get("", response_model=list[schemas.FaixaOut])
@@ -54,43 +111,25 @@ def create_faixa(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    template = (
-        db.query(models.Template)
-        .options(selectinload(models.Template.variables))
-        .filter(models.Template.id == payload.template_id)
-        .first()
-    )
-    if not template:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
     if db.query(models.Faixa).filter(models.Faixa.name == payload.name).first():
         raise HTTPException(status.HTTP_409_CONFLICT, "Já existe uma faixa com esse nome")
-    if not payload.whatsapp_number_ids:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Selecione ao menos um número de envio")
 
-    _validar_mapeamento_variaveis(template, payload.variable_mappings)
-
-    faixa = models.Faixa(name=payload.name, template_id=payload.template_id)
+    faixa = models.Faixa(name=payload.name)
     db.add(faixa)
     db.flush()
 
-    for number_id in payload.whatsapp_number_ids:
-        number = db.query(models.WhatsappNumber).get(number_id)
-        if not number:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Número {number_id} não encontrado")
-        db.add(models.FaixaNumber(faixa_id=faixa.id, whatsapp_number_id=number_id))
+    if payload.template_id:
+        template = _get_template(db, payload.template_id)
+        _salvar_mapeamento(db, faixa.id, template, payload.variable_mappings)
 
-    for mapping in payload.variable_mappings:
-        db.add(
-            models.FaixaVariableMapping(
-                faixa_id=faixa.id,
-                template_variable_id=mapping.template_variable_id,
-                fonte_tipo=mapping.fonte_tipo,
-                column_name=mapping.column_name,
-                expressao=mapping.expressao,
-            )
-        )
-
-    db.add(models.DispatchConfig(faixa_id=faixa.id, active=False))
+        for number_id in payload.whatsapp_number_ids:
+            number = db.query(models.WhatsappNumber).filter(models.WhatsappNumber.id == number_id).first()
+            if not number:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, f"Número {number_id} não encontrado")
+            envio = models.FaixaEnvio(faixa_id=faixa.id, whatsapp_number_id=number_id, template_id=template.id)
+            db.add(envio)
+            db.flush()
+            db.add(models.DispatchConfig(faixa_envio_id=envio.id, active=False))
 
     db.commit()
     return _full_query(db).filter(models.Faixa.id == faixa.id).first()
@@ -102,9 +141,9 @@ def sincronizar_faixas_atraso(
 ):
     """Cria uma faixa de cobrança (aba "Faixas") para cada faixa de atraso
     configurada em Configurações → Regras de cobrança que ainda não tenha
-    uma faixa de cobrança com o mesmo nome. A faixa nasce sem template, sem
-    número e sem mapeamento de variável — completar isso em "Faixas" antes
-    de ligar o disparo."""
+    uma faixa de cobrança com o mesmo nome. A faixa nasce sem nenhum envio
+    (número + template) — atribua ao menos um em "Faixas" antes de ligar o
+    disparo."""
 
     regras = regras_db.carregar_regras(db)
     nomes_existentes = {f.name for f in db.query(models.Faixa.name).all()}
@@ -115,10 +154,7 @@ def sincronizar_faixas_atraso(
         if nome in nomes_existentes:
             ja_existentes.append(nome)
             continue
-        faixa = models.Faixa(name=nome, template_id=None)
-        db.add(faixa)
-        db.flush()
-        db.add(models.DispatchConfig(faixa_id=faixa.id, active=False))
+        db.add(models.Faixa(name=nome))
         criadas.append(nome)
         nomes_existentes.add(nome)
 
@@ -126,70 +162,136 @@ def sincronizar_faixas_atraso(
     return schemas.SincronizarFaixasAtrasoOut(criadas=criadas, ja_existentes=ja_existentes)
 
 
-@router.put("/{faixa_id}", response_model=schemas.FaixaOut)
-def update_faixa(
+@router.post(
+    "/{faixa_id}/envios", response_model=schemas.FaixaEnvioOut, status_code=status.HTTP_201_CREATED
+)
+def add_envio(
     faixa_id: str,
-    payload: schemas.FaixaUpdate,
+    payload: schemas.FaixaEnvioCreate,
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    """Reatribui template, números de envio e mapeamento de variáveis de uma
-    faixa já existente — o nome não muda. template_id None deixa a faixa sem
-    template (disparo fica pausado)."""
+    """Atribui mais um par (número, template) a uma faixa já existente —
+    cada um roda com seu próprio agendamento (ver dispatch-config), pensado
+    pra números de WABAs diferentes cobrando em paralelo."""
 
-    faixa = db.query(models.Faixa).filter(models.Faixa.id == faixa_id).first()
-    if not faixa:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Faixa não encontrada")
+    faixa = _get_faixa(db, faixa_id)
+    template = _get_template(db, payload.template_id)
+    number = db.query(models.WhatsappNumber).filter(models.WhatsappNumber.id == payload.whatsapp_number_id).first()
+    if not number:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Número não encontrado")
 
-    template = None
-    if payload.template_id is not None:
-        template = (
-            db.query(models.Template)
-            .options(selectinload(models.Template.variables))
-            .filter(models.Template.id == payload.template_id)
-            .first()
+    ja_existe = (
+        db.query(models.FaixaEnvio)
+        .filter(
+            models.FaixaEnvio.faixa_id == faixa_id,
+            models.FaixaEnvio.whatsapp_number_id == payload.whatsapp_number_id,
         )
-        if not template:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
-        _validar_mapeamento_variaveis(template, payload.variable_mappings)
-    elif payload.variable_mappings:
+        .first()
+    )
+    if ja_existe:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Este número já está atribuído a esta faixa")
+
+    if payload.variable_mappings:
+        _salvar_mapeamento(db, faixa_id, template, payload.variable_mappings)
+    elif template.variables and not _tem_mapeamento(db, faixa_id, template.id):
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Não é possível mapear variáveis sem um template atribuído"
+            status.HTTP_400_BAD_REQUEST,
+            "Mapeie as variáveis deste template antes de usá-lo nesta faixa",
         )
 
-    for number_id in payload.whatsapp_number_ids:
-        if not db.query(models.WhatsappNumber).filter(models.WhatsappNumber.id == number_id).first():
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Número {number_id} não encontrado")
-
-    faixa.template_id = payload.template_id
-    faixa.last_number_index = 0
-
-    db.query(models.FaixaNumber).filter(models.FaixaNumber.faixa_id == faixa.id).delete()
-    for number_id in payload.whatsapp_number_ids:
-        db.add(models.FaixaNumber(faixa_id=faixa.id, whatsapp_number_id=number_id))
-
-    db.query(models.FaixaVariableMapping).filter(models.FaixaVariableMapping.faixa_id == faixa.id).delete()
-    for mapping in payload.variable_mappings:
-        db.add(
-            models.FaixaVariableMapping(
-                faixa_id=faixa.id,
-                template_variable_id=mapping.template_variable_id,
-                fonte_tipo=mapping.fonte_tipo,
-                column_name=mapping.column_name,
-                expressao=mapping.expressao,
-            )
-        )
-
-    # Template mudou (ou sumiu): não dá mais pra confiar no mapeamento de
-    # colunas da planilha anterior, já que as variáveis podem ser outras.
-    faixa.upload_field_mapping = {}
-
-    config = db.query(models.DispatchConfig).filter(models.DispatchConfig.faixa_id == faixa.id).first()
-    if config and payload.template_id is None:
-        config.active = False
-
+    envio = models.FaixaEnvio(faixa_id=faixa_id, whatsapp_number_id=payload.whatsapp_number_id, template_id=template.id)
+    db.add(envio)
+    db.flush()
+    db.add(models.DispatchConfig(faixa_envio_id=envio.id, active=False))
     db.commit()
-    return _full_query(db).filter(models.Faixa.id == faixa.id).first()
+
+    return (
+        db.query(models.FaixaEnvio)
+        .options(
+            selectinload(models.FaixaEnvio.whatsapp_number),
+            selectinload(models.FaixaEnvio.template).selectinload(models.Template.variables),
+            selectinload(models.FaixaEnvio.dispatch_config),
+        )
+        .filter(models.FaixaEnvio.id == envio.id)
+        .first()
+    )
+
+
+@router.put("/{faixa_id}/envios/{envio_id}", response_model=schemas.FaixaEnvioOut)
+def update_envio(
+    faixa_id: str,
+    envio_id: str,
+    payload: schemas.FaixaEnvioUpdate,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    envio = (
+        db.query(models.FaixaEnvio)
+        .filter(models.FaixaEnvio.id == envio_id, models.FaixaEnvio.faixa_id == faixa_id)
+        .first()
+    )
+    if not envio:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Envio não encontrado")
+
+    template = _get_template(db, payload.template_id)
+    number = db.query(models.WhatsappNumber).filter(models.WhatsappNumber.id == payload.whatsapp_number_id).first()
+    if not number:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Número não encontrado")
+
+    conflito = (
+        db.query(models.FaixaEnvio)
+        .filter(
+            models.FaixaEnvio.faixa_id == faixa_id,
+            models.FaixaEnvio.whatsapp_number_id == payload.whatsapp_number_id,
+            models.FaixaEnvio.id != envio_id,
+        )
+        .first()
+    )
+    if conflito:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Este número já está atribuído a esta faixa")
+
+    if payload.variable_mappings:
+        _salvar_mapeamento(db, faixa_id, template, payload.variable_mappings)
+    elif template.variables and not _tem_mapeamento(db, faixa_id, template.id):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Mapeie as variáveis deste template antes de usá-lo nesta faixa",
+        )
+
+    envio.whatsapp_number_id = payload.whatsapp_number_id
+    envio.template_id = payload.template_id
+    envio.active = payload.active
+    if not payload.active and envio.dispatch_config:
+        envio.dispatch_config.active = False
+    db.commit()
+
+    return (
+        db.query(models.FaixaEnvio)
+        .options(
+            selectinload(models.FaixaEnvio.whatsapp_number),
+            selectinload(models.FaixaEnvio.template).selectinload(models.Template.variables),
+            selectinload(models.FaixaEnvio.dispatch_config),
+        )
+        .filter(models.FaixaEnvio.id == envio_id)
+        .first()
+    )
+
+
+@router.delete("/{faixa_id}/envios/{envio_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_envio(
+    faixa_id: str, envio_id: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)
+):
+    envio = (
+        db.query(models.FaixaEnvio)
+        .filter(models.FaixaEnvio.id == envio_id, models.FaixaEnvio.faixa_id == faixa_id)
+        .first()
+    )
+    if not envio:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Envio não encontrado")
+    db.delete(envio)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{faixa_id}/spreadsheet-model")
@@ -199,12 +301,9 @@ def download_spreadsheet_model(
     faixa = _full_query(db).filter(models.Faixa.id == faixa_id).first()
     if not faixa:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Faixa não encontrada")
-    if not faixa.template:
+    if not faixa.variable_mappings:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Faixa sem template atribuído")
-    variable_names = [
-        next(v.internal_name for v in faixa.template.variables if v.id == m.template_variable_id)
-        for m in faixa.variable_mappings
-    ]
+    variable_names = [m.template_variable.internal_name for m in faixa.variable_mappings]
     content = build_model_xlsx(variable_names)
     return Response(
         content=content,
@@ -215,21 +314,26 @@ def download_spreadsheet_model(
     )
 
 
-@router.put("/{faixa_id}/dispatch-config", response_model=schemas.DispatchConfigOut)
+@router.put("/{faixa_id}/envios/{envio_id}/dispatch-config", response_model=schemas.DispatchConfigOut)
 def update_dispatch_config(
     faixa_id: str,
+    envio_id: str,
     payload: schemas.DispatchConfigUpdate,
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    faixa = db.query(models.Faixa).filter(models.Faixa.id == faixa_id).first()
-    if not faixa:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Faixa não encontrada")
-    if payload.active and not faixa.template_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Atribua um template à faixa antes de ativar o disparo")
-    config = db.query(models.DispatchConfig).filter(models.DispatchConfig.faixa_id == faixa_id).first()
+    envio = (
+        db.query(models.FaixaEnvio)
+        .filter(models.FaixaEnvio.id == envio_id, models.FaixaEnvio.faixa_id == faixa_id)
+        .first()
+    )
+    if not envio:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Envio não encontrado")
+    if payload.active and not envio.active:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Este envio está desativado — reative-o antes de ligar o disparo")
+    config = db.query(models.DispatchConfig).filter(models.DispatchConfig.faixa_envio_id == envio_id).first()
     if not config:
-        config = models.DispatchConfig(faixa_id=faixa_id)
+        config = models.DispatchConfig(faixa_envio_id=envio_id)
         db.add(config)
     for field, value in payload.model_dump().items():
         setattr(config, field, value)
@@ -246,13 +350,18 @@ def delete_faixa(
     esta faixa (cobranca_fila, telefones_invalidos etc. referenciam faixa_id),
     só tira a faixa da lista e para qualquer disparo agendado nela."""
 
-    faixa = db.query(models.Faixa).filter(models.Faixa.id == faixa_id).first()
+    faixa = (
+        db.query(models.Faixa)
+        .options(selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.dispatch_config))
+        .filter(models.Faixa.id == faixa_id)
+        .first()
+    )
     if not faixa:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Faixa não encontrada")
     faixa.active = False
-    config = db.query(models.DispatchConfig).filter(models.DispatchConfig.faixa_id == faixa_id).first()
-    if config:
-        config.active = False
+    for envio in faixa.envios:
+        if envio.dispatch_config:
+            envio.dispatch_config.active = False
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -261,17 +370,22 @@ def delete_faixa(
 def dispatch_now(
     faixa_id: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)
 ):
-    """Marca a faixa para ser processada pelo worker na próxima varredura,
-    ignorando o agendamento configurado — equivalente ao antigo 'cobrar agora'."""
+    """Marca todos os envios ativos desta faixa para serem processados pelo
+    worker na próxima varredura, ignorando o agendamento configurado —
+    equivalente ao antigo 'cobrar agora'."""
 
-    faixa = db.query(models.Faixa).filter(models.Faixa.id == faixa_id).first()
+    faixa = (
+        db.query(models.Faixa)
+        .options(selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.dispatch_config))
+        .filter(models.Faixa.id == faixa_id)
+        .first()
+    )
     if not faixa:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Faixa não encontrada")
-    if not faixa.template_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Atribua um template à faixa antes de disparar")
-    config = db.query(models.DispatchConfig).filter(models.DispatchConfig.faixa_id == faixa_id).first()
-    if not config:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Faixa sem configuração de disparo")
-    config.force_run = True
+    envios_ativos = [e for e in faixa.envios if e.active and e.dispatch_config]
+    if not envios_ativos:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Faixa sem número/template ativo para disparar")
+    for envio in envios_ativos:
+        envio.dispatch_config.force_run = True
     db.commit()
     return {"status": "agendado para a próxima varredura do worker"}

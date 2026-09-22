@@ -1,12 +1,15 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
-import { api, CampoCliente, Template, WhatsappNumber } from "../api";
-import SortableTh from "../components/SortableTh";
-import { IconAlert, IconEye, IconPlus, IconTemplate } from "../icons";
-import { ordenarPor, useSort } from "../sort";
+import { api, CampoCliente, Template, WhatsappNumber } from "../../api";
+import SortableTh from "../SortableTh";
+import { IconAlert, IconEye, IconPlus, IconTemplate } from "../../icons";
+import { ordenarPor, useSort } from "../../sort";
 
 type ColunaTemplate = "name" | "meta_template_name" | "status";
 
-export default function Templates() {
+// Templates de WhatsApp aprovados na Meta, usados pelas faixas de cobrança —
+// vive em Configurações porque é infraestrutura compartilhada entre faixas,
+// não uma configuração de uma faixa específica.
+export default function TemplatesCard() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const templatesSort = useSort<ColunaTemplate>();
   const templatesOrdenados = ordenarPor(
@@ -136,14 +139,7 @@ export default function Templates() {
   }
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h2>Templates</h2>
-          <div className="subtitle">Templates de WhatsApp aprovados na Meta, usados pelas faixas de cobrança</div>
-        </div>
-      </div>
-
+    <>
       {error && (
         <div className="error-box">
           <IconAlert width={16} height={16} />
@@ -376,6 +372,6 @@ export default function Templates() {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }

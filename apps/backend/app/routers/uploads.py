@@ -34,8 +34,9 @@ def _load_faixa(db: Session, faixa_id: str) -> models.Faixa:
     faixa = (
         db.query(models.Faixa)
         .options(
-            selectinload(models.Faixa.variable_mappings),
-            selectinload(models.Faixa.template).selectinload(models.Template.variables),
+            selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.template).selectinload(
+                models.Template.variables
+            ),
         )
         .filter(models.Faixa.id == faixa_id)
         .first()
@@ -43,6 +44,14 @@ def _load_faixa(db: Session, faixa_id: str) -> models.Faixa:
     if not faixa:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Faixa não encontrada")
     return faixa
+
+
+def _templates_ativos(faixa: models.Faixa) -> dict[str, models.Template]:
+    """Templates distintos entre os envios ativos da faixa — a planilha
+    subida precisa alimentar as variáveis de todos eles, já que qualquer um
+    pode acabar processando um item da fila (ver worker.run_dispatch_cycle)."""
+
+    return {e.template_id: e.template for e in faixa.envios if e.active and e.template_id}
 
 
 @router.post("/{faixa_id}/uploads/columns", response_model=schemas.UploadColumnsOut)
@@ -75,15 +84,20 @@ async def upload_planilha(
     user: models.User = Depends(get_current_user),
 ):
     faixa = _load_faixa(db, faixa_id)
-    if not faixa.template:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Atribua um template à faixa antes de subir a planilha")
+    templates_ativos = _templates_ativos(faixa)
+    if not templates_ativos:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Atribua ao menos um número e template à faixa antes de subir a planilha"
+        )
 
     try:
         field_mapping = schemas.UploadFieldMapping.model_validate_json(mapping)
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Mapeamento inválido: {exc}") from exc
 
-    variable_by_id = {v.id: v for v in faixa.template.variables}
+    # União das variáveis de todos os templates ativos: a planilha só precisa
+    # ser subida uma vez, mesmo com mais de um número/template na faixa.
+    variable_by_id = {v.id: v for tpl in templates_ativos.values() for v in tpl.variables}
     mapped_var_ids = set(field_mapping.variables) | set(field_mapping.expressoes)
     missing_vars = set(variable_by_id) - mapped_var_ids
     if missing_vars:
@@ -189,28 +203,45 @@ async def upload_planilha(
         celular = normalize_phone(celular_original)
 
         missing_var_cols = []
-        var_values = {}
+        # Chaveado por template_variable_id (não por internal_name) — dois
+        # templates distintos podem usar o mesmo internal_name pra coisas
+        # diferentes, então resolver por nome colidiria entre eles.
+        resolved_by_vid: dict[str, str] = {}
         for vid, v in variable_by_id.items():
             if vid in field_mapping.expressoes:
                 val = renderizar_expressao(field_mapping.expressoes[vid], row)
                 if not val:
                     missing_var_cols.append(v.internal_name)
                 else:
-                    var_values[v.internal_name] = val
+                    resolved_by_vid[vid] = val
             else:
                 raw_val = (row.get(field_mapping.variables[vid]) or "").strip()
                 val = normalizar_para_meta(raw_val)
                 if not val:
                     missing_var_cols.append(v.internal_name)
                 else:
-                    var_values[v.internal_name] = val
+                    resolved_by_vid[vid] = val
 
         if missing_var_cols:
             rejected += 1
             reasons.append(f"Linha {i}: faltando coluna(s) {', '.join(missing_var_cols)}")
             continue
 
-        variables_json = var_values
+        # Faixa com um único template ativo: dict "achatado" (formato de
+        # sempre). Mais de um template ativo: um dict por template_id, já
+        # que qualquer um dos envios da faixa pode processar este item (ver
+        # worker.montar_parametros_envio).
+        if len(templates_ativos) <= 1:
+            variables_json = {
+                v.internal_name: resolved_by_vid[v.id]
+                for tpl in templates_ativos.values()
+                for v in tpl.variables
+            }
+        else:
+            variables_json = {
+                tid: {v.internal_name: resolved_by_vid[v.id] for v in tpl.variables}
+                for tid, tpl in templates_ativos.items()
+            }
         db.add(
             models.QueueItem(
                 faixa_id=faixa_id,
