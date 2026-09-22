@@ -296,8 +296,8 @@ class ClienteCobrancaOut(BaseModel):
     vencimento_mais_antigo: date
     lojas: list[str]
     portadores: list[str]
-    spc_restricao: str | None = None  # sim / nao / indeterminado (só na listagem, para a página)
-    spc_data_consulta: date | None = None
+    spc_restricao: str  # sim / nao / indeterminado
+    spc_data_consulta: date | None = None  # só preenchida na listagem, para os clientes da página
 
 
 class ClientesCobrancaPage(BaseModel):
@@ -311,3 +311,17 @@ class CobrancaRegrasOut(BaseModel):
     faixas_whatsapp: dict[str, list[str]]  # cluster -> faixas que recebem WhatsApp
     primeiro_dia: dict[str, int]  # faixa -> primeiro dia
     faixas_compra: list[str]
+
+
+class MatrizQuantidadeOut(BaseModel):
+    celulas: dict[str, dict[str, int]]  # cluster -> faixa -> clientes
+    total_por_cluster: dict[str, int]
+    total_por_faixa: dict[str, int]
+    total: int
+
+
+class RelatorioCobrancaOut(BaseModel):
+    clusters: list[str]
+    faixas: list[str]
+    quantidade: MatrizQuantidadeOut
+    quantidade_com_restricao_spc: MatrizQuantidadeOut

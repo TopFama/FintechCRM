@@ -3,6 +3,8 @@ aplica as regras de `cobranca_regras` (cluster, faixa de atraso, matriz
 WhatsApp, primeiro dia da faixa). Relatório, listagem e leads usam esta
 mesma função, então todos enxergam exatamente os mesmos clientes."""
 
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from . import seta_client
@@ -42,6 +44,9 @@ def buscar_base(
     lojas: list[str] | None = None,
     portadores: list[str] | None = None,
     status_cliente: list[str] | None = None,
+    vencimento_de: date | None = None,
+    vencimento_ate: date | None = None,
+    restricoes_spc: list[str] | None = None,
 ) -> list[dict]:
     """Clientes da base de cobrança, do mais atrasado para o menos.
 
@@ -52,11 +57,14 @@ def buscar_base(
       Desligado, devolve todos (cada linha carrega `entra_whatsapp`).
     - `faixas` / `clusters`: restringem a essas faixas/clusters.
     - `faixas_compra`: restringe pela quantidade de compras no crediário (1 a 9, 10+).
+    - `vencimento_de` / `vencimento_ate`: período do vencimento da parcela mais antiga.
+    - `restricoes_spc`: "sim", "nao" e/ou "indeterminado".
     """
 
     _validar(faixas, NOMES_FAIXA, "Faixa")
     _validar(clusters, NOMES_CLUSTER, "Cluster")
     _validar(faixas_compra, NOMES_FAIXA_COMPRA, "Faixa de compra")
+    _validar(restricoes_spc, ["sim", "nao", "indeterminado"], "Restrição SPC")
 
     if faixas:
         faixas_sel = list(faixas)
@@ -78,6 +86,8 @@ def buscar_base(
         lojas=lojas,
         portadores=portadores,
         status_cliente=status_cliente,
+        vencimento_de=vencimento_de,
+        vencimento_ate=vencimento_ate,
         bloqueados_codigos=bl_codigos,
         bloqueados_cpfs=bl_cpfs,
     )
@@ -91,6 +101,8 @@ def buscar_base(
         if clusters and cluster not in clusters:
             continue
         if faixas_compra and compra not in faixas_compra:
+            continue
+        if restricoes_spc and r["spc_restricao"] not in restricoes_spc:
             continue
         if somente_regra_whatsapp and not entra:
             continue
@@ -126,6 +138,7 @@ def _montar_cliente(r: dict, faixa: str | None, cluster: str, entra: bool, faixa
         "qtd_compras": r["qtd_compras"],
         "faixa_compra": faixa_compra,
         "ultima_compra": r["ultima_compra"],
+        "spc_restricao": r["spc_restricao"],
         "faixa": faixa,
         "dias_atraso": r["dias_atraso"],
         "entra_whatsapp": entra,

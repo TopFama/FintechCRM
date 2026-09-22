@@ -15,6 +15,7 @@ Convenções do schema do SETA que o restante do código precisa conhecer:
 
 import logging
 import time
+from datetime import date
 from functools import lru_cache
 
 from sqlalchemy import bindparam, create_engine, text
@@ -152,6 +153,7 @@ candidatos AS (
     SELECT a.*, current_date - a.vencimento_mais_antigo AS dias_atraso
       FROM abertos a
      WHERE {filtro_dias}
+       {filtro_vencimento}
 ),
 base AS (
     SELECT c.*,
@@ -168,7 +170,10 @@ base AS (
            CASE WHEN p.nascimento BETWEEN DATE '1900-01-01' AND current_date
                 THEN p.nascimento END AS nascimento,
            CASE WHEN p.cadastro BETWEEN DATE '1900-01-01' AND current_date
-                THEN p.cadastro END   AS cadastro
+                THEN p.cadastro END   AS cadastro,
+           CASE WHEN p.scpcresultado ~* 'RESTRI\S*\s*:\s*SIM' THEN 'sim'
+                WHEN p.scpcresultado ~* 'RESTRI\S*\s*:\s*N'   THEN 'nao'
+                ELSE 'indeterminado' END AS spc_restricao
       FROM candidatos c
       JOIN pessoas p ON p.codigo = c.pessoa
      WHERE p.cliente
@@ -227,7 +232,7 @@ def _sql_dias(dias_exatos: list[int] | None, faixas: list[tuple[int, int | None]
     if dias_exatos is not None:
         if not dias_exatos:
             return "false"
-        return f"{_DIAS_ATRASO} IN (%s)" % ", ".join(str(int(d)) for d in dias_exatos)
+        return f"({_DIAS_ATRASO} IN (%s))" % ", ".join(str(int(d)) for d in dias_exatos)
     if not faixas:
         return "false"
     partes = []
@@ -235,7 +240,8 @@ def _sql_dias(dias_exatos: list[int] | None, faixas: list[tuple[int, int | None]
         partes.append(
             f"{_DIAS_ATRASO} >= {int(dmin)}" + (f" AND {_DIAS_ATRASO} <= {int(dmax)}" if dmax is not None else "")
         )
-    return "(" + ") OR (".join(partes) + ")"
+    # parênteses externos: o predicado vem seguido de AND (filtro de vencimento)
+    return "((" + ") OR (".join(partes) + "))"
 
 
 def buscar_base_cobranca(
@@ -245,6 +251,8 @@ def buscar_base_cobranca(
     lojas: list[str] | None = None,
     portadores: list[str] | None = None,
     status_cliente: list[str] | None = None,
+    vencimento_de: date | None = None,
+    vencimento_ate: date | None = None,
     bloqueados_codigos: list[str] | None = None,
     bloqueados_cpfs: list[str] | None = None,
     juros: ParametrosJuros = PARAMETROS_JUROS_PADRAO,
@@ -258,6 +266,8 @@ def buscar_base_cobranca(
       define a faixa do cliente). A parcela de seguro entra normalmente.
     - `faixas` (intervalos de dias) e `dias_exatos` (só o primeiro dia de cada
       faixa) restringem quem volta; `dias_exatos` tem precedência.
+    - `vencimento_de` / `vencimento_ate` filtram pelo vencimento da parcela mais
+      antiga (a que define a faixa e aparece na tela).
     - `lojas` (`ft.empresa`) e `portadores` restringem **quais parcelas** contam:
       dias, valor e quantidade são calculados só sobre elas.
     - `qtd_titulos` / `valor_em_aberto` cobrem todas as parcelas abertas (RE e
@@ -285,7 +295,13 @@ def buscar_base_cobranca(
         "multa": juros.multa,
     }
     expanding: list[str] = []
-    filtro_loja = filtro_portador = filtro_status = ""
+    filtro_loja = filtro_portador = filtro_status = filtro_vencimento = ""
+    if vencimento_de:
+        filtro_vencimento += "AND a.vencimento_mais_antigo >= :vencimento_de "
+        params["vencimento_de"] = vencimento_de
+    if vencimento_ate:
+        filtro_vencimento += "AND a.vencimento_mais_antigo <= :vencimento_ate "
+        params["vencimento_ate"] = vencimento_ate
     if lojas:
         filtro_loja = "AND trim(ft.empresa) IN :lojas"
         params["lojas"] = lojas
@@ -304,6 +320,7 @@ def buscar_base_cobranca(
             filtro_loja_titulo=filtro_loja,
             filtro_portador=filtro_portador,
             filtro_status=filtro_status,
+            filtro_vencimento=filtro_vencimento,
             filtro_dias=_sql_dias(dias_exatos, faixas),
         )
     ).bindparams(*(bindparam(nome, expanding=True) for nome in expanding))
