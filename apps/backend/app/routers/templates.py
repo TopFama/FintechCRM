@@ -59,6 +59,27 @@ def list_template_variable_fields(_user: models.User = Depends(get_current_user)
     ]
 
 
+@router.patch("/{template_id}/variaveis/{variavel_id}", response_model=schemas.TemplateVariableOut)
+def update_template_variable(
+    template_id: str,
+    variavel_id: str,
+    payload: schemas.TemplateVariableUpdate,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    variavel = (
+        db.query(models.TemplateVariable)
+        .filter(models.TemplateVariable.id == variavel_id, models.TemplateVariable.template_id == template_id)
+        .first()
+    )
+    if not variavel:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Variável não encontrada")
+    variavel.campo_sugerido = payload.campo_sugerido
+    db.commit()
+    db.refresh(variavel)
+    return variavel
+
+
 @router.post("/meta/sync", response_model=list[schemas.TemplateOut])
 async def sync_from_meta(
     db: Session = Depends(get_db),

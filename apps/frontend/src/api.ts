@@ -124,6 +124,12 @@ export const api = {
   syncTemplatesFromMeta: () => request<Template[]>("/templates/meta/sync", { method: "POST" }),
   refreshTemplateStatus: (id: string) =>
     request<Template>(`/templates/${id}/refresh-status`, { method: "POST" }),
+  listCamposCliente: () => request<CampoCliente[]>("/templates/variaveis/campos"),
+  atualizarVariavelTemplate: (templateId: string, variavelId: string, campoSugerido: string | null) =>
+    request<TemplateVariable>(`/templates/${templateId}/variaveis/${variavelId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ campo_sugerido: campoSugerido }),
+    }),
   uploadTemplateImage: (id: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
@@ -296,6 +302,15 @@ export interface TemplateVariable {
   id: string;
   position: number;
   internal_name: string;
+  campo_sugerido: string | null;
+}
+
+// Campo do cliente disponível pra mapear numa variável de template — "exemplo"
+// é o valor de demonstração usado na pré-visualização.
+export interface CampoCliente {
+  campo: string;
+  rotulo: string;
+  exemplo: string;
 }
 
 export interface Template {

@@ -132,6 +132,19 @@ class TemplateVariableOut(BaseModel):
     id: str
     position: int
     internal_name: str
+    campo_sugerido: str | None = None
+
+
+class TemplateVariableUpdate(BaseModel):
+    campo_sugerido: str | None = None
+
+    @field_validator("campo_sugerido")
+    @classmethod
+    def validar_campo(cls, valor: str | None) -> str | None:
+        if valor is not None and valor not in CAMPOS_CLIENTE:
+            validos = ", ".join(sorted(CAMPOS_CLIENTE.keys()))
+            raise ValueError(f"Campo inválido ({validos})")
+        return valor
 
 
 class TemplateOut(BaseModel):

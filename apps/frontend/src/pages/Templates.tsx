@@ -1,10 +1,12 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { api, Template, WhatsappNumber } from "../api";
-import { IconAlert, IconPlus, IconTemplate } from "../icons";
+import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
+import { api, CampoCliente, Template, WhatsappNumber } from "../api";
+import { IconAlert, IconEye, IconPlus, IconTemplate } from "../icons";
 
 export default function Templates() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [numbers, setNumbers] = useState<WhatsappNumber[]>([]);
+  const [campos, setCampos] = useState<CampoCliente[]>([]);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [selectedWabaId, setSelectedWabaId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -31,6 +33,34 @@ export default function Templates() {
   }
 
   useEffect(load, []);
+  useEffect(() => {
+    api.listCamposCliente().then(setCampos).catch(() => undefined);
+  }, []);
+
+  function renderizarPreview(t: Template): string {
+    return t.body_text.replace(/\{\{(\d+)\}\}/g, (match, pos) => {
+      const variavel = t.variables.find((v) => v.position === Number(pos));
+      const campo = variavel?.campo_sugerido
+        ? campos.find((c) => c.campo === variavel.campo_sugerido)
+        : undefined;
+      return campo ? campo.exemplo : `${match} (não mapeado)`;
+    });
+  }
+
+  async function handleCampoSugerido(templateId: string, variavelId: string, campo: string) {
+    try {
+      const atualizada = await api.atualizarVariavelTemplate(templateId, variavelId, campo || null);
+      setTemplates((atual) =>
+        atual.map((t) =>
+          t.id !== templateId
+            ? t
+            : { ...t, variables: t.variables.map((v) => (v.id === variavelId ? atualizada : v)) }
+        )
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao salvar mapeamento da variável");
+    }
+  }
 
   async function handleSync() {
     setError(null);
@@ -249,38 +279,77 @@ export default function Templates() {
               </thead>
               <tbody>
                 {templates.map((t) => (
-                  <tr key={t.id}>
-                    <td className="cell-strong">{t.name}</td>
-                    <td className="text-muted">{t.meta_template_name}</td>
-                    <td>
-                      <span className={`badge ${t.status}`}>{t.status}</span>
-                    </td>
-                    <td className="text-muted">{t.variables.map((v) => v.internal_name).join(", ") || "—"}</td>
-                    <td>
-                      {t.header_type === "image" ? (
-                        t.image_url ? (
-                          <span className="badge sent">enviada</span>
+                  <Fragment key={t.id}>
+                    <tr>
+                      <td className="cell-strong">{t.name}</td>
+                      <td className="text-muted">{t.meta_template_name}</td>
+                      <td>
+                        <span className={`badge ${t.status}`}>{t.status}</span>
+                      </td>
+                      <td className="text-muted">{t.variables.map((v) => v.internal_name).join(", ") || "—"}</td>
+                      <td>
+                        {t.header_type === "image" ? (
+                          t.image_url ? (
+                            <span className="badge sent">enviada</span>
+                          ) : (
+                            <label style={{ cursor: "pointer", color: "var(--color-primary)", fontWeight: 600 }}>
+                              subir
+                              <input
+                                type="file"
+                                accept="image/*"
+                                style={{ display: "none" }}
+                                onChange={(e) => e.target.files && handleImageUpload(t.id, e.target.files[0])}
+                              />
+                            </label>
+                          )
                         ) : (
-                          <label style={{ cursor: "pointer", color: "var(--color-primary)", fontWeight: 600 }}>
-                            subir
-                            <input
-                              type="file"
-                              accept="image/*"
-                              style={{ display: "none" }}
-                              onChange={(e) => e.target.files && handleImageUpload(t.id, e.target.files[0])}
-                            />
-                          </label>
-                        )
-                      ) : (
-                        <span className="text-faint">—</span>
-                      )}
-                    </td>
-                    <td>
-                      <button className="secondary small" onClick={() => handleRefreshStatus(t.id)}>
-                        Atualizar status
-                      </button>
-                    </td>
-                  </tr>
+                          <span className="text-faint">—</span>
+                        )}
+                      </td>
+                      <td style={{ display: "flex", gap: 8 }}>
+                        <button className="secondary small" onClick={() => handleRefreshStatus(t.id)}>
+                          Atualizar status
+                        </button>
+                        <button
+                          className="secondary small"
+                          onClick={() => setPreviewId((atual) => (atual === t.id ? null : t.id))}
+                        >
+                          <IconEye width={14} height={14} /> {previewId === t.id ? "Fechar" : "Pré-visualizar"}
+                        </button>
+                      </td>
+                    </tr>
+                    {previewId === t.id && (
+                      <tr>
+                        <td colSpan={6}>
+                          <div className="template-preview">
+                            <div className="template-preview-bubble">{renderizarPreview(t)}</div>
+                            {t.variables.length === 0 ? (
+                              <p className="field-hint">Este template não tem variáveis.</p>
+                            ) : (
+                              <div className="template-preview-vars">
+                                {t.variables.map((v) => (
+                                  <div className="field" key={v.id}>
+                                    <label>{`{{${v.position}}}`} ({v.internal_name})</label>
+                                    <select
+                                      value={v.campo_sugerido || ""}
+                                      onChange={(e) => handleCampoSugerido(t.id, v.id, e.target.value)}
+                                    >
+                                      <option value="">Não mapeado</option>
+                                      {campos.map((c) => (
+                                        <option key={c.campo} value={c.campo}>
+                                          {c.rotulo}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

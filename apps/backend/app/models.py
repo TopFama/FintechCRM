@@ -126,6 +126,10 @@ class TemplateVariable(Base):
     template_id: Mapped[str] = mapped_column(ForeignKey("templates.id"))
     position: Mapped[int] = mapped_column(Integer)
     internal_name: Mapped[str] = mapped_column(String)
+    # Campo do cliente (CAMPOS_CLIENTE) sugerido pra essa variável — só serve
+    # de referência na pré-visualização da aba Templates; o mapeamento que
+    # realmente vale no envio é o de FaixaVariableMapping, por faixa.
+    campo_sugerido: Mapped[str | None] = mapped_column(String, nullable=True)
 
     template: Mapped[Template] = relationship(back_populates="variables")
 

@@ -497,6 +497,32 @@ label {
   margin: 0;
 }
 
+.template-preview {
+  padding: 16px 4px;
+}
+
+.template-preview-bubble {
+  background: var(--color-primary-light);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-width: 480px;
+  margin-bottom: 16px;
+}
+
+.template-preview-vars {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.template-preview-vars .field {
+  margin-bottom: 0;
+}
+
 .actions-row {
   display: flex;
   gap: 10px;
