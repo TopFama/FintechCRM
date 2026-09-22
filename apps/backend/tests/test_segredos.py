@@ -29,7 +29,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.main import EXEMPLO_ENCRYPTION_KEY, _check_secrets, _run_migrations
 from app.meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_da_waba, token_do_numero
-from app.segredos import importar_token_legado, recifrar_segredos
+from app.segredos import recifrar_segredos
 from app.worker import run_dispatch_cycle
 
 # 1. Migrações antes de qualquer operação de banco
@@ -176,39 +176,6 @@ finally:
     db.close()
 
 # ============================================================================
-# Teste 4: importar_token_legado
-# ============================================================================
-db = SessionLocal()
-try:
-    # Sem a variável de ambiente -> não faz nada
-    os.environ.pop("META_ACCESS_TOKEN", None)
-    assert importar_token_legado(db) is False
-
-    # Com META_ACCESS_TOKEN no os.environ -> importa
-    os.environ["META_ACCESS_TOKEN"] = "EAAX_token_do_env_legado_9999"
-    importado = importar_token_legado(db)
-    assert importado is True, "Deveria ter importado o token do ambiente"
-
-    # Confere que o registro foi criado cifrado e com o valor correto
-    t_importado = (
-        db.query(models.MetaToken)
-        .filter(models.MetaToken.nome == "Token importado do .env")
-        .first()
-    )
-    assert t_importado is not None
-    assert "EAAX_token_do_env_legado_9999" not in t_importado.token_cifrado
-    assert crypto.decifrar(t_importado.token_cifrado) == "EAAX_token_do_env_legado_9999"
-    assert t_importado.ultimos4 == "9999"
-    assert t_importado.ativo is True
-
-    # Segunda execução -> não duplica
-    assert importar_token_legado(db) is False
-
-    os.environ.pop("META_ACCESS_TOKEN", None)
-finally:
-    db.close()
-
-# ============================================================================
 # Teste 5: token_da_waba / token_do_numero
 # ============================================================================
 db = SessionLocal()
@@ -278,14 +245,14 @@ try:
     # token_da_waba retorna o token da WABA
     assert token_da_waba(db, waba_k) == "TOKEN_WABA_GERAL_BBB"
 
-    # Nada configurado: mesmo com META_ACCESS_TOKEN no os.environ, lança MetaTokenConfigError
+    # Nada configurado: um META_ACCESS_TOKEN no ambiente é ignorado (token só vem do banco)
     os.environ["META_ACCESS_TOKEN"] = "TOKEN_DE_ENV_QUE_NAO_DEVE_SER_USADO"
     err_waba = False
     try:
         token_da_waba(db, waba_vazia)
     except MetaTokenConfigError as exc:
         err_waba = True
-        assert f"Nenhum token da Meta cadastrado para a WABA {waba_vazia}: cadastre um em Números" in str(exc)
+        assert f"Nenhum token da Meta cadastrado para a WABA {waba_vazia}: cadastre um em Configurações" in str(exc)
     assert err_waba, "token_da_waba deveria falhar sem fallback para env"
 
     err_num = False
@@ -293,7 +260,7 @@ try:
         token_do_numero(db, num4)
     except MetaTokenConfigError as exc:
         err_num = True
-        assert f"Nenhum token da Meta cadastrado para a WABA {waba_vazia}: cadastre um em Números" in str(exc)
+        assert f"Nenhum token da Meta cadastrado para a WABA {waba_vazia}: cadastre um em Configurações" in str(exc)
     assert err_num, "token_do_numero deveria falhar sem fallback para env"
 
     os.environ.pop("META_ACCESS_TOKEN", None)

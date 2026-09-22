@@ -343,7 +343,7 @@ try:
         token_da_waba(db, waba_spec)
     except MetaTokenConfigError as e:
         error_raised = True
-        assert f"Nenhum token da Meta cadastrado para a WABA {waba_spec}: cadastre um em Números" in str(e)
+        assert f"Nenhum token da Meta cadastrado para a WABA {waba_spec}: cadastre um em Configurações" in str(e)
     assert error_raised, "Esperava MetaTokenConfigError quando nenhum token está configurado"
 
 finally:

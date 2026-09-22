@@ -1,12 +1,11 @@
 """Gerenciamento de segredos cifrados no banco de dados.
 
-Contém as rotinas de inicialização chamadas no lifespan: re-criptografia de
-segredos legados para a nova chave primária e importação pontual de token
-legado presente em variável de ambiente.
+Chamado na subida do backend (lifespan): re-cifra com a ENCRYPTION_KEY os
+segredos que ainda estejam sob a chave legada. Tokens da Meta vêm só do banco,
+cadastrados na tela de Configurações — nunca do ambiente.
 """
 
 import logging
-import os
 
 from sqlalchemy.orm import Session
 
@@ -62,34 +61,3 @@ def recifrar_segredos(db: Session) -> int:
     logger.info("Re-criptografia concluída: %d segredo(s) atualizado(s)", total_recifrados)
     return total_recifrados
 
-
-def importar_token_legado(db: Session) -> bool:
-    """Importa o token de META_ACCESS_TOKEN do ambiente para a tabela meta_tokens.
-
-    Executado na subida se a variável de ambiente existir e nenhum registro
-    no banco contiver esse mesmo token. Idempotente.
-    """
-    env_token = os.environ.get("META_ACCESS_TOKEN", "").strip()
-    if not env_token:
-        return False
-
-    tokens_existentes = db.query(models.MetaToken).all()
-    for t in tokens_existentes:
-        if crypto.decifrar(t.token_cifrado) == env_token:
-            return False
-
-    ultimos4 = env_token[-4:] if len(env_token) >= 4 else env_token
-    novo = models.MetaToken(
-        nome="Token importado do .env",
-        token_cifrado=crypto.cifrar(env_token),
-        ultimos4=ultimos4,
-        ativo=True,
-    )
-    db.add(novo)
-    db.commit()
-
-    logger.warning(
-        "Token da Meta importado do .env para a tabela meta_tokens ('Token importado do .env'). "
-        "Remova META_ACCESS_TOKEN do .env e vincule os números a ele na tela Números."
-    )
-    return True

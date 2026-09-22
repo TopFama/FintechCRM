@@ -14,7 +14,7 @@ from .config import settings
 from .database import SessionLocal
 from .routers import auth, blacklist, cobranca, config_cobranca, dashboard, faixas, google, leads, lojas, meta_tokens, numbers, reports, seta, templates, uploads
 from .security import hash_password
-from .segredos import importar_token_legado, recifrar_segredos
+from .segredos import recifrar_segredos
 from .worker import start_scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -97,7 +97,6 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         recifrar_segredos(db)
-        importar_token_legado(db)
     finally:
         db.close()
     scheduler = start_scheduler()

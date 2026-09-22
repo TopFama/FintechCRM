@@ -75,12 +75,13 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 | `VITE_API_URL` | frontend (build) | não | `http://localhost:8000` | URL base da API que o frontend chama — usada só no build do Vite (fica embutida no bundle). |
 
 WABA ID, `phone_number_id` e os **tokens de acesso da Meta** **não** vão no `.env` — são cadastrados dentro do
-próprio portal, na tela **Números**, depois que o sistema estiver no ar (ficam guardados cifrados no
-Postgres).
+próprio portal depois que o sistema estiver no ar: os tokens em **Configurações → Tokens da Meta** (guardados
+cifrados no Postgres) e os números na tela **Números**, onde se escolhe qual token cada um usa.
 
 ## Configurando a API da Meta (WhatsApp Business)
 
-Passo a passo para gerar o token da Meta e cadastrá-lo na tela **Números** do portal:
+Passo a passo para gerar o token da Meta e cadastrá-lo no portal. O token **nunca** vai no `.env`:
+ele é cadastrado em **Configurações → Tokens da Meta** e guardado cifrado no banco.
 
 1. **Crie (ou use) um app Meta for Developers** em https://developers.facebook.com/apps, com o
    produto **WhatsApp** adicionado a ele.
@@ -98,12 +99,12 @@ Passo a passo para gerar o token da Meta e cadastrá-lo na tela **Números** do 
      `whatsapp_business_management`. Tokens de System User podem ser gerados sem expiração.
 4. **Cadastre o token no portal**:
    - Suba o sistema (`docker compose up --build`).
-   - Dentro do portal, na tela **Números**, localize o card **Tokens da Meta**.
+   - Dentro do portal, na tela **Configurações**, localize o card **Tokens da Meta**.
    - Cadastre o token com um nome identificador. Ele é cifrado e salvo no banco com `ENCRYPTION_KEY`.
      Você pode testar a conexão com a Meta diretamente no botão "Testar".
 5. **Cadastre e vincule os números**:
-   - Na mesma tela **Números**, cadastre cada número com WABA ID + `phone_number_id` + número exibido
-     e selecione o token da Meta cadastrado no passo anterior.
+   - Na tela **Números**, cadastre cada número com WABA ID + `phone_number_id` + número exibido
+     e selecione, na lista, o token da Meta cadastrado no passo anterior.
 6. Tela **Templates**: use **"Sincronizar templates da Meta"** para puxar os templates já aprovados,
    ou crie um novo template pelo próprio portal (com a opção de já submeter para aprovação).
 

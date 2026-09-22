@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, StatusGoogle, StatusSeta } from "../api";
+import TokensMetaCard from "../components/config/TokensMetaCard";
 import { IconAlert, IconRefresh } from "../icons";
 
 export default function Configuracoes() {
@@ -265,6 +266,8 @@ export default function Configuracoes() {
           </div>
         )}
       </div>
+
+      <TokensMetaCard />
     </div>
   );
 }

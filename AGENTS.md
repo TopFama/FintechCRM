@@ -107,8 +107,8 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
   import — não assuma nomes de coluna fixos como "nome"/"celular".
 - **ENCRYPTION_KEY e segredos no banco**: tokens da Meta e refresh token do Google são cifrados
   com Fernet usando `ENCRYPTION_KEY` (e chave legada derivada de `JWT_SECRET` para transição).
-  Na subida do backend, `app/segredos.py` re-cifra automaticamente segredos pendentes e importa
-  qualquer `META_ACCESS_TOKEN` legado do `.env`. A `ENCRYPTION_KEY` é obrigatória e deve ser
+  Na subida do backend, `app/segredos.py` re-cifra automaticamente segredos pendentes. Token da Meta
+  **nunca** vem do ambiente: só da tabela `meta_tokens` (tela Configurações). A `ENCRYPTION_KEY` é obrigatória e deve ser
   mantida junto com o backup do banco.
 
 ## Referências

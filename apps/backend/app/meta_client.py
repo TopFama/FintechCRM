@@ -136,7 +136,7 @@ def token_da_waba(db: Session, waba_id: str) -> str:
         if token_decifrado:
             return token_decifrado
 
-    raise MetaTokenConfigError(f"Nenhum token da Meta cadastrado para a WABA {waba_id}: cadastre um em Números")
+    raise MetaTokenConfigError(f"Nenhum token da Meta cadastrado para a WABA {waba_id}: cadastre um em Configurações")
 
 
 def token_do_numero(db: Session, numero: models.WhatsappNumber) -> str:
