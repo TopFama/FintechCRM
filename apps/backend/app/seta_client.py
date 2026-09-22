@@ -471,3 +471,56 @@ def situacao_titulos(codigos: list[str]) -> dict[str, dict]:
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
     return resultado
 
+
+def pagamentos_pos_cobranca(
+    pares: list[tuple[str, date]], dias_janela: int | None = None
+) -> dict[tuple[str, date], date]:
+    """Pra cada (codigo_cliente, data_cobranca), diz se o cliente "pagou" no
+    sentido amplo da Tarefa 5: quitou (status='B') QUALQUER título em aberto
+    dele — não necessariamente o título cobrado — em data_pagamento >=
+    data_cobranca (e, se `dias_janela` for informado, até data_cobranca +
+    dias_janela). Retorna {(codigo_cliente, data_cobranca): data_pagamento
+    mais antiga que conta como "pagou"} só para quem pagou — a chave inclui
+    data_cobranca porque o mesmo cliente pode ter sido cobrado mais de uma
+    vez em datas diferentes.
+
+    Consulta única via CTE com VALUES injetando os pares — nunca em loop por
+    cliente/título, pra não sobrecarregar o banco de produção do ERP (regra
+    obrigatória da Tarefa 5)."""
+
+    resultado: dict[tuple[str, date], date] = {}
+    if not pares:
+        return resultado
+
+    engine = engine_ou_erro()
+    CHUNK = 1000
+    try:
+        with engine.connect() as conn:
+            for i in range(0, len(pares), CHUNK):
+                lote = pares[i : i + CHUNK]
+                linhas_values = ", ".join(f"(:p{j}, :d{j})" for j in range(len(lote)))
+                params: dict = {}
+                for j, (codigo, data_cobranca) in enumerate(lote):
+                    params[f"p{j}"] = codigo
+                    params[f"d{j}"] = data_cobranca
+                params["dias_janela"] = dias_janela
+
+                sql = f"""
+                    WITH cobrancas(pessoa, data_cobranca) AS (
+                        VALUES {linhas_values}
+                    )
+                    SELECT c.pessoa AS pessoa, c.data_cobranca AS data_cobranca, min(ft.pagamento) AS data_pagamento
+                      FROM cobrancas c
+                      JOIN financeiro_titulos ft ON trim(ft.pessoa) = c.pessoa
+                     WHERE ft.status = 'B'
+                       AND ft.pagamento >= c.data_cobranca
+                       AND (:dias_janela IS NULL OR ft.pagamento <= c.data_cobranca + (:dias_janela * INTERVAL '1 day'))
+                     GROUP BY c.pessoa, c.data_cobranca
+                """
+                for r in conn.execute(text(sql), params).mappings():
+                    resultado[(r["pessoa"], r["data_cobranca"])] = r["data_pagamento"]
+    except SQLAlchemyError as exc:
+        logger.warning("Falha ao consultar pagamentos pós-cobrança no SETA: %s", exc.__class__.__name__)
+        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
+    return resultado
+

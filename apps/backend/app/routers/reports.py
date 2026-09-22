@@ -1,5 +1,5 @@
 import io
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -429,11 +429,24 @@ def _obter_dados_efetividade(
 
     parcelas_db = parc_query.all()
 
+    # Regra da Tarefa 5: conta como "pagou" quem quitou QUALQUER título em
+    # aberto (não só o cobrado) dentro da janela — nunca em loop por
+    # cliente/título, uma única consulta via CTE (ver seta_client).
     codigos_titulos = list({p.titulo_codigo for p in parcelas_db})
     situacoes: dict[str, dict] = {}
     if codigos_titulos:
         try:
             situacoes = seta_client.situacao_titulos(codigos_titulos)
+        except seta_client.SetaIndisponivel as exc:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+
+    pares_cobranca = {
+        (p.codigo_cliente, p.cobrado_em.date()) for p in parcelas_db if p.cobrado_em is not None
+    }
+    pagamentos: dict[tuple[str, date], date] = {}
+    if pares_cobranca:
+        try:
+            pagamentos = seta_client.pagamentos_pos_cobranca(sorted(pares_cobranca), dias_janela)
         except seta_client.SetaIndisponivel as exc:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
@@ -445,22 +458,11 @@ def _obter_dados_efetividade(
         renegociada = False
         valor_pago = Decimal("0.00")
 
-        if sit:
-            st = sit.get("status")
-            if st == "B" and data_cobranca:
-                pagamento = sit.get("pagamento")
-                if hasattr(pagamento, "date") and callable(pagamento.date):
-                    pagamento = pagamento.date()
-                if pagamento and pagamento >= data_cobranca:
-                    if dias_janela is None or pagamento <= data_cobranca + timedelta(days=dias_janela):
-                        pago = True
-                        valorpago = sit.get("valorpago")
-                        if valorpago is not None and Decimal(str(valorpago)) > 0:
-                            valor_pago = Decimal(str(valorpago))
-                        else:
-                            valor_pago = Decimal(str(sit.get("valor") or 0))
-            elif st == "S":
-                renegociada = True
+        if data_cobranca and (p.codigo_cliente, data_cobranca) in pagamentos:
+            pago = True
+            valor_pago = Decimal(str(p.valor_cobrar or 0))
+        elif sit and sit.get("status") == "S":
+            renegociada = True
 
         itens.append(
             {
