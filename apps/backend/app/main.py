@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from . import models
 from .config import settings
 from .database import SessionLocal
-from .routers import auth, blacklist, cobranca, config_cobranca, dashboard, faixas, google, leads, lojas, meta_tokens, numbers, reports, seta, templates, uploads
+from .routers import auth, blacklist, chatwoot, cobranca, config_cobranca, dashboard, faixas, google, leads, lojas, meta_tokens, numbers, reports, seta, templates, uploads
 from .security import hash_password
 from .segredos import recifrar_segredos
 from .worker import start_scheduler
@@ -132,6 +132,7 @@ app.include_router(config_cobranca.router)
 app.include_router(leads.router)
 app.include_router(google.router)
 app.include_router(lojas.router)
+app.include_router(chatwoot.router)
 
 
 @app.get("/health")

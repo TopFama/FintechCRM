@@ -13,7 +13,7 @@ from datetime import datetime, time as dt_time
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session, selectinload
 
-from . import models
+from . import chatwoot_client, models
 from .config import settings
 from .database import SessionLocal
 from .meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_do_numero
@@ -56,18 +56,7 @@ async def _send_one(faixa: models.Faixa, item: models.QueueItem, db: Session) ->
     number_entry = faixa.numbers[faixa.last_number_index % len(faixa.numbers)]
     faixa.last_number_index = (faixa.last_number_index + 1) % len(faixa.numbers)
     number = number_entry.whatsapp_number
-
-    try:
-        token = token_do_numero(db, number)
-    except MetaTokenConfigError as exc:
-        item.status = models.QueueStatus.error
-        item.error_message = str(exc)
-        item.whatsapp_number_id = number.id
-        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
-        logger.warning("Falha ao obter token da Meta para envio %s: %s", item.id, exc)
-        return
-
-    client = MetaClient(access_token=token)
+    item.whatsapp_number_id = number.id
 
     ordered_variables = sorted(faixa.template.variables, key=lambda v: v.position)
     body_params = [str(item.variables_json.get(v.internal_name, "")) for v in ordered_variables]
@@ -77,6 +66,32 @@ async def _send_one(faixa: models.Faixa, item: models.QueueItem, db: Session) ->
         if faixa.template.image_url.startswith("http"):
             header_image_link = faixa.template.image_url
 
+    # Número com inbox do Chatwoot vinculada (Configurações) envia por lá;
+    # os demais seguem direto pela Graph API da Meta, como sempre.
+    if number.chatwoot_inbox_id:
+        await _send_via_chatwoot(faixa, item, db, number, body_params, header_image_link)
+    else:
+        await _send_via_meta(faixa, item, db, number, body_params, header_image_link)
+
+
+async def _send_via_meta(
+    faixa: models.Faixa,
+    item: models.QueueItem,
+    db: Session,
+    number: models.WhatsappNumber,
+    body_params: list[str],
+    header_image_link: str | None,
+) -> None:
+    try:
+        token = token_do_numero(db, number)
+    except MetaTokenConfigError as exc:
+        item.status = models.QueueStatus.error
+        item.error_message = str(exc)
+        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
+        logger.warning("Falha ao obter token da Meta para envio %s: %s", item.id, exc)
+        return
+
+    client = MetaClient(access_token=token)
     try:
         result = await client.send_template_message(
             phone_number_id=number.phone_number_id,
@@ -88,22 +103,70 @@ async def _send_one(faixa: models.Faixa, item: models.QueueItem, db: Session) ->
         )
         item.status = models.QueueStatus.sent
         item.sent_at = datetime.utcnow()
-        item.whatsapp_number_id = number.id
         messages = result.get("messages") or []
         if messages:
             item.whatsapp_message_id = messages[0].get("id")
     except MetaAPIError as exc:
         item.status = models.QueueStatus.error
         item.error_message = str(exc)
-        item.whatsapp_number_id = number.id
         db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=str(exc)))
         logger.warning("Falha ao enviar cobrança %s: %s", item.id, exc)
     except Exception as exc:  # noqa: BLE001 - qualquer falha de rede/config não pode travar o item em "reserved"
         item.status = models.QueueStatus.error
         item.error_message = f"Falha inesperada ao enviar: {exc}"
-        item.whatsapp_number_id = number.id
         db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
         logger.exception("Falha inesperada ao enviar cobrança %s", item.id)
+
+
+async def _send_via_chatwoot(
+    faixa: models.Faixa,
+    item: models.QueueItem,
+    db: Session,
+    number: models.WhatsappNumber,
+    body_params: list[str],
+    header_image_link: str | None,
+) -> None:
+    try:
+        client = chatwoot_client.cliente_configurado(db)
+    except chatwoot_client.ChatwootConfigError as exc:
+        item.status = models.QueueStatus.error
+        item.error_message = str(exc)
+        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
+        logger.warning("Falha ao obter configuração do Chatwoot para envio %s: %s", item.id, exc)
+        return
+
+    # Texto de fallback mostrado na conversa — quem dispara o WhatsApp de fato
+    # é o template_params abaixo, mas o Chatwoot exige `content` mesmo assim.
+    conteudo = faixa.template.body_text
+    for posicao, valor in enumerate(body_params, start=1):
+        conteudo = conteudo.replace(f"{{{{{posicao}}}}}", valor)
+
+    try:
+        contact_id, source_id = await client.buscar_ou_criar_contato(
+            number.chatwoot_inbox_id, item.celular, item.nome
+        )
+        conversation_id = await client.buscar_ou_criar_conversa(number.chatwoot_inbox_id, contact_id, source_id)
+        await client.enviar_mensagem_template(
+            conversation_id,
+            conteudo,
+            template_name=faixa.template.meta_template_name,
+            category=faixa.template.category,
+            language=faixa.template.language,
+            body_params=body_params,
+            header_image_url=header_image_link,
+        )
+        item.status = models.QueueStatus.sent
+        item.sent_at = datetime.utcnow()
+    except chatwoot_client.ChatwootAPIError as exc:
+        item.status = models.QueueStatus.error
+        item.error_message = str(exc)
+        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=str(exc)))
+        logger.warning("Falha ao enviar cobrança %s via Chatwoot: %s", item.id, exc)
+    except Exception as exc:  # noqa: BLE001 - qualquer falha de rede/config não pode travar o item em "reserved"
+        item.status = models.QueueStatus.error
+        item.error_message = f"Falha inesperada ao enviar via Chatwoot: {exc}"
+        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
+        logger.exception("Falha inesperada ao enviar cobrança %s via Chatwoot", item.id)
 
 
 async def run_dispatch_cycle() -> None:

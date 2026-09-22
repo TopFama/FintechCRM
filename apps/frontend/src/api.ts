@@ -235,6 +235,10 @@ export const api = {
   statusGoogle: () => request<StatusGoogle>("/google/status"),
   iniciarOAuthGoogle: () => request<{ url: string }>("/google/oauth/iniciar", { method: "POST" }),
   desconectarGoogle: () => request<void>("/google/oauth", { method: "DELETE" }),
+  statusChatwoot: () => request<StatusChatwoot>("/chatwoot/status"),
+  salvarConfigChatwoot: (payload: { base_url: string; account_id: string; api_access_token: string | null }) =>
+    request<StatusChatwoot>("/chatwoot/config", { method: "PUT", body: JSON.stringify(payload) }),
+  testarChatwoot: () => request<{ ok: boolean; detalhe: string }>("/chatwoot/testar", { method: "POST" }),
 };
 
 async function downloadFile(path: string, nomePadrao: string): Promise<void> {
@@ -583,6 +587,12 @@ export interface StatusGoogle {
   conectado: boolean;
   email: string | null;
   redirect_uri: string;
+}
+
+export interface StatusChatwoot {
+  configurado: boolean;
+  base_url: string | null;
+  account_id: string | null;
 }
 
 // --- Efetividade da cobrança ---

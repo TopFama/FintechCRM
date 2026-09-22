@@ -549,6 +549,40 @@ class GoogleAutorizacaoOut(BaseModel):
     url: str
 
 
+# --- Chatwoot ---
+
+
+class ChatwootStatusOut(BaseModel):
+    configurado: bool
+    base_url: str | None = None
+    account_id: str | None = None
+
+
+class ChatwootConfigIn(BaseModel):
+    base_url: str
+    account_id: str
+    # Vazio ao editar uma configuração já existente = mantém o token atual
+    # (a tela nunca mostra o token salvo de volta, então não tem o que reenviar).
+    api_access_token: str | None = None
+
+    @field_validator("base_url", "account_id")
+    @classmethod
+    def campo_obrigatorio(cls, valor: str) -> str:
+        if not valor or not valor.strip():
+            raise ValueError("Campo obrigatório")
+        return valor.strip()
+
+    @field_validator("api_access_token")
+    @classmethod
+    def token_sem_espacos(cls, valor: str | None) -> str | None:
+        return valor.strip() if valor and valor.strip() else None
+
+
+class ChatwootTestResult(BaseModel):
+    ok: bool
+    detalhe: str
+
+
 class LojaOut(BaseModel):
     filial: str  # código de 2 caracteres (ft.empresa)
     nome_com_cod: str | None

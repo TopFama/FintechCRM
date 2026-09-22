@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, StatusGoogle, StatusSeta } from "../api";
+import { api, StatusChatwoot, StatusGoogle, StatusSeta } from "../api";
 import NumerosCard from "../components/config/NumerosCard";
 import TokensMetaCard from "../components/config/TokensMetaCard";
 import { IconAlert, IconRefresh } from "../icons";
@@ -18,6 +18,13 @@ export default function Configuracoes() {
   const [googleErro, setGoogleErro] = useState<string | null>(null);
   const [oauthErro, setOauthErro] = useState<string | null>(null);
   const [oauthSucesso, setOauthSucesso] = useState<string | null>(null);
+
+  const [chatwoot, setChatwoot] = useState<StatusChatwoot | null>(null);
+  const [chatwootErro, setChatwootErro] = useState<string | null>(null);
+  const [chatwootSalvando, setChatwootSalvando] = useState(false);
+  const [chatwootTestando, setChatwootTestando] = useState(false);
+  const [chatwootTeste, setChatwootTeste] = useState<{ ok: boolean; detalhe: string } | null>(null);
+  const [formChatwoot, setFormChatwoot] = useState({ base_url: "", account_id: "", api_access_token: "" });
 
   // Mensagem do callback OAuth (google=ok ou google=erro&motivo=...)
   useEffect(() => {
@@ -57,10 +64,52 @@ export default function Configuracoes() {
       .finally(() => setGoogleCarregando(false));
   }
 
+  function carregarChatwoot() {
+    setChatwootErro(null);
+    api
+      .statusChatwoot()
+      .then((s) => {
+        setChatwoot(s);
+        if (s.configurado) {
+          setFormChatwoot({ base_url: s.base_url || "", account_id: s.account_id || "", api_access_token: "" });
+        }
+      })
+      .catch((e) => setChatwootErro(e instanceof Error ? e.message : "Erro ao consultar Chatwoot"));
+  }
+
   useEffect(() => {
     carregarSeta();
     carregarGoogle();
+    carregarChatwoot();
   }, []);
+
+  async function salvarChatwoot(e: FormEvent) {
+    e.preventDefault();
+    setChatwootErro(null);
+    setChatwootTeste(null);
+    setChatwootSalvando(true);
+    try {
+      const s = await api.salvarConfigChatwoot(formChatwoot);
+      setChatwoot(s);
+      setFormChatwoot((f) => ({ ...f, api_access_token: "" }));
+    } catch (err) {
+      setChatwootErro(err instanceof Error ? err.message : "Erro ao salvar configuração do Chatwoot");
+    } finally {
+      setChatwootSalvando(false);
+    }
+  }
+
+  async function testarChatwoot() {
+    setChatwootTeste(null);
+    setChatwootTestando(true);
+    try {
+      setChatwootTeste(await api.testarChatwoot());
+    } catch (err) {
+      setChatwootTeste({ ok: false, detalhe: err instanceof Error ? err.message : "Erro ao testar" });
+    } finally {
+      setChatwootTestando(false);
+    }
+  }
 
   async function conectarGoogle() {
     setOauthErro(null);
@@ -267,6 +316,78 @@ export default function Configuracoes() {
             )}
           </div>
         )}
+      </div>
+
+      {/* Chatwoot */}
+      <div className="card">
+        <div className="card-header">
+          <h3>Chatwoot</h3>
+          {chatwoot?.configurado && (
+            <span className="status-pill on" style={{ fontSize: 14 }}>
+              Configurado
+            </span>
+          )}
+        </div>
+        <p className="card-subtitle">
+          Credenciais da conta do Chatwoot usada para enviar cobrança pelos números com inbox vinculada
+          (card Números de WhatsApp, abaixo).
+        </p>
+
+        {chatwootErro && (
+          <div className="error-box">
+            <IconAlert width={16} height={16} />
+            <span>{chatwootErro}</span>
+          </div>
+        )}
+        {chatwootTeste && (
+          <div className={chatwootTeste.ok ? "success-box" : "error-box"}>
+            {!chatwootTeste.ok && <IconAlert width={16} height={16} />}
+            <span>{chatwootTeste.detalhe}</span>
+          </div>
+        )}
+
+        <form onSubmit={salvarChatwoot}>
+          <div className="form-row">
+            <div className="field">
+              <label>URL base</label>
+              <input
+                placeholder="https://chat.suaempresa.com.br"
+                value={formChatwoot.base_url}
+                onChange={(e) => setFormChatwoot({ ...formChatwoot, base_url: e.target.value })}
+                required
+              />
+            </div>
+            <div className="field">
+              <label>ID da conta</label>
+              <input
+                value={formChatwoot.account_id}
+                onChange={(e) => setFormChatwoot({ ...formChatwoot, account_id: e.target.value })}
+                required
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label>Token de acesso da API</label>
+            <input
+              type="password"
+              placeholder={chatwoot?.configurado ? "•••••••• (deixe em branco pra manter o atual)" : ""}
+              value={formChatwoot.api_access_token}
+              onChange={(e) => setFormChatwoot({ ...formChatwoot, api_access_token: e.target.value })}
+              required={!chatwoot?.configurado}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button type="submit" disabled={chatwootSalvando}>
+              {chatwootSalvando ? "Salvando..." : "Salvar"}
+            </button>
+            {chatwoot?.configurado && (
+              <button type="button" className="secondary" onClick={testarChatwoot} disabled={chatwootTestando}>
+                <IconRefresh width={16} height={16} />
+                {chatwootTestando ? "Testando..." : "Testar conexão"}
+              </button>
+            )}
+          </div>
+        </form>
       </div>
 
       <TokensMetaCard onNumerosAlterados={() => setVersaoNumeros((v) => v + 1)} />

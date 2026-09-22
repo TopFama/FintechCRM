@@ -55,6 +55,18 @@ def recifrar_segredos(db: Session) -> int:
                 integracao.id,
             )
 
+    config_chatwoot = db.query(models.ConfiguracaoChatwoot).first()
+    if config_chatwoot and config_chatwoot.api_access_token_cifrado:
+        if crypto.decifrar_chave_nova(config_chatwoot.api_access_token_cifrado) is None:
+            recifrado = crypto.recifrar(config_chatwoot.api_access_token_cifrado)
+            if recifrado is not None:
+                config_chatwoot.api_access_token_cifrado = recifrado
+                total_recifrados += 1
+            else:
+                logger.warning(
+                    "Segredo do ConfiguracaoChatwoot não pôde ser decifrado com nenhuma chave disponível"
+                )
+
     if total_recifrados > 0:
         db.commit()
 

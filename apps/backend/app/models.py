@@ -414,6 +414,21 @@ class RegraWhatsapp(Base):
     faixa: Mapped[FaixaAtrasoCobranca] = relationship(back_populates="regras")
 
 
+class ConfiguracaoChatwoot(Base):
+    """Credenciais da conta Chatwoot usada para enviar cobrança pelas inboxes
+    vinculadas aos números (WhatsappNumber.chatwoot_inbox_id) — tabela de uma
+    linha única, no mesmo espírito do token da Meta: cadastrada pela tela de
+    Configurações, nunca em .env."""
+
+    __tablename__ = "config_chatwoot"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    base_url: Mapped[str] = mapped_column(String)
+    account_id: Mapped[str] = mapped_column(String)
+    api_access_token_cifrado: Mapped[str] = mapped_column(String)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class ParametrosCobranca(Base):
     """Parâmetros de multa e juros — tabela de uma linha única."""
 
