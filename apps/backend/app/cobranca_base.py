@@ -1,13 +1,21 @@
 """Monta a base de clientes para cobrança: busca no SETA (`seta_client`) e
 aplica as regras de `cobranca_regras` (cluster, faixa de atraso, matriz
 WhatsApp, primeiro dia da faixa). Relatório, listagem e leads usam esta
-mesma função, então todos enxergam exatamente os mesmos clientes."""
+mesma função, então todos enxergam exatamente os mesmos clientes.
+
+A consulta ao SETA (`seta_client.buscar_base_cobranca`) é a parte cara —
+tabela de títulos com mais de 27M de linhas — e por isso passa pelo cache
+Redis (`cache.py`): filtro igual a um pedido de minutos atrás sai do cache
+na hora; filtro novo dispara o cálculo em segundo plano e devolve
+"processing" (quem pediu tenta de novo em seguida, sem segurar a conexão
+HTTP)."""
 
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from . import seta_client
+from . import cache, seta_client
 from .cobranca_regras import NOMES_FAIXA_COMPRA, faixa_de_compra
 from .regras_db import carregar_regras
 from .routers.blacklist import codigos_bloqueados
@@ -24,6 +32,24 @@ def _validar(valores: list[str] | None, validos: list[str], rotulo: str) -> None
             raise FiltroInvalido(f"{rotulo} {v!r} não existe (use {', '.join(validos)})")
 
 
+# Campos das linhas cruas do SETA que viram texto na ida ao Redis (Decimal e
+# date não são JSON nativamente) e precisam ser restaurados na volta.
+_CAMPOS_DECIMAL_SETA = ("salario", "limite_rotativo", "valor_pago", "valor_em_aberto", "valor_cobrar")
+_CAMPOS_DATA_SETA = ("nascimento", "cadastro", "ultima_compra", "vencimento_mais_antigo")
+
+
+def _restaurar_linha_seta(linha: dict) -> dict:
+    linha = dict(linha)
+    for campo in _CAMPOS_DECIMAL_SETA:
+        if linha.get(campo) is not None:
+            linha[campo] = Decimal(str(linha[campo]))
+    for campo in _CAMPOS_DATA_SETA:
+        valor = linha.get(campo)
+        if isinstance(valor, str):
+            linha[campo] = date.fromisoformat(valor[:10])
+    return linha
+
+
 def buscar_base(
     db: Session,
     *,
@@ -38,8 +64,10 @@ def buscar_base(
     vencimento_de: date | None = None,
     vencimento_ate: date | None = None,
     restricoes_spc: list[str] | None = None,
-) -> list[dict]:
-    """Clientes da base de cobrança, do mais atrasado para o menos.
+) -> dict:
+    """{"status": "ready", "data": [...]} com os clientes da base de
+    cobrança (do mais atrasado para o menos), ou {"status": "processing",
+    "data": None} enquanto a consulta ao SETA calcula em segundo plano.
 
     - `apenas_primeiro_dia`: traz só quem está exatamente no primeiro dia da
       faixa (ex.: faixa "21 A 30" → só clientes com 21 dias). Desligado, traz
@@ -53,7 +81,7 @@ def buscar_base(
     """
 
     if lojas is not None and not lojas:
-        return []  # os atributos de loja escolhidos não casaram com nenhuma loja
+        return {"status": "ready", "data": []}  # atributos de loja escolhidos não casaram com nenhuma loja
 
     regras = carregar_regras(db)
 
@@ -75,21 +103,46 @@ def buscar_base(
     dias_exatos = [regras.faixa(f).dia_min for f in faixas_sel] if apenas_primeiro_dia else None
 
     bl_codigos, bl_cpfs = codigos_bloqueados(db)
-    linhas = seta_client.buscar_base_cobranca(
-        faixas=intervalos,
-        dias_exatos=dias_exatos,
-        lojas=lojas,
-        portadores=portadores,
-        status_cliente=status_cliente,
-        vencimento_de=vencimento_de,
-        vencimento_ate=vencimento_ate,
-        bloqueados_codigos=bl_codigos,
-        bloqueados_cpfs=bl_cpfs,
-        juros=regras.juros,
+
+    chave_cache = cache.chave(
+        "seta_base_cobranca",
+        {
+            "intervalos": intervalos,
+            "dias_exatos": dias_exatos,
+            "lojas": sorted(lojas) if lojas else None,
+            "portadores": sorted(portadores) if portadores else None,
+            "status_cliente": sorted(status_cliente) if status_cliente else None,
+            "vencimento_de": vencimento_de,
+            "vencimento_ate": vencimento_ate,
+            "bl_codigos": sorted(bl_codigos),
+            "bl_cpfs": sorted(bl_cpfs),
+            "juros_mes_percentual": str(regras.juros.juros_mes_percentual),
+            "multa_percentual": str(regras.juros.multa_percentual),
+            "dias_min_juros": regras.juros.dias_min,
+        },
     )
 
+    def calcular_linhas() -> list[dict]:
+        return seta_client.buscar_base_cobranca(
+            faixas=intervalos,
+            dias_exatos=dias_exatos,
+            lojas=lojas,
+            portadores=portadores,
+            status_cliente=status_cliente,
+            vencimento_de=vencimento_de,
+            vencimento_ate=vencimento_ate,
+            bloqueados_codigos=bl_codigos,
+            bloqueados_cpfs=bl_cpfs,
+            juros=regras.juros,
+        )
+
+    job = cache.buscar_ou_iniciar(chave_cache, calcular_linhas)
+    if job["status"] != "ready":
+        return {"status": "processing", "data": None}
+
     resultado = []
-    for r in linhas:
+    for linha_bruta in job["data"]:
+        r = _restaurar_linha_seta(linha_bruta)
         faixa = regras.faixa_por_dias(r["dias_atraso"])
         cluster = regras.cluster_por_valor_pago(r["valor_pago"])
         entra = regras.entra_no_whatsapp(cluster, faixa)
@@ -105,7 +158,7 @@ def buscar_base(
         resultado.append(_montar_cliente(r, faixa, cluster, entra, compra))
 
     resultado.sort(key=lambda c: (-c["dias_atraso"], -c["valor_em_aberto"], c["codigo"]))
-    return resultado
+    return {"status": "ready", "data": resultado}
 
 
 def _montar_cliente(r: dict, faixa: str | None, cluster: str, entra: bool, faixa_compra: str | None) -> dict:

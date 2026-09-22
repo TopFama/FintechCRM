@@ -72,6 +72,7 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | backend | não | *(vazio)* | Cliente OAuth2 (aplicativo da Web) do Google Cloud, com a Google Sheets API ativada. Vazio = integração desligada; sem ela só não dá para filtrar por regional/estado/cluster de loja. Depois de preenchido, conecte a conta em **Configurações** (o refresh token fica cifrado no banco com a `ENCRYPTION_KEY`). |
 | `GOOGLE_REDIRECT_URI` / `GOOGLE_FRONTEND_URL` | backend | não | `http://localhost:8000/google/oauth/callback` / `http://localhost:5173` | A primeira precisa estar cadastrada, idêntica, nas URIs de redirecionamento autorizadas do cliente OAuth; a segunda é para onde o navegador volta depois do consentimento. |
 | `GOOGLE_SHEET_LOJAS_ID` / `GOOGLE_SHEET_LOJAS_GID` | backend | não | planilha de lojas da TopFama | ID da planilha (trecho da URL entre `/d/` e `/edit`) e `gid` da aba (`#gid=…`). Colunas lidas: FILIAL, NOME COM COD, REGIONAL, ESTADO, CLUSTER INAD e CLUSTER POPULAÇÃO. |
+| `REDIS_URL` | backend | não | `redis://redis:6379/0` | Cache das consultas pesadas ao SETA (`GET /cobranca/clientes`, `/cobranca/relatorio` e `POST /leads/gerar` — a tabela de títulos tem mais de 27 milhões de linhas). Ver `app/cache.py`. |
 | `VITE_API_URL` | frontend (build) | não | `http://localhost:8000` | URL base da API que o frontend chama — usada só no build do Vite (fica embutida no bundle). |
 
 WABA ID, `phone_number_id` e os **tokens de acesso da Meta** **não** vão no `.env` — são cadastrados dentro do

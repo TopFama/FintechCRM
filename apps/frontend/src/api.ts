@@ -63,6 +63,24 @@ export function mensagemErroSeta(e: unknown): string {
   return e instanceof Error ? e.message : "Erro desconhecido";
 }
 
+// Relatórios pesados do SETA (base de cobrança) calculam em segundo plano no
+// backend (cache Redis) — a primeira consulta com um filtro novo devolve
+// "processing" na hora, sem segurar a conexão; aqui a gente só tenta de novo
+// a cada 2s até vir "ready", então quem chama continua recebendo uma Promise
+// normal com o resultado, como se fosse uma chamada síncrona.
+async function pollAsync<T>(chamar: () => Promise<{ status: "ready" | "processing"; data: T | null }>): Promise<T> {
+  const INTERVALO_MS = 2000;
+  const MAX_TENTATIVAS = 90; // ~3 minutos
+  for (let tentativa = 0; tentativa < MAX_TENTATIVAS; tentativa++) {
+    const resultado = await chamar();
+    if (resultado.status === "ready" && resultado.data !== null) {
+      return resultado.data;
+    }
+    await new Promise((resolve) => setTimeout(resolve, INTERVALO_MS));
+  }
+  throw new ApiError(504, "O relatório está demorando mais que o esperado para calcular — tente novamente");
+}
+
 // Gera query string com arrays como parâmetros repetidos (?a=1&a=2) e ignora vazios.
 export function montarQuery(params: object): string {
   const qs = new URLSearchParams();
@@ -197,17 +215,22 @@ export const api = {
     downloadFile(`/relatorios/envios/export${faixaId ? `?faixa_id=${faixaId}` : ""}`, "relatorio_envios.xlsx"),
 
   // --- Cobrança ---
+  // /clientes, /relatorio e /leads/gerar consultam uma tabela do SETA com
+  // dezenas de milhões de linhas, cacheada no Redis pelo backend — a primeira
+  // vez com um filtro novo pode "processar" por alguns segundos/minutos;
+  // pollAsync tenta de novo sozinho até vir pronto.
   regrasCobranca: () => request<RegrasCobranca>("/cobranca/regras"),
   listarClientesCobranca: (params: FiltrosCobranca & { limit: number; offset: number }) =>
-    request<{ total: number; itens: ClienteCobranca[] }>(`/cobranca/clientes?${montarQuery(params)}`),
+    pollAsync<{ total: number; itens: ClienteCobranca[] }>(() =>
+      request(`/cobranca/clientes?${montarQuery(params)}`)
+    ),
   relatorioCobranca: (params: FiltrosCobranca) =>
-    request<RelatorioCobranca>(`/cobranca/relatorio?${montarQuery(params)}`),
+    pollAsync<RelatorioCobranca>(() => request(`/cobranca/relatorio?${montarQuery(params)}`)),
 
   // --- Leads ---
   gerarLeads: (params: FiltrosCobranca) =>
-    request<{ criados: number; ja_existiam: number; sem_celular: number }>(
-      `/leads/gerar?${montarQuery(params)}`,
-      { method: "POST" },
+    pollAsync<{ criados: number; ja_existiam: number; sem_celular: number }>(() =>
+      request(`/leads/gerar?${montarQuery(params)}`, { method: "POST" })
     ),
   listarLeads: (params: FiltrosLeads & { limit: number; offset: number }) =>
     request<{ total: number; itens: Lead[] }>(`/leads?${montarQuery(params)}`),

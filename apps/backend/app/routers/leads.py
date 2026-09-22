@@ -24,7 +24,7 @@ def _em_lotes(itens: list, tamanho: int = LOTE):
         yield itens[i : i + tamanho]
 
 
-@router.post("/gerar", response_model=schemas.LeadsGerarResult)
+@router.post("/gerar", response_model=schemas.LeadsGerarAsyncOut)
 def gerar_leads(
     filtros: dict = Depends(filtros_base),
     db: Session = Depends(get_db),
@@ -32,9 +32,16 @@ def gerar_leads(
 ):
     """Transforma em leads os clientes da base de cobrança que passam nos
     filtros (os mesmos de `/cobranca/clientes`). Quem já é lead da mesma
-    faixa e parcela não é duplicado."""
+    faixa e parcela não é duplicado.
 
-    clientes = buscar_base_ou_erro(db, filtros)
+    A base de cobrança pode levar minutos pra calcular na primeira vez (ver
+    `cobranca_base.buscar_base`) — enquanto isso, devolve "processing" sem
+    criar lead nenhum; quem pediu tenta de novo em seguida."""
+
+    job = buscar_base_ou_erro(db, filtros)
+    if job["status"] != "ready":
+        return schemas.LeadsGerarAsyncOut(status="processing")
+    clientes = job["data"]
 
     ja_existem: set[tuple[str, str, date]] = set()
     for lote in _em_lotes([c["codigo"] for c in clientes]):
@@ -104,10 +111,13 @@ def gerar_leads(
 
     db.add_all(leads_para_salvar)
     db.commit()
-    return schemas.LeadsGerarResult(
-        criados=len(novos),
-        ja_existiam=len(clientes) - len(novos),
-        sem_celular=sum(1 for c in novos if not c["celular"]),
+    return schemas.LeadsGerarAsyncOut(
+        status="ready",
+        data=schemas.LeadsGerarResult(
+            criados=len(novos),
+            ja_existiam=len(clientes) - len(novos),
+            sem_celular=sum(1 for c in novos if not c["celular"]),
+        ),
     )
 
 

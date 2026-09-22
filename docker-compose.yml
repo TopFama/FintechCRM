@@ -16,6 +16,17 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   backend:
     build: ./apps/backend
     restart: unless-stopped
@@ -23,8 +34,11 @@ services:
       - .env
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://fintechcrm:change-me@db:5432/fintechcrm}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -45,3 +59,4 @@ services:
 volumes:
   postgres-data:
   media-data:
+  redis-data:

@@ -475,6 +475,16 @@ class ClientesCobrancaPage(BaseModel):
     itens: list[ClienteCobrancaOut]
 
 
+class ClientesCobrancaAsyncOut(BaseModel):
+    """A consulta ao SETA por trás da base de cobrança pode levar minutos na
+    primeira vez (tabela de títulos com dezenas de milhões de linhas) — ver
+    `app/cache.py`. "processing" significa que o cálculo está em segundo
+    plano; quem pediu tenta de novo em seguida."""
+
+    status: Literal["ready", "processing"]
+    data: ClientesCobrancaPage | None = None
+
+
 class CobrancaRegrasOut(BaseModel):
     clusters: list[str]
     faixas: list[str]
@@ -503,6 +513,11 @@ class RelatorioCobrancaOut(BaseModel):
     quantidade: MatrizQuantidadeOut
     quantidade_com_restricao_spc: MatrizQuantidadeOut
     valor_em_aberto: MatrizValorOut
+
+
+class RelatorioCobrancaAsyncOut(BaseModel):
+    status: Literal["ready", "processing"]
+    data: RelatorioCobrancaOut | None = None
 
 
 
@@ -552,6 +567,11 @@ class LeadsGerarResult(BaseModel):
     criados: int
     ja_existiam: int
     sem_celular: int  # entre os criados: sem telefone válido em nenhum dos campos
+
+
+class LeadsGerarAsyncOut(BaseModel):
+    status: Literal["ready", "processing"]
+    data: LeadsGerarResult | None = None
 
 
 class LeadsMarcarCobrados(BaseModel):

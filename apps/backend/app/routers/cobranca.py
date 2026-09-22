@@ -3,7 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from .. import cobranca_base, cobranca_relatorio, google_client, lojas as lojas_base, models, schemas, seta_client
+from .. import cache, cobranca_base, cobranca_relatorio, google_client, lojas as lojas_base, models, schemas, seta_client
 from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
@@ -69,16 +69,21 @@ def filtros_base(
     )
 
 
-def buscar_base_ou_erro(db: Session, filtros: dict) -> list[dict]:
+def buscar_base_ou_erro(db: Session, filtros: dict) -> dict:
+    """{"status": "ready", "data": [...]} ou {"status": "processing", "data":
+    None} — ver `cobranca_base.buscar_base`."""
+
     try:
         return cobranca_base.buscar_base(db, **filtros)
     except cobranca_base.FiltroInvalido as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except seta_client.SetaIndisponivel as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except cache.CacheIndisponivel as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
 
-@router.get("/clientes", response_model=schemas.ClientesCobrancaPage)
+@router.get("/clientes", response_model=schemas.ClientesCobrancaAsyncOut)
 def listar_clientes(
     filtros: dict = Depends(filtros_base),
     limit: int = Query(50, ge=1, le=500),
@@ -86,7 +91,11 @@ def listar_clientes(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    clientes = buscar_base_ou_erro(db, filtros)
+    job = buscar_base_ou_erro(db, filtros)
+    if job["status"] != "ready":
+        return schemas.ClientesCobrancaAsyncOut(status="processing")
+
+    clientes = job["data"]
     pagina = clientes[offset : offset + limit]
 
     # o texto do SPC é pesado: só se busca (para a data da consulta) de quem aparece na página
@@ -97,10 +106,12 @@ def listar_clientes(
     for c in pagina:
         _, c["spc_data_consulta"] = parse_spc(spc.get(c["codigo"]))
 
-    return schemas.ClientesCobrancaPage(total=len(clientes), itens=pagina)
+    return schemas.ClientesCobrancaAsyncOut(
+        status="ready", data=schemas.ClientesCobrancaPage(total=len(clientes), itens=pagina)
+    )
 
 
-@router.get("/relatorio", response_model=schemas.RelatorioCobrancaOut)
+@router.get("/relatorio", response_model=schemas.RelatorioCobrancaAsyncOut)
 def relatorio(
     filtros: dict = Depends(filtros_base),
     db: Session = Depends(get_db),
@@ -109,13 +120,20 @@ def relatorio(
     """Quantidade e valor em aberto de clientes por cluster (linhas) × faixa de
     atraso (colunas), no total e só entre os com restrição no SPC."""
 
-    clientes = buscar_base_ou_erro(db, filtros)
+    job = buscar_base_ou_erro(db, filtros)
+    if job["status"] != "ready":
+        return schemas.RelatorioCobrancaAsyncOut(status="processing")
+
+    clientes = job["data"]
     r = carregar_regras(db)
-    return schemas.RelatorioCobrancaOut(
-        clusters=r.nomes_cluster,
-        faixas=r.nomes_faixa,
-        quantidade=cobranca_relatorio.montar_matriz(clientes, r),
-        quantidade_com_restricao_spc=cobranca_relatorio.montar_matriz(clientes, r, apenas_com_restricao_spc=True),
-        valor_em_aberto=cobranca_relatorio.montar_matriz_valor(clientes, r),
+    return schemas.RelatorioCobrancaAsyncOut(
+        status="ready",
+        data=schemas.RelatorioCobrancaOut(
+            clusters=r.nomes_cluster,
+            faixas=r.nomes_faixa,
+            quantidade=cobranca_relatorio.montar_matriz(clientes, r),
+            quantidade_com_restricao_spc=cobranca_relatorio.montar_matriz(clientes, r, apenas_com_restricao_spc=True),
+            valor_em_aberto=cobranca_relatorio.montar_matriz_valor(clientes, r),
+        ),
     )
 

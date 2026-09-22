@@ -41,5 +41,8 @@ class Settings(BaseSettings):
 
     dispatch_worker_interval_seconds: int = 5
 
+    # Cache dos relatórios pesados do SETA (ver app/cache.py).
+    redis_url: str = "redis://redis:6379/0"
+
 
 settings = Settings()
