@@ -63,6 +63,8 @@ async def upload_planilha(
     user: models.User = Depends(get_current_user),
 ):
     faixa = _load_faixa(db, faixa_id)
+    if not faixa.template:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Atribua um template à faixa antes de subir a planilha")
 
     try:
         field_mapping = schemas.UploadFieldMapping.model_validate_json(mapping)

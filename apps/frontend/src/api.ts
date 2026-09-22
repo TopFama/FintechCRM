@@ -149,6 +149,14 @@ export const api = {
   getFaixa: (id: string) => request<Faixa>(`/faixas/${id}`),
   createFaixa: (payload: unknown) =>
     request<Faixa>("/faixas", { method: "POST", body: JSON.stringify(payload) }),
+  sincronizarFaixasAtraso: () =>
+    request<{ criadas: string[]; ja_existentes: string[] }>("/faixas/sincronizar-faixas-atraso", {
+      method: "POST",
+    }),
+  atualizarFaixa: (
+    id: string,
+    payload: { template_id: string | null; whatsapp_number_ids: string[]; variable_mappings: FaixaVariableMappingIn[] }
+  ) => request<Faixa>(`/faixas/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   updateDispatchConfig: (id: string, payload: unknown) =>
     request(`/faixas/${id}/dispatch-config`, { method: "PUT", body: JSON.stringify(payload) }),
   dispatchNow: (id: string) => request(`/faixas/${id}/dispatch-now`, { method: "POST" }),
@@ -253,6 +261,15 @@ export const api = {
   salvarConfigChatwoot: (payload: { base_url: string; account_id: string; api_access_token: string | null }) =>
     request<StatusChatwoot>("/chatwoot/config", { method: "PUT", body: JSON.stringify(payload) }),
   testarChatwoot: () => request<{ ok: boolean; detalhe: string }>("/chatwoot/testar", { method: "POST" }),
+
+  // --- Regras de cobrança (clusters, faixas de atraso, matriz do WhatsApp) ---
+  getConfigCobranca: () => request<ConfigCobrancaOut>("/config/cobranca"),
+  salvarClustersCobranca: (clusters: ClusterConfigIn[]) =>
+    request<ConfigCobrancaOut>("/config/cobranca/clusters", { method: "PUT", body: JSON.stringify(clusters) }),
+  salvarFaixasCobranca: (faixas: FaixaAtrasoConfigIn[]) =>
+    request<ConfigCobrancaOut>("/config/cobranca/faixas", { method: "PUT", body: JSON.stringify(faixas) }),
+  salvarMatrizCobranca: (celulas: CelulaMatriz[]) =>
+    request<ConfigCobrancaOut>("/config/cobranca/matriz", { method: "PUT", body: JSON.stringify(celulas) }),
 };
 
 async function downloadFile(path: string, nomePadrao: string): Promise<void> {
@@ -349,7 +366,16 @@ export interface Template {
 export interface FaixaVariableMapping {
   id: string;
   template_variable_id: string;
-  column_name: string;
+  fonte_tipo: "coluna" | "campo_cliente" | "expressao";
+  column_name: string | null;
+  expressao: string | null;
+}
+
+export interface FaixaVariableMappingIn {
+  template_variable_id: string;
+  fonte_tipo: "coluna" | "campo_cliente" | "expressao";
+  column_name?: string | null;
+  expressao?: string | null;
 }
 
 export interface DispatchConfig {
@@ -365,9 +391,10 @@ export interface DispatchConfig {
 export interface Faixa {
   id: string;
   name: string;
-  template_id: string;
+  template_id: string | null;
   active: boolean;
-  template: Template;
+  template: Template | null;
+  numbers: { whatsapp_number_id: string }[];
   variable_mappings: FaixaVariableMapping[];
   dispatch_config: DispatchConfig | null;
   upload_field_mapping: Partial<UploadFieldMapping>;
@@ -445,6 +472,46 @@ export interface RegrasCobranca {
   faixas_whatsapp: Record<string, string[]>; // cluster -> faixas que recebem WhatsApp
   primeiro_dia: Record<string, number>;
   faixas_compra: string[];
+}
+
+// --- Configuração da cobrança (clusters, faixas de atraso, matriz do WhatsApp) ---
+
+export interface ClusterConfig {
+  id: string;
+  nome: string;
+  valor_min: string;
+}
+
+export interface ClusterConfigIn {
+  id?: string | null;
+  nome: string;
+  valor_min: string | number;
+}
+
+export interface FaixaAtrasoConfig {
+  id: string;
+  nome: string;
+  dia_min: number;
+  dia_max: number | null;
+}
+
+export interface FaixaAtrasoConfigIn {
+  id?: string | null;
+  nome: string;
+  dia_min: number;
+  dia_max: number | null;
+}
+
+export interface CelulaMatriz {
+  cluster_id: string;
+  faixa_id: string;
+}
+
+export interface ConfigCobrancaOut {
+  clusters: ClusterConfig[];
+  faixas: FaixaAtrasoConfig[];
+  matriz: CelulaMatriz[];
+  parametros: { juros_mes_percentual: string; multa_percentual: string; dias_min_juros: number };
 }
 
 export interface ClienteCobranca {

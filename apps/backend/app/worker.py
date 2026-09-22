@@ -64,6 +64,12 @@ def montar_parametros_envio(template: models.Template, variables_json: dict) -> 
 
 
 async def _send_one(faixa: models.Faixa, item: models.QueueItem, db: Session) -> None:
+    if not faixa.template:
+        item.status = models.QueueStatus.error
+        item.error_message = "Faixa sem template atribuído"
+        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
+        return
+
     if not faixa.numbers:
         item.status = models.QueueStatus.error
         item.error_message = "Faixa sem número de envio configurado"

@@ -209,6 +209,17 @@ class FaixaCreate(BaseModel):
     variable_mappings: list[FaixaVariableMappingIn]
 
 
+class FaixaUpdate(BaseModel):
+    """Reatribuição de template/números/variáveis de uma faixa já existente
+    (o nome não muda: continua ligado à faixa de atraso que a originou,
+    quando for o caso). template_id None deixa a faixa sem template — o
+    disparo fica pausado até alguém completar a configuração."""
+
+    template_id: str | None = None
+    whatsapp_number_ids: list[str] = []
+    variable_mappings: list[FaixaVariableMappingIn] = []
+
+
 class FaixaVariableMappingOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -240,18 +251,30 @@ class DispatchConfigUpdate(BaseModel):
     active: bool = True
 
 
+class FaixaNumberOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    whatsapp_number_id: str
+
+
 class FaixaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
     name: str
-    template_id: str
+    template_id: str | None
     active: bool
     created_at: datetime
-    template: TemplateOut
+    template: TemplateOut | None
+    numbers: list[FaixaNumberOut] = []
     variable_mappings: list[FaixaVariableMappingOut] = []
     dispatch_config: DispatchConfigOut | None = None
     upload_field_mapping: dict = {}
+
+
+class SincronizarFaixasAtrasoOut(BaseModel):
+    criadas: list[str]
+    ja_existentes: list[str]
 
 
 class QueueItemOut(BaseModel):

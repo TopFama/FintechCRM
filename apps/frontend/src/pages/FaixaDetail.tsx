@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, DispatchConfig, Faixa, QueueItem, UploadFieldMapping, UploadResult } from "../api";
+import {
+  api,
+  CampoCliente,
+  DispatchConfig,
+  Faixa,
+  FaixaVariableMappingIn,
+  Lead,
+  QueueItem,
+  Template,
+  UploadFieldMapping,
+  UploadResult,
+  WhatsappNumber,
+} from "../api";
 import {
   IconAlert,
   IconBolt,
@@ -9,6 +21,7 @@ import {
   IconInbox,
   IconRefresh,
   IconUpload,
+  IconUsers,
 } from "../icons";
 
 const QUEUE_POLL_MS = 4000;
@@ -52,6 +65,25 @@ export default function FaixaDetail() {
   const [lastQueueUpdate, setLastQueueUpdate] = useState<Date | null>(null);
   const [downloadingModel, setDownloadingModel] = useState(false);
 
+  // Configuração da faixa: template, números de envio e mapeamento de
+  // variáveis — o que o wizard define na criação, mas também pode ser
+  // reatribuído depois aqui (ex.: faixa criada por "Sincronizar com faixas
+  // de atraso", que nasce sem nada disso).
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [numbers, setNumbers] = useState<WhatsappNumber[]>([]);
+  const [campos, setCampos] = useState<CampoCliente[]>([]);
+  const [editTemplateId, setEditTemplateId] = useState("");
+  const [editNumberIds, setEditNumberIds] = useState<string[]>([]);
+  const [editMappings, setEditMappings] = useState<Record<string, { fonte_tipo: "coluna" | "campo_cliente"; valor: string }>>({});
+  const [salvandoFaixa, setSalvandoFaixa] = useState(false);
+  const [faixaSalvaMsg, setFaixaSalvaMsg] = useState<string | null>(null);
+
+  // Leads gerados (Cobrança → Leads) para esta mesma faixa de atraso, só
+  // pra dar visibilidade de quem existe antes de decidir subir a planilha.
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [leadsTotal, setLeadsTotal] = useState(0);
+  const [leadsLoading, setLeadsLoading] = useState(false);
+
   // Upload em duas etapas: 1) escolher arquivo e ler as colunas reais do
   // cabeçalho; 2) mapear cada variável/campo para uma dessas colunas antes
   // de confirmar a importação.
@@ -77,6 +109,16 @@ export default function FaixaDetail() {
       .then((f) => {
         setFaixa(f);
         setConfig(f.dispatch_config);
+        setEditTemplateId(f.template_id || "");
+        setEditNumberIds(f.numbers.map((n) => n.whatsapp_number_id));
+        const mapeamentos: Record<string, { fonte_tipo: "coluna" | "campo_cliente"; valor: string }> = {};
+        for (const m of f.variable_mappings) {
+          mapeamentos[m.template_variable_id] = {
+            fonte_tipo: m.fonte_tipo === "campo_cliente" ? "campo_cliente" : "coluna",
+            valor: m.column_name || "",
+          };
+        }
+        setEditMappings(mapeamentos);
       })
       .catch((e) => setError(e.message));
   }
@@ -91,6 +133,29 @@ export default function FaixaDetail() {
       })
       .catch((e) => setError(e.message));
   }
+
+  function loadLeads(nomeFaixa: string) {
+    setLeadsLoading(true);
+    api
+      .listarLeads({ faixa: [nomeFaixa], limit: 50, offset: 0 })
+      .then((r) => {
+        setLeads(r.itens);
+        setLeadsTotal(r.total);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLeadsLoading(false));
+  }
+
+  useEffect(() => {
+    api.listTemplates().then(setTemplates).catch(() => undefined);
+    api.listNumbers().then(setNumbers).catch(() => undefined);
+    api.listCamposCliente().then(setCampos).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (faixa) loadLeads(faixa.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [faixa?.name]);
 
   useEffect(() => {
     loadFaixa();
@@ -124,7 +189,7 @@ export default function FaixaDetail() {
         cpf: pickDefault(result.columns, previous?.cpf),
         valor: pickDefault(result.columns, previous?.valor),
         variables: Object.fromEntries(
-          (faixa?.template.variables || []).map((v) => [
+          (faixa?.template?.variables || []).map((v) => [
             v.id,
             pickDefault(result.columns, previous?.variables?.[v.id]),
           ])
@@ -144,7 +209,7 @@ export default function FaixaDetail() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  const requiredVariableIds = faixa?.template.variables.map((v) => v.id) || [];
+  const requiredVariableIds = faixa?.template?.variables.map((v) => v.id) || [];
   const mappingComplete =
     Boolean(fieldMap.celular) &&
     Boolean(fieldMap.codigo_cliente) &&
@@ -208,6 +273,62 @@ export default function FaixaDetail() {
     }
   }
 
+  function selecionarTemplateEdicao(templateId: string) {
+    setEditTemplateId(templateId);
+    const template = templates.find((t) => t.id === templateId);
+    if (!template) {
+      setEditMappings({});
+      return;
+    }
+    // Mudou de template: o mapeamento antigo não serve mais (variáveis são
+    // outras), então recomeça com a sugestão padrão (nome interno da
+    // variável como coluna, igual ao passo 3 do assistente de nova faixa).
+    if (templateId !== faixa?.template_id) {
+      const mapeamentos: Record<string, { fonte_tipo: "coluna" | "campo_cliente"; valor: string }> = {};
+      for (const v of template.variables) {
+        mapeamentos[v.id] = { fonte_tipo: "coluna", valor: v.internal_name };
+      }
+      setEditMappings(mapeamentos);
+    }
+  }
+
+  function toggleEditNumber(numberId: string) {
+    setEditNumberIds((prev) => (prev.includes(numberId) ? prev.filter((n) => n !== numberId) : [...prev, numberId]));
+  }
+
+  const templateEmEdicao = templates.find((t) => t.id === editTemplateId) || null;
+
+  async function salvarConfigFaixa() {
+    if (!id) return;
+    setError(null);
+    setFaixaSalvaMsg(null);
+    setSalvandoFaixa(true);
+    try {
+      const variable_mappings: FaixaVariableMappingIn[] = editTemplateId
+        ? (templateEmEdicao?.variables || []).map((v) => {
+            const m = editMappings[v.id] || { fonte_tipo: "coluna" as const, valor: v.internal_name };
+            return {
+              template_variable_id: v.id,
+              fonte_tipo: m.fonte_tipo,
+              column_name: m.valor,
+            };
+          })
+        : [];
+      const atualizada = await api.atualizarFaixa(id, {
+        template_id: editTemplateId || null,
+        whatsapp_number_ids: editNumberIds,
+        variable_mappings,
+      });
+      setFaixa(atualizada);
+      setConfig(atualizada.dispatch_config);
+      setFaixaSalvaMsg("Configuração da faixa salva");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao salvar a configuração da faixa");
+    } finally {
+      setSalvandoFaixa(false);
+    }
+  }
+
   if (!faixa) return <div className="loading-state">Carregando faixa...</div>;
 
   return (
@@ -234,7 +355,118 @@ export default function FaixaDetail() {
 
       <div className="card">
         <div className="card-header">
-          <h3>1. Subir planilha e mapear colunas</h3>
+          <h3>Template, números e variáveis</h3>
+        </div>
+        {!faixa.template_id && (
+          <p className="card-subtitle" style={{ marginTop: 0 }}>
+            Esta faixa ainda não tem template atribuído — atribua um abaixo para poder subir a planilha e ligar o
+            disparo.
+          </p>
+        )}
+        {faixaSalvaMsg && (
+          <div className="success-box" style={{ marginBottom: 16 }}>
+            <IconCheckCircle width={16} height={16} />
+            <span>{faixaSalvaMsg}</span>
+          </div>
+        )}
+        <div className="field">
+          <label>Template aprovado</label>
+          <select value={editTemplateId} onChange={(e) => selecionarTemplateEdicao(e.target.value)}>
+            <option value="">Sem template</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.status})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <label style={{ marginBottom: 8, display: "block" }}>Números de envio</label>
+        <div className="option-list">
+          {numbers.map((n) => (
+            <label key={n.id} className={`option-item${editNumberIds.includes(n.id) ? " checked" : ""}`}>
+              <input type="checkbox" checked={editNumberIds.includes(n.id)} onChange={() => toggleEditNumber(n.id)} />
+              {n.label || n.display_phone_number} ({n.display_phone_number})
+            </label>
+          ))}
+          {numbers.length === 0 && (
+            <p className="text-muted">Nenhum número ainda — importe os números da WABA em Configurações.</p>
+          )}
+        </div>
+
+        {templateEmEdicao && templateEmEdicao.variables.length > 0 && (
+          <>
+            <label style={{ marginBottom: 8, marginTop: 16, display: "block" }}>Variáveis do template</label>
+            <div className="form-row" style={{ flexWrap: "wrap" }}>
+              {templateEmEdicao.variables.map((v) => {
+                const m = editMappings[v.id] || { fonte_tipo: "coluna" as const, valor: v.internal_name };
+                return (
+                  <div className="field" key={v.id} style={{ minWidth: 260 }}>
+                    <label>{`{{${v.position}}}`} ({v.internal_name})</label>
+                    <div style={{ display: "flex", gap: 6, minWidth: 0 }}>
+                      <select
+                        value={m.fonte_tipo}
+                        onChange={(e) =>
+                          setEditMappings((atual) => ({
+                            ...atual,
+                            [v.id]: {
+                              fonte_tipo: e.target.value as "coluna" | "campo_cliente",
+                              valor: e.target.value === "campo_cliente" ? campos[0]?.campo || "" : v.internal_name,
+                            },
+                          }))
+                        }
+                        style={{ flex: "0 0 auto" }}
+                      >
+                        <option value="coluna">Coluna da planilha</option>
+                        <option value="campo_cliente">Campo do cliente</option>
+                      </select>
+                      {m.fonte_tipo === "campo_cliente" ? (
+                        <select
+                          value={m.valor}
+                          onChange={(e) =>
+                            setEditMappings((atual) => ({ ...atual, [v.id]: { ...m, valor: e.target.value } }))
+                          }
+                          style={{ flex: 1, minWidth: 0 }}
+                        >
+                          {campos.map((c) => (
+                            <option key={c.campo} value={c.campo}>
+                              {c.rotulo}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          value={m.valor}
+                          onChange={(e) =>
+                            setEditMappings((atual) => ({ ...atual, [v.id]: { ...m, valor: e.target.value } }))
+                          }
+                          placeholder="nome de coluna sugerido"
+                          style={{ flex: 1, minWidth: 0 }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="field-hint">
+              "Coluna da planilha" só define o nome sugerido — ao subir a planilha, você escolhe a coluna real. "Campo
+              do cliente" usa um valor fixo do cadastro, sem precisar de planilha.
+            </p>
+          </>
+        )}
+
+        <div className="actions-row">
+          <button type="button" onClick={salvarConfigFaixa} disabled={salvandoFaixa}>
+            {salvandoFaixa ? "Salvando..." : "Salvar configuração da faixa"}
+          </button>
+        </div>
+      </div>
+
+      {faixa.template && (
+      <div className="card">
+        <div className="card-header">
+          <h3>Subir planilha e mapear colunas</h3>
           <button className="ghost small" onClick={handleDownloadModel} disabled={downloadingModel}>
             <IconDownload width={16} height={16} /> {downloadingModel ? "Baixando..." : "Baixar modelo sugerido (.xlsx)"}
           </button>
@@ -408,10 +640,11 @@ export default function FaixaDetail() {
           </>
         )}
       </div>
+      )}
 
       <div className="card">
         <div className="card-header">
-          <h3>2. Disparo e controles de execução</h3>
+          <h3>Disparo e controles de execução</h3>
         </div>
         {config && (
           <>
@@ -540,6 +773,62 @@ export default function FaixaDetail() {
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <h3>Leads gerados nesta faixa de atraso</h3>
+          <Link to="/leads" className="ghost small">
+            Ver em Leads →
+          </Link>
+        </div>
+        <p className="card-subtitle">
+          Clientes já gerados em Cobrança → Leads para a faixa de atraso "{faixa.name}" — não entram automaticamente
+          na fila acima, é preciso subir a planilha com esta base.
+        </p>
+        {leadsLoading ? (
+          <div className="loading-state">Carregando leads...</div>
+        ) : leads.length === 0 ? (
+          <div className="empty-state">
+            <IconUsers width={28} height={28} />
+            <div className="title">Nenhum lead gerado para esta faixa</div>
+            <p>Gere leads em Cobrança → Leads filtrando por esta faixa de atraso.</p>
+          </div>
+        ) : (
+          <>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Celular</th>
+                    <th>Cluster</th>
+                    <th>Dias de atraso</th>
+                    <th>Valor a cobrar</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leads.map((l) => (
+                    <tr key={l.id}>
+                      <td className="cell-strong">{l.nome || "—"}</td>
+                      <td>{l.celular || "—"}</td>
+                      <td className="text-muted">{l.cluster}</td>
+                      <td>{l.dias_atraso}</td>
+                      <td className="text-muted">{l.valor_cobrar}</td>
+                      <td>
+                        <span className={`status-pill ${l.status === "cobrado" ? "on" : "off"}`}>{l.status}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {leadsTotal > leads.length && (
+              <p className="field-hint">Mostrando {leads.length} de {leadsTotal} leads — veja o restante em Leads.</p>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -144,7 +144,10 @@ class Faixa(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String, unique=True, index=True)
-    template_id: Mapped[str] = mapped_column(ForeignKey("templates.id"))
+    # Nullable: uma faixa sincronizada a partir de uma faixa de atraso (ver
+    # POST /faixas/sincronizar-faixas-atraso) nasce sem template — o disparo
+    # fica pausado até alguém atribuir um template e os números em "Faixas".
+    template_id: Mapped[str | None] = mapped_column(ForeignKey("templates.id"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_number_index: Mapped[int] = mapped_column(Integer, default=0)
     # Último mapeamento coluna-da-planilha -> campo usado num upload, guardado só
@@ -154,7 +157,7 @@ class Faixa(Base):
     upload_field_mapping: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    template: Mapped[Template] = relationship()
+    template: Mapped[Template | None] = relationship()
     numbers: Mapped[list["FaixaNumber"]] = relationship(
         back_populates="faixa", cascade="all, delete-orphan"
     )

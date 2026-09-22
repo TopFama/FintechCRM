@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, CampoCliente, ChatwootTestResult, StatusChatwoot, StatusGoogle, StatusSeta, Template, WhatsappNumber } from "../api";
 import NumerosCard from "../components/config/NumerosCard";
+import RegrasCobrancaCard from "../components/config/RegrasCobrancaCard";
 import TokensMetaCard from "../components/config/TokensMetaCard";
 import { IconAlert, IconRefresh } from "../icons";
 
@@ -534,6 +535,7 @@ export default function Configuracoes() {
 
       <TokensMetaCard onNumerosAlterados={() => setVersaoNumeros((v) => v + 1)} />
       <NumerosCard versao={versaoNumeros} />
+      <RegrasCobrancaCard />
     </div>
   );
 }
