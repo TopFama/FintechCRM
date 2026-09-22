@@ -1,33 +1,48 @@
 import { useEffect, useState } from "react";
 import { api, DashboardSummary } from "../api";
+import EfetividadeCard from "../components/dashboard/EfetividadeCard";
+import LeadsCard from "../components/dashboard/LeadsCard";
+import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
+import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { IconAlert, IconBolt, IconCheckCircle, IconInbox, IconPhone } from "../icons";
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const opcoes = useOpcoesCobranca();
 
   useEffect(() => {
     api.dashboardSummary().then(setSummary).catch((e) => setError(e.message));
   }, []);
-
-  if (error)
-    return (
-      <div className="error-box">
-        <IconAlert width={16} height={16} />
-        <span>{error}</span>
-      </div>
-    );
-  if (!summary) return <div className="loading-state">Carregando dashboard...</div>;
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h2>Dashboard</h2>
-          <div className="subtitle">Visão geral da cobrança via WhatsApp</div>
+          <div className="subtitle">Fila de envio, base de cobrança, efetividade e leads</div>
         </div>
       </div>
 
+      {error && (
+        <div className="error-box">
+          <IconAlert width={16} height={16} />
+          <span>{error}</span>
+        </div>
+      )}
+      {!summary && !error && <div className="loading-state">Carregando resumo da fila...</div>}
+      {summary && <ResumoFila summary={summary} />}
+
+      <MatrizCobrancaCard opcoes={opcoes} />
+      <EfetividadeCard opcoes={opcoes} />
+      <LeadsCard opcoes={opcoes} />
+    </div>
+  );
+}
+
+function ResumoFila({ summary }: { summary: DashboardSummary }) {
+  return (
+    <>
       <div className="stat-grid">
         <div className="stat">
           <div className="stat-icon tone-primary">
@@ -134,6 +149,6 @@ export default function Dashboard() {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }

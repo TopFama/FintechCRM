@@ -55,6 +55,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response as unknown as T;
 }
 
+// 503 nas rotas de cobrança = ERP fora do ar ou não configurado
+export function mensagemErroSeta(e: unknown): string {
+  if (e instanceof ApiError && e.status === 503) {
+    return e.message.startsWith("ERP") ? e.message : `ERP SETA indisponível: ${e.message}`;
+  }
+  return e instanceof Error ? e.message : "Erro desconhecido";
+}
+
 // Gera query string com arrays como parâmetros repetidos (?a=1&a=2) e ignora vazios.
 export function montarQuery(params: object): string {
   const qs = new URLSearchParams();
@@ -173,11 +181,21 @@ export const api = {
     ),
   listarLeads: (params: FiltrosLeads & { limit: number; offset: number }) =>
     request<{ total: number; itens: Lead[] }>(`/leads?${montarQuery(params)}`),
+  contarLeads: async (status: "novo" | "cobrado") =>
+    (await request<{ total: number }>(`/leads?${montarQuery({ status, limit: 1 })}`)).total,
+  exportarLeads: (params: FiltrosLeads) =>
+    downloadFile(`/leads/exportar.xlsx?${montarQuery(params)}`, "leads.xlsx"),
   marcarLeadsCobrados: (ids: string[]) =>
     request<{ atualizados: number }>("/leads/marcar-cobrados", {
       method: "POST",
       body: JSON.stringify({ ids }),
     }),
+
+  // --- Efetividade da cobrança ---
+  relatorioEfetividade: (params: FiltrosEfetividade) =>
+    request<RelatorioEfetividade>(`/reports/efetividade?${montarQuery(params)}`),
+  exportarEfetividade: (params: FiltrosEfetividade) =>
+    downloadFile(`/reports/efetividade.xlsx?${montarQuery(params)}`, "efetividade.xlsx"),
 
   // --- Blacklist ---
   listarBlacklist: (busca?: string) =>
@@ -206,19 +224,23 @@ export const api = {
   desconectarGoogle: () => request<void>("/google/oauth", { method: "DELETE" }),
 };
 
-async function downloadFile(path: string, filename: string): Promise<void> {
+async function downloadFile(path: string, nomePadrao: string): Promise<void> {
   const token = getToken();
   const response = await fetch(`${API_URL}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!response.ok) {
-    throw new Error(`Erro ${response.status} ao baixar o relatório`);
+    const body = await response.json().catch(() => ({}));
+    throw new ApiError(response.status, body.detail || `Erro ${response.status} ao baixar o arquivo`);
   }
+  // O backend manda o nome do arquivo (ex. com as faixas e a data) no Content-Disposition
+  const disposicao = response.headers.get("content-disposition") ?? "";
+  const nome = /filename="?([^";]+)"?/i.exec(disposicao)?.[1] ?? nomePadrao;
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = filename;
+  link.download = nome;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -417,7 +439,7 @@ export interface RelatorioCobranca {
   faixas: string[];
   quantidade: MatrizDados<number>;
   quantidade_com_restricao_spc: MatrizDados<number>;
-  valor_em_aberto?: MatrizDados<string>;
+  valor_em_aberto: MatrizDados<string>;
 }
 
 export interface FiltrosCobranca {
@@ -527,4 +549,49 @@ export interface StatusGoogle {
   conectado: boolean;
   email: string | null;
   redirect_uri: string;
+}
+
+// --- Efetividade da cobrança ---
+
+export interface LinhaEfetividade {
+  clientes_cobrados: number;
+  valor_cobrado: string;
+  clientes_pagaram: number;
+  valor_pago: string;
+  parcelas_cobradas: number;
+  parcelas_pagas: number;
+  parcelas_renegociadas: number;
+  conversao_clientes: string; // razão 0–1
+  recuperacao_valor: string; // razão 0–1
+}
+
+export interface LinhaEfetividadeFaixa extends LinhaEfetividade {
+  faixa: string;
+}
+
+export interface LinhaEfetividadeLoja extends LinhaEfetividade {
+  loja: string;
+  loja_nome: string | null;
+  regional: string | null;
+  cluster_inad: string | null;
+}
+
+export interface RelatorioEfetividade {
+  por_faixa: LinhaEfetividadeFaixa[];
+  por_loja: LinhaEfetividadeLoja[];
+  total: LinhaEfetividade;
+  leads_sem_parcelas: number;
+  dias_janela: number | null;
+}
+
+export interface FiltrosEfetividade {
+  cobrado_de?: string;
+  cobrado_ate?: string;
+  dias_janela?: number;
+  faixa?: string[];
+  cluster?: string[];
+  loja?: string[];
+  regional?: string[];
+  estado?: string[];
+  cluster_inad?: string[];
 }

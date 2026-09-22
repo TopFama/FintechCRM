@@ -54,3 +54,11 @@ export function formatCelular(cel: string | null | undefined): string {
   }
   return cel;
 }
+
+// Razão 0–1 (decimal em string vindo do backend) → "12,3%"
+export function formatPercentual(razao: string | number | null | undefined): string {
+  if (razao === null || razao === undefined || razao === "") return "—";
+  return new Intl.NumberFormat("pt-BR", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(
+    Number(razao),
+  );
+}

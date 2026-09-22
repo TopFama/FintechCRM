@@ -31,13 +31,13 @@ test.describe("03. Gerar leads", () => {
       data.itens.forEach((it: any) => existingCombos.add(`${it.cluster}|${it.faixa}`));
     }
 
-    await page.goto("/cobranca");
+    // The cluster × faixa matrix lives on the Dashboard; a cell opens Cobrança pre-filtered
+    await page.goto("/");
+    const card = page.locator(".card").filter({ has: page.getByRole("heading", { name: /cluster × faixa/ }) });
+    await card.getByRole("button", { name: "Aplicar filtros" }).click();
+    await expect(card.locator(".loading-state")).toHaveCount(0, { timeout: 120_000 });
 
-    // Click "Aplicar filtros" to load matrix and clients
-    await page.getByRole("button", { name: "Aplicar filtros" }).click();
-    await expect(page.getByText(/Carregando/i)).not.toBeVisible({ timeout: 120_000 });
-
-    const matrix = page.locator("table").first();
+    const matrix = card.locator(".matriz-table");
     await expect(matrix).toBeVisible({ timeout: 60_000 });
 
     // Header faixas
@@ -92,7 +92,8 @@ test.describe("03. Gerar leads", () => {
 
     expect(targetCell).not.toBeNull();
     await targetCell.click();
-    await expect(page.getByText(/Carregando/i)).not.toBeVisible({ timeout: 120_000 });
+    await expect(page).toHaveURL(/\/cobranca\?/);
+    await expect(page.locator(".loading-state")).toHaveCount(0, { timeout: 120_000 });
 
     // Click "Gerar leads com estes filtros" and accept confirm dialog
     const gerarBtn = page.getByRole("button", { name: "Gerar leads com estes filtros" });

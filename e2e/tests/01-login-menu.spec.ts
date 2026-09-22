@@ -23,6 +23,8 @@ test.describe("01. Login & menu", () => {
   });
 
   test("correct login lands on dashboard, sidebar has exact items", async ({ page }) => {
+    // o Dashboard carrega as lojas; sem Google conectado /lojas responde 503 (esperado neste ambiente)
+    allowConsoleErrors(page, /503/, /status of 503/);
     await page.goto("/login");
 
     // Login with correct password

@@ -112,6 +112,8 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    # sem isso o navegador esconde o nome do arquivo das exportações .xlsx
+    expose_headers=["Content-Disposition"],
 )
 
 app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")

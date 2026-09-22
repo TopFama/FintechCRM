@@ -1100,3 +1100,31 @@ label {
   white-space: nowrap;
   border-width: 0;
 }
+
+/* --- Dashboard: abas, total e formatação condicional do cluster INAD --- */
+.abas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.linha-total td {
+  font-weight: 700;
+  border-top: 2px solid var(--color-border-strong);
+}
+.badge.cluster-inad-alto {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+.badge.cluster-inad-medio {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+.badge.cluster-inad-baixo {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+.badge.cluster-inad-neutro {
+  background: var(--color-neutral-bg);
+  color: var(--color-text-muted);
+}
