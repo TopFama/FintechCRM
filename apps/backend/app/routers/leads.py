@@ -8,21 +8,13 @@ from sqlalchemy.orm import Session
 from .. import google_client, lojas as lojas_base, models, schemas, seta_client
 from ..database import get_db
 from ..deps import get_current_user
+from ..leads_service import _em_lotes, gerar_leads_de_clientes
 from ..regras_db import carregar_regras
-from ..utils.leads_xlsx import gerar_xlsx_leads
-from ..utils.spc import parse_spc
 from ..timezone import hoje_br
 from .blacklist import codigos_bloqueados
 from .cobranca import buscar_base_ou_erro, filtros_base
 
 router = APIRouter(prefix="/leads", tags=["leads"])
-
-LOTE = 1000  # tamanho dos lotes de IN (...) ao consultar o banco
-
-
-def _em_lotes(itens: list, tamanho: int = LOTE):
-    for i in range(0, len(itens), tamanho):
-        yield itens[i : i + tamanho]
 
 
 @router.post("/gerar", response_model=schemas.LeadsGerarAsyncOut)
@@ -44,81 +36,14 @@ def gerar_leads(
         return schemas.LeadsGerarAsyncOut(status="processing")
     clientes = job["data"]
 
-    ja_existem: set[tuple[str, str, date]] = set()
-    for lote in _em_lotes([c["codigo"] for c in clientes]):
-        rows = db.query(
-            models.Lead.codigo_cliente, models.Lead.faixa, models.Lead.vencimento_mais_antigo
-        ).filter(models.Lead.codigo_cliente.in_(lote))
-        ja_existem.update((r[0], r[1], r[2]) for r in rows)
+    try:
+        criados, ja_existiam, sem_celular = gerar_leads_de_clientes(db, clientes, created_by=user.id)
+    except seta_client.SetaIndisponivel as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
-    novos = [c for c in clientes if (c["codigo"], c["faixa"], c["vencimento_mais_antigo"]) not in ja_existem]
-
-    # a data da consulta SPC só existe no texto bruto: busca só de quem vira lead
-    datas_spc: dict[str, date | None] = {}
-    parcelas_map: dict[str, list[dict]] = {}
-    if novos:
-        codigos_novos = [c["codigo"] for c in novos]
-        try:
-            for lote in _em_lotes(codigos_novos, 5000):
-                for codigo, texto in seta_client.buscar_spc(lote).items():
-                    datas_spc[codigo] = parse_spc(texto)[1]
-            parcelas_map = seta_client.buscar_parcelas_cobranca(
-                codigos_novos, juros=carregar_regras(db).juros
-            )
-        except seta_client.SetaIndisponivel as exc:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-
-    leads_para_salvar = []
-    for c in novos:
-        lead = models.Lead(
-            codigo_cliente=c["codigo"],
-            nome=c["nome"],
-            cpf=c["cpfcnpj"],
-            celular=c["celular"],
-            celular_origem=c["celular_origem"],
-            celular_original=c["celular_original"],
-            cluster=c["cluster"],
-            faixa=c["faixa"],
-            faixa_compra=c["faixa_compra"],
-            qtd_compras=c["qtd_compras"],
-            dias_atraso=c["dias_atraso"],
-            qtd_parcelas=c["qtd_parcelas_cobranca"],
-            valor_em_aberto=c["valor_em_aberto"],
-            valor_cobrar=c["valor_cobrar"],
-            vencimento_mais_antigo=c["vencimento_mais_antigo"],
-            lojas="," + ",".join(c["lojas"]) + ",",
-            portadores="," + ",".join(c["portadores"]) + ",",
-            status_cliente=c["status"],
-            spc_restricao=c["spc_restricao"],
-            spc_data_consulta=datas_spc.get(c["codigo"]),
-            created_by=user.id,
-        )
-        vistos_titulos = set()
-        for p in parcelas_map.get(c["codigo"], []):
-            t_cod = str(p["titulo_codigo"]).strip()
-            if t_cod in vistos_titulos:
-                continue
-            vistos_titulos.add(t_cod)
-            lead.parcelas.append(
-                models.LeadParcela(
-                    titulo_codigo=t_cod,
-                    empresa=str(p["empresa"]).strip(),
-                    vencimento=p["vencimento"],
-                    valor=p["valor"],
-                    valor_cobrar=p["valor_cobrar"],
-                )
-            )
-        leads_para_salvar.append(lead)
-
-    db.add_all(leads_para_salvar)
-    db.commit()
     return schemas.LeadsGerarAsyncOut(
         status="ready",
-        data=schemas.LeadsGerarResult(
-            criados=len(novos),
-            ja_existiam=len(clientes) - len(novos),
-            sem_celular=sum(1 for c in novos if not c["celular"]),
-        ),
+        data=schemas.LeadsGerarResult(criados=criados, ja_existiam=ja_existiam, sem_celular=sem_celular),
     )
 
 
