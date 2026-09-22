@@ -11,6 +11,7 @@ from ..deps import get_current_user
 from ..regras_db import carregar_regras
 from ..utils.leads_xlsx import gerar_xlsx_leads
 from ..utils.spc import parse_spc
+from ..timezone import hoje_br
 from .blacklist import codigos_bloqueados
 from .cobranca import buscar_base_ou_erro, filtros_base
 
@@ -259,7 +260,7 @@ def exportar_leads_xlsx(
 
     conteudo = gerar_xlsx_leads(leads)
     nome_faixas = _nome_faixas_arquivo(filtros["faixa"])
-    hoje = date.today().isoformat()
+    hoje = hoje_br().isoformat()
     filename = f"leads_{nome_faixas}_{hoje}.xlsx"
 
     return Response(

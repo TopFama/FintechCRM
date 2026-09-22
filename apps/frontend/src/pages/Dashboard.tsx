@@ -4,6 +4,7 @@ import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
 import SortableTh from "../components/SortableTh";
+import { formatDataHora } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { IconAlert, IconBolt, IconCheckCircle, IconInbox, IconPhone } from "../icons";
 import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
@@ -201,7 +202,7 @@ function ResumoFila({ summary, nomesFaixa }: { summary: DashboardSummary; nomesF
               <tbody>
                 {errosOrdenado.map((row, i) => (
                   <tr key={i}>
-                    <td className="text-muted">{new Date(String(row.created_at)).toLocaleString("pt-BR")}</td>
+                    <td className="text-muted">{formatDataHora(String(row.created_at))}</td>
                     <td>{String(row.message)}</td>
                   </tr>
                 ))}

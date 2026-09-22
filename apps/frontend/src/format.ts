@@ -16,15 +16,24 @@ export function formatData(iso: string | null | undefined): string {
   return `${d}/${m}/${a}`;
 }
 
+const dataHoraBR = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+// O backend grava e serializa timestamps em UTC sem sufixo de fuso (ex:
+// "2024-01-15T14:30:00") — sem isso, o navegador interpretaria a string como
+// hora local dele, não UTC, e o horário exibido saía errado.
 export function formatDataHora(iso: string | null | undefined): string {
   if (!iso) return "—";
-  // iso pode ser "2024-01-15T14:30:00", "2024-01-15 14:30:00" ou com timezone
-  const [datePart, timePart] = iso.split(/[T ]/);
-  const partes = datePart.split("-");
-  if (partes.length !== 3) return iso;
-  const [a, m, d] = partes;
-  const hora = timePart ? timePart.slice(0, 5) : "";
-  return hora ? `${d}/${m}/${a} ${hora}` : `${d}/${m}/${a}`;
+  const normalizado = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso.replace(" ", "T")}Z`;
+  const data = new Date(normalizado);
+  if (isNaN(data.getTime())) return iso;
+  return dataHoraBR.format(data).replace(",", "");
 }
 
 export function formatCpf(digitos: string | null | undefined): string {

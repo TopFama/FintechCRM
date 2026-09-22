@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, DispatchReportItem, Faixa, InvalidPhoneRecord } from "../api";
 import SortableTh from "../components/SortableTh";
+import { formatDataHora } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
 import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
 
@@ -151,7 +152,7 @@ export default function Relatorios() {
                       <td>{r.celular_original}</td>
                       <td className="text-muted">{r.celular_normalizado || "—"}</td>
                       <td className="text-muted">{r.motivo}</td>
-                      <td className="text-faint">{new Date(r.created_at).toLocaleString("pt-BR")}</td>
+                      <td className="text-faint">{formatDataHora(r.created_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -198,7 +199,7 @@ export default function Relatorios() {
                     <td>{r.nome || "—"}</td>
                     <td>{r.valor || "—"}</td>
                     <td className="text-muted">{r.telefone}</td>
-                    <td className="text-faint">{new Date(r.enviado_em).toLocaleString("pt-BR")}</td>
+                    <td className="text-faint">{formatDataHora(r.enviado_em)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -18,14 +18,13 @@ from . import chatwoot_client, models
 from .config import settings
 from .database import SessionLocal
 from .meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_do_numero
+from .timezone import BUSINESS_TZ
 
 logger = logging.getLogger("dispatch_worker")
 
 _WEEKDAY_MAP = {  # Python Monday=0 .. Sunday=6  ->  1..7 como usado em schedule_days
     0: "1", 1: "2", 2: "3", 3: "4", 4: "5", 5: "6", 6: "7",
 }
-
-_BUSINESS_TZ = ZoneInfo(settings.business_timezone)
 
 
 def _within_schedule_window(config: models.DispatchConfig, now_utc: datetime) -> bool:
@@ -36,7 +35,7 @@ def _within_schedule_window(config: models.DispatchConfig, now_utc: datetime) ->
     mais cedo (ou mais tarde) do horário real de Brasília, deixando cliente
     na fila sem disparar mesmo "dentro do horário configurado"."""
 
-    local_now = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(_BUSINESS_TZ)
+    local_now = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ)
     if _WEEKDAY_MAP[local_now.weekday()] not in config.schedule_days.split(","):
         return False
     start = dt_time.fromisoformat(config.schedule_start)
