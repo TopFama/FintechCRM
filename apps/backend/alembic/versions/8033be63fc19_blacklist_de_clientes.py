@@ -1,7 +1,7 @@
 """blacklist de clientes
 
 Revision ID: 8033be63fc19
-Revises: 3bd1d89aa92f
+Revises: 9137e403d92d
 Create Date: 2026-09-21 20:41:34.639733
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '8033be63fc19'
-down_revision: Union[str, None] = '3bd1d89aa92f'
+down_revision: Union[str, None] = '9137e403d92d'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

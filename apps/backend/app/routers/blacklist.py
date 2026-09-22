@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
-from ..utils.document import validate_client_code
+from ..utils.document import identify_document
 
 router = APIRouter(prefix="/blacklist", tags=["blacklist"])
 
@@ -39,7 +39,7 @@ def add_blacklist(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    parsed = validate_client_code(payload.documento)
+    parsed = identify_document(payload.documento)
     if not parsed:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, MSG_DOCUMENTO_INVALIDO)
     valor, tipo = parsed
@@ -71,7 +71,7 @@ def add_blacklist_lote(
     for bruto in payload.documentos:
         if not bruto.strip():
             continue
-        parsed = validate_client_code(bruto)
+        parsed = identify_document(bruto)
         if not parsed:
             invalidos.append(bruto.strip())
             continue

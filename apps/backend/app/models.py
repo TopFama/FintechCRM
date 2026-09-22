@@ -253,7 +253,7 @@ class ClienteBloqueado(Base):
     __table_args__ = (UniqueConstraint("tipo", "valor"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
-    tipo: Mapped[str] = mapped_column(String)  # "seta" ou "cpf", igual a QueueItem.codigo_tipo
+    tipo: Mapped[str] = mapped_column(String)  # "seta" (8 dígitos) ou "cpf" (11 dígitos)
     valor: Mapped[str] = mapped_column(String, index=True)
     motivo: Mapped[str] = mapped_column(String, default="")
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
