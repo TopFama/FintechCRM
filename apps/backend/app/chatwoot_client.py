@@ -112,7 +112,7 @@ class ChatwootClient:
         criada = await self._request(
             "POST",
             "conversations",
-            json={"source_id": source_id, "inbox_id": inbox_id, "contact_id": contact_id, "status": "open"},
+            json={"source_id": source_id, "inbox_id": inbox_id, "contact_id": contact_id, "status": "pending"},
         )
         return int(criada["id"])
 
