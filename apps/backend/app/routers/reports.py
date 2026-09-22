@@ -1,5 +1,7 @@
+import asyncio
 import io
-from datetime import date, datetime
+import logging
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -9,11 +11,13 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session, selectinload
 
-from .. import google_client, lojas as lojas_base, models, schemas, seta_client
+from .. import cambio, google_client, lojas as lojas_base, meta_client, models, schemas, seta_client
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
 from ..relatorio_efetividade import montar_relatorio
+
+logger = logging.getLogger(__name__)
 
 api = APIRouter()
 
@@ -72,11 +76,12 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
 
     headers_faixa = [
         "Faixa de atraso",
+        "Qtd. de envios",
         "Clientes cobrados",
         "Valor cobrado",
         "Clientes que pagaram",
-        "Valor pago",
-        "Conversão (%)",
+        "Recebimento",
+        "% Conv.",
         "Recuperação (%)",
     ]
     ws_faixa.append(headers_faixa)
@@ -85,6 +90,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
         ws_faixa.append(
             [
                 linha["faixa"],
+                linha["qtd_envios"],
                 linha["clientes_cobrados"],
                 float(linha["valor_cobrado"]),
                 linha["clientes_pagaram"],
@@ -98,6 +104,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
     ws_faixa.append(
         [
             "Total",
+            tot["qtd_envios"],
             tot["clientes_cobrados"],
             float(tot["valor_cobrado"]),
             tot["clientes_pagaram"],
@@ -116,9 +123,9 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
         for col_idx, cell in enumerate(ws_faixa[row_idx], start=1):
             if is_total:
                 cell.font = Font(bold=True)
-            if col_idx in (3, 5):
+            if col_idx in (4, 6):
                 cell.number_format = '"R$" #,##0.00'
-            elif col_idx in (6, 7):
+            elif col_idx in (7, 8):
                 cell.number_format = "0.0%"
 
     ws_faixa.freeze_panes = "A2"
@@ -139,11 +146,12 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
         "Loja",
         "Regional",
         "Cluster INAD",
+        "Qtd. de envios",
         "Clientes cobrados",
         "Valor cobrado",
         "Clientes que pagaram",
-        "Valor pago",
-        "Conversão (%)",
+        "Recebimento",
+        "% Conv.",
         "Recuperação (%)",
     ]
     ws_loja.append(headers_loja)
@@ -154,6 +162,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
                 linha["loja"],
                 linha.get("regional") or "",
                 linha.get("cluster_inad") or "",
+                linha["qtd_envios"],
                 linha["clientes_cobrados"],
                 float(linha["valor_cobrado"]),
                 linha["clientes_pagaram"],
@@ -168,6 +177,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
             "Total",
             "",
             "",
+            tot["qtd_envios"],
             tot["clientes_cobrados"],
             float(tot["valor_cobrado"]),
             tot["clientes_pagaram"],
@@ -186,9 +196,9 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
         for col_idx, cell in enumerate(ws_loja[row_idx], start=1):
             if is_total:
                 cell.font = Font(bold=True)
-            if col_idx in (5, 7):
+            if col_idx in (6, 8):
                 cell.number_format = '"R$" #,##0.00'
-            elif col_idx in (8, 9):
+            elif col_idx in (9, 10):
                 cell.number_format = "0.0%"
 
     ws_loja.freeze_panes = "A2"
@@ -362,7 +372,7 @@ def _obter_dados_efetividade(
     regional: list[str] | None = None,
     estado: list[str] | None = None,
     cluster_inad: list[str] | None = None,
-) -> tuple[dict, int]:
+) -> tuple[dict, int, list[dict]]:
     try:
         codigos_loja = lojas_base.combinar_lojas(
             db,
@@ -376,7 +386,7 @@ def _obter_dados_efetividade(
 
     regras = carregar_regras(db)
     if codigos_loja is not None and len(codigos_loja) == 0:
-        return montar_relatorio([], lojas_info={}, faixas_ordem=regras.nomes_faixa), 0
+        return montar_relatorio([], lojas_info={}, faixas_ordem=regras.nomes_faixa), 0, []
 
     try:
         lojas_info = {l["filial"]: l for l in lojas_base.listar_lojas(db)}
@@ -405,7 +415,9 @@ def _obter_dados_efetividade(
             models.LeadParcela.empresa,
             models.LeadParcela.valor,
             models.LeadParcela.valor_cobrar,
+            models.Lead.id.label("lead_id"),
             models.Lead.codigo_cliente,
+            models.Lead.nome,
             models.Lead.faixa,
             models.Lead.cobrado_em,
         )
@@ -466,9 +478,13 @@ def _obter_dados_efetividade(
 
         itens.append(
             {
+                "lead_id": p.lead_id,
                 "codigo_cliente": p.codigo_cliente,
+                "nome": p.nome,
                 "faixa": p.faixa,
                 "empresa": p.empresa,
+                "titulo_codigo": p.titulo_codigo,
+                "data_cobranca": data_cobranca,
                 "valor_cobrar": p.valor_cobrar,
                 "pago": pago,
                 "renegociada": renegociada,
@@ -477,7 +493,45 @@ def _obter_dados_efetividade(
         )
 
     relatorio = montar_relatorio(itens, lojas_info=lojas_info, faixas_ordem=regras.nomes_faixa)
-    return relatorio, leads_sem_parcelas
+    return relatorio, leads_sem_parcelas, itens
+
+
+def _calcular_valor_a_pagar_brl(db: Session, cobrado_de: date | None, cobrado_ate: date | None) -> Decimal | None:
+    """Custo das conversas de WhatsApp no período (Meta Pricing Analytics),
+    somado entre todas as WABAs cadastradas e convertido pra BRL na cotação
+    atual. A Meta não permite quebrar esse custo por faixa/loja (é por
+    WABA/categoria de conversa), então só entra no total do relatório.
+    Best-effort: qualquer falha (token não configurado, Meta fora do ar,
+    câmbio indisponível) faz o valor voltar None em vez de derrubar o
+    relatório inteiro, já que é informação complementar."""
+
+    wabas = {
+        w for (w,) in db.query(models.WhatsappNumber.waba_id).filter(models.WhatsappNumber.waba_id.isnot(None)).distinct()
+    }
+    if not wabas:
+        return None
+
+    inicio = cobrado_de or (date.today() - timedelta(days=30))
+    fim = cobrado_ate or date.today()
+    start_unix = int(datetime.combine(inicio, datetime.min.time()).timestamp())
+    end_unix = int(datetime.combine(fim, datetime.max.time()).timestamp())
+
+    async def _somar() -> Decimal:
+        total_usd = Decimal("0.00")
+        for waba_id in wabas:
+            token = meta_client.token_da_waba(db, waba_id)
+            client = meta_client.MetaClient(token)
+            pontos = await client.conversation_analytics(waba_id, start_unix=start_unix, end_unix=end_unix)
+            for p in pontos:
+                total_usd += Decimal(str(p.get("cost", 0) or 0))
+        cotacao = await cambio.cotacao_usd_brl()
+        return (total_usd * Decimal(str(cotacao))).quantize(Decimal("0.01"))
+
+    try:
+        return asyncio.run(_somar())
+    except Exception as exc:  # noqa: BLE001 - dado complementar, não pode derrubar o relatório
+        logger.warning("Não foi possível calcular o valor a pagar à Meta: %s", exc)
+        return None
 
 
 @api.get("/efetividade", response_model=schemas.RelatorioEfetividadeOut)
@@ -494,7 +548,7 @@ def relatorio_efetividade(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    dados, leads_sem_parcelas = _obter_dados_efetividade(
+    dados, leads_sem_parcelas, _itens = _obter_dados_efetividade(
         db,
         cobrado_de=cobrado_de,
         cobrado_ate=cobrado_ate,
@@ -506,12 +560,14 @@ def relatorio_efetividade(
         estado=estado,
         cluster_inad=cluster_inad,
     )
+    valor_a_pagar_brl = _calcular_valor_a_pagar_brl(db, cobrado_de, cobrado_ate)
     return schemas.RelatorioEfetividadeOut(
         por_faixa=dados["por_faixa"],
         por_loja=dados["por_loja"],
         total=dados["total"],
         leads_sem_parcelas=leads_sem_parcelas,
         dias_janela=dias_janela,
+        valor_a_pagar_brl=valor_a_pagar_brl,
     )
 
 
@@ -529,7 +585,7 @@ def export_relatorio_efetividade(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    dados, _ = _obter_dados_efetividade(
+    dados, _leads_sem_parcelas, _itens = _obter_dados_efetividade(
         db,
         cobrado_de=cobrado_de,
         cobrado_ate=cobrado_ate,
@@ -546,6 +602,101 @@ def export_relatorio_efetividade(
         content=content,
         media_type=_XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="relatorio_efetividade.xlsx"'},
+    )
+
+
+@api.get("/efetividade/clientes", response_model=list[schemas.LinhaEfetividadeClienteOut])
+def relatorio_efetividade_clientes(
+    cobrado_de: date | None = Query(None),
+    cobrado_ate: date | None = Query(None),
+    dias_janela: int | None = Query(None, ge=0, le=365),
+    faixa: list[str] | None = Query(None),
+    cluster: list[str] | None = Query(None),
+    loja: list[str] | None = Query(None),
+    regional: list[str] | None = Query(None),
+    estado: list[str] | None = Query(None),
+    cluster_inad: list[str] | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Mesmo relatório de efetividade, no nível de cada cliente/parcela
+    cobrada — pra investigar caso a caso em vez de só o agregado."""
+
+    _dados, _leads_sem_parcelas, itens = _obter_dados_efetividade(
+        db,
+        cobrado_de=cobrado_de,
+        cobrado_ate=cobrado_ate,
+        dias_janela=dias_janela,
+        faixa=faixa,
+        cluster=cluster,
+        loja=loja,
+        regional=regional,
+        estado=estado,
+        cluster_inad=cluster_inad,
+    )
+    return [
+        schemas.LinhaEfetividadeClienteOut(
+            codigo_cliente=it["codigo_cliente"],
+            nome=it["nome"],
+            faixa=it["faixa"],
+            empresa=it["empresa"],
+            titulo_codigo=it["titulo_codigo"],
+            data_cobranca=it["data_cobranca"],
+            valor_cobrar=it["valor_cobrar"],
+            pago=it["pago"],
+            valor_pago=it["valor_pago"],
+            renegociada=it["renegociada"],
+        )
+        for it in itens
+    ]
+
+
+@api.get("/efetividade/clientes.xlsx")
+def export_relatorio_efetividade_clientes(
+    cobrado_de: date | None = Query(None),
+    cobrado_ate: date | None = Query(None),
+    dias_janela: int | None = Query(None, ge=0, le=365),
+    faixa: list[str] | None = Query(None),
+    cluster: list[str] | None = Query(None),
+    loja: list[str] | None = Query(None),
+    regional: list[str] | None = Query(None),
+    estado: list[str] | None = Query(None),
+    cluster_inad: list[str] | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    _dados, _leads_sem_parcelas, itens = _obter_dados_efetividade(
+        db,
+        cobrado_de=cobrado_de,
+        cobrado_ate=cobrado_ate,
+        dias_janela=dias_janela,
+        faixa=faixa,
+        cluster=cluster,
+        loja=loja,
+        regional=regional,
+        estado=estado,
+        cluster_inad=cluster_inad,
+    )
+    headers = ["Código", "Nome", "Faixa", "Loja", "Título", "Data cobrança", "Valor cobrado", "Pagou", "Valor pago"]
+    rows = [
+        [
+            _formula_safe(it["codigo_cliente"]),
+            _formula_safe(it["nome"] or ""),
+            it["faixa"],
+            it["empresa"],
+            it["titulo_codigo"],
+            it["data_cobranca"].isoformat() if it["data_cobranca"] else "",
+            float(it["valor_cobrar"] or 0),
+            "Sim" if it["pago"] else "Não",
+            float(it["valor_pago"] or 0),
+        ]
+        for it in itens
+    ]
+    content = _build_xlsx(headers, rows)
+    return Response(
+        content=content,
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="relatorio_efetividade_clientes.xlsx"'},
     )
 
 

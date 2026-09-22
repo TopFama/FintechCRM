@@ -305,6 +305,8 @@ export const api = {
     request<RelatorioEfetividade>(`/reports/efetividade?${montarQuery(params)}`),
   exportarEfetividade: (params: FiltrosEfetividade) =>
     downloadFile(`/reports/efetividade.xlsx?${montarQuery(params)}`, "efetividade.xlsx"),
+  exportarEfetividadeClientes: (params: FiltrosEfetividade) =>
+    downloadFile(`/reports/efetividade/clientes.xlsx?${montarQuery(params)}`, "efetividade_clientes.xlsx"),
 
   // --- Blacklist ---
   listarBlacklist: (busca?: string) =>
@@ -786,6 +788,7 @@ export interface ChatwootTestResult {
 // --- Efetividade da cobrança ---
 
 export interface LinhaEfetividade {
+  qtd_envios: number;
   clientes_cobrados: number;
   valor_cobrado: string;
   clientes_pagaram: number;
@@ -814,6 +817,7 @@ export interface RelatorioEfetividade {
   total: LinhaEfetividade;
   leads_sem_parcelas: number;
   dias_janela: number | null;
+  valor_a_pagar_brl: string | null;
 }
 
 export interface FiltrosEfetividade {

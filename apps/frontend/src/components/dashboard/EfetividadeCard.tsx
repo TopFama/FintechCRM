@@ -43,24 +43,16 @@ export function BadgeClusterInad({ valor }: { valor: string | null }) {
 function Metricas({ linha }: { linha: LinhaEfetividade }) {
   return (
     <>
+      <td>{linha.qtd_envios.toLocaleString("pt-BR")}</td>
       <td>{linha.clientes_cobrados.toLocaleString("pt-BR")}</td>
-      <td>{formatBRL(linha.valor_cobrado)}</td>
       <td>{linha.clientes_pagaram.toLocaleString("pt-BR")}</td>
-      <td>{formatBRL(linha.valor_pago)}</td>
       <td>{formatPercentual(linha.conversao_clientes)}</td>
-      <td>{formatPercentual(linha.recuperacao_valor)}</td>
+      <td>{formatBRL(linha.valor_pago)}</td>
     </>
   );
 }
 
-const CABECALHO_METRICAS = [
-  "Clientes cobrados",
-  "Valor cobrado",
-  "Clientes que pagaram",
-  "Valor pago",
-  "Conversão",
-  "Recuperação",
-];
+const CABECALHO_METRICAS = ["Qtd. de envios", "Clientes cobrados", "Clientes pagou", "% Conv.", "Recebimento"];
 
 export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) {
   const [filtros, setFiltros] = useState<FiltrosEfetividade>(FILTROS_PADRAO);
@@ -70,6 +62,7 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [exportando, setExportando] = useState(false);
+  const [exportandoClientes, setExportandoClientes] = useState(false);
   const [aba, setAba] = useState<Aba>("faixa");
   const reqRef = useRef(0);
 
@@ -106,6 +99,19 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
     }
   }
 
+  async function exportarClientes() {
+    if (janelaInvalida) return;
+    setExportandoClientes(true);
+    setErro(null);
+    try {
+      await api.exportarEfetividadeClientes(filtrosComJanela());
+    } catch (e) {
+      setErro(mensagemErroSeta(e));
+    } finally {
+      setExportandoClientes(false);
+    }
+  }
+
   const paraOpcoes = (valores: string[] = []) => valores.map((v) => ({ value: v, label: v }));
 
   return (
@@ -115,9 +121,19 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
           <h3>Efetividade da cobrança</h3>
           <div className="card-subtitle">Das parcelas cobradas por WhatsApp, quantas foram pagas após o envio</div>
         </div>
-        <button type="button" className="secondary" onClick={exportar} disabled={exportando || janelaInvalida}>
-          {exportando ? "Exportando..." : "Exportar Excel"}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" className="secondary" onClick={exportar} disabled={exportando || janelaInvalida}>
+            {exportando ? "Exportando..." : "Exportar Excel"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={exportarClientes}
+            disabled={exportandoClientes || janelaInvalida}
+          >
+            {exportandoClientes ? "Exportando..." : "Exportar por cliente"}
+          </button>
+        </div>
       </div>
 
       <div className="form-row" style={{ flexWrap: "wrap" }}>
@@ -235,6 +251,11 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
 
       {relatorio && !carregando && (
         <>
+          {relatorio.valor_a_pagar_brl !== null && (
+            <div className="field-hint" style={{ marginBottom: 8 }}>
+              Valor a pagar (Meta, conversas do período convertidas em BRL): {formatBRL(relatorio.valor_a_pagar_brl)}
+            </div>
+          )}
           {relatorio.leads_sem_parcelas > 0 && (
             <div className="field-hint" style={{ marginBottom: 8 }}>
               {relatorio.leads_sem_parcelas} lead(s) antigo(s) não entram no relatório (foram gerados antes do registro

@@ -13,6 +13,7 @@ from .cobranca_regras import REGRAS_PADRAO
 def _calcular_metricas(itens_grupo: list[dict]) -> dict:
     if not itens_grupo:
         return {
+            "qtd_envios": 0,
             "clientes_cobrados": 0,
             "valor_cobrado": Decimal("0.00"),
             "clientes_pagaram": 0,
@@ -26,9 +27,14 @@ def _calcular_metricas(itens_grupo: list[dict]) -> dict:
 
     clientes_cobrados_set = {it["codigo_cliente"] for it in itens_grupo}
     clientes_pagaram_set = {it["codigo_cliente"] for it in itens_grupo if it.get("pago")}
+    envios_set = {it["lead_id"] for it in itens_grupo if it.get("lead_id")}
 
     clientes_cobrados = len(clientes_cobrados_set)
     clientes_pagaram = len(clientes_pagaram_set)
+    # QTD DE ENVIOS: mensagens de WhatsApp mandadas (1 por lead marcado
+    # "cobrado") — pode ser maior que clientes_cobrados se o mesmo cliente
+    # tiver sido cobrado mais de uma vez no período (leads diferentes).
+    qtd_envios = len(envios_set) if envios_set else clientes_cobrados
 
     valor_cobrado = sum((Decimal(str(it["valor_cobrar"])) for it in itens_grupo), Decimal("0.00")).quantize(
         Decimal("0.01")
@@ -52,6 +58,7 @@ def _calcular_metricas(itens_grupo: list[dict]) -> dict:
         recuperacao_valor = Decimal("0.0000")
 
     return {
+        "qtd_envios": qtd_envios,
         "clientes_cobrados": clientes_cobrados,
         "valor_cobrado": valor_cobrado,
         "clientes_pagaram": clientes_pagaram,

@@ -427,6 +427,7 @@ class DashboardSummary(BaseModel):
 
 
 class LinhaEfetividadeBase(BaseModel):
+    qtd_envios: int
     clientes_cobrados: int
     valor_cobrado: Decimal
     clientes_pagaram: int
@@ -453,12 +454,26 @@ class LinhaEfetividadeTotal(LinhaEfetividadeBase):
     pass
 
 
+class LinhaEfetividadeClienteOut(BaseModel):
+    codigo_cliente: str
+    nome: str
+    faixa: str
+    empresa: str
+    titulo_codigo: str
+    data_cobranca: date | None
+    valor_cobrar: Decimal
+    pago: bool
+    valor_pago: Decimal
+    renegociada: bool
+
+
 class RelatorioEfetividadeOut(BaseModel):
     por_faixa: list[LinhaEfetividadeFaixa]
     por_loja: list[LinhaEfetividadeLoja]
     total: LinhaEfetividadeTotal
     leads_sem_parcelas: int
     dias_janela: int | None = None
+    valor_a_pagar_brl: Decimal | None = None
 
 
 # --- SETA (ERP) ---
