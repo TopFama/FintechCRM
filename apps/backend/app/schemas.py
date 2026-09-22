@@ -16,6 +16,39 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    is_admin: bool = False
+
+
+# --- Usuários ---
+
+
+class UserCreate(BaseModel):
+    email: str
+    password: str
+
+    @field_validator("email")
+    @classmethod
+    def validar_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if "@" not in v or len(v) < 5:
+            raise ValueError("Email inválido")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def validar_senha(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Senha precisa ter pelo menos 8 caracteres")
+        return v
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    email: str
+    is_admin: bool
+    created_at: datetime
 
 
 # --- Meta Tokens ---

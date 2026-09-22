@@ -31,6 +31,9 @@ class User(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String)
+    # Só o admin pode criar/listar/excluir outros usuários (ver routers/users.py);
+    # fora isso, um usuário criado pelo admin acessa o sistema normalmente, igual ao admin.
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

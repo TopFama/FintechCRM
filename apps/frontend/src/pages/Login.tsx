@@ -15,8 +15,8 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
-      await api.login(email, password);
-      marcarAutenticado();
+      const resultado = await api.login(email, password);
+      marcarAutenticado(resultado.is_admin);
       navigate("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao entrar");

@@ -1,20 +1,27 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-// Sinalizador local só para a UI decidir se mostra a tela de login sem
-// esperar uma chamada à API — não é o que autentica (isso é o cookie
-// httpOnly), então não tem problema em ficar acessível via JS.
+// Sinalizadores locais só para a UI decidir o que mostrar sem esperar uma
+// chamada à API — não é o que autentica/autoriza (isso é o cookie httpOnly +
+// checagem no backend), então não tem problema em ficarem acessíveis via JS.
 const AUTH_FLAG_KEY = "autenticado";
+const ADMIN_FLAG_KEY = "eh_admin";
 
-export function marcarAutenticado() {
+export function marcarAutenticado(isAdmin: boolean) {
   localStorage.setItem(AUTH_FLAG_KEY, "1");
+  localStorage.setItem(ADMIN_FLAG_KEY, isAdmin ? "1" : "0");
 }
 
 export function limparAutenticado() {
   localStorage.removeItem(AUTH_FLAG_KEY);
+  localStorage.removeItem(ADMIN_FLAG_KEY);
 }
 
 export function pareceAutenticado(): boolean {
   return localStorage.getItem(AUTH_FLAG_KEY) === "1";
+}
+
+export function pareceAdmin(): boolean {
+  return localStorage.getItem(ADMIN_FLAG_KEY) === "1";
 }
 
 export class ApiError extends Error {
@@ -114,11 +121,16 @@ export function montarQuery(params: object): string {
 
 export const api = {
   login: (email: string, password: string) =>
-    request<{ access_token: string }>("/auth/login", {
+    request<{ access_token: string; is_admin: boolean }>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+
+  listUsuarios: () => request<Usuario[]>("/users"),
+  criarUsuario: (email: string, password: string) =>
+    request<Usuario>("/users", { method: "POST", body: JSON.stringify({ email, password }) }),
+  excluirUsuario: (id: string) => request<void>(`/users/${id}`, { method: "DELETE" }),
 
   listNumbers: () => request<WhatsappNumber[]>("/numbers"),
   createNumber: (payload: Partial<WhatsappNumber>) =>
@@ -347,6 +359,13 @@ async function downloadFile(path: string, nomePadrao: string): Promise<void> {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+export interface Usuario {
+  id: string;
+  email: string;
+  is_admin: boolean;
+  created_at: string;
 }
 
 export interface WhatsappNumber {

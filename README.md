@@ -277,14 +277,16 @@ Não existe suíte de testes automatizados formal ainda. Para validar uma mudan�
 - **Fila em "tempo real"**: o acompanhamento da fila no portal usa polling (nova consulta a cada
   poucos segundos), não WebSocket — simples e suficiente para o volume atual, mas vale revisar se
   o volume de faixas abertas simultaneamente crescer muito.
-- **Autenticação e segurança**: login simples (usuário/senha + JWT), sem papéis granulares, conforme escopo
-  combinado para a v1. `POST /auth/login` grava o JWT num cookie `access_token` httpOnly (o frontend nunca
-  guarda o token em `localStorage`/JS — mitiga roubo de sessão via XSS) e também devolve o token no corpo da
-  resposta só para uso programático (scripts de validação, integrações), que autenticam via header
-  `Authorization: Bearer`; `POST /auth/logout` limpa o cookie. Segredos sensíveis guardados no banco (tokens
-  de acesso da Meta e refresh token do Google OAuth) são cifrados simetricamente com a chave dedicada
-  `ENCRYPTION_KEY`. A perda dessa chave impede a leitura desses segredos e exige cadastrar novamente os
-  tokens da Meta e reconectar a conta Google.
+- **Autenticação e segurança**: login usuário/senha + JWT. `POST /auth/login` grava o JWT num cookie
+  `access_token` httpOnly (o frontend nunca guarda o token em `localStorage`/JS — mitiga roubo de sessão via
+  XSS) e também devolve o token no corpo da resposta só para uso programático (scripts de validação,
+  integrações), que autenticam via header `Authorization: Bearer`; `POST /auth/logout` limpa o cookie. Só
+  dois papéis existem: administrador (`is_admin=true`, sempre o usuário de `ADMIN_EMAIL`) e usuário comum.
+  O admin gerencia outros usuários em **Usuários** (`GET/POST/DELETE /users`) — quem ele cria tem acesso a
+  tudo que o admin tem, exceto gerenciar outros usuários; não há papéis mais granulares que isso. Segredos
+  sensíveis guardados no banco (tokens de acesso da Meta e refresh token do Google OAuth) são cifrados
+  simetricamente com a chave dedicada `ENCRYPTION_KEY`. A perda dessa chave impede a leitura desses segredos
+  e exige cadastrar novamente os tokens da Meta e reconectar a conta Google.
 
 ## Migração a partir do n8n
 
