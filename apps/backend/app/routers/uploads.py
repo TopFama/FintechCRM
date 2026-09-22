@@ -11,6 +11,7 @@ from ..utils.document import extract_first_name, format_cpf, normalize_seta_code
 from ..utils.phone import is_valid_phone, normalize_phone
 from ..utils.spreadsheet import parse_uploaded_spreadsheet, read_spreadsheet_headers
 from ..variaveis_template import (
+    contexto_cliente,
     extrair_placeholders,
     normalizar_chave,
     normalizar_para_meta,
@@ -37,6 +38,7 @@ def _load_faixa(db: Session, faixa_id: str) -> models.Faixa:
             selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.template).selectinload(
                 models.Template.variables
             ),
+            selectinload(models.Faixa.variable_mappings),
         )
         .filter(models.Faixa.id == faixa_id)
         .first()
@@ -98,7 +100,18 @@ async def upload_planilha(
     # União das variáveis de todos os templates ativos: a planilha só precisa
     # ser subida uma vez, mesmo com mais de um número/template na faixa.
     variable_by_id = {v.id: v for tpl in templates_ativos.values() for v in tpl.variables}
-    mapped_var_ids = set(field_mapping.variables) | set(field_mapping.expressoes)
+
+    # Mapeamento persistido por variável (config da faixa/template): decide se
+    # a variável vem de uma coluna da planilha, de um campo fixo do cadastro
+    # do cliente (Lead) ou de uma expressão — "campo_cliente" e "expressao"
+    # (quando já tem expressão salva) não exigem coluna escolhida no upload.
+    mapping_by_vid = {m.template_variable_id: m for m in faixa.variable_mappings}
+    auto_resolved_vids = {
+        vid
+        for vid, m in mapping_by_vid.items()
+        if m.fonte_tipo == "campo_cliente" or (m.fonte_tipo == "expressao" and m.expressao)
+    }
+    mapped_var_ids = set(field_mapping.variables) | set(field_mapping.expressoes) | auto_resolved_vids
     missing_vars = set(variable_by_id) - mapped_var_ids
     if missing_vars:
         names = ", ".join(variable_by_id[v].internal_name for v in missing_vars)
@@ -153,6 +166,17 @@ async def upload_planilha(
         )
     }
 
+    # Base de leads (Cobrança → Leads) desta faixa, pra resolver variáveis com
+    # fonte_tipo="campo_cliente" direto do cadastro, sem depender da planilha
+    # subida. Quando o mesmo código aparece em mais de um lead da faixa (datas
+    # de vencimento diferentes), usa o mais recente.
+    leads_por_codigo: dict[str, models.Lead] = {}
+    if auto_resolved_vids:
+        for lead in db.query(models.Lead).filter(models.Lead.faixa == faixa.name):
+            atual = leads_por_codigo.get(lead.codigo_cliente)
+            if atual is None or lead.created_at > atual.created_at:
+                leads_por_codigo[lead.codigo_cliente] = lead
+
     for i, row in enumerate(rows, start=2):  # linha 1 = cabeçalho
         codigo_raw = (row.get(field_mapping.codigo_cliente) or "").strip()
         celular_original = (row.get(field_mapping.celular) or "").strip()
@@ -202,25 +226,54 @@ async def upload_planilha(
 
         celular = normalize_phone(celular_original)
 
+        # Contexto de resolução = linha da planilha + (se existir) o cadastro
+        # do cliente nesta faixa — permite variável "campo_cliente" (base
+        # direta de leads, sem depender da planilha) e expressão referenciando
+        # tanto coluna da planilha quanto campo do cliente.
+        lead = leads_por_codigo.get(codigo_cliente)
+        contexto = dict(row)
+        if lead is not None:
+            contexto.update(
+                contexto_cliente(
+                    {
+                        "codigo": lead.codigo_cliente,
+                        "nome": lead.nome,
+                        "cpf": lead.cpf,
+                        "celular": lead.celular,
+                        "cluster": lead.cluster,
+                        "faixa": lead.faixa,
+                        "dias_atraso": lead.dias_atraso,
+                        "qtd_parcelas": lead.qtd_parcelas,
+                        "valor_cobrar": lead.valor_cobrar,
+                        "valor_em_aberto": lead.valor_em_aberto,
+                        "vencimento_mais_antigo": lead.vencimento_mais_antigo,
+                    }
+                )
+            )
+
         missing_var_cols = []
         # Chaveado por template_variable_id (não por internal_name) — dois
         # templates distintos podem usar o mesmo internal_name pra coisas
         # diferentes, então resolver por nome colidiria entre eles.
         resolved_by_vid: dict[str, str] = {}
         for vid, v in variable_by_id.items():
-            if vid in field_mapping.expressoes:
-                val = renderizar_expressao(field_mapping.expressoes[vid], row)
-                if not val:
-                    missing_var_cols.append(v.internal_name)
-                else:
-                    resolved_by_vid[vid] = val
+            mapping = mapping_by_vid.get(vid)
+            fonte_tipo = mapping.fonte_tipo if mapping else "coluna"
+
+            if fonte_tipo == "campo_cliente":
+                val = normalizar_para_meta(contexto.get(mapping.column_name or "", ""))
+            elif vid in field_mapping.expressoes:
+                val = renderizar_expressao(field_mapping.expressoes[vid], contexto)
+            elif fonte_tipo == "expressao" and mapping and mapping.expressao:
+                val = renderizar_expressao(mapping.expressao, contexto)
             else:
-                raw_val = (row.get(field_mapping.variables[vid]) or "").strip()
+                raw_val = (row.get(field_mapping.variables.get(vid, "")) or "").strip()
                 val = normalizar_para_meta(raw_val)
-                if not val:
-                    missing_var_cols.append(v.internal_name)
-                else:
-                    resolved_by_vid[vid] = val
+
+            if not val:
+                missing_var_cols.append(v.internal_name)
+            else:
+                resolved_by_vid[vid] = val
 
         if missing_var_cols:
             rejected += 1

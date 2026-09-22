@@ -216,7 +216,21 @@ export default function FaixaDetail() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  const requiredVariableIds = templatesAtivos.flatMap((t) => t.variables.map((v) => v.id));
+  // Variável com fonte_tipo "campo_cliente" vem direto do cadastro do
+  // cliente (base de leads) — não precisa de coluna na planilha, então não
+  // entra na exigência de mapeamento do upload.
+  const mappingByVid = useMemo(() => {
+    const m: Record<string, string> = {};
+    (faixa?.variable_mappings || []).forEach((vm) => {
+      m[vm.template_variable_id] = vm.fonte_tipo;
+    });
+    return m;
+  }, [faixa]);
+
+  const requiredVariableIds = templatesAtivos
+    .flatMap((t) => t.variables)
+    .filter((v) => (mappingByVid[v.id] || "coluna") === "coluna")
+    .map((v) => v.id);
   const mappingComplete =
     Boolean(fieldMap.celular) &&
     Boolean(fieldMap.codigo_cliente) &&
@@ -714,24 +728,39 @@ export default function FaixaDetail() {
                   <label style={{ marginBottom: 8 }}>Variáveis dos templates ativos</label>
                   <div className="form-row" style={{ flexWrap: "wrap" }}>
                     {templatesAtivos.flatMap((t) =>
-                      t.variables.map((v) => (
-                        <div className="field" key={v.id} style={{ minWidth: 220 }}>
-                          <label>
-                            {t.name}: {v.internal_name} *
-                          </label>
-                          <select
-                            value={fieldMap.variables[v.id] || ""}
-                            onChange={(e) => setFieldMap({ ...fieldMap, variables: { ...fieldMap.variables, [v.id]: e.target.value } })}
-                          >
-                            <option value="">Selecione...</option>
-                            {columns.map((c) => (
-                              <option key={c} value={c}>
-                                {c}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      ))
+                      t.variables.map((v) => {
+                        const tipo = mappingByVid[v.id] || "coluna";
+                        if (tipo === "campo_cliente") {
+                          return (
+                            <div className="field" key={v.id} style={{ minWidth: 220 }}>
+                              <label>
+                                {t.name}: {v.internal_name}
+                              </label>
+                              <div className="text-muted" style={{ paddingTop: 6 }}>
+                                Preenchido direto do cadastro do cliente
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="field" key={v.id} style={{ minWidth: 220 }}>
+                            <label>
+                              {t.name}: {v.internal_name} *
+                            </label>
+                            <select
+                              value={fieldMap.variables[v.id] || ""}
+                              onChange={(e) => setFieldMap({ ...fieldMap, variables: { ...fieldMap.variables, [v.id]: e.target.value } })}
+                            >
+                              <option value="">Selecione...</option>
+                              {columns.map((c) => (
+                                <option key={c} value={c}>
+                                  {c}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </>
