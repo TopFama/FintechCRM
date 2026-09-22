@@ -3,7 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from .. import cobranca_base, cobranca_relatorio, models, schemas, seta_client
+from .. import cobranca_base, cobranca_relatorio, google_client, lojas as lojas_base, models, schemas, seta_client
 from ..cobranca_regras import FAIXAS, FAIXAS_WHATSAPP, NOMES_CLUSTER, NOMES_FAIXA, NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
@@ -32,13 +32,25 @@ def filtros_base(
     cluster: list[str] | None = Query(None),
     faixa_compra: list[str] | None = Query(None, description="Quantidade de compras no crediário: 1 a 9 ou 10+"),
     loja: list[str] | None = Query(None, description="Código de 2 caracteres da loja do título (ft.empresa)"),
+    regional: list[str] | None = Query(None, description="Regional da loja (planilha de lojas)"),
+    estado: list[str] | None = Query(None, description="Estado da loja: TO, PA, MA ou GO"),
+    cluster_inad: list[str] | None = Query(None, description="Cluster de inadimplência da loja"),
+    cluster_populacao: list[str] | None = Query(None, description="Cluster de população da loja"),
     portador: list[str] | None = Query(None, description="001 TopFama, 114 SYSCO, 216 MJ"),
     status_cliente: list[str] | None = Query(None, description="E, A ou B"),
     restricao_spc: list[str] | None = Query(None, description="sim, nao e/ou indeterminado"),
     vencimento_de: date | None = Query(None, description="Vencimento da parcela mais antiga, a partir de"),
     vencimento_ate: date | None = Query(None, description="Vencimento da parcela mais antiga, até"),
+    db: Session = Depends(get_db),
 ) -> dict:
     """Filtros comuns à listagem e aos relatórios: os dois enxergam os mesmos clientes."""
+
+    try:
+        codigos_loja = lojas_base.combinar_lojas(
+            db, loja, regional=regional, estado=estado, cluster_inad=cluster_inad, cluster_populacao=cluster_populacao
+        )
+    except google_client.GoogleIndisponivel as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
     return dict(
         apenas_primeiro_dia=apenas_primeiro_dia,
@@ -46,7 +58,7 @@ def filtros_base(
         faixas=faixa,
         clusters=cluster,
         faixas_compra=faixa_compra,
-        lojas=loja,
+        lojas=codigos_loja,
         portadores=portador,
         status_cliente=status_cliente,
         restricoes_spc=restricao_spc,

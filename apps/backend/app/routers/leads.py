@@ -1,10 +1,10 @@
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_
+from sqlalchemy import false, or_
 from sqlalchemy.orm import Session
 
-from .. import models, schemas, seta_client
+from .. import google_client, lojas as lojas_base, models, schemas, seta_client
 from ..database import get_db
 from ..deps import get_current_user
 from ..utils.spc import parse_spc
@@ -101,8 +101,11 @@ def filtrar_leads(
     de clientes que entraram na blacklist depois de criados ficam de fora."""
 
     query = db.query(models.Lead)
-    if loja:
-        query = query.filter(or_(*(models.Lead.lojas.contains(f",{codigo},") for codigo in loja)))
+    if loja is not None:
+        if loja:
+            query = query.filter(or_(*(models.Lead.lojas.contains(f",{codigo},") for codigo in loja)))
+        else:
+            query = query.filter(false())  # os atributos de loja escolhidos não casaram com nenhuma
     if faixa:
         query = query.filter(models.Lead.faixa.in_(faixa))
     if cluster:
@@ -135,6 +138,10 @@ def filtrar_leads(
 @router.get("", response_model=schemas.LeadsPage)
 def listar_leads(
     loja: list[str] | None = Query(None, description="Código da loja do título"),
+    regional: list[str] | None = Query(None),
+    estado: list[str] | None = Query(None),
+    cluster_inad: list[str] | None = Query(None),
+    cluster_populacao: list[str] | None = Query(None),
     faixa: list[str] | None = Query(None),
     cluster: list[str] | None = Query(None),
     lead_status: str | None = Query(None, alias="status", pattern="^(novo|cobrado)$"),
@@ -147,9 +154,15 @@ def listar_leads(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
+    try:
+        codigos_loja = lojas_base.combinar_lojas(
+            db, loja, regional=regional, estado=estado, cluster_inad=cluster_inad, cluster_populacao=cluster_populacao
+        )
+    except google_client.GoogleIndisponivel as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     query = filtrar_leads(
         db,
-        loja=loja,
+        loja=codigos_loja,
         faixa=faixa,
         cluster=cluster,
         lead_status=lead_status,

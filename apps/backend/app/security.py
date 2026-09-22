@@ -28,3 +28,20 @@ def decode_access_token(token: str) -> str | None:
         return payload.get("sub")
     except JWTError:
         return None
+
+
+def create_oauth_state(user_email: str, minutes: int = 10) -> str:
+    """Parâmetro `state` do OAuth: prova que o retorno do Google pertence a um
+    consentimento iniciado por um usuário logado. O e-mail vai em `usr`, não em
+    `sub`, para este token nunca ser aceito como token de login."""
+
+    payload = {"usr": user_email, "typ": "oauth_state", "exp": datetime.utcnow() + timedelta(minutes=minutes)}
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_oauth_state(token: str) -> str | None:
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except JWTError:
+        return None
+    return payload.get("usr") if payload.get("typ") == "oauth_state" else None

@@ -61,6 +61,9 @@ def buscar_base(
     - `restricoes_spc`: "sim", "nao" e/ou "indeterminado".
     """
 
+    if lojas is not None and not lojas:
+        return []  # os atributos de loja escolhidos não casaram com nenhuma loja
+
     _validar(faixas, NOMES_FAIXA, "Faixa")
     _validar(clusters, NOMES_CLUSTER, "Cluster")
     _validar(faixas_compra, NOMES_FAIXA_COMPRA, "Faixa de compra")

@@ -27,6 +27,16 @@ class Settings(BaseSettings):
     # Teto por consulta: o ERP é produção e a tabela de títulos passa de 27M de linhas.
     seta_db_statement_timeout_seconds: int = 120
 
+    # Google (OAuth2) — só para ler a planilha de lojas. Vazio = integração desligada.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Precisa estar cadastrada, idêntica, nas "URIs de redirecionamento autorizadas" do cliente OAuth.
+    google_redirect_uri: str = "http://localhost:8000/google/oauth/callback"
+    # Para onde o navegador volta depois do consentimento.
+    google_frontend_url: str = "http://localhost:5173"
+    google_sheet_lojas_id: str = "1QYHjtEjmlJ_4WL_K95TOMV9X63wfF2V5bmK0LGOQ9F0"
+    google_sheet_lojas_gid: int = 113434922
+
     media_dir: str = "/app/media"
 
     dispatch_worker_interval_seconds: int = 5

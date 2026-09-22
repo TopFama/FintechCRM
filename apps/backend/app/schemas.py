@@ -377,3 +377,33 @@ class LeadsGerarResult(BaseModel):
 
 class LeadsMarcarCobrados(BaseModel):
     ids: list[str]
+
+
+# --- Google e lojas ---
+
+
+class GoogleStatusOut(BaseModel):
+    configurado: bool
+    conectado: bool
+    email: str | None
+    redirect_uri: str  # a mesma que precisa estar cadastrada no cliente OAuth do Google
+
+
+class GoogleAutorizacaoOut(BaseModel):
+    url: str
+
+
+class LojaOut(BaseModel):
+    filial: str  # código de 2 caracteres (ft.empresa)
+    nome_com_cod: str | None
+    regional: str | None
+    estado: str | None
+    cluster_inad: str | None
+    cluster_populacao: str | None
+
+
+class LojaFiltrosOut(BaseModel):
+    regionais: list[str]
+    estados: list[str]
+    clusters_inad: list[str]
+    clusters_populacao: list[str]

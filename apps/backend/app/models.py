@@ -296,3 +296,16 @@ class Lead(Base):
     cobrado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class IntegracaoGoogle(Base):
+    """Conta Google conectada por OAuth2 (uma só). Guarda o refresh token
+    cifrado, para gerar access tokens sem pedir consentimento de novo."""
+
+    __tablename__ = "integracao_google"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    refresh_token_cifrado: Mapped[str] = mapped_column(String)
+    connected_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
