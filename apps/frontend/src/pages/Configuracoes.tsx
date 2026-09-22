@@ -10,16 +10,17 @@ import TokensMetaCard from "../components/config/TokensMetaCard";
 import UsuariosCard from "../components/config/UsuariosCard";
 import { IconAlert, IconRefresh } from "../icons";
 
-type Aba = "conexoes" | "templates" | "horario" | "blacklist" | "usuarios";
+type Aba = "conexoes" | "templates" | "horario" | "indicadores" | "blacklist" | "usuarios";
 
 const ABAS: { valor: Aba; rotulo: string }[] = [
   { valor: "templates", rotulo: "Templates" },
   { valor: "conexoes", rotulo: "Conexões" },
   { valor: "horario", rotulo: "Horário" },
+  { valor: "indicadores", rotulo: "Indicadores" },
   { valor: "blacklist", rotulo: "Blacklist" },
 ];
 
-const ABAS_VALIDAS: Aba[] = ["conexoes", "templates", "horario", "blacklist", "usuarios"];
+const ABAS_VALIDAS: Aba[] = ["conexoes", "templates", "horario", "indicadores", "blacklist", "usuarios"];
 
 export default function Configuracoes() {
   const [versaoNumeros, setVersaoNumeros] = useState(0);
@@ -232,7 +233,10 @@ export default function Configuracoes() {
       <div className="page-header">
         <div>
           <h2>Configurações</h2>
-          <div className="subtitle">Templates, conexões, horário de disparo e blacklist do sistema</div>
+          <div className="subtitle">
+            Templates, conexões, horário de disparo, indicadores (clusters, faixas de atraso e regra do WhatsApp) e
+            blacklist do sistema
+          </div>
         </div>
       </div>
 
@@ -251,6 +255,7 @@ export default function Configuracoes() {
 
       {aba === "templates" && <TemplatesCard />}
       {aba === "horario" && <DisparoCard />}
+      {aba === "indicadores" && <RegrasCobrancaCard />}
       {aba === "blacklist" && <BlacklistCard />}
       {aba === "usuarios" && admin && <UsuariosCard />}
 
