@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, StatusChatwoot, StatusGoogle, StatusSeta } from "../api";
+import { api, CampoCliente, ChatwootTestResult, StatusChatwoot, StatusGoogle, StatusSeta, Template, WhatsappNumber } from "../api";
 import NumerosCard from "../components/config/NumerosCard";
 import TokensMetaCard from "../components/config/TokensMetaCard";
 import { IconAlert, IconRefresh } from "../icons";
@@ -25,6 +25,23 @@ export default function Configuracoes() {
   const [chatwootTestando, setChatwootTestando] = useState(false);
   const [chatwootTeste, setChatwootTeste] = useState<{ ok: boolean; detalhe: string } | null>(null);
   const [formChatwoot, setFormChatwoot] = useState({ base_url: "", account_id: "", api_access_token: "" });
+
+  // Testar envio de template (via Chatwoot) pra um número específico
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [numbers, setNumbers] = useState<WhatsappNumber[]>([]);
+  const [campos, setCampos] = useState<CampoCliente[]>([]);
+  const [testeTemplateId, setTesteTemplateId] = useState("");
+  const [testeNumeroId, setTesteNumeroId] = useState("");
+  const [testeCelular, setTesteCelular] = useState("");
+  const [testeVariaveis, setTesteVariaveis] = useState<Record<string, string>>({});
+  const [testeEnviando, setTesteEnviando] = useState(false);
+  const [testeResultado, setTesteResultado] = useState<ChatwootTestResult | null>(null);
+
+  const testeTemplate = useMemo(
+    () => templates.find((t) => t.id === testeTemplateId) || null,
+    [templates, testeTemplateId]
+  );
+  const numerosChatwoot = useMemo(() => numbers.filter((n) => n.chatwoot_inbox_id), [numbers]);
 
   // Mensagem do callback OAuth (google=ok ou google=erro&motivo=...)
   useEffect(() => {
@@ -81,7 +98,48 @@ export default function Configuracoes() {
     carregarSeta();
     carregarGoogle();
     carregarChatwoot();
+    api.listTemplates().then(setTemplates).catch(() => undefined);
+    api.listNumbers().then(setNumbers).catch(() => undefined);
+    api.listCamposCliente().then(setCampos).catch(() => undefined);
   }, []);
+
+  function selecionarTemplateTeste(templateId: string) {
+    setTesteTemplateId(templateId);
+    setTesteResultado(null);
+    const template = templates.find((t) => t.id === templateId);
+    const variaveis: Record<string, string> = {};
+    for (const v of template?.variables || []) {
+      const campo = v.campo_sugerido ? campos.find((c) => c.campo === v.campo_sugerido) : undefined;
+      variaveis[v.internal_name] = campo ? campo.exemplo : "";
+    }
+    setTesteVariaveis(variaveis);
+  }
+
+  function renderizarPreviewTeste(t: Template): string {
+    return t.body_text.replace(/\{\{(\d+)\}\}/g, (match, pos) => {
+      const variavel = t.variables.find((v) => v.position === Number(pos));
+      const valor = variavel ? testeVariaveis[variavel.internal_name] : undefined;
+      return valor || match;
+    });
+  }
+
+  async function handleTestarEnvio() {
+    if (!testeTemplate) return;
+    setTesteEnviando(true);
+    setTesteResultado(null);
+    try {
+      const resultado = await api.testarEnvioChatwoot(testeTemplate.id, {
+        whatsapp_number_id: testeNumeroId,
+        celular: testeCelular,
+        variables: testeVariaveis,
+      });
+      setTesteResultado(resultado);
+    } catch (err) {
+      setTesteResultado({ ok: false, detalhe: err instanceof Error ? err.message : "Erro ao testar envio" });
+    } finally {
+      setTesteEnviando(false);
+    }
+  }
 
   async function salvarChatwoot(e: FormEvent) {
     e.preventDefault();
@@ -388,6 +446,90 @@ export default function Configuracoes() {
             )}
           </div>
         </form>
+
+        {chatwoot?.configurado && (
+          <div className="chatwoot-teste-envio">
+            <h4>Testar envio de template</h4>
+            <p className="card-subtitle">
+              Dispara agora um template pra um celular específico, pra validar o envio antes de ligar o
+              número numa faixa de cobrança.
+            </p>
+            {numerosChatwoot.length === 0 ? (
+              <p className="field-hint">
+                Nenhum número tem inbox do Chatwoot vinculada ainda (campo "Inbox do Chatwoot" no card Números,
+                abaixo).
+              </p>
+            ) : (
+              <>
+                <div className="form-row">
+                  <div className="field">
+                    <label>Template</label>
+                    <select value={testeTemplateId} onChange={(e) => selecionarTemplateTeste(e.target.value)}>
+                      <option value="">Selecione...</option>
+                      {templates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label>Número de origem</label>
+                    <select value={testeNumeroId} onChange={(e) => setTesteNumeroId(e.target.value)}>
+                      <option value="">Selecione...</option>
+                      {numerosChatwoot.map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {n.label} ({n.display_phone_number})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label>Celular de destino</label>
+                    <input
+                      value={testeCelular}
+                      onChange={(e) => setTesteCelular(e.target.value)}
+                      placeholder="55DDDNÚMERO"
+                    />
+                  </div>
+                </div>
+
+                {testeTemplate && (
+                  <div className="template-preview">
+                    <div className="template-preview-bubble">{renderizarPreviewTeste(testeTemplate)}</div>
+                    {testeTemplate.variables.length > 0 && (
+                      <div className="template-preview-vars">
+                        {testeTemplate.variables.map((v) => (
+                          <div className="field" key={v.id}>
+                            <label>{`{{${v.position}}}`} ({v.internal_name})</label>
+                            <input
+                              value={testeVariaveis[v.internal_name] || ""}
+                              onChange={(e) =>
+                                setTesteVariaveis((atual) => ({ ...atual, [v.internal_name]: e.target.value }))
+                              }
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="secondary small"
+                  disabled={testeEnviando || !testeTemplate || !testeNumeroId || !testeCelular}
+                  onClick={handleTestarEnvio}
+                >
+                  {testeEnviando ? "Enviando..." : "Enviar teste"}
+                </button>
+                {testeResultado && (
+                  <p className={testeResultado.ok ? "field-success" : "field-error"}>{testeResultado.detalhe}</p>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <TokensMetaCard onNumerosAlterados={() => setVersaoNumeros((v) => v + 1)} />
