@@ -14,113 +14,6 @@ from decimal import Decimal
 # 00384572"): fica fora de qualquer cobrança.
 CODIGO_CLIENTE_IGNORADO = "00384572"
 
-# --- Cluster: soma paga em títulos de venda -------------------------------
-
-# (nome, valor pago mínimo — inclusive). O máximo de cada um é o mínimo do
-# próximo. A planilha diz "<7000" para BEST SELLER e ">7000" para HEAVY USER,
-# deixando 7000 exato sem dono; ele fica com HEAVY USER.
-CLUSTERS: list[tuple[str, Decimal]] = [
-    ("ESPECIAL", Decimal(0)),
-    ("POTENCIAL", Decimal(400)),
-    ("EM POTENCIAL", Decimal(1000)),
-    ("ALTO POTENCIAL", Decimal(1500)),
-    ("BEST SELLER", Decimal(3000)),
-    ("HEAVY USER", Decimal(7000)),
-]
-NOMES_CLUSTER = [nome for nome, _ in CLUSTERS]
-
-
-def cluster_por_valor_pago(valor_pago: Decimal | int | float | None) -> str:
-    """Quem nunca pagou nada em venda (None ou 0) é ESPECIAL, o cluster de base."""
-
-    valor = Decimal(str(valor_pago)) if valor_pago is not None else Decimal(0)
-    escolhido = CLUSTERS[0][0]
-    for nome, minimo in CLUSTERS:
-        if valor >= minimo:
-            escolhido = nome
-    return escolhido
-
-
-# --- Faixa de atraso -------------------------------------------------------
-
-# (nome, dia_min, dia_max). Dias de atraso = hoje − vencimento da parcela em
-# aberto mais antiga do cliente; negativo = ainda não venceu. Os nomes são o
-# rótulo da planilha, e "primeiro dia" da faixa é o dia_min.
-#
-# "-1" e "2" são lidos pelo primeiro número do rótulo, como as demais faixas:
-# "-1" cobre de -1 a 1 (vence amanhã, hoje ou venceu ontem) e "2" é só o dia 2.
-# Quem está a 2+ dias de vencer (dias <= -2) não cai em faixa nenhuma.
-FAIXAS: list[tuple[str, int, int | None]] = [
-    ("-1", -1, 1),
-    ("2", 2, 2),
-    ("3 A 10", 3, 10),
-    ("11 A 20", 11, 20),
-    ("21 A 30", 21, 30),
-    ("31 A 40", 31, 40),
-    ("41 A 60", 41, 60),
-    ("61 A 80", 61, 80),
-    ("81 A 100", 81, 100),
-    ("101 A 120", 101, 120),
-    ("121 A 140", 121, 140),
-    ("141 A 150", 141, 150),
-    ("151+", 151, None),
-]
-NOMES_FAIXA = [nome for nome, _, _ in FAIXAS]
-_FAIXA_POR_NOME = {nome: (dmin, dmax) for nome, dmin, dmax in FAIXAS}
-
-
-def faixa_por_dias(dias_atraso: int) -> str | None:
-    for nome, dmin, dmax in FAIXAS:
-        if dias_atraso >= dmin and (dmax is None or dias_atraso <= dmax):
-            return nome
-    return None
-
-
-def primeiro_dia_da_faixa(faixa: str) -> int:
-    return _FAIXA_POR_NOME[faixa][0]
-
-
-def eh_primeiro_dia(dias_atraso: int) -> bool:
-    """Verdadeiro se o cliente está exatamente no primeiro dia da faixa dele
-    (ex.: 21 dias na faixa "21 A 30")."""
-
-    faixa = faixa_por_dias(dias_atraso)
-    return faixa is not None and dias_atraso == primeiro_dia_da_faixa(faixa)
-
-
-# --- Quem entra no WhatsApp: cluster × faixa -------------------------------
-
-_BASE_ALTO = ["-1", "11 A 20", "31 A 40", "81 A 100", "101 A 120", "121 A 140", "141 A 150", "151+"]
-_BASE_POTENCIAL = ["-1", "2", "11 A 20", "31 A 40", "61 A 80", "81 A 100", "101 A 120", "121 A 140", "141 A 150", "151+"]
-
-# Faixas "3 A 10" e "41 A 60" não recebem WhatsApp em nenhum cluster.
-FAIXAS_WHATSAPP: dict[str, frozenset[str]] = {
-    "ESPECIAL": frozenset(["-1", "2", "11 A 20", "21 A 30", "61 A 80", "101 A 120", "121 A 140", "141 A 150", "151+"]),
-    "POTENCIAL": frozenset(_BASE_POTENCIAL),
-    "EM POTENCIAL": frozenset(_BASE_POTENCIAL),
-    "ALTO POTENCIAL": frozenset(_BASE_ALTO),
-    "BEST SELLER": frozenset(_BASE_ALTO),
-    "HEAVY USER": frozenset(_BASE_ALTO),
-}
-
-
-def entra_no_whatsapp(cluster: str, faixa: str | None) -> bool:
-    return faixa is not None and faixa in FAIXAS_WHATSAPP.get(cluster, frozenset())
-
-
-# --- Faixa de compra: quantidade de compras no crediário ---------------------
-
-NOMES_FAIXA_COMPRA = [str(n) for n in range(1, 10)] + ["10+"]
-
-
-def faixa_de_compra(qtd_compras: int) -> str | None:
-    """1 a 9 compras, depois "10+". Quem não tem nenhuma compra de crediário
-    validada (ex.: só tem parcelas de reparcelamento) fica sem faixa (None)."""
-
-    if qtd_compras < 1:
-        return None
-    return str(qtd_compras) if qtd_compras < 10 else "10+"
-
 
 # --- Valor a cobrar no template do WhatsApp ----------------------------------
 
@@ -145,3 +38,132 @@ class ParametrosJuros:
 
 
 PARAMETROS_JUROS_PADRAO = ParametrosJuros()
+
+
+# --- Dataclasses das regras configuráveis -----------------------------------
+
+
+@dataclass(frozen=True)
+class Cluster:
+    """Segmento do cliente pela soma paga em vendas.
+    Vale de valor_min (inclusive) até o mínimo do próximo cluster."""
+
+    nome: str
+    valor_min: Decimal
+
+
+@dataclass(frozen=True)
+class FaixaAtraso:
+    """Intervalo de dias de atraso. dia_max None = sem limite superior.
+    'Primeiro dia' da faixa é sempre dia_min."""
+
+    nome: str
+    dia_min: int
+    dia_max: int | None
+
+
+@dataclass(frozen=True)
+class Regras:
+    """Conjunto completo de regras de cobrança carregadas (do banco ou do padrão)."""
+
+    clusters: tuple[Cluster, ...]          # ordenados por valor_min crescente
+    faixas: tuple[FaixaAtraso, ...]        # ordenadas por dia_min crescente
+    whatsapp: frozenset[tuple[str, str]]   # pares (nome_cluster, nome_faixa) que recebem WhatsApp
+    juros: ParametrosJuros
+
+    @property
+    def nomes_cluster(self) -> list[str]:
+        return [c.nome for c in self.clusters]
+
+    @property
+    def nomes_faixa(self) -> list[str]:
+        return [f.nome for f in self.faixas]
+
+    def cluster_por_valor_pago(self, valor_pago: Decimal | int | float | None) -> str:
+        """None ou 0 → cluster de menor valor_min (ESPECIAL). Usa o último
+        cluster cujo valor_min <= valor."""
+        valor = Decimal(str(valor_pago)) if valor_pago is not None else Decimal(0)
+        escolhido = self.clusters[0].nome
+        for c in self.clusters:
+            if valor >= c.valor_min:
+                escolhido = c.nome
+        return escolhido
+
+    def faixa_por_dias(self, dias_atraso: int) -> str | None:
+        """Primeira faixa que contém o dia; None se nenhuma."""
+        for f in self.faixas:
+            if dias_atraso >= f.dia_min and (f.dia_max is None or dias_atraso <= f.dia_max):
+                return f.nome
+        return None
+
+    def faixa(self, nome: str) -> FaixaAtraso:
+        for f in self.faixas:
+            if f.nome == nome:
+                return f
+        raise KeyError(f"Faixa {nome!r} não encontrada")
+
+    def entra_no_whatsapp(self, cluster: str, faixa: str | None) -> bool:
+        """False se faixa is None."""
+        return faixa is not None and (cluster, faixa) in self.whatsapp
+
+    def faixas_whatsapp(self, cluster: str) -> list[str]:
+        """Nomes das faixas que recebem WhatsApp para o cluster, na ordem das faixas."""
+        return [f.nome for f in self.faixas if (cluster, f.nome) in self.whatsapp]
+
+
+# --- Faixa de compra: quantidade de compras no crediário (não configurável) ---
+
+NOMES_FAIXA_COMPRA = [str(n) for n in range(1, 10)] + ["10+"]
+
+
+def faixa_de_compra(qtd_compras: int) -> str | None:
+    """1 a 9 compras, depois "10+". Quem não tem nenhuma compra de crediário
+    validada (ex.: só tem parcelas de reparcelamento) fica sem faixa (None)."""
+
+    if qtd_compras < 1:
+        return None
+    return str(qtd_compras) if qtd_compras < 10 else "10+"
+
+
+# --- Valores padrão (seed) — reproduzem exatamente o comportamento atual ----
+
+_CLUSTERS_PADRAO = (
+    Cluster("ESPECIAL", Decimal(0)),
+    Cluster("POTENCIAL", Decimal(400)),
+    Cluster("EM POTENCIAL", Decimal(1000)),
+    Cluster("ALTO POTENCIAL", Decimal(1500)),
+    Cluster("BEST SELLER", Decimal(3000)),
+    Cluster("HEAVY USER", Decimal(7000)),
+)
+
+_FAIXAS_PADRAO = (
+    FaixaAtraso("-1", -1, 1),
+    FaixaAtraso("2", 2, 2),
+    FaixaAtraso("3 A 10", 3, 10),
+    FaixaAtraso("11 A 20", 11, 20),
+    FaixaAtraso("21 A 30", 21, 30),
+    FaixaAtraso("31 A 40", 31, 40),
+    FaixaAtraso("41 A 60", 41, 60),
+    FaixaAtraso("61 A 80", 61, 80),
+    FaixaAtraso("81 A 100", 81, 100),
+    FaixaAtraso("101 A 120", 101, 120),
+    FaixaAtraso("121 A 140", 121, 140),
+    FaixaAtraso("141 A 150", 141, 150),
+    FaixaAtraso("151+", 151, None),
+)
+
+_BASE_ALTO = ["-1", "11 A 20", "31 A 40", "81 A 100", "101 A 120", "121 A 140", "141 A 150", "151+"]
+_BASE_POTENCIAL = ["-1", "2", "11 A 20", "31 A 40", "61 A 80", "81 A 100", "101 A 120", "121 A 140", "141 A 150", "151+"]
+
+_WHATSAPP_PADRAO: frozenset[tuple[str, str]] = frozenset(
+    [(c, f) for c in ["ESPECIAL"] for f in ["-1", "2", "11 A 20", "21 A 30", "61 A 80", "101 A 120", "121 A 140", "141 A 150", "151+"]]
+    + [(c, f) for c in ["POTENCIAL", "EM POTENCIAL"] for f in _BASE_POTENCIAL]
+    + [(c, f) for c in ["ALTO POTENCIAL", "BEST SELLER", "HEAVY USER"] for f in _BASE_ALTO]
+)
+
+REGRAS_PADRAO = Regras(
+    clusters=_CLUSTERS_PADRAO,
+    faixas=_FAIXAS_PADRAO,
+    whatsapp=_WHATSAPP_PADRAO,
+    juros=ParametrosJuros(),
+)

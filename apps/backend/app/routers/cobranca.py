@@ -4,23 +4,25 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from .. import cobranca_base, cobranca_relatorio, google_client, lojas as lojas_base, models, schemas, seta_client
-from ..cobranca_regras import FAIXAS, FAIXAS_WHATSAPP, NOMES_CLUSTER, NOMES_FAIXA, NOMES_FAIXA_COMPRA
+from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
+from ..regras_db import carregar_regras
 from ..utils.spc import parse_spc
 
 router = APIRouter(prefix="/cobranca", tags=["cobranca"])
 
 
 @router.get("/regras", response_model=schemas.CobrancaRegrasOut)
-def regras(_user: models.User = Depends(get_current_user)):
+def regras(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
     """Clusters, faixas de atraso e a matriz WhatsApp — alimenta os filtros da tela."""
 
+    r = carregar_regras(db)
     return schemas.CobrancaRegrasOut(
-        clusters=NOMES_CLUSTER,
-        faixas=NOMES_FAIXA,
-        faixas_whatsapp={c: [f for f in NOMES_FAIXA if f in FAIXAS_WHATSAPP[c]] for c in NOMES_CLUSTER},
-        primeiro_dia={nome: dmin for nome, dmin, _ in FAIXAS},
+        clusters=r.nomes_cluster,
+        faixas=r.nomes_faixa,
+        faixas_whatsapp={c: r.faixas_whatsapp(c) for c in r.nomes_cluster},
+        primeiro_dia={f.nome: f.dia_min for f in r.faixas},
         faixas_compra=NOMES_FAIXA_COMPRA,
     )
 
@@ -108,9 +110,10 @@ def relatorio(
     no total e só entre os com restrição no SPC."""
 
     clientes = buscar_base_ou_erro(db, filtros)
+    r = carregar_regras(db)
     return schemas.RelatorioCobrancaOut(
-        clusters=NOMES_CLUSTER,
-        faixas=NOMES_FAIXA,
-        quantidade=cobranca_relatorio.montar_matriz(clientes),
-        quantidade_com_restricao_spc=cobranca_relatorio.montar_matriz(clientes, apenas_com_restricao_spc=True),
+        clusters=r.nomes_cluster,
+        faixas=r.nomes_faixa,
+        quantidade=cobranca_relatorio.montar_matriz(clientes, r),
+        quantidade_com_restricao_spc=cobranca_relatorio.montar_matriz(clientes, r, apenas_com_restricao_spc=True),
     )

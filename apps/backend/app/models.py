@@ -309,3 +309,60 @@ class IntegracaoGoogle(Base):
     refresh_token_cifrado: Mapped[str] = mapped_column(String)
     connected_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# --- Configuração das regras de cobrança ------------------------------------
+
+
+class ClusterCobranca(Base):
+    """Segmentos de cliente configuráveis (antes hardcoded em cobranca_regras.py)."""
+
+    __tablename__ = "config_clusters"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    nome: Mapped[str] = mapped_column(String)
+    valor_min: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+
+    regras: Mapped[list["RegraWhatsapp"]] = relationship(
+        back_populates="cluster", cascade="all, delete-orphan"
+    )
+
+
+class FaixaAtrasoCobranca(Base):
+    """Faixas de atraso configuráveis (antes hardcoded em cobranca_regras.py)."""
+
+    __tablename__ = "config_faixas_atraso"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    nome: Mapped[str] = mapped_column(String)
+    dia_min: Mapped[int] = mapped_column(Integer)
+    dia_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    regras: Mapped[list["RegraWhatsapp"]] = relationship(
+        back_populates="faixa", cascade="all, delete-orphan"
+    )
+
+
+class RegraWhatsapp(Base):
+    """Matriz cluster × faixa que recebe cobrança por WhatsApp."""
+
+    __tablename__ = "config_regras_whatsapp"
+    __table_args__ = (UniqueConstraint("cluster_id", "faixa_id"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    cluster_id: Mapped[str] = mapped_column(ForeignKey("config_clusters.id", ondelete="CASCADE"))
+    faixa_id: Mapped[str] = mapped_column(ForeignKey("config_faixas_atraso.id", ondelete="CASCADE"))
+
+    cluster: Mapped[ClusterCobranca] = relationship(back_populates="regras")
+    faixa: Mapped[FaixaAtrasoCobranca] = relationship(back_populates="regras")
+
+
+class ParametrosCobranca(Base):
+    """Parâmetros de multa e juros — tabela de uma linha única."""
+
+    __tablename__ = "config_parametros"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    juros_mes_percentual: Mapped[Decimal] = mapped_column(Numeric(6, 2))
+    multa_percentual: Mapped[Decimal] = mapped_column(Numeric(6, 2))
+    dias_min_juros: Mapped[int] = mapped_column(Integer)

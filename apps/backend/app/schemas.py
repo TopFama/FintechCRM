@@ -408,3 +408,69 @@ class LojaFiltrosOut(BaseModel):
     estados: list[str]
     clusters_inad: list[str]
     clusters_populacao: list[str]
+
+
+# --- Configuração da cobrança ---
+
+
+class ClusterConfigIn(BaseModel):
+    id: str | None = None
+    nome: str
+    valor_min: Decimal
+
+
+class FaixaAtrasoConfigIn(BaseModel):
+    id: str | None = None
+    nome: str
+    dia_min: int
+    dia_max: int | None = None
+
+
+class CelulaMatrizIn(BaseModel):
+    cluster_id: str
+    faixa_id: str
+
+
+class ParametrosCobrancaIn(BaseModel):
+    juros_mes_percentual: Decimal
+    multa_percentual: Decimal
+    dias_min_juros: int
+
+
+class ClusterConfigOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    nome: str
+    valor_min: Decimal
+
+
+class FaixaAtrasoConfigOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    nome: str
+    dia_min: int
+    dia_max: int | None
+
+
+class CelulaMatrizOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    cluster_id: str
+    faixa_id: str
+
+
+class ParametrosCobrancaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    juros_mes_percentual: Decimal
+    multa_percentual: Decimal
+    dias_min_juros: int
+
+
+class ConfigCobrancaOut(BaseModel):
+    clusters: list[ClusterConfigOut]
+    faixas: list[FaixaAtrasoConfigOut]
+    matriz: list[CelulaMatrizOut]
+    parametros: ParametrosCobrancaOut

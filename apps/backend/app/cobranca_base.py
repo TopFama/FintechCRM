@@ -8,17 +8,8 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from . import seta_client
-from .cobranca_regras import (
-    FAIXAS,
-    FAIXAS_WHATSAPP,
-    NOMES_CLUSTER,
-    NOMES_FAIXA,
-    cluster_por_valor_pago,
-    NOMES_FAIXA_COMPRA,
-    entra_no_whatsapp,
-    faixa_de_compra,
-    faixa_por_dias,
-)
+from .cobranca_regras import NOMES_FAIXA_COMPRA, faixa_de_compra
+from .regras_db import carregar_regras
 from .routers.blacklist import codigos_bloqueados
 from .utils.phone import escolher_telefone
 
@@ -64,8 +55,10 @@ def buscar_base(
     if lojas is not None and not lojas:
         return []  # os atributos de loja escolhidos não casaram com nenhuma loja
 
-    _validar(faixas, NOMES_FAIXA, "Faixa")
-    _validar(clusters, NOMES_CLUSTER, "Cluster")
+    regras = carregar_regras(db)
+
+    _validar(faixas, regras.nomes_faixa, "Faixa")
+    _validar(clusters, regras.nomes_cluster, "Cluster")
     _validar(faixas_compra, NOMES_FAIXA_COMPRA, "Faixa de compra")
     _validar(restricoes_spc, ["sim", "nao", "indeterminado"], "Restrição SPC")
 
@@ -73,14 +66,13 @@ def buscar_base(
         faixas_sel = list(faixas)
     elif somente_regra_whatsapp:
         # só as faixas em que algum dos clusters pedidos recebe WhatsApp
-        dos_clusters = clusters or NOMES_CLUSTER
-        faixas_sel = [f for f in NOMES_FAIXA if any(f in FAIXAS_WHATSAPP[c] for c in dos_clusters)]
+        dos_clusters = clusters or regras.nomes_cluster
+        faixas_sel = [f for f in regras.nomes_faixa if any(regras.entra_no_whatsapp(c, f) for c in dos_clusters)]
     else:
-        faixas_sel = list(NOMES_FAIXA)
+        faixas_sel = list(regras.nomes_faixa)
 
-    limites = {nome: (dmin, dmax) for nome, dmin, dmax in FAIXAS}
-    intervalos = [limites[f] for f in faixas_sel]
-    dias_exatos = [limites[f][0] for f in faixas_sel] if apenas_primeiro_dia else None
+    intervalos = [(regras.faixa(f).dia_min, regras.faixa(f).dia_max) for f in faixas_sel]
+    dias_exatos = [regras.faixa(f).dia_min for f in faixas_sel] if apenas_primeiro_dia else None
 
     bl_codigos, bl_cpfs = codigos_bloqueados(db)
     linhas = seta_client.buscar_base_cobranca(
@@ -93,13 +85,14 @@ def buscar_base(
         vencimento_ate=vencimento_ate,
         bloqueados_codigos=bl_codigos,
         bloqueados_cpfs=bl_cpfs,
+        juros=regras.juros,
     )
 
     resultado = []
     for r in linhas:
-        faixa = faixa_por_dias(r["dias_atraso"])
-        cluster = cluster_por_valor_pago(r["valor_pago"])
-        entra = entra_no_whatsapp(cluster, faixa)
+        faixa = regras.faixa_por_dias(r["dias_atraso"])
+        cluster = regras.cluster_por_valor_pago(r["valor_pago"])
+        entra = regras.entra_no_whatsapp(cluster, faixa)
         compra = faixa_de_compra(r["qtd_compras"])
         if clusters and cluster not in clusters:
             continue

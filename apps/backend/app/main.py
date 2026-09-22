@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from . import models
 from .config import settings
 from .database import SessionLocal
-from .routers import auth, blacklist, cobranca, dashboard, faixas, google, leads, lojas, numbers, reports, seta, templates, uploads
+from .routers import auth, blacklist, cobranca, config_cobranca, dashboard, faixas, google, leads, lojas, numbers, reports, seta, templates, uploads
 from .security import hash_password
 from .worker import start_scheduler
 
@@ -97,6 +97,7 @@ app.include_router(reports.router)
 app.include_router(seta.router)
 app.include_router(blacklist.router)
 app.include_router(cobranca.router)
+app.include_router(config_cobranca.router)
 app.include_router(leads.router)
 app.include_router(google.router)
 app.include_router(lojas.router)
