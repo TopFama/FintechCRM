@@ -395,7 +395,6 @@ async def testar_envio_chatwoot(
         return schemas.ChatwootTestResult(ok=False, detalhe=str(exc))
 
     body_params, header_image_link = montar_parametros_envio(template, payload.variables)
-    conteudo = chatwoot_client.renderizar_conteudo(template.body_text, body_params)
 
     try:
         contact_id, source_id = await client.buscar_ou_criar_contato(
@@ -404,7 +403,7 @@ async def testar_envio_chatwoot(
         conversation_id = await client.buscar_ou_criar_conversa(numero.chatwoot_inbox_id, contact_id, source_id)
         await client.enviar_mensagem_template(
             conversation_id,
-            conteudo,
+            template.body_text,
             template_name=template.meta_template_name,
             category=template.category,
             language=template.language,

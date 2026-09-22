@@ -146,8 +146,6 @@ async def _send_via_chatwoot(
         logger.warning("Falha ao obter configuração do Chatwoot para envio %s: %s", item.id, exc)
         return
 
-    conteudo = chatwoot_client.renderizar_conteudo(faixa.template.body_text, body_params)
-
     try:
         contact_id, source_id = await client.buscar_ou_criar_contato(
             number.chatwoot_inbox_id, item.celular, item.nome
@@ -155,7 +153,7 @@ async def _send_via_chatwoot(
         conversation_id = await client.buscar_ou_criar_conversa(number.chatwoot_inbox_id, contact_id, source_id)
         await client.enviar_mensagem_template(
             conversation_id,
-            conteudo,
+            faixa.template.body_text,
             template_name=faixa.template.meta_template_name,
             category=faixa.template.category,
             language=faixa.template.language,

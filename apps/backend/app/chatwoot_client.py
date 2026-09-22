@@ -102,39 +102,36 @@ class ChatwootClient:
     async def enviar_mensagem_template(
         self,
         conversation_id: int,
-        conteudo: str,
+        body_text: str,
         template_name: str,
         category: str,
         language: str,
         body_params: list[str],
         header_image_url: str | None = None,
     ) -> dict:
+        """`body_text` é o corpo do template ORIGINAL, com `{{1}}`, `{{2}}`...
+        ainda não substituídos — com `content_mode: raw_template`, é o
+        Chatwoot quem faz a substituição ao renderizar a mensagem na
+        conversa. Sem esse campo, o Chatwoot registra o envio mas a
+        mensagem de abertura (a que efetivamente cria a conversa) não
+        aparece na tela do agente."""
+
         processed_params: dict = {"body": {str(i + 1): valor for i, valor in enumerate(body_params)}}
         if header_image_url:
             processed_params["header"] = {"media_url": header_image_url, "media_type": "image"}
 
         payload = {
-            "content": conteudo,
+            "content": body_text,
             "message_type": "outgoing",
             "template_params": {
                 "name": template_name,
                 "category": category,
                 "language": language,
+                "content_mode": "raw_template",
                 "processed_params": processed_params,
             },
         }
         return await self._request("POST", f"conversations/{conversation_id}/messages", json=payload)
-
-
-def renderizar_conteudo(body_text: str, body_params: list[str]) -> str:
-    """Texto de fallback mostrado na conversa do Chatwoot — quem dispara o
-    WhatsApp de fato é o `template_params` de `enviar_mensagem_template`, mas
-    a API exige `content` mesmo assim."""
-
-    conteudo = body_text
-    for posicao, valor in enumerate(body_params, start=1):
-        conteudo = conteudo.replace(f"{{{{{posicao}}}}}", valor)
-    return conteudo
 
 
 def is_configured(db: Session) -> bool:
