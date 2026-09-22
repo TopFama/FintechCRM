@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { api, CampoCliente, ChatwootTestResult, pareceAdmin, StatusChatwoot, StatusGoogle, StatusSeta, Template, WhatsappNumber } from "../api";
 import BlacklistCard from "../components/config/BlacklistCard";
 import DisparoCard from "../components/config/DisparoCard";
+import Faixas from "./Faixas";
 import NumerosCard from "../components/config/NumerosCard";
 import OrcamentoCard from "../components/config/OrcamentoCard";
 import RegrasCobrancaCard from "../components/config/RegrasCobrancaCard";
@@ -11,17 +12,18 @@ import TokensMetaCard from "../components/config/TokensMetaCard";
 import UsuariosCard from "../components/config/UsuariosCard";
 import { IconAlert, IconRefresh } from "../icons";
 
-type Aba = "conexoes" | "templates" | "horario" | "indicadores" | "blacklist" | "usuarios";
+type Aba = "conexoes" | "templates" | "faixas" | "horario" | "indicadores" | "blacklist" | "usuarios";
 
 const ABAS: { valor: Aba; rotulo: string }[] = [
   { valor: "templates", rotulo: "Templates" },
   { valor: "conexoes", rotulo: "Conexões" },
+  { valor: "faixas", rotulo: "Faixas de cobrança" },
   { valor: "horario", rotulo: "Horário" },
   { valor: "indicadores", rotulo: "Indicadores" },
   { valor: "blacklist", rotulo: "Blacklist" },
 ];
 
-const ABAS_VALIDAS: Aba[] = ["conexoes", "templates", "horario", "indicadores", "blacklist", "usuarios"];
+const ABAS_VALIDAS: Aba[] = ["conexoes", "templates", "faixas", "horario", "indicadores", "blacklist", "usuarios"];
 
 export default function Configuracoes() {
   const [versaoNumeros, setVersaoNumeros] = useState(0);
@@ -255,6 +257,7 @@ export default function Configuracoes() {
       </div>
 
       {aba === "templates" && <TemplatesCard />}
+      {aba === "faixas" && <Faixas />}
       {aba === "horario" && <DisparoCard />}
       {aba === "indicadores" && (
         <>

@@ -60,10 +60,10 @@ export default function Faixas() {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="card-header">
         <div>
-          <h2>Faixas de cobrança</h2>
-          <div className="subtitle">Cada faixa liga um nome de cobrança a um ou mais pares de número e template</div>
+          <h3>Faixas de cobrança</h3>
+          <div className="card-subtitle">Cada faixa liga um nome de cobrança a um ou mais pares de número e template</div>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <button type="button" className="secondary" onClick={handleSincronizar} disabled={sincronizando}>

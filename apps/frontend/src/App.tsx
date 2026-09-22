@@ -2,7 +2,6 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { api, limparAutenticado, pareceAutenticado } from "./api";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import Faixas from "./pages/Faixas";
 import FaixaWizard from "./pages/FaixaWizard";
 import FaixaDetail from "./pages/FaixaDetail";
 import Relatorios from "./pages/Relatorios";
@@ -11,7 +10,6 @@ import Leads from "./pages/Leads";
 import Configuracoes from "./pages/Configuracoes";
 import {
   IconDashboard,
-  IconLayers,
   IconLogout,
   IconReport,
   IconUsers,
@@ -43,9 +41,6 @@ function Layout({ children }: { children: JSX.Element }) {
           </NavLink>
           <NavLink to="/leads" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconList /> Leads
-          </NavLink>
-          <NavLink to="/faixas" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-            <IconLayers /> Faixas de cobrança
           </NavLink>
           <NavLink to="/relatorios" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconReport /> Relatórios
@@ -110,16 +105,7 @@ export default function App() {
       <Route path="/templates" element={<Navigate to="/configuracoes?aba=templates" replace />} />
       <Route path="/usuarios" element={<Navigate to="/configuracoes?aba=usuarios" replace />} />
       <Route path="/blacklist" element={<Navigate to="/configuracoes?aba=blacklist" replace />} />
-      <Route
-        path="/faixas"
-        element={
-          <RequireAuth>
-            <Layout>
-              <Faixas />
-            </Layout>
-          </RequireAuth>
-        }
-      />
+      <Route path="/faixas" element={<Navigate to="/configuracoes?aba=faixas" replace />} />
       <Route
         path="/faixas/nova"
         element={
