@@ -130,6 +130,14 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ campo_sugerido: campoSugerido }),
     }),
+  testarEnvioChatwoot: (
+    templateId: string,
+    payload: { whatsapp_number_id: string; celular: string; variables: Record<string, string> }
+  ) =>
+    request<ChatwootTestResult>(`/templates/${templateId}/testar-envio-chatwoot`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   uploadTemplateImage: (id: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
@@ -593,6 +601,11 @@ export interface StatusChatwoot {
   configurado: boolean;
   base_url: string | null;
   account_id: string | null;
+}
+
+export interface ChatwootTestResult {
+  ok: boolean;
+  detalhe: string;
 }
 
 // --- Efetividade da cobrança ---

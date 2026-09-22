@@ -121,6 +121,17 @@ class ChatwootClient:
         return await self._request("POST", f"conversations/{conversation_id}/messages", json=payload)
 
 
+def renderizar_conteudo(body_text: str, body_params: list[str]) -> str:
+    """Texto de fallback mostrado na conversa do Chatwoot — quem dispara o
+    WhatsApp de fato é o `template_params` de `enviar_mensagem_template`, mas
+    a API exige `content` mesmo assim."""
+
+    conteudo = body_text
+    for posicao, valor in enumerate(body_params, start=1):
+        conteudo = conteudo.replace(f"{{{{{posicao}}}}}", valor)
+    return conteudo
+
+
 def is_configured(db: Session) -> bool:
     return db.query(models.ConfiguracaoChatwoot).first() is not None
 

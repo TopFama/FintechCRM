@@ -523,6 +523,25 @@ label {
   margin-bottom: 0;
 }
 
+.template-preview-teste {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+  max-width: 480px;
+}
+
+.field-success {
+  font-size: 12.5px;
+  color: var(--color-success);
+  margin-top: 8px;
+}
+
+.field-error {
+  font-size: 12.5px;
+  color: var(--color-danger);
+  margin-top: 8px;
+}
+
 .actions-row {
   display: flex;
   gap: 10px;

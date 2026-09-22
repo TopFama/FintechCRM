@@ -7,12 +7,14 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session, selectinload
 
-from .. import models, schemas
+from .. import chatwoot_client, models, schemas
 from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user
 from ..meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_da_waba
+from ..utils.phone import is_valid_phone, normalize_phone
 from ..variaveis_template import CAMPOS_CLIENTE, contexto_cliente
+from ..worker import montar_parametros_envio
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 logger = logging.getLogger(__name__)
@@ -356,3 +358,63 @@ async def upload_template_image(
     db.commit()
     db.refresh(template)
     return template
+
+
+@router.post("/{template_id}/testar-envio-chatwoot", response_model=schemas.ChatwootTestResult)
+async def testar_envio_chatwoot(
+    template_id: str,
+    payload: schemas.TestarEnvioChatwootIn,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Dispara agora, via Chatwoot, o template pra um celular específico —
+    fora da fila normal, só pra validar que o envio (config + inbox) está
+    funcionando de verdade antes de ligar uma faixa nele."""
+
+    template = _with_variables(db.query(models.Template)).filter(
+        models.Template.id == template_id
+    ).first()
+    if not template:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
+
+    numero = db.get(models.WhatsappNumber, payload.whatsapp_number_id)
+    if not numero:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Número não encontrado")
+    if not numero.chatwoot_inbox_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Este número não tem inbox do Chatwoot vinculada (Configurações)"
+        )
+
+    celular = normalize_phone(payload.celular)
+    if not is_valid_phone(celular):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Celular de destino inválido")
+
+    try:
+        client = chatwoot_client.cliente_configurado(db)
+    except chatwoot_client.ChatwootConfigError as exc:
+        return schemas.ChatwootTestResult(ok=False, detalhe=str(exc))
+
+    body_params, header_image_link = montar_parametros_envio(template, payload.variables)
+    conteudo = chatwoot_client.renderizar_conteudo(template.body_text, body_params)
+
+    try:
+        contact_id, source_id = await client.buscar_ou_criar_contato(
+            numero.chatwoot_inbox_id, celular, "Teste de envio"
+        )
+        conversation_id = await client.buscar_ou_criar_conversa(numero.chatwoot_inbox_id, contact_id, source_id)
+        await client.enviar_mensagem_template(
+            conversation_id,
+            conteudo,
+            template_name=template.meta_template_name,
+            category=template.category,
+            language=template.language,
+            body_params=body_params,
+            header_image_url=header_image_link,
+        )
+        return schemas.ChatwootTestResult(ok=True, detalhe=f"Mensagem de teste enviada para {celular}")
+    except chatwoot_client.ChatwootAPIError as exc:
+        return schemas.ChatwootTestResult(
+            ok=False, detalhe=f"Erro retornado pelo Chatwoot ({exc.status_code}): {exc.payload}"
+        )
+    except Exception as exc:  # noqa: BLE001 - qualquer falha de rede/config vira mensagem pro usuário
+        return schemas.ChatwootTestResult(ok=False, detalhe=f"Erro ao enviar: {exc}")

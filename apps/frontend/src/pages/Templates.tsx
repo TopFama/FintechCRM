@@ -1,5 +1,5 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
-import { api, CampoCliente, Template, WhatsappNumber } from "../api";
+import { api, CampoCliente, ChatwootTestResult, Template, WhatsappNumber } from "../api";
 import { IconAlert, IconEye, IconPlus, IconTemplate } from "../icons";
 
 export default function Templates() {
@@ -7,6 +7,10 @@ export default function Templates() {
   const [numbers, setNumbers] = useState<WhatsappNumber[]>([]);
   const [campos, setCampos] = useState<CampoCliente[]>([]);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [testeNumeroId, setTesteNumeroId] = useState("");
+  const [testeCelular, setTesteCelular] = useState("");
+  const [testeEnviando, setTesteEnviando] = useState(false);
+  const [testeResultado, setTesteResultado] = useState<ChatwootTestResult | null>(null);
   const [selectedWabaId, setSelectedWabaId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -27,6 +31,8 @@ export default function Templates() {
     [numbers]
   );
 
+  const numerosChatwoot = useMemo(() => numbers.filter((n) => n.chatwoot_inbox_id), [numbers]);
+
   function load() {
     api.listTemplates().then(setTemplates).catch((e) => setError(e.message));
     api.listNumbers().then(setNumbers).catch(() => undefined);
@@ -45,6 +51,32 @@ export default function Templates() {
         : undefined;
       return campo ? campo.exemplo : `${match} (não mapeado)`;
     });
+  }
+
+  function montarVariaveisExemplo(t: Template): Record<string, string> {
+    const variaveis: Record<string, string> = {};
+    for (const v of t.variables) {
+      const campo = v.campo_sugerido ? campos.find((c) => c.campo === v.campo_sugerido) : undefined;
+      variaveis[v.internal_name] = campo ? campo.exemplo : "";
+    }
+    return variaveis;
+  }
+
+  async function handleTestarEnvio(t: Template) {
+    setTesteEnviando(true);
+    setTesteResultado(null);
+    try {
+      const resultado = await api.testarEnvioChatwoot(t.id, {
+        whatsapp_number_id: testeNumeroId,
+        celular: testeCelular,
+        variables: montarVariaveisExemplo(t),
+      });
+      setTesteResultado(resultado);
+    } catch (err) {
+      setTesteResultado({ ok: false, detalhe: err instanceof Error ? err.message : "Erro ao testar envio" });
+    } finally {
+      setTesteEnviando(false);
+    }
   }
 
   async function handleCampoSugerido(templateId: string, variavelId: string, campo: string) {
@@ -312,7 +344,12 @@ export default function Templates() {
                         </button>
                         <button
                           className="secondary small"
-                          onClick={() => setPreviewId((atual) => (atual === t.id ? null : t.id))}
+                          onClick={() => {
+                            setPreviewId((atual) => (atual === t.id ? null : t.id));
+                            setTesteNumeroId("");
+                            setTesteCelular("");
+                            setTesteResultado(null);
+                          }}
                         >
                           <IconEye width={14} height={14} /> {previewId === t.id ? "Fechar" : "Pré-visualizar"}
                         </button>
@@ -345,6 +382,50 @@ export default function Templates() {
                                 ))}
                               </div>
                             )}
+                            <div className="template-preview-teste">
+                              <label>Testar envio (via Chatwoot)</label>
+                              {numerosChatwoot.length === 0 ? (
+                                <p className="field-hint">
+                                  Nenhum número tem inbox do Chatwoot vinculada. Vincule em Configurações → Números.
+                                </p>
+                              ) : (
+                                <>
+                                  <div className="form-row">
+                                    <div className="field">
+                                      <label>Número de origem</label>
+                                      <select value={testeNumeroId} onChange={(e) => setTesteNumeroId(e.target.value)}>
+                                        <option value="">Selecione...</option>
+                                        {numerosChatwoot.map((n) => (
+                                          <option key={n.id} value={n.id}>
+                                            {n.label} ({n.display_phone_number})
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div className="field">
+                                      <label>Celular de destino</label>
+                                      <input
+                                        value={testeCelular}
+                                        onChange={(e) => setTesteCelular(e.target.value)}
+                                        placeholder="55DDDNÚMERO"
+                                      />
+                                    </div>
+                                  </div>
+                                  <button
+                                    className="secondary small"
+                                    disabled={testeEnviando || !testeNumeroId || !testeCelular}
+                                    onClick={() => handleTestarEnvio(t)}
+                                  >
+                                    {testeEnviando ? "Enviando..." : "Enviar teste"}
+                                  </button>
+                                  {testeResultado && (
+                                    <p className={testeResultado.ok ? "field-success" : "field-error"}>
+                                      {testeResultado.detalhe}
+                                    </p>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </div>
                         </td>
                       </tr>

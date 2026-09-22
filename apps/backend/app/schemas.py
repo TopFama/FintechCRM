@@ -583,6 +583,12 @@ class ChatwootTestResult(BaseModel):
     detalhe: str
 
 
+class TestarEnvioChatwootIn(BaseModel):
+    whatsapp_number_id: str
+    celular: str
+    variables: dict[str, str] = {}
+
+
 class LojaOut(BaseModel):
     filial: str  # código de 2 caracteres (ft.empresa)
     nome_com_cod: str | None

@@ -46,6 +46,23 @@ def _due(config: models.DispatchConfig, now: datetime) -> bool:
     return elapsed >= config.interval_seconds
 
 
+def montar_parametros_envio(template: models.Template, variables_json: dict) -> tuple[list[str], str | None]:
+    """Body params (na ordem das variáveis do template) e link da imagem de
+    cabeçalho, a partir de um dict variavel.internal_name -> valor. Usado no
+    disparo de verdade (variables_json de QueueItem) e no teste de envio
+    manual (Templates → Testar envio)."""
+
+    ordered_variables = sorted(template.variables, key=lambda v: v.position)
+    body_params = [str(variables_json.get(v.internal_name, "")) for v in ordered_variables]
+
+    header_image_link = None
+    if template.header_type == models.TemplateHeaderType.image and template.image_url:
+        if template.image_url.startswith("http"):
+            header_image_link = template.image_url
+
+    return body_params, header_image_link
+
+
 async def _send_one(faixa: models.Faixa, item: models.QueueItem, db: Session) -> None:
     if not faixa.numbers:
         item.status = models.QueueStatus.error
@@ -58,13 +75,7 @@ async def _send_one(faixa: models.Faixa, item: models.QueueItem, db: Session) ->
     number = number_entry.whatsapp_number
     item.whatsapp_number_id = number.id
 
-    ordered_variables = sorted(faixa.template.variables, key=lambda v: v.position)
-    body_params = [str(item.variables_json.get(v.internal_name, "")) for v in ordered_variables]
-
-    header_image_link = None
-    if faixa.template.header_type == models.TemplateHeaderType.image and faixa.template.image_url:
-        if faixa.template.image_url.startswith("http"):
-            header_image_link = faixa.template.image_url
+    body_params, header_image_link = montar_parametros_envio(faixa.template, item.variables_json)
 
     # Número com inbox do Chatwoot vinculada (Configurações) envia por lá;
     # os demais seguem direto pela Graph API da Meta, como sempre.
@@ -135,11 +146,7 @@ async def _send_via_chatwoot(
         logger.warning("Falha ao obter configuração do Chatwoot para envio %s: %s", item.id, exc)
         return
 
-    # Texto de fallback mostrado na conversa — quem dispara o WhatsApp de fato
-    # é o template_params abaixo, mas o Chatwoot exige `content` mesmo assim.
-    conteudo = faixa.template.body_text
-    for posicao, valor in enumerate(body_params, start=1):
-        conteudo = conteudo.replace(f"{{{{{posicao}}}}}", valor)
+    conteudo = chatwoot_client.renderizar_conteudo(faixa.template.body_text, body_params)
 
     try:
         contact_id, source_id = await client.buscar_ou_criar_contato(
