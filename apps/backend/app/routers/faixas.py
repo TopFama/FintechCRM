@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
-from ..utils.spreadsheet import build_model_csv
+from ..utils.spreadsheet import build_model_xlsx
 
 router = APIRouter(prefix="/faixas", tags=["faixas"])
 
@@ -95,12 +95,12 @@ def download_spreadsheet_model(
         next(v.internal_name for v in faixa.template.variables if v.id == m.template_variable_id)
         for m in faixa.variable_mappings
     ]
-    content = build_model_csv(variable_names)
+    content = build_model_xlsx(variable_names)
     return Response(
         content=content,
-        media_type="text/csv",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": f'attachment; filename="modelo_{faixa.name}.csv"'
+            "Content-Disposition": f'attachment; filename="modelo_{faixa.name}.xlsx"'
         },
     )
 

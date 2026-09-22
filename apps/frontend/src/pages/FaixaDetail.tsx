@@ -20,6 +20,26 @@ function pickDefault(columns: string[], previous: string | null | undefined): st
   return NO_COLUMN;
 }
 
+const WEEKDAYS = [
+  { value: "1", label: "Seg" },
+  { value: "2", label: "Ter" },
+  { value: "3", label: "Qua" },
+  { value: "4", label: "Qui" },
+  { value: "5", label: "Sex" },
+  { value: "6", label: "Sáb" },
+  { value: "7", label: "Dom" },
+];
+
+function toggleWeekday(scheduleDays: string, value: string): string {
+  const days = new Set(scheduleDays.split(",").filter(Boolean));
+  if (days.has(value)) {
+    days.delete(value);
+  } else {
+    days.add(value);
+  }
+  return WEEKDAYS.map((d) => d.value).filter((v) => days.has(v)).join(",");
+}
+
 export default function FaixaDetail() {
   const { id } = useParams<{ id: string }>();
   const [faixa, setFaixa] = useState<Faixa | null>(null);
@@ -30,6 +50,7 @@ export default function FaixaDetail() {
   const [savingConfig, setSavingConfig] = useState(false);
   const [dispatchMessage, setDispatchMessage] = useState<string | null>(null);
   const [lastQueueUpdate, setLastQueueUpdate] = useState<Date | null>(null);
+  const [downloadingModel, setDownloadingModel] = useState(false);
 
   // Upload em duas etapas: 1) escolher arquivo e ler as colunas reais do
   // cabeçalho; 2) mapear cada variável/campo para uma dessas colunas antes
@@ -41,6 +62,7 @@ export default function FaixaDetail() {
     celular: NO_COLUMN,
     codigo_cliente: NO_COLUMN,
     nome: NO_COLUMN,
+    cpf: NO_COLUMN,
     valor: NO_COLUMN,
     variables: {},
   });
@@ -99,6 +121,7 @@ export default function FaixaDetail() {
         celular: pickDefault(result.columns, previous?.celular),
         codigo_cliente: pickDefault(result.columns, previous?.codigo_cliente),
         nome: pickDefault(result.columns, previous?.nome),
+        cpf: pickDefault(result.columns, previous?.cpf),
         valor: pickDefault(result.columns, previous?.valor),
         variables: Object.fromEntries(
           (faixa?.template.variables || []).map((v) => [
@@ -125,6 +148,8 @@ export default function FaixaDetail() {
   const mappingComplete =
     Boolean(fieldMap.celular) &&
     Boolean(fieldMap.codigo_cliente) &&
+    Boolean(fieldMap.nome) &&
+    Boolean(fieldMap.cpf) &&
     requiredVariableIds.every((vid) => Boolean(fieldMap.variables[vid]));
 
   async function confirmImport() {
@@ -155,6 +180,19 @@ export default function FaixaDetail() {
       setError(err instanceof Error ? err.message : "Erro ao salvar configuração");
     } finally {
       setSavingConfig(false);
+    }
+  }
+
+  async function handleDownloadModel() {
+    if (!id || !faixa) return;
+    setError(null);
+    setDownloadingModel(true);
+    try {
+      await api.downloadSpreadsheetModel(id, faixa.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao baixar modelo");
+    } finally {
+      setDownloadingModel(false);
     }
   }
 
@@ -197,12 +235,9 @@ export default function FaixaDetail() {
       <div className="card">
         <div className="card-header">
           <h3>1. Subir planilha e mapear colunas</h3>
-          <a
-            href={id ? api.spreadsheetModelUrl(id) : "#"}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}
-          >
-            <IconDownload width={16} height={16} /> Baixar modelo sugerido (.csv)
-          </a>
+          <button className="ghost small" onClick={handleDownloadModel} disabled={downloadingModel}>
+            <IconDownload width={16} height={16} /> {downloadingModel ? "Baixando..." : "Baixar modelo sugerido (.xlsx)"}
+          </button>
         </div>
         <p className="card-subtitle">
           Suba a planilha com a base de clientes desta faixa. O sistema lê o cabeçalho (primeira linha) e você
@@ -214,12 +249,12 @@ export default function FaixaDetail() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv,.xlsx"
+              accept=".xlsx"
               onChange={(e) => e.target.files && handlePickFile(e.target.files[0])}
             />
             <IconUpload width={26} height={26} />
             <div className="dz-title">{loadingColumns ? "Lendo colunas da planilha..." : "Clique ou arraste a planilha aqui"}</div>
-            <div className="dz-hint">.csv ou .xlsx</div>
+            <div className="dz-hint">.xlsx</div>
           </label>
         )}
 
@@ -231,8 +266,33 @@ export default function FaixaDetail() {
 
             <div className="form-row">
               <div className="field">
-                <label>Coluna do código do cliente (SETA de 8 dígitos ou CPF) *</label>
+                <label>Coluna do código (SETA, até 8 dígitos — completa com zero à esquerda) *</label>
                 <select value={fieldMap.codigo_cliente} onChange={(e) => setFieldMap({ ...fieldMap, codigo_cliente: e.target.value })}>
+                  <option value="">Selecione...</option>
+                  {columns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Coluna do nome (usa só o primeiro nome) *</label>
+                <select value={fieldMap.nome} onChange={(e) => setFieldMap({ ...fieldMap, nome: e.target.value })}>
+                  <option value="">Selecione...</option>
+                  {columns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="field">
+                <label>Coluna do CPF (formata com pontos e traço) *</label>
+                <select value={fieldMap.cpf} onChange={(e) => setFieldMap({ ...fieldMap, cpf: e.target.value })}>
                   <option value="">Selecione...</option>
                   {columns.map((c) => (
                     <option key={c} value={c}>
@@ -255,17 +315,6 @@ export default function FaixaDetail() {
             </div>
 
             <div className="form-row">
-              <div className="field">
-                <label>Coluna do nome (opcional)</label>
-                <select value={fieldMap.nome || ""} onChange={(e) => setFieldMap({ ...fieldMap, nome: e.target.value })}>
-                  <option value="">Nenhuma</option>
-                  {columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
               <div className="field">
                 <label>Coluna do valor cobrado (opcional)</label>
                 <select value={fieldMap.valor || ""} onChange={(e) => setFieldMap({ ...fieldMap, valor: e.target.value })}>
@@ -385,11 +434,22 @@ export default function FaixaDetail() {
               </div>
             </div>
             <div className="field">
-              <label>Dias da semana (1=segunda ... 7=domingo, separados por vírgula)</label>
-              <input
-                value={config.schedule_days}
-                onChange={(e) => setConfig({ ...config, schedule_days: e.target.value })}
-              />
+              <label>Dias da semana</label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {WEEKDAYS.map((d) => {
+                  const active = config.schedule_days.split(",").includes(d.value);
+                  return (
+                    <button
+                      key={d.value}
+                      type="button"
+                      className={active ? "small" : "secondary small"}
+                      onClick={() => setConfig({ ...config, schedule_days: toggleWeekday(config.schedule_days, d.value) })}
+                    >
+                      {d.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <div className="form-row">
               <div className="field">
@@ -456,6 +516,7 @@ export default function FaixaDetail() {
                 <tr>
                   <th>Código</th>
                   <th>Nome</th>
+                  <th>CPF</th>
                   <th>Celular</th>
                   <th>Valor</th>
                   <th>Status</th>
@@ -467,6 +528,7 @@ export default function FaixaDetail() {
                   <tr key={q.id}>
                     <td className="cell-strong">{q.codigo_cliente}</td>
                     <td>{q.nome || "—"}</td>
+                    <td className="text-muted">{q.cpf || "—"}</td>
                     <td>{q.celular}</td>
                     <td className="text-muted">{q.valor || "—"}</td>
                     <td>

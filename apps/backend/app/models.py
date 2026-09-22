@@ -165,8 +165,8 @@ class QueueItem(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     faixa_id: Mapped[str] = mapped_column(ForeignKey("faixas.id"), index=True)
     codigo_cliente: Mapped[str] = mapped_column(String, index=True)
-    codigo_tipo: Mapped[str] = mapped_column(String)  # "seta" (8 dígitos) ou "cpf"
     nome: Mapped[str] = mapped_column(String, default="")
+    cpf: Mapped[str] = mapped_column(String, default="")
     valor: Mapped[str | None] = mapped_column(String, nullable=True)
     celular: Mapped[str] = mapped_column(String, index=True)
     celular_original: Mapped[str] = mapped_column(String)

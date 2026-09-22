@@ -53,7 +53,7 @@ class TemplateCreate(BaseModel):
     category: str = "UTILITY"
     header_type: TemplateHeaderType = TemplateHeaderType.none
     body_text: str
-    waba_id: str
+    waba_id: str | None = None
     variables: list[TemplateVariableIn] = []
     submit_to_meta: bool = False
 
@@ -150,8 +150,8 @@ class QueueItemOut(BaseModel):
     id: str
     faixa_id: str
     codigo_cliente: str
-    codigo_tipo: str
     nome: str
+    cpf: str
     valor: str | None
     celular: str
     status: QueueStatus
@@ -174,7 +174,8 @@ class UploadFieldMapping(BaseModel):
 
     celular: str
     codigo_cliente: str
-    nome: str | None = None
+    nome: str
+    cpf: str
     valor: str | None = None
     variables: dict[str, str] = {}  # template_variable_id -> nome da coluna
 
