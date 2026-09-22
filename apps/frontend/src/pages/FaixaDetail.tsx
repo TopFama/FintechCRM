@@ -99,6 +99,7 @@ export default function FaixaDetail() {
   // de confirmar a importação.
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [columns, setColumns] = useState<string[] | null>(null);
+  const [sampleRow, setSampleRow] = useState<Record<string, string> | null>(null);
   const [loadingColumns, setLoadingColumns] = useState(false);
   const [fieldMap, setFieldMap] = useState<UploadFieldMapping>({
     celular: NO_COLUMN,
@@ -190,6 +191,7 @@ export default function FaixaDetail() {
     try {
       const result = await api.uploadColumns(id!, file);
       setColumns(result.columns);
+      setSampleRow(result.sample_row);
       const previous = faixa?.upload_field_mapping;
       const variableIds = templatesAtivos.flatMap((t) => t.variables.map((v) => v.id));
       setFieldMap({
@@ -213,6 +215,7 @@ export default function FaixaDetail() {
   function cancelMapping() {
     setPendingFile(null);
     setColumns(null);
+    setSampleRow(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -223,6 +226,14 @@ export default function FaixaDetail() {
     const m: Record<string, string> = {};
     (faixa?.variable_mappings || []).forEach((vm) => {
       m[vm.template_variable_id] = vm.fonte_tipo;
+    });
+    return m;
+  }, [faixa]);
+
+  const mappingColumnByVid = useMemo(() => {
+    const m: Record<string, string> = {};
+    (faixa?.variable_mappings || []).forEach((vm) => {
+      if (vm.fonte_tipo === "campo_cliente" && vm.column_name) m[vm.template_variable_id] = vm.column_name;
     });
     return m;
   }, [faixa]);
@@ -275,9 +286,14 @@ export default function FaixaDetail() {
     const result: Record<string, MapeamentoEdicao> = {};
     for (const v of template.variables) {
       const existente = existentes.find((m) => m.template_variable_id === v.id);
-      result[v.id] = existente
-        ? { fonte_tipo: existente.fonte_tipo === "campo_cliente" ? "campo_cliente" : "coluna", valor: existente.column_name || "" }
-        : { fonte_tipo: "coluna", valor: v.internal_name };
+      if (existente) {
+        result[v.id] = {
+          fonte_tipo: existente.fonte_tipo === "campo_cliente" ? "campo_cliente" : "coluna",
+          valor: existente.column_name || "",
+        };
+      }
+      // variável nova (sem mapeamento salvo ainda): fica sem entrada, pra a
+      // lista suspensa mostrar o placeholder até o usuário escolher a origem.
     }
     return result;
   }
@@ -315,6 +331,7 @@ export default function FaixaDetail() {
   }
 
   const templateDoForm = templates.find((t) => t.id === formTemplateId) || null;
+  const templatesAprovados = templates.filter((t) => t.status === "approved");
 
   const numerosDisponiveis = numbers.filter(
     (n) => n.id === formNumberId || !faixa?.envios.some((e) => e.whatsapp_number_id === n.id && e.id !== envioEditandoId)
@@ -334,13 +351,33 @@ export default function FaixaDetail() {
     });
   }
 
+  function renderizarPreviewUpload(t: Template): string {
+    return t.body_text.replace(/\{\{(\d+)\}\}/g, (match, pos) => {
+      const variavel = t.variables.find((v) => v.position === Number(pos));
+      if (!variavel) return match;
+      const tipo = mappingByVid[variavel.id] || "coluna";
+      if (tipo === "campo_cliente") {
+        const campo = campos.find((c) => c.campo === mappingColumnByVid[variavel.id]);
+        return campo ? campo.exemplo : match;
+      }
+      const coluna = fieldMap.variables[variavel.id];
+      const valor = coluna && sampleRow ? sampleRow[coluna] : "";
+      return valor ? valor : `[${variavel.internal_name}]`;
+    });
+  }
+
   async function salvarEnvio() {
     if (!id || !formNumberId || !formTemplateId || !templateDoForm) return;
+    const semOrigem = templateDoForm.variables.filter((v) => !formMappings[v.id]);
+    if (semOrigem.length > 0) {
+      setError(`Selecione a origem de todas as variáveis (faltando: ${semOrigem.map((v) => v.internal_name).join(", ")})`);
+      return;
+    }
     setError(null);
     setSalvandoEnvio(true);
     try {
       const variable_mappings: FaixaVariableMappingIn[] = templateDoForm.variables.map((v) => {
-        const m = formMappings[v.id] || { fonte_tipo: "coluna" as const, valor: v.internal_name };
+        const m = formMappings[v.id];
         return { template_variable_id: v.id, fonte_tipo: m.fonte_tipo, column_name: m.valor };
       });
       if (envioEditandoId) {
@@ -502,13 +539,13 @@ export default function FaixaDetail() {
                 )}
               </div>
               <div className="field">
-                <label>Template aprovado</label>
+                <label>Template</label>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <select value={formTemplateId} onChange={(e) => selecionarTemplateForm(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
                     <option value="">Selecione...</option>
-                    {templates.map((t) => (
+                    {templatesAprovados.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.name} ({t.status})
+                        {t.name}
                       </option>
                     ))}
                   </select>
@@ -559,47 +596,54 @@ export default function FaixaDetail() {
                 <label style={{ marginBottom: 8, marginTop: 16, display: "block" }}>Variáveis do template</label>
                 <div className="form-row" style={{ flexWrap: "wrap" }}>
                   {templateDoForm.variables.map((v) => {
-                    const m = formMappings[v.id] || { fonte_tipo: "coluna" as const, valor: v.internal_name };
+                    const m = formMappings[v.id];
+                    const selectValue = !m ? "" : m.fonte_tipo === "campo_cliente" ? `campo:${m.valor}` : "coluna";
                     return (
                       <div className="field" key={v.id} style={{ minWidth: 260 }}>
                         <label>
                           {`{{${v.position}}}`} ({v.internal_name})
                         </label>
-                        <div style={{ display: "flex", gap: 6, minWidth: 0 }}>
+                        <div style={{ display: "flex", gap: 6, minWidth: 0, flexDirection: "column" }}>
                           <select
-                            value={m.fonte_tipo}
-                            onChange={(e) =>
-                              setFormMappings((atual) => ({
-                                ...atual,
-                                [v.id]: {
-                                  fonte_tipo: e.target.value as "coluna" | "campo_cliente",
-                                  valor: e.target.value === "campo_cliente" ? campos[0]?.campo || "" : v.internal_name,
-                                },
-                              }))
-                            }
-                            style={{ flex: "0 0 auto" }}
+                            value={selectValue}
+                            onChange={(e) => {
+                              const valorSelect = e.target.value;
+                              if (!valorSelect) {
+                                setFormMappings((atual) => {
+                                  const proximo = { ...atual };
+                                  delete proximo[v.id];
+                                  return proximo;
+                                });
+                              } else if (valorSelect === "coluna") {
+                                setFormMappings((atual) => ({
+                                  ...atual,
+                                  [v.id]: { fonte_tipo: "coluna", valor: v.internal_name },
+                                }));
+                              } else {
+                                setFormMappings((atual) => ({
+                                  ...atual,
+                                  [v.id]: { fonte_tipo: "campo_cliente", valor: valorSelect.slice("campo:".length) },
+                                }));
+                              }
+                            }}
                           >
+                            <option value="" disabled>
+                              Selecione a origem da variável...
+                            </option>
                             <option value="coluna">Coluna da planilha</option>
-                            <option value="campo_cliente">Campo do cliente</option>
-                          </select>
-                          {m.fonte_tipo === "campo_cliente" ? (
-                            <select
-                              value={m.valor}
-                              onChange={(e) => setFormMappings((atual) => ({ ...atual, [v.id]: { ...m, valor: e.target.value } }))}
-                              style={{ flex: 1, minWidth: 0 }}
-                            >
+                            <optgroup label="Campo do cliente">
                               {campos.map((c) => (
-                                <option key={c.campo} value={c.campo}>
+                                <option key={c.campo} value={`campo:${c.campo}`}>
                                   {c.rotulo}
                                 </option>
                               ))}
-                            </select>
-                          ) : (
+                            </optgroup>
+                          </select>
+                          {m?.fonte_tipo === "coluna" && (
                             <input
                               value={m.valor}
                               onChange={(e) => setFormMappings((atual) => ({ ...atual, [v.id]: { ...m, valor: e.target.value } }))}
                               placeholder="nome de coluna sugerido"
-                              style={{ flex: 1, minWidth: 0 }}
                             />
                           )}
                         </div>
@@ -764,6 +808,19 @@ export default function FaixaDetail() {
                     )}
                   </div>
                 </>
+              )}
+
+              {sampleRow && templatesAtivos.length > 0 && (
+                <div className="sub-card" style={{ marginTop: 16 }}>
+                  <label style={{ marginBottom: 8, display: "block" }}>
+                    Pré-visualização (com a primeira linha da planilha subida)
+                  </label>
+                  {templatesAtivos.map((t) => (
+                    <p key={t.id} className="card-subtitle" style={{ whiteSpace: "pre-wrap" }}>
+                      <strong>{t.name}:</strong> {renderizarPreviewUpload(t)}
+                    </p>
+                  ))}
+                </div>
               )}
 
               <div className="actions-row">

@@ -72,10 +72,30 @@ def read_spreadsheet_headers(filename: str, content: bytes) -> list[str]:
     usuário escolha, em uma lista suspensa, qual coluna real vira cada
     variável/campo — sem precisar que a planilha use nomes fixos."""
 
+    return read_spreadsheet_preview(filename, content)[0]
+
+
+def read_spreadsheet_preview(filename: str, content: bytes) -> tuple[list[str], dict[str, str] | None]:
+    """Cabeçalho + a primeira linha de dados (como {coluna: valor}), pra
+    pré-visualizar o template com um valor real da planilha subida, em vez
+    de só o nome da variável entre colchetes."""
+
     _require_xlsx(filename)
     wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     ws = wb.active
-    first_row = next(ws.iter_rows(values_only=True), None)
+    linhas = ws.iter_rows(values_only=True)
+    first_row = next(linhas, None)
     if not first_row:
-        return []
-    return [str(h).strip() if h is not None else "" for h in first_row if h is not None and str(h).strip()]
+        return [], None
+    headers = [str(h).strip() if h is not None else "" for h in first_row if h is not None and str(h).strip()]
+
+    amostra: dict[str, str] | None = None
+    for row in linhas:
+        if row is None or all(cell is None for cell in row):
+            continue
+        amostra = {
+            headers[i]: ("" if i >= len(row) or row[i] is None else str(row[i]).strip())
+            for i in range(len(headers))
+        }
+        break
+    return headers, amostra

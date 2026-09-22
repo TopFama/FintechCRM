@@ -60,9 +60,14 @@ export default function LeadsCard({ opcoes }: { opcoes: OpcoesCobranca }) {
           onChange={setFaixas}
           placeholder="Todas"
         />
-        <button type="button" onClick={exportar} disabled={exportando}>
-          {exportando ? "Exportando..." : "Exportar leads enviados (.xlsx)"}
-        </button>
+        <div className="field">
+          <label aria-hidden="true" style={{ visibility: "hidden" }}>
+            Exportar
+          </label>
+          <button type="button" onClick={exportar} disabled={exportando}>
+            {exportando ? "Exportando..." : "Exportar leads enviados (.xlsx)"}
+          </button>
+        </div>
       </div>
       <div className="field-hint">Planilha com Codigo, Nome, CPF e Celular dos leads com mensagem enviada.</div>
 
