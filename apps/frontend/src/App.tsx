@@ -1,5 +1,5 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { api, limparAutenticado, pareceAutenticado } from "./api";
+import { api, limparAutenticado, pareceAdmin, pareceAutenticado } from "./api";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Templates from "./pages/Templates";
@@ -11,6 +11,7 @@ import Cobranca from "./pages/Cobranca";
 import Leads from "./pages/Leads";
 import Blacklist from "./pages/Blacklist";
 import Configuracoes from "./pages/Configuracoes";
+import Usuarios from "./pages/Usuarios";
 import {
   IconDashboard,
   IconLayers,
@@ -18,6 +19,7 @@ import {
   IconReport,
   IconTemplate,
   IconUsers,
+  IconUserShield,
   IconList,
   IconBan,
   IconSettings,
@@ -25,6 +27,12 @@ import {
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   if (!pareceAutenticado()) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function RequireAdmin({ children }: { children: JSX.Element }) {
+  if (!pareceAutenticado()) return <Navigate to="/login" replace />;
+  if (!pareceAdmin()) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -63,6 +71,11 @@ function Layout({ children }: { children: JSX.Element }) {
           <NavLink to="/configuracoes" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconSettings /> Configurações
           </NavLink>
+          {pareceAdmin() && (
+            <NavLink to="/usuarios" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+              <IconUserShield /> Usuários
+            </NavLink>
+          )}
         </nav>
 
         <div className="sidebar-footer">
@@ -185,6 +198,16 @@ export default function App() {
               <Configuracoes />
             </Layout>
           </RequireAuth>
+        }
+      />
+      <Route
+        path="/usuarios"
+        element={
+          <RequireAdmin>
+            <Layout>
+              <Usuarios />
+            </Layout>
+          </RequireAdmin>
         }
       />
     </Routes>

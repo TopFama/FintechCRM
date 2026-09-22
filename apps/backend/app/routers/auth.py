@@ -45,7 +45,7 @@ def login(payload: schemas.LoginRequest, request: Request, response: Response, d
         max_age=settings.access_token_expire_minutes * 60,
         path="/",
     )
-    return schemas.LoginResponse(access_token=token)
+    return schemas.LoginResponse(access_token=token, is_admin=user.is_admin)
 
 
 @router.post("/logout")

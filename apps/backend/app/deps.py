@@ -26,3 +26,9 @@ def get_current_user(
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário não encontrado")
     return user
+
+
+def require_admin(user: models.User = Depends(get_current_user)) -> models.User:
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Só o administrador pode fazer isso")
+    return user

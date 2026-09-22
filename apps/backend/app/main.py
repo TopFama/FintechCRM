@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from . import models
 from .config import settings
 from .database import SessionLocal
-from .routers import auth, blacklist, chatwoot, cobranca, config_cobranca, dashboard, faixas, google, leads, lojas, meta_tokens, numbers, reports, seta, templates, uploads
+from .routers import auth, blacklist, chatwoot, cobranca, config_cobranca, dashboard, faixas, google, leads, lojas, meta_tokens, numbers, reports, seta, templates, uploads, users
 from .security import hash_password
 from .segredos import recifrar_segredos
 from .worker import start_scheduler
@@ -82,8 +82,14 @@ def _ensure_admin_user() -> None:
                 models.User(
                     email=settings.admin_email,
                     password_hash=hash_password(settings.admin_password),
+                    is_admin=True,
                 )
             )
+            db.commit()
+        elif not existing.is_admin:
+            # Garante que o e-mail configurado em ADMIN_EMAIL sempre tem
+            # is_admin=True, mesmo em bancos que já existiam antes deste campo.
+            existing.is_admin = True
             db.commit()
     finally:
         db.close()
@@ -127,6 +133,7 @@ app.add_middleware(
 app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
 app.include_router(auth.router)
+app.include_router(users.router)
 app.include_router(meta_tokens.router)
 app.include_router(numbers.router)
 app.include_router(templates.router)

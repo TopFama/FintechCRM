@@ -246,3 +246,13 @@ export function IconSettings(props: IconProps) {
     </svg>
   );
 }
+
+export function IconUserShield(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="9" cy="7.5" r="3.5" />
+      <path d="M3 20c0-4 2.7-6.5 6-6.5s6 2.5 6 6.5" />
+      <path d="M17 12.3v-2.6l2.7-1 2.7 1v2.6c0 2.4-1.3 4-2.7 4.7-1.4-.7-2.7-2.3-2.7-4.7Z" />
+    </svg>
+  );
+}
