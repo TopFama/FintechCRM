@@ -295,6 +295,41 @@ class DashboardSummary(BaseModel):
     erros_recentes: list[dict]
 
 
+class LinhaEfetividadeBase(BaseModel):
+    clientes_cobrados: int
+    valor_cobrado: Decimal
+    clientes_pagaram: int
+    valor_pago: Decimal
+    parcelas_cobradas: int
+    parcelas_pagas: int
+    parcelas_renegociadas: int
+    conversao_clientes: Decimal
+    recuperacao_valor: Decimal
+
+
+class LinhaEfetividadeFaixa(LinhaEfetividadeBase):
+    faixa: str
+
+
+class LinhaEfetividadeLoja(LinhaEfetividadeBase):
+    loja: str
+    loja_nome: str | None = None
+    regional: str | None = None
+    cluster_inad: str | None = None
+
+
+class LinhaEfetividadeTotal(LinhaEfetividadeBase):
+    pass
+
+
+class RelatorioEfetividadeOut(BaseModel):
+    por_faixa: list[LinhaEfetividadeFaixa]
+    por_loja: list[LinhaEfetividadeLoja]
+    total: LinhaEfetividadeTotal
+    leads_sem_parcelas: int
+    dias_janela: int | None = None
+
+
 # --- SETA (ERP) ---
 
 

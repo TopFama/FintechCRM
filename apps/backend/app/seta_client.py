@@ -139,13 +139,15 @@ abertos AS (
            string_agg(DISTINCT portador, ',') AS portadores,
            count(*) FILTER (WHERE vencimento <= GREATEST(current_date, vencimento_min))
                                           AS qtd_parcelas_cobranca,
-           round(sum(
+           -- arredonda parcela a parcela: o total cobrado é a soma exata das
+           -- parcelas guardadas no lead (buscar_parcelas_cobranca)
+           sum(
                CASE WHEN vencimento <= GREATEST(current_date, vencimento_min) THEN
-                   CASE WHEN current_date - vencimento >= :dias_min_juros
-                        THEN valor + valor * :juros_dia * (current_date - vencimento) + valor * :multa
-                        ELSE valor END
+                   round(CASE WHEN current_date - vencimento >= :dias_min_juros
+                              THEN valor + valor * :juros_dia * (current_date - vencimento) + valor * :multa
+                              ELSE valor END, 2)
                END
-           ), 2)                          AS valor_cobrar
+           )                              AS valor_cobrar
       FROM parcelas
      GROUP BY pessoa
 ),
@@ -336,13 +338,15 @@ def buscar_base_cobranca(
 
 def buscar_spc(codigos: list[str]) -> dict[str, str]:
     """Texto bruto da consulta SPC de cada cliente. É pesado (~1 KB por cliente),
-    então só se pede para quem vai aparecer na tela ou virar lead."""
+    então só se pede para quem vai aparecer na tela ou virar lead.
+    Compara a coluna bruta 'codigo' (sem trim) para usar o índice pk_pessoas."""
 
     if not codigos:
         return {}
     engine = engine_ou_erro()
+    # Compara a coluna bruta para usar o índice PK (bpchar ignora espaços à direita no =)
     stmt = text(
-        "SELECT trim(codigo) AS codigo, scpcresultado FROM pessoas WHERE trim(codigo) IN :codigos"
+        "SELECT trim(codigo) AS codigo, scpcresultado FROM pessoas WHERE codigo IN :codigos"
     ).bindparams(bindparam("codigos", expanding=True))
     try:
         with engine.connect() as conn:
@@ -350,3 +354,120 @@ def buscar_spc(codigos: list[str]) -> dict[str, str]:
     except SQLAlchemyError as exc:
         logger.warning("Falha ao consultar o SETA: %s", exc.__class__.__name__)
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
+
+
+# --- Consulta de parcelas e situação para efetividade -----------------------
+
+_SQL_PARCELAS_COBRANCA = r"""
+WITH parcelas AS (
+    SELECT trim(ft.pessoa)   AS pessoa,
+           trim(ft.codigo)   AS titulo_codigo,
+           trim(ft.empresa)  AS empresa,
+           ft.vencimento,
+           ft.valor,
+           min(ft.vencimento) OVER (PARTITION BY ft.pessoa) AS vencimento_min
+      FROM financeiro_titulos ft
+     WHERE ft.rp = 'R'
+       AND ft.status = 'A'
+       AND ft.tipo IN ('4', '5')
+       AND ft.valor > 0
+       AND ft.pessoa IN :codigos
+)
+SELECT pessoa,
+       titulo_codigo,
+       empresa,
+       vencimento,
+       valor,
+       round(
+           CASE WHEN current_date - vencimento >= :dias_min_juros
+                THEN valor + valor * :juros_dia * (current_date - vencimento) + valor * :multa
+                ELSE valor
+           END, 2
+       ) AS valor_cobrar
+  FROM parcelas
+ WHERE vencimento <= GREATEST(current_date, vencimento_min)
+ ORDER BY pessoa, vencimento, titulo_codigo
+"""
+
+
+def buscar_parcelas_cobranca(
+    codigos: list[str], juros: ParametrosJuros = PARAMETROS_JUROS_PADRAO
+) -> dict[str, list[dict]]:
+    """Por código de cliente, as parcelas que entram na cobrança (mesma regra
+    da base de cobrança: rp='R', status='A', tipo 4/5, valor > 0, vencimento <=
+    GREATEST(hoje, vencimento_min)). Cada dict tem titulo_codigo, empresa,
+    vencimento, valor e valor_cobrar.
+    Compara ft.pessoa bruto (sem trim) para usar o índice idx_financeiro_titulos_pessoa."""
+
+    resultado: dict[str, list[dict]] = {c: [] for c in codigos}
+    if not codigos:
+        return resultado
+
+    engine = engine_ou_erro()
+    params_base = {
+        "dias_min_juros": juros.dias_min,
+        "juros_dia": juros.juros_dia,
+        "multa": juros.multa,
+    }
+    CHUNK = 1000
+    try:
+        with engine.connect() as conn:
+            for i in range(0, len(codigos), CHUNK):
+                chunk = codigos[i : i + CHUNK]
+                stmt = text(_SQL_PARCELAS_COBRANCA).bindparams(bindparam("codigos", expanding=True))
+                params = {**params_base, "codigos": chunk}
+                for r in conn.execute(stmt, params).mappings():
+                    p_dict = {
+                        "titulo_codigo": r["titulo_codigo"],
+                        "empresa": r["empresa"],
+                        "vencimento": r["vencimento"],
+                        "valor": r["valor"],
+                        "valor_cobrar": r["valor_cobrar"],
+                    }
+                    resultado.setdefault(r["pessoa"], []).append(p_dict)
+    except SQLAlchemyError as exc:
+        logger.warning("Falha ao consultar parcelas no SETA: %s", exc.__class__.__name__)
+        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
+    return resultado
+
+
+def situacao_titulos(codigos: list[str]) -> dict[str, dict]:
+    """Consulta no SETA a situação de liquidação dos títulos pelo código.
+    Compara ft.codigo bruto (sem trim) para usar o índice pk_financeiro_titulos."""
+
+    if not codigos:
+        return {}
+
+    engine = engine_ou_erro()
+    resultado: dict[str, dict] = {}
+    CHUNK = 1000
+    # Compara a coluna bruta para usar o índice PK (bpchar ignora espaços à direita no =)
+    stmt = text(
+        "SELECT trim(ft.codigo) AS titulo_codigo, "
+        "trim(ft.status) AS status, "
+        "ft.pagamento, "
+        "COALESCE(ft.valorpago, 0) AS valorpago, "
+        "COALESCE(ft.valor, 0) AS valor "
+        "FROM financeiro_titulos ft "
+        "WHERE ft.codigo IN :codigos"
+    ).bindparams(bindparam("codigos", expanding=True))
+
+    try:
+        with engine.connect() as conn:
+            for i in range(0, len(codigos), CHUNK):
+                chunk = codigos[i : i + CHUNK]
+                for r in conn.execute(stmt, {"codigos": chunk}).mappings():
+                    pag = r["pagamento"]
+                    if hasattr(pag, "date") and callable(pag.date):
+                        pag = pag.date()
+                    resultado[r["titulo_codigo"]] = {
+                        "status": r["status"],
+                        "pagamento": pag,
+                        "valorpago": r["valorpago"],
+                        "valor": r["valor"],
+                    }
+    except SQLAlchemyError as exc:
+        logger.warning("Falha ao consultar situação dos títulos no SETA: %s", exc.__class__.__name__)
+        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
+    return resultado
+

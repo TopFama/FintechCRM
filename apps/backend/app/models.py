@@ -327,6 +327,26 @@ class Lead(Base):
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
+    parcelas: Mapped[list["LeadParcela"]] = relationship(back_populates="lead", cascade="all, delete-orphan")
+
+
+class LeadParcela(Base):
+    """Snapshot das parcelas em aberto que entraram na cobrança do lead no
+    momento de sua criação."""
+
+    __tablename__ = "lead_parcelas"
+    __table_args__ = (UniqueConstraint("lead_id", "titulo_codigo"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    lead_id: Mapped[str] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"), index=True)
+    titulo_codigo: Mapped[str] = mapped_column(String, index=True)
+    empresa: Mapped[str] = mapped_column(String)
+    vencimento: Mapped[date] = mapped_column(Date)
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    valor_cobrar: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+
+    lead: Mapped[Lead] = relationship(back_populates="parcelas")
+
 
 class IntegracaoGoogle(Base):
     """Conta Google conectada por OAuth2 (uma só). Guarda o refresh token

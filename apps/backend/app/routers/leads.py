@@ -47,15 +47,22 @@ def gerar_leads(
 
     # a data da consulta SPC só existe no texto bruto: busca só de quem vira lead
     datas_spc: dict[str, date | None] = {}
-    try:
-        for lote in _em_lotes([c["codigo"] for c in novos], 5000):
-            for codigo, texto in seta_client.buscar_spc(lote).items():
-                datas_spc[codigo] = parse_spc(texto)[1]
-    except seta_client.SetaIndisponivel as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    parcelas_map: dict[str, list[dict]] = {}
+    if novos:
+        codigos_novos = [c["codigo"] for c in novos]
+        try:
+            for lote in _em_lotes(codigos_novos, 5000):
+                for codigo, texto in seta_client.buscar_spc(lote).items():
+                    datas_spc[codigo] = parse_spc(texto)[1]
+            parcelas_map = seta_client.buscar_parcelas_cobranca(
+                codigos_novos, juros=carregar_regras(db).juros
+            )
+        except seta_client.SetaIndisponivel as exc:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
-    db.add_all(
-        models.Lead(
+    leads_para_salvar = []
+    for c in novos:
+        lead = models.Lead(
             codigo_cliente=c["codigo"],
             nome=c["nome"],
             cpf=c["cpfcnpj"],
@@ -78,8 +85,24 @@ def gerar_leads(
             spc_data_consulta=datas_spc.get(c["codigo"]),
             created_by=user.id,
         )
-        for c in novos
-    )
+        vistos_titulos = set()
+        for p in parcelas_map.get(c["codigo"], []):
+            t_cod = str(p["titulo_codigo"]).strip()
+            if t_cod in vistos_titulos:
+                continue
+            vistos_titulos.add(t_cod)
+            lead.parcelas.append(
+                models.LeadParcela(
+                    titulo_codigo=t_cod,
+                    empresa=str(p["empresa"]).strip(),
+                    vencimento=p["vencimento"],
+                    valor=p["valor"],
+                    valor_cobrar=p["valor_cobrar"],
+                )
+            )
+        leads_para_salvar.append(lead)
+
+    db.add_all(leads_para_salvar)
     db.commit()
     return schemas.LeadsGerarResult(
         criados=len(novos),
