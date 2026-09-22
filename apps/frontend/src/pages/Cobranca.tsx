@@ -139,7 +139,7 @@ export default function Cobranca() {
         <div>
           <h2>Cobrança</h2>
           <div className="subtitle">
-            Consulte clientes em atraso no ERP SETA e gere leads — os relatórios ficam no{" "}
+            Consulte clientes em atraso no SETA e gere leads — os relatórios ficam no{" "}
             <Link to="/">Dashboard</Link>
           </div>
         </div>
@@ -195,7 +195,7 @@ export default function Cobranca() {
         )}
 
         {clientesCarregando && (
-          <div className="loading-state">Consultando o ERP SETA — isso pode levar até 45 segundos...</div>
+          <div className="loading-state">Consultando o SETA — isso pode levar até 45 segundos...</div>
         )}
 
         {!clientesCarregando && clientes.length === 0 && !clientesErro && (

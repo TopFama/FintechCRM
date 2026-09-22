@@ -247,7 +247,7 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
           <span>{erro}</span>
         </div>
       )}
-      {carregando && <div className="loading-state">Cruzando as parcelas cobradas com o ERP SETA...</div>}
+      {carregando && <div className="loading-state">Cruzando as parcelas cobradas com o SETA...</div>}
 
       {relatorio && !carregando && (
         <>

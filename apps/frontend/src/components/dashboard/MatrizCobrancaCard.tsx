@@ -81,7 +81,7 @@ export default function MatrizCobrancaCard({ opcoes }: { opcoes: OpcoesCobranca 
           <span>{erro}</span>
         </div>
       )}
-      {carregando && <div className="loading-state">Consultando o ERP SETA — pode levar até um minuto...</div>}
+      {carregando && <div className="loading-state">Consultando o SETA — pode levar até um minuto...</div>}
       {matriz && relatorio && !carregando && (
         <>
           <MatrizTable

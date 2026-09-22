@@ -78,7 +78,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 // 503 nas rotas de cobrança = ERP fora do ar ou não configurado
 export function mensagemErroSeta(e: unknown): string {
   if (e instanceof ApiError && e.status === 503) {
-    return e.message.startsWith("ERP") ? e.message : `ERP SETA indisponível: ${e.message}`;
+    return e.message.startsWith("SETA") ? e.message : `SETA indisponível: ${e.message}`;
   }
   return e instanceof Error ? e.message : "Erro desconhecido";
 }

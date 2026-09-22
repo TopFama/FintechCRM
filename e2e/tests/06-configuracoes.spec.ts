@@ -5,7 +5,7 @@ test.describe("06. Configurações", () => {
     await page.goto("/configuracoes");
     await expect(page.getByRole("heading", { level: 2, name: "Configurações" })).toBeVisible();
 
-    const erpCard = page.locator(".card").filter({ hasText: "ERP SETA" });
+    const erpCard = page.locator(".card").filter({ hasText: "SETA" });
     await expect(erpCard).toBeVisible();
 
     // Verify connected status, "Somente leitura", and latency in ms
