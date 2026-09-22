@@ -7,7 +7,22 @@ import Faixas from "./pages/Faixas";
 import FaixaWizard from "./pages/FaixaWizard";
 import FaixaDetail from "./pages/FaixaDetail";
 import Relatorios from "./pages/Relatorios";
-import { IconDashboard, IconLayers, IconLogout, IconPhone, IconReport, IconTemplate } from "./icons";
+import Cobranca from "./pages/Cobranca";
+import Leads from "./pages/Leads";
+import Blacklist from "./pages/Blacklist";
+import Configuracoes from "./pages/Configuracoes";
+import {
+  IconDashboard,
+  IconLayers,
+  IconLogout,
+  IconPhone,
+  IconReport,
+  IconTemplate,
+  IconUsers,
+  IconList,
+  IconBan,
+  IconSettings,
+} from "./icons";
 
 function isAuthenticated() {
   return Boolean(localStorage.getItem("token"));
@@ -32,6 +47,15 @@ function Layout({ children }: { children: JSX.Element }) {
           <NavLink to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconDashboard /> Dashboard
           </NavLink>
+          <NavLink to="/cobranca" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <IconUsers /> Cobrança
+          </NavLink>
+          <NavLink to="/leads" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <IconList /> Leads
+          </NavLink>
+          <NavLink to="/blacklist" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <IconBan /> Blacklist
+          </NavLink>
           <NavLink to="/numeros" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconPhone /> Números
           </NavLink>
@@ -43,6 +67,9 @@ function Layout({ children }: { children: JSX.Element }) {
           </NavLink>
           <NavLink to="/relatorios" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconReport /> Relatórios
+          </NavLink>
+          <NavLink to="/configuracoes" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <IconSettings /> Configurações
           </NavLink>
         </nav>
 
@@ -73,6 +100,36 @@ export default function App() {
           <RequireAuth>
             <Layout>
               <Dashboard />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/cobranca"
+        element={
+          <RequireAuth>
+            <Layout>
+              <Cobranca />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/leads"
+        element={
+          <RequireAuth>
+            <Layout>
+              <Leads />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/blacklist"
+        element={
+          <RequireAuth>
+            <Layout>
+              <Blacklist />
             </Layout>
           </RequireAuth>
         }
@@ -133,6 +190,16 @@ export default function App() {
           <RequireAuth>
             <Layout>
               <Relatorios />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/configuracoes"
+        element={
+          <RequireAuth>
+            <Layout>
+              <Configuracoes />
             </Layout>
           </RequireAuth>
         }

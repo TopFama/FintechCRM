@@ -4,6 +4,16 @@ function getToken(): string | null {
   return localStorage.getItem("token");
 }
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -16,18 +26,51 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const response = await fetch(`${API_URL}${path}`, { ...options, headers });
   if (response.status === 401) {
+    if (path.startsWith("/auth/login") || !token) {
+      const body = await response.json().catch(() => ({}));
+      throw new ApiError(401, body.detail || "Email ou senha incorretos");
+    }
     localStorage.removeItem("token");
     window.location.href = "/login";
-    throw new Error("Sessão expirada");
+    throw new ApiError(401, "Sessão expirada");
   }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || `Erro ${response.status}`);
+    throw new ApiError(response.status, body.detail || `Erro ${response.status}`);
+  }
+  if (
+    response.status === 204 ||
+    response.status === 205 ||
+    response.headers.get("content-length") === "0"
+  ) {
+    return undefined as unknown as T;
   }
   if (response.headers.get("content-type")?.includes("application/json")) {
-    return response.json();
+    const text = await response.text();
+    if (!text || !text.trim()) {
+      return undefined as unknown as T;
+    }
+    return JSON.parse(text) as T;
   }
   return response as unknown as T;
+}
+
+// Gera query string com arrays como parâmetros repetidos (?a=1&a=2) e ignora vazios.
+export function montarQuery(params: object): string {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "") continue;
+    if (Array.isArray(v)) {
+      v.forEach((item) => {
+        if (item !== undefined && item !== null && item !== "") {
+          qs.append(k, String(item));
+        }
+      });
+    } else {
+      qs.append(k, String(v));
+    }
+  }
+  return qs.toString();
 }
 
 export const api = {
@@ -114,6 +157,53 @@ export const api = {
     downloadFile(`/relatorios/telefones-invalidos/export${faixaId ? `?faixa_id=${faixaId}` : ""}`, "telefones_invalidos.xlsx"),
   downloadDispatchReportXlsx: (faixaId?: string) =>
     downloadFile(`/relatorios/envios/export${faixaId ? `?faixa_id=${faixaId}` : ""}`, "relatorio_envios.xlsx"),
+
+  // --- Cobrança ---
+  regrasCobranca: () => request<RegrasCobranca>("/cobranca/regras"),
+  listarClientesCobranca: (params: FiltrosCobranca & { limit: number; offset: number }) =>
+    request<{ total: number; itens: ClienteCobranca[] }>(`/cobranca/clientes?${montarQuery(params)}`),
+  relatorioCobranca: (params: FiltrosCobranca) =>
+    request<RelatorioCobranca>(`/cobranca/relatorio?${montarQuery(params)}`),
+
+  // --- Leads ---
+  gerarLeads: (params: FiltrosCobranca) =>
+    request<{ criados: number; ja_existiam: number; sem_celular: number }>(
+      `/leads/gerar?${montarQuery(params)}`,
+      { method: "POST" },
+    ),
+  listarLeads: (params: FiltrosLeads & { limit: number; offset: number }) =>
+    request<{ total: number; itens: Lead[] }>(`/leads?${montarQuery(params)}`),
+  marcarLeadsCobrados: (ids: string[]) =>
+    request<{ atualizados: number }>("/leads/marcar-cobrados", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
+
+  // --- Blacklist ---
+  listarBlacklist: (busca?: string) =>
+    request<Bloqueado[]>(`/blacklist${busca ? `?busca=${encodeURIComponent(busca)}` : ""}`),
+  adicionarBlacklist: (documento: string, motivo?: string) =>
+    request<Bloqueado>("/blacklist", {
+      method: "POST",
+      body: JSON.stringify({ documento, motivo }),
+    }),
+  adicionarBlacklistLote: (documentos: string[], motivo?: string) =>
+    request<{ adicionados: number; ja_existiam: number; invalidos: string[] }>("/blacklist/lote", {
+      method: "POST",
+      body: JSON.stringify({ documentos, motivo }),
+    }),
+  removerBlacklist: (id: string) =>
+    request<void>(`/blacklist/${id}`, { method: "DELETE" }),
+
+  // --- Lojas ---
+  listarLojas: () => request<Loja[]>("/lojas"),
+  filtrosLojas: () => request<FiltrosLoja>("/lojas/filtros"),
+
+  // --- Configurações ---
+  statusSeta: () => request<StatusSeta>("/seta/status"),
+  statusGoogle: () => request<StatusGoogle>("/google/status"),
+  iniciarOAuthGoogle: () => request<{ url: string }>("/google/oauth/iniciar", { method: "POST" }),
+  desconectarGoogle: () => request<void>("/google/oauth", { method: "DELETE" }),
 };
 
 async function downloadFile(path: string, filename: string): Promise<void> {
@@ -271,4 +361,170 @@ export interface DashboardSummary {
   total_telefones_invalidos: number;
   por_faixa: Record<string, unknown>[];
   erros_recentes: Record<string, unknown>[];
+}
+
+// --- Cobrança ---
+
+export interface RegrasCobranca {
+  clusters: string[];
+  faixas: string[];
+  faixas_whatsapp: Record<string, string[]>; // cluster -> faixas que recebem WhatsApp
+  primeiro_dia: Record<string, number>;
+  faixas_compra: string[];
+}
+
+export interface ClienteCobranca {
+  codigo: string;
+  nome: string;
+  celular: string | null;
+  celular_origem: string | null;
+  cpfcnpj: string | null;
+  status: string;
+  status_descricao: string;
+  loja_cadastro: string | null;
+  salario: string | null;
+  limite_rotativo: string | null;
+  nascimento: string | null;
+  cadastro: string | null;
+  cluster: string;
+  valor_pago: string;
+  qtd_compras: number;
+  faixa_compra: string | null;
+  ultima_compra: string | null;
+  faixa: string | null;
+  dias_atraso: number;
+  entra_whatsapp: boolean;
+  qtd_titulos: number;
+  valor_em_aberto: string;
+  qtd_parcelas_cobranca: number;
+  valor_cobrar: string;
+  vencimento_mais_antigo: string;
+  lojas: string[];
+  portadores: string[];
+  spc_restricao: "sim" | "nao" | "indeterminado";
+  spc_data_consulta: string | null;
+}
+
+export interface MatrizDados<T> {
+  celulas: Record<string, Record<string, T>>;
+  total_por_cluster: Record<string, T>;
+  total_por_faixa: Record<string, T>;
+  total: T;
+}
+
+export interface RelatorioCobranca {
+  clusters: string[];
+  faixas: string[];
+  quantidade: MatrizDados<number>;
+  quantidade_com_restricao_spc: MatrizDados<number>;
+  valor_em_aberto?: MatrizDados<string>;
+}
+
+export interface FiltrosCobranca {
+  apenas_primeiro_dia?: boolean;
+  somente_regra_whatsapp?: boolean;
+  faixa?: string[];
+  cluster?: string[];
+  faixa_compra?: string[];
+  loja?: string[];
+  regional?: string[];
+  estado?: string[];
+  cluster_inad?: string[];
+  cluster_populacao?: string[];
+  portador?: string[];
+  status_cliente?: string[];
+  restricao_spc?: string[];
+  vencimento_de?: string;
+  vencimento_ate?: string;
+}
+
+// --- Leads ---
+
+export interface Lead {
+  id: string;
+  codigo_cliente: string;
+  nome: string;
+  cpf: string | null;
+  celular: string | null;
+  celular_origem: string | null;
+  cluster: string;
+  faixa: string;
+  faixa_compra: string | null;
+  qtd_compras: number;
+  dias_atraso: number;
+  qtd_parcelas: number;
+  valor_em_aberto: string;
+  valor_cobrar: string;
+  vencimento_mais_antigo: string;
+  lojas: string[];
+  portadores: string[];
+  status_cliente: string;
+  spc_restricao: string;
+  spc_data_consulta: string | null;
+  status: "novo" | "cobrado";
+  cobrado_em: string | null;
+  created_at: string;
+}
+
+export interface FiltrosLeads {
+  loja?: string[];
+  regional?: string[];
+  estado?: string[];
+  cluster_inad?: string[];
+  cluster_populacao?: string[];
+  faixa?: string[];
+  cluster?: string[];
+  status?: "novo" | "cobrado";
+  busca?: string;
+  com_celular?: boolean;
+  criado_de?: string;
+  criado_ate?: string;
+}
+
+// --- Blacklist ---
+
+export interface Bloqueado {
+  id: string;
+  tipo: "seta" | "cpf";
+  valor: string;
+  motivo: string;
+  created_at: string;
+}
+
+// --- Lojas ---
+
+export interface Loja {
+  filial: string;
+  nome_com_cod: string | null;
+  regional: string | null;
+  estado: string | null;
+  cluster_inad: string | null;
+  cluster_populacao: string | null;
+}
+
+export interface FiltrosLoja {
+  regionais: string[];
+  estados: string[];
+  clusters_inad: string[];
+  clusters_populacao: string[];
+}
+
+// --- Configurações ---
+
+export interface StatusSeta {
+  configurado: boolean;
+  conectado: boolean;
+  banco: string | null;
+  usuario: string | null;
+  versao: string | null;
+  somente_leitura: boolean | null;
+  latencia_ms: number | null;
+  erro: string | null;
+}
+
+export interface StatusGoogle {
+  configurado: boolean;
+  conectado: boolean;
+  email: string | null;
+  redirect_uri: string;
 }
