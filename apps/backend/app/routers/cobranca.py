@@ -106,8 +106,8 @@ def relatorio(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    """Quantidade de clientes por cluster (linhas) × faixa de atraso (colunas),
-    no total e só entre os com restrição no SPC."""
+    """Quantidade e valor em aberto de clientes por cluster (linhas) × faixa de
+    atraso (colunas), no total e só entre os com restrição no SPC."""
 
     clientes = buscar_base_ou_erro(db, filtros)
     r = carregar_regras(db)
@@ -116,4 +116,6 @@ def relatorio(
         faixas=r.nomes_faixa,
         quantidade=cobranca_relatorio.montar_matriz(clientes, r),
         quantidade_com_restricao_spc=cobranca_relatorio.montar_matriz(clientes, r, apenas_com_restricao_spc=True),
+        valor_em_aberto=cobranca_relatorio.montar_matriz_valor(clientes, r),
     )
+

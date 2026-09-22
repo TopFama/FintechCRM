@@ -1,32 +1,65 @@
 """Relatórios cluster × faixa de atraso sobre a base de cobrança."""
 
+from decimal import Decimal
+from typing import Any, Callable
+
 from .cobranca_regras import Regras
+
+
+def _montar_matriz_generica(
+    clientes: list[dict],
+    regras: Regras,
+    valor_fn: Callable[[dict], Any],
+    zero: Any,
+    *,
+    apenas_com_restricao_spc: bool = False,
+) -> dict:
+    nomes_cluster = regras.nomes_cluster
+    nomes_faixa = regras.nomes_faixa
+    celulas = {c: {f: zero for f in nomes_faixa} for c in nomes_cluster}
+    for cliente in clientes:
+        if cliente.get("faixa") is None:
+            continue
+        if apenas_com_restricao_spc and cliente.get("spc_restricao") != "sim":
+            continue
+        cluster = cliente.get("cluster")
+        faixa = cliente.get("faixa")
+        if cluster not in celulas:
+            continue
+        if faixa not in celulas[cluster]:
+            continue
+        celulas[cluster][faixa] += valor_fn(cliente)
+
+    total_por_cluster = {c: sum(celulas[c].values(), zero) for c in nomes_cluster}
+    total_por_faixa = {f: sum((celulas[c][f] for c in nomes_cluster), zero) for f in nomes_faixa}
+    return {
+        "celulas": celulas,
+        "total_por_cluster": total_por_cluster,
+        "total_por_faixa": total_por_faixa,
+        "total": sum(total_por_cluster.values(), zero),
+    }
 
 
 def montar_matriz(clientes: list[dict], regras: Regras, *, apenas_com_restricao_spc: bool = False) -> dict:
     """Conta clientes por cluster (linhas) e faixa de atraso (colunas), com os
     totais. Com `apenas_com_restricao_spc`, só conta quem tem restrição "sim"."""
+    return _montar_matriz_generica(
+        clientes,
+        regras,
+        valor_fn=lambda _c: 1,
+        zero=0,
+        apenas_com_restricao_spc=apenas_com_restricao_spc,
+    )
 
-    nomes_cluster = regras.nomes_cluster
-    nomes_faixa = regras.nomes_faixa
-    celulas = {c: {f: 0 for f in nomes_faixa} for c in nomes_cluster}
-    for cliente in clientes:
-        if cliente["faixa"] is None:
-            continue
-        if apenas_com_restricao_spc and cliente["spc_restricao"] != "sim":
-            continue
-        # cluster/faixa que não existem mais na matriz não estouram KeyError
-        if cliente["cluster"] not in celulas:
-            continue
-        if cliente["faixa"] not in celulas[cliente["cluster"]]:
-            continue
-        celulas[cliente["cluster"]][cliente["faixa"]] += 1
 
-    total_por_cluster = {c: sum(celulas[c].values()) for c in nomes_cluster}
-    total_por_faixa = {f: sum(celulas[c][f] for c in nomes_cluster) for f in nomes_faixa}
-    return {
-        "celulas": celulas,
-        "total_por_cluster": total_por_cluster,
-        "total_por_faixa": total_por_faixa,
-        "total": sum(total_por_cluster.values()),
-    }
+def montar_matriz_valor(clientes: list[dict], regras: Regras, *, apenas_com_restricao_spc: bool = False) -> dict:
+    """Soma o valor em aberto dos clientes por cluster (linhas) e faixa de
+    atraso (colunas), com os totais."""
+    return _montar_matriz_generica(
+        clientes,
+        regras,
+        valor_fn=lambda c: Decimal(str(c["valor_em_aberto"])),
+        zero=Decimal("0"),
+        apenas_com_restricao_spc=apenas_com_restricao_spc,
+    )
+

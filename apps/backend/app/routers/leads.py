@@ -1,12 +1,15 @@
 from datetime import date, datetime
+import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import false, or_
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import case, false, or_
 from sqlalchemy.orm import Session
 
 from .. import google_client, lojas as lojas_base, models, schemas, seta_client
 from ..database import get_db
 from ..deps import get_current_user
+from ..regras_db import carregar_regras
+from ..utils.leads_xlsx import gerar_xlsx_leads
 from ..utils.spc import parse_spc
 from .blacklist import codigos_bloqueados
 from .cobranca import buscar_base_ou_erro, filtros_base
@@ -135,8 +138,7 @@ def filtrar_leads(
     return query
 
 
-@router.get("", response_model=schemas.LeadsPage)
-def listar_leads(
+def filtros_consulta_leads(
     loja: list[str] | None = Query(None, description="Código da loja do título"),
     regional: list[str] | None = Query(None),
     estado: list[str] | None = Query(None),
@@ -144,33 +146,106 @@ def listar_leads(
     cluster_populacao: list[str] | None = Query(None),
     faixa: list[str] | None = Query(None),
     cluster: list[str] | None = Query(None),
-    lead_status: str | None = Query(None, alias="status", pattern="^(novo|cobrado)$"),
     busca: str | None = Query(None, description="Nome, código ou CPF"),
     com_celular: bool | None = Query(None),
     criado_de: date | None = Query(None),
     criado_ate: date | None = Query(None),
+) -> dict:
+    return {
+        "loja": loja,
+        "regional": regional,
+        "estado": estado,
+        "cluster_inad": cluster_inad,
+        "cluster_populacao": cluster_populacao,
+        "faixa": faixa,
+        "cluster": cluster,
+        "busca": busca,
+        "com_celular": com_celular,
+        "criado_de": criado_de,
+        "criado_ate": criado_ate,
+    }
+
+
+def query_leads_filtrada(db: Session, filtros: dict, lead_status: str | None):
+    try:
+        codigos_loja = lojas_base.combinar_lojas(
+            db,
+            filtros["loja"],
+            regional=filtros["regional"],
+            estado=filtros["estado"],
+            cluster_inad=filtros["cluster_inad"],
+            cluster_populacao=filtros["cluster_populacao"],
+        )
+    except google_client.GoogleIndisponivel as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    return filtrar_leads(
+        db,
+        loja=codigos_loja,
+        faixa=filtros["faixa"],
+        cluster=filtros["cluster"],
+        lead_status=lead_status,
+        busca=filtros["busca"],
+        com_celular=filtros["com_celular"],
+        criado_de=filtros["criado_de"],
+        criado_ate=filtros["criado_ate"],
+    )
+
+
+def _nome_faixas_arquivo(faixas: list[str] | None) -> str:
+    if not faixas:
+        return "todas"
+    limpos = [re.sub(r"[^A-Za-z0-9+-]", "", f) for f in faixas]
+    limpos = [f for f in limpos if f]
+    return "_".join(limpos) if limpos else "todas"
+
+
+@router.get("/exportar.xlsx")
+def exportar_leads_xlsx(
+    filtros: dict = Depends(filtros_consulta_leads),
+    lead_status: str | None = Query("cobrado", alias="status", pattern="^(novo|cobrado)$"),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Exporta os leads para planilha Excel (.xlsx) com colunas Codigo, Nome, CPF e Celular."""
+    query = query_leads_filtrada(db, filtros, lead_status)
+    regras = carregar_regras(db)
+    nomes_faixa = regras.nomes_faixa
+
+    if nomes_faixa:
+        ordem_faixa = case(
+            {nome: i for i, nome in enumerate(nomes_faixa)},
+            value=models.Lead.faixa,
+            else_=len(nomes_faixa),
+        )
+        leads = query.order_by(ordem_faixa, models.Lead.nome).all()
+    else:
+        leads = query.order_by(models.Lead.nome).all()
+
+    ordem_map = {n: i for i, n in enumerate(nomes_faixa)}
+    leads.sort(key=lambda l: (ordem_map.get(l.faixa, len(nomes_faixa)), l.nome or ""))
+
+    conteudo = gerar_xlsx_leads(leads)
+    nome_faixas = _nome_faixas_arquivo(filtros["faixa"])
+    hoje = date.today().isoformat()
+    filename = f"leads_{nome_faixas}_{hoje}.xlsx"
+
+    return Response(
+        content=conteudo,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("", response_model=schemas.LeadsPage)
+def listar_leads(
+    filtros: dict = Depends(filtros_consulta_leads),
+    lead_status: str | None = Query(None, alias="status", pattern="^(novo|cobrado)$"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    try:
-        codigos_loja = lojas_base.combinar_lojas(
-            db, loja, regional=regional, estado=estado, cluster_inad=cluster_inad, cluster_populacao=cluster_populacao
-        )
-    except google_client.GoogleIndisponivel as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-    query = filtrar_leads(
-        db,
-        loja=codigos_loja,
-        faixa=faixa,
-        cluster=cluster,
-        lead_status=lead_status,
-        busca=busca,
-        com_celular=com_celular,
-        criado_de=criado_de,
-        criado_ate=criado_ate,
-    )
+    query = query_leads_filtrada(db, filtros, lead_status)
     total = query.count()
     itens = (
         query.order_by(models.Lead.created_at.desc(), models.Lead.dias_atraso.desc(), models.Lead.codigo_cliente)
@@ -179,6 +254,7 @@ def listar_leads(
         .all()
     )
     return schemas.LeadsPage(total=total, itens=itens)
+
 
 
 @router.post("/marcar-cobrados", response_model=dict)

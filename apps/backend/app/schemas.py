@@ -394,11 +394,20 @@ class MatrizQuantidadeOut(BaseModel):
     total: int
 
 
+class MatrizValorOut(BaseModel):
+    celulas: dict[str, dict[str, Decimal]]  # cluster -> faixa -> valor em aberto
+    total_por_cluster: dict[str, Decimal]
+    total_por_faixa: dict[str, Decimal]
+    total: Decimal
+
+
 class RelatorioCobrancaOut(BaseModel):
     clusters: list[str]
     faixas: list[str]
     quantidade: MatrizQuantidadeOut
     quantidade_com_restricao_spc: MatrizQuantidadeOut
+    valor_em_aberto: MatrizValorOut
+
 
 
 # --- Leads ---
