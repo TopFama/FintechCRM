@@ -58,6 +58,18 @@ async def enviar_item(envio: models.FaixaEnvio, item: models.QueueItem, db: Sess
         await _enviar_via_meta(envio, item, db, number, template, body_params, header_image_link)
 
 
+def _marcar_lead_cobrado(db: Session, item: models.QueueItem) -> None:
+    """Envio real marca o lead como cobrado — é o que alimenta "Leads enviados"."""
+    faixa = db.get(models.Faixa, item.faixa_id)
+    if faixa is None:
+        return
+    db.query(models.Lead).filter(
+        models.Lead.codigo_cliente == item.codigo_cliente,
+        models.Lead.faixa == faixa.name,
+        models.Lead.status == "novo",
+    ).update({"status": "cobrado", "cobrado_em": item.sent_at}, synchronize_session=False)
+
+
 async def _enviar_via_meta(
     envio: models.FaixaEnvio,
     item: models.QueueItem,
@@ -88,6 +100,7 @@ async def _enviar_via_meta(
         )
         item.status = models.QueueStatus.sent
         item.sent_at = datetime.utcnow()
+        _marcar_lead_cobrado(db, item)
         messages = result.get("messages") or []
         if messages:
             item.whatsapp_message_id = messages[0].get("id")
@@ -137,6 +150,7 @@ async def _enviar_via_chatwoot(
         )
         item.status = models.QueueStatus.sent
         item.sent_at = datetime.utcnow()
+        _marcar_lead_cobrado(db, item)
     except chatwoot_client.ChatwootAPIError as exc:
         item.status = models.QueueStatus.error
         item.error_message = str(exc)

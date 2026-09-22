@@ -1,4 +1,5 @@
 from datetime import datetime, time
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from sqlalchemy import and_, or_
@@ -30,6 +31,17 @@ async def _ler_planilha_limitada(file: UploadFile) -> bytes:
     if len(content) > _TAMANHO_MAXIMO_PLANILHA_BYTES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Planilha maior que o limite de 20 MB")
     return content
+
+
+def _valor_decimal(valor: str | None) -> Decimal:
+    """Aceita "1.234,56", "1234.56" ou "R$ 10" — o que vier na planilha."""
+    texto = (valor or "").replace("R$", "").strip()
+    if "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+    try:
+        return Decimal(texto)
+    except (InvalidOperation, ValueError):
+        return Decimal(0)
 
 
 def _load_faixa(db: Session, faixa_id: str) -> models.Faixa:
@@ -171,12 +183,13 @@ async def upload_planilha(
     # fonte_tipo="campo_cliente" direto do cadastro, sem depender da planilha
     # subida. Quando o mesmo código aparece em mais de um lead da faixa (datas
     # de vencimento diferentes), usa o mais recente.
+    # Também usada pra criar o Lead de quem só existe na planilha: todo
+    # cliente cobrado precisa aparecer em "Leads enviados".
     leads_por_codigo: dict[str, models.Lead] = {}
-    if auto_resolved_vids:
-        for lead in db.query(models.Lead).filter(models.Lead.faixa == faixa.name):
-            atual = leads_por_codigo.get(lead.codigo_cliente)
-            if atual is None or lead.created_at > atual.created_at:
-                leads_por_codigo[lead.codigo_cliente] = lead
+    for lead in db.query(models.Lead).filter(models.Lead.faixa == faixa.name):
+        atual = leads_por_codigo.get(lead.codigo_cliente)
+        if atual is None or lead.created_at > atual.created_at:
+            leads_por_codigo[lead.codigo_cliente] = lead
 
     for i, row in enumerate(rows, start=2):  # linha 1 = cabeçalho
         codigo_raw = (row.get(field_mapping.codigo_cliente) or "").strip()
@@ -327,6 +340,25 @@ async def upload_planilha(
                 status=models.QueueStatus.pending,
             )
         )
+        if lead is None:
+            lead = models.Lead(
+                codigo_cliente=codigo_cliente,
+                nome=nome_raw,
+                cpf=cpf,
+                celular=celular,
+                celular_origem="planilha",
+                celular_original=celular_original,
+                cluster="Planilha",
+                faixa=faixa.name,
+                dias_atraso=0,
+                valor_cobrar=_valor_decimal(valor),
+                valor_em_aberto=_valor_decimal(valor),
+                vencimento_mais_antigo=hoje_br(),
+                status="novo",
+                created_by=user.id,
+            )
+            db.add(lead)
+            leads_por_codigo[codigo_cliente] = lead
         clientes_bloqueados.add(codigo_cliente)
         accepted += 1
 
