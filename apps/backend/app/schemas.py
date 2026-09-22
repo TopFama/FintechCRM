@@ -535,6 +535,10 @@ class LeadsMarcarCobrados(BaseModel):
     ids: list[str]
 
 
+class LeadsExcluir(BaseModel):
+    ids: list[str] = []
+
+
 # --- Google e lojas ---
 
 

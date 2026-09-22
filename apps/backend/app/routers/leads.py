@@ -296,3 +296,26 @@ def marcar_cobrados(
         )
     db.commit()
     return {"atualizados": atualizados}
+
+
+@router.post("/excluir", response_model=dict)
+def excluir_leads(
+    payload: schemas.LeadsExcluir,
+    filtros: dict = Depends(filtros_consulta_leads),
+    lead_status: str | None = Query(None, alias="status", pattern="^(novo|cobrado)$"),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Exclui leads ainda não enviados. Com `ids`, exclui só esses; sem
+    `ids`, exclui todos que casam com os filtros aplicados na tela. Nunca
+    exclui lead já marcado como enviado (histórico usado na Efetividade)."""
+
+    if payload.ids:
+        base = db.query(models.Lead).filter(models.Lead.id.in_(payload.ids))
+    else:
+        base = query_leads_filtrada(db, filtros, lead_status)
+
+    total_alvo = base.count()
+    excluidos = base.filter(models.Lead.status == "novo").delete(synchronize_session=False)
+    db.commit()
+    return {"excluidos": excluidos, "ignorados_ja_enviados": total_alvo - excluidos}

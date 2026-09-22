@@ -47,6 +47,7 @@ export default function Leads() {
 
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [marcandoCobrados, setMarcandoCobrados] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
   const [sucesso, setSucesso] = useState<string | null>(null);
 
   const reqRef = useRef(0);
@@ -146,6 +147,33 @@ export default function Leads() {
       setErro(e instanceof Error ? e.message : "Erro ao marcar como enviados");
     } finally {
       setMarcandoCobrados(false);
+    }
+  }
+
+  async function excluirLeads() {
+    const ids = Array.from(selecionados);
+    const mensagem =
+      ids.length > 0
+        ? `Excluir ${ids.length} lead(s) selecionado(s)? Só os que ainda não foram enviados serão excluídos.`
+        : `Excluir TODOS os leads que casam com os filtros aplicados? Só os que ainda não foram enviados serão excluídos.`;
+    if (!window.confirm(mensagem)) return;
+    setExcluindo(true);
+    setErro(null);
+    setSucesso(null);
+    try {
+      const r = await api.excluirLeads(filtrosAplicados, ids);
+      let msg = `${r.excluidos} lead(s) excluído(s).`;
+      if (r.ignorados_ja_enviados > 0) {
+        msg += ` ${r.ignorados_ja_enviados} já estavam enviados e foram mantidos.`;
+      }
+      setSucesso(msg);
+      setSelecionados(new Set());
+      setOffset(0);
+      buscar(filtrosAplicados, 0);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Erro ao excluir leads");
+    } finally {
+      setExcluindo(false);
     }
   }
 
@@ -345,15 +373,22 @@ export default function Leads() {
       </div>
 
       {/* Barra de ações */}
-      {selecionados.size > 0 && (
-        <div className="actions-row" style={{ marginBottom: 12 }}>
+      <div className="actions-row" style={{ marginBottom: 12 }}>
+        {selecionados.size > 0 && (
           <button type="button" onClick={marcarCobrados} disabled={marcandoCobrados}>
             {marcandoCobrados
               ? "Marcando..."
               : `Marcar como enviados (${selecionados.size})`}
           </button>
-        </div>
-      )}
+        )}
+        <button type="button" className="danger" onClick={excluirLeads} disabled={excluindo}>
+          {excluindo
+            ? "Excluindo..."
+            : selecionados.size > 0
+            ? `Excluir selecionados (${selecionados.size})`
+            : "Excluir todos (filtrados)"}
+        </button>
+      </div>
 
       {erro && (
         <div className="error-box">

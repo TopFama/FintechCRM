@@ -211,6 +211,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ ids }),
     }),
+  excluirLeads: (filtros: FiltrosLeads, ids: string[]) =>
+    request<{ excluidos: number; ignorados_ja_enviados: number }>(`/leads/excluir?${montarQuery(filtros)}`, {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
 
   // --- Efetividade da cobrança ---
   relatorioEfetividade: (params: FiltrosEfetividade) =>
