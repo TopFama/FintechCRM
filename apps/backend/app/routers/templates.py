@@ -11,10 +11,10 @@ from .. import chatwoot_client, models, schemas
 from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user
+from ..dispatch_service import montar_parametros_envio
 from ..meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_da_waba
 from ..utils.phone import is_valid_phone, normalize_phone
 from ..variaveis_template import CAMPOS_CLIENTE, contexto_cliente
-from ..worker import montar_parametros_envio
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 logger = logging.getLogger(__name__)

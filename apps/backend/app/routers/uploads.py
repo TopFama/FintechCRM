@@ -284,7 +284,7 @@ async def upload_planilha(
         # Faixa com um único template ativo: dict "achatado" (formato de
         # sempre). Mais de um template ativo: um dict por template_id, já
         # que qualquer um dos envios da faixa pode processar este item (ver
-        # worker.montar_parametros_envio).
+        # dispatch_service.montar_parametros_envio).
         if len(templates_ativos) <= 1:
             variables_json = {
                 v.internal_name: resolved_by_vid[v.id]
