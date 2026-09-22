@@ -117,7 +117,8 @@ def token_da_waba(db: Session, waba_id: str) -> str:
     criação (`created_at` ascendente). Isso garante determinismo e estabilidade
     na escolha do token usado para interações administrativas com a WABA.
 
-    Se nenhum número ativo possuir um token ativo associado, lança MetaTokenConfigError.
+    Sem número com token, usa o token ativo cadastrado para a WABA (Configurações);
+    se também não houver, lança MetaTokenConfigError.
     """
     numero = (
         db.query(models.WhatsappNumber)
@@ -133,6 +134,18 @@ def token_da_waba(db: Session, waba_id: str) -> str:
 
     if numero and numero.meta_token and numero.meta_token.token_cifrado:
         token_decifrado = crypto.decifrar(numero.meta_token.token_cifrado)
+        if token_decifrado:
+            return token_decifrado
+
+    # Nenhum número da WABA com token: vale o token cadastrado para ela em Configurações
+    token_da_config = (
+        db.query(models.MetaToken)
+        .filter(models.MetaToken.waba_id == waba_id, models.MetaToken.ativo.is_(True))
+        .order_by(models.MetaToken.created_at.asc())
+        .first()
+    )
+    if token_da_config:
+        token_decifrado = crypto.decifrar(token_da_config.token_cifrado)
         if token_decifrado:
             return token_decifrado
 

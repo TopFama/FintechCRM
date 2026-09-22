@@ -31,6 +31,14 @@ def mock_meta_handler(request: httpx.Request) -> httpx.Response:
     auth_header = request.headers.get("authorization", "")
     token = auth_header.replace("Bearer ", "").strip()
 
+    if request.url.path.endswith("/message_templates"):
+        waba = request.url.path.split("/")[-2]
+        return httpx.Response(
+            200,
+            json={"data": [{"id": f"TPL_{waba}", "name": f"cobranca_{waba}", "language": "pt_BR", "category": "UTILITY",
+                            "status": "APPROVED", "components": [{"type": "BODY", "text": "Olá {{1}}, parcela de {{2}}"}]}]},
+        )
+
     if request.url.path.endswith("/phone_numbers"):
         waba = request.url.path.split("/")[-2]
         if token == "TOKEN_INVALIDO_META" or waba == "999":
@@ -431,5 +439,30 @@ assert r.status_code == 400 and "PNID_X" in r.json()["detail"]
 r = client.get(f"/meta-tokens/{tok_err_id}/numeros-meta", headers=headers)
 assert r.status_code == 400 and "WABA" in r.json()["detail"]  # token antigo sem WABA
 assert client.get("/meta-tokens/nao-existe/numeros-meta", headers=headers).status_code == 404
+
+# 17. Sincronização de templates com números importados
+# (regressão: um número antigo inativo e sem token abortava a sincronização inteira)
+db = SessionLocal()
+db.add(models.WhatsappNumber(waba_id="1234567890", phone_number_id="PNID_ANTIGO", display_phone_number="+55 63 90000-0000",
+                             label="Teste", active=False))
+db.commit()
+db.close()
+# WABA só com token (nenhum número): usa o token cadastrado para ela em Configurações
+r = client.post("/meta-tokens", json={"nome": "Token só WABA", "token": "EAAX_SO_WABA_2222", "waba_id": "2222"}, headers=headers)
+assert r.status_code == 201, r.text
+r = client.post("/templates/meta/sync", headers=headers)
+assert r.status_code == 200, r.text
+por_nome = {t["meta_template_name"]: t for t in r.json()}
+assert por_nome["cobranca_1111"]["waba_id"] == "1111" and por_nome["cobranca_1111"]["status"] == "approved"
+assert "cobranca_2222" in por_nome, "WABA só com token deveria sincronizar"
+assert "cobranca_1234567890" not in por_nome, "número inativo não deve ser sincronizado"
+assert [v["position"] for v in por_nome["cobranca_1111"]["variables"]] == [1, 2]
+# sem token nenhum utilizável: erro explicando cada WABA, nunca 500
+db = SessionLocal()
+db.query(models.MetaToken).update({"ativo": False})
+db.commit()
+db.close()
+r = client.post("/templates/meta/sync", headers=headers)
+assert r.status_code == 400 and "Nenhuma WABA sincronizou" in r.json()["detail"], r.text
 
 print("OK")

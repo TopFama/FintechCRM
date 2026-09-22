@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from datetime import date
@@ -14,6 +15,7 @@ from ..meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_
 from ..variaveis_template import CAMPOS_CLIENTE, contexto_cliente
 
 router = APIRouter(prefix="/templates", tags=["templates"])
+logger = logging.getLogger(__name__)
 
 
 def _with_variables(query):
@@ -64,29 +66,33 @@ async def sync_from_meta(
 ):
     """Puxa os templates aprovados/pendentes direto da Meta e faz upsert local,
     para que o cadastro de faixa sempre escolha a partir do que existe na Meta.
-    Não pede mais o WABA ID na mão: sincroniza automaticamente todos os WABAs
-    dos números de WhatsApp já cadastrados na aba Números."""
+    Não pede o WABA ID na mão: sincroniza as WABAs dos tokens ativos
+    (Configurações) e dos números ativos (Números). Uma WABA com problema não
+    impede as demais; só falha se nenhuma sincronizar."""
 
     waba_ids = sorted(
-        {row[0] for row in db.query(models.WhatsappNumber.waba_id).distinct().all() if row[0]}
+        {w for (w,) in db.query(models.MetaToken.waba_id).filter(models.MetaToken.ativo.is_(True)) if w}
+        | {
+            w
+            for (w,) in db.query(models.WhatsappNumber.waba_id).filter(models.WhatsappNumber.active.is_(True))
+            if w
+        }
     )
     if not waba_ids:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            "Cadastre um número de WhatsApp (aba Números) antes de sincronizar templates",
+            "Cadastre um token da Meta com a WABA (Configurações) antes de sincronizar templates",
         )
 
+    falhas: list[str] = []
     for waba_id in waba_ids:
         try:
-            token = token_da_waba(db, waba_id)
-        except MetaTokenConfigError as exc:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-
-        client = MetaClient(access_token=token)
-        try:
+            client = MetaClient(access_token=token_da_waba(db, waba_id))
             remote_templates = await client.list_templates(waba_id)
-        except MetaAPIError as exc:
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+        except (MetaTokenConfigError, MetaAPIError) as exc:
+            falhas.append(f"WABA {waba_id}: {exc}")
+            logger.warning("Sincronização de templates pulou a WABA %s: %s", waba_id, exc)
+            continue
 
         for remote in remote_templates:
             existing = (
@@ -127,6 +133,10 @@ async def sync_from_meta(
                             template_id=template.id, position=i, internal_name=name
                         )
                     )
+    if len(falhas) == len(waba_ids):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Nenhuma WABA sincronizou — " + "; ".join(falhas)
+        )
     db.commit()
     return _with_variables(db.query(models.Template)).order_by(
         models.Template.created_at.desc()
