@@ -7,11 +7,14 @@ import os
 import tempfile
 from datetime import datetime, timedelta
 
+from cryptography.fernet import Fernet
+
 # Configura variáveis de ambiente antes de carregar o app
-os.environ["DATABASE_URL"] = "postgresql+psycopg://postgres:t@localhost:15432/agy_tokens"
+os.environ["DATABASE_URL"] = os.environ.get("DATABASE_URL", "postgresql+psycopg://postgres:t@localhost:15432/agy_k")
 os.environ["JWT_SECRET"] = "super-secret-key-for-meta-tokens-test-12345"
 os.environ["ADMIN_PASSWORD"] = "test-admin-password-xyz-987"
 os.environ["MEDIA_DIR"] = tempfile.mkdtemp()
+os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 
 import httpx
 from fastapi.testclient import TestClient
@@ -331,22 +334,16 @@ try:
     token_apos_inativar_num = token_da_waba(db, waba_spec)
     assert token_apos_inativar_num == "TOKEN_NOVO_222"
 
-    # Se o token do segundo número for inativado, cai no fallback de .env
+    # Se o token do segundo número for inativado, não há mais token ativo -> MetaTokenConfigError (sem fallback de env)
     tok_novo.ativo = False
     db.commit()
 
-    settings.meta_access_token = "ENV_FALLBACK_TOKEN_999"
-    token_fallback = token_da_waba(db, waba_spec)
-    assert token_fallback == "ENV_FALLBACK_TOKEN_999"
-
-    # Se settings.meta_access_token for vazio, deve levantar MetaTokenConfigError
-    settings.meta_access_token = ""
     error_raised = False
     try:
         token_da_waba(db, waba_spec)
     except MetaTokenConfigError as e:
         error_raised = True
-        assert f"Nenhum token da Meta configurado para a WABA {waba_spec}" in str(e)
+        assert f"Nenhum token da Meta cadastrado para a WABA {waba_spec}: cadastre um em Números" in str(e)
     assert error_raised, "Esperava MetaTokenConfigError quando nenhum token está configurado"
 
 finally:

@@ -19,6 +19,10 @@ os.environ["MEDIA_DIR"] = tempfile.gettempdir()
 from fastapi.testclient import TestClient
 import openpyxl
 
+import os as _os
+from cryptography.fernet import Fernet as _Fernet
+
+_os.environ.setdefault("ENCRYPTION_KEY", _Fernet.generate_key().decode())  # o backend não sobe sem ela
 from app import models
 from app.cobranca_regras import Cluster, FaixaAtraso, ParametrosJuros, Regras
 from app.cobranca_relatorio import montar_matriz, montar_matriz_valor

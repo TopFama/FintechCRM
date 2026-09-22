@@ -4,6 +4,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -13,11 +14,14 @@ from .config import settings
 from .database import SessionLocal
 from .routers import auth, blacklist, cobranca, config_cobranca, dashboard, faixas, google, leads, lojas, meta_tokens, numbers, reports, seta, templates, uploads
 from .security import hash_password
+from .segredos import importar_token_legado, recifrar_segredos
 from .worker import start_scheduler
 
 logging.basicConfig(level=logging.INFO)
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+EXEMPLO_ENCRYPTION_KEY = "ZXhlbXBsb19jaGF2ZV9mZXJuZXRfMzJfYnl0ZXNfX18="
 
 
 def _run_migrations() -> None:
@@ -49,6 +53,25 @@ def _check_secrets() -> None:
             "`.env.example` são públicos e não podem ser usados fora de desenvolvimento local."
         )
 
+    enc_key = (settings.encryption_key or "").strip()
+    if not enc_key:
+        raise RuntimeError(
+            "Configuração insegura: ENCRYPTION_KEY não pode ser vazia. "
+            "Gere uma chave com: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        )
+    if enc_key == EXEMPLO_ENCRYPTION_KEY:
+        raise RuntimeError(
+            "Configuração insegura: ENCRYPTION_KEY não pode ser o valor de exemplo do `.env.example`. "
+            "Gere uma chave com: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        )
+    try:
+        Fernet(enc_key.encode())
+    except Exception as exc:
+        raise RuntimeError(
+            "Configuração insegura: ENCRYPTION_KEY não é uma chave Fernet válida. "
+            "Gere uma chave com: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        ) from exc
+
 
 def _ensure_admin_user() -> None:
     db = SessionLocal()
@@ -71,6 +94,12 @@ async def lifespan(app: FastAPI):
     _check_secrets()
     _run_migrations()
     _ensure_admin_user()
+    db = SessionLocal()
+    try:
+        recifrar_segredos(db)
+        importar_token_legado(db)
+    finally:
+        db.close()
     scheduler = start_scheduler()
     yield
     scheduler.shutdown(wait=False)

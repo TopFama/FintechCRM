@@ -30,10 +30,10 @@ class MetaClient:
 
     def __init__(
         self,
-        access_token: str | None = None,
+        access_token: str,
         transport: httpx.AsyncBaseTransport | None = None,
     ):
-        self.access_token = access_token or settings.meta_access_token
+        self.access_token = access_token
         self.base_url = f"https://graph.facebook.com/{settings.meta_graph_api_version}"
         self._transport = transport if transport is not None else self.default_transport
 
@@ -117,9 +117,7 @@ def token_da_waba(db: Session, waba_id: str) -> str:
     criação (`created_at` ascendente). Isso garante determinismo e estabilidade
     na escolha do token usado para interações administrativas com a WABA.
 
-    Se nenhum número ativo possuir um token ativo associado, é realizado o fallback
-    para `settings.meta_access_token` (compatibilidade com `.env`).
-    Se este também estiver vazio ou não configurado, lança `MetaTokenConfigError`.
+    Se nenhum número ativo possuir um token ativo associado, lança MetaTokenConfigError.
     """
     numero = (
         db.query(models.WhatsappNumber)
@@ -138,8 +136,15 @@ def token_da_waba(db: Session, waba_id: str) -> str:
         if token_decifrado:
             return token_decifrado
 
-    if settings.meta_access_token and settings.meta_access_token.strip():
-        return settings.meta_access_token.strip()
+    raise MetaTokenConfigError(f"Nenhum token da Meta cadastrado para a WABA {waba_id}: cadastre um em Números")
 
-    raise MetaTokenConfigError(f"Nenhum token da Meta configurado para a WABA {waba_id}")
+
+def token_do_numero(db: Session, numero: models.WhatsappNumber) -> str:
+    """Retorna o token ativo do próprio número, ou faz fallback para o token da WABA."""
+    if numero.meta_token and numero.meta_token.ativo and numero.meta_token.token_cifrado:
+        token_decifrado = crypto.decifrar(numero.meta_token.token_cifrado)
+        if token_decifrado:
+            return token_decifrado
+
+    return token_da_waba(db, numero.waba_id)
 

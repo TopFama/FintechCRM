@@ -64,31 +64,29 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 | `DATABASE_URL` | backend | não | `postgresql+psycopg://fintechcrm:change-me@db:5432/fintechcrm` | String de conexão completa (SQLAlchemy + psycopg 3). Se mudar usuário/senha/banco acima, ajuste aqui também — o backend usa esta variável, não as três de cima diretamente. |
 | `JWT_SECRET` | backend | **sim** | `change-me-too` | Chave usada para assinar o JWT de login — o backend **recusa subir** se este valor continuar igual ao default do `.env.example`. |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | backend | `ADMIN_PASSWORD` **sim** | `admin@topfama.com.br` / `change-me-admin` | Credenciais do usuário admin criado automaticamente na primeira subida (só se ainda não existir um usuário com esse email). O backend também recusa subir se `ADMIN_PASSWORD` continuar com o valor default. |
-| `META_ACCESS_TOKEN` | backend | **sim** | *(vazio)* | Token de acesso à Graph API da Meta. Única credencial externa obrigatória — ver passo a passo abaixo. |
+| `ENCRYPTION_KEY` | backend | **sim** | *(vazio)* | Chave Fernet (32 bytes em base64 url-safe) dedicada para criptografia de segredos no banco (tokens da Meta e refresh token do Google). O backend **recusa subir** se vazia, inválida ou igual ao exemplo do `.env.example`. Gere com: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Guarde junto ao backup do banco: sem ela os segredos salvos não abrem. |
 | `META_GRAPH_API_VERSION` | backend | não | `v21.0` | Versão da Graph API usada em todas as chamadas (`app/meta_client.py`). |
 | `SETA_DB_HOST` / `SETA_DB_PORT` / `SETA_DB_NAME` | backend | não | *(vazio)* / `5432` / `seta` | Postgres do ERP SETA, usado **só para leitura** (a conexão abre com `default_transaction_read_only=on`). Vazio = integração desligada: o backend sobe normalmente e `GET /seta/status` responde `configurado: false`. |
 | `SETA_DB_USER` / `SETA_DB_PASSWORD` | backend | não | *(vazio)* | Credenciais do SETA. O ideal é um usuário do banco só com `SELECT`. |
 | `SETA_DB_CONNECT_TIMEOUT_SECONDS` / `SETA_DB_STATEMENT_TIMEOUT_SECONDS` | backend | não | `10` / `120` | Tempo máximo para conectar e para cada consulta (o ERP é produção e a tabela de títulos passa de 27 milhões de linhas). |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | backend | não | *(vazio)* | Cliente OAuth2 (aplicativo da Web) do Google Cloud, com a Google Sheets API ativada. Vazio = integração desligada; sem ela só não dá para filtrar por regional/estado/cluster de loja. Depois de preenchido, conecte a conta em **Configurações** (o refresh token fica cifrado no banco, com chave derivada do `JWT_SECRET`). |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | backend | não | *(vazio)* | Cliente OAuth2 (aplicativo da Web) do Google Cloud, com a Google Sheets API ativada. Vazio = integração desligada; sem ela só não dá para filtrar por regional/estado/cluster de loja. Depois de preenchido, conecte a conta em **Configurações** (o refresh token fica cifrado no banco com a `ENCRYPTION_KEY`). |
 | `GOOGLE_REDIRECT_URI` / `GOOGLE_FRONTEND_URL` | backend | não | `http://localhost:8000/google/oauth/callback` / `http://localhost:5173` | A primeira precisa estar cadastrada, idêntica, nas URIs de redirecionamento autorizadas do cliente OAuth; a segunda é para onde o navegador volta depois do consentimento. |
 | `GOOGLE_SHEET_LOJAS_ID` / `GOOGLE_SHEET_LOJAS_GID` | backend | não | planilha de lojas da TopFama | ID da planilha (trecho da URL entre `/d/` e `/edit`) e `gid` da aba (`#gid=…`). Colunas lidas: FILIAL, NOME COM COD, REGIONAL, ESTADO, CLUSTER INAD e CLUSTER POPULAÇÃO. |
 | `VITE_API_URL` | frontend (build) | não | `http://localhost:8000` | URL base da API que o frontend chama — usada só no build do Vite (fica embutida no bundle). |
 
-WABA ID e `phone_number_id` de cada número **não** vão no `.env` — são cadastrados dentro do
-próprio portal, na tela **Números**, depois que o sistema estiver no ar (ficam guardados no
-Postgres, por número).
+WABA ID, `phone_number_id` e os **tokens de acesso da Meta** **não** vão no `.env` — são cadastrados dentro do
+próprio portal, na tela **Números**, depois que o sistema estiver no ar (ficam guardados cifrados no
+Postgres).
 
 ## Configurando a API da Meta (WhatsApp Business)
 
-Passo a passo para conseguir o `META_ACCESS_TOKEN` e os dados que serão cadastrados depois na
-tela **Números** do portal:
+Passo a passo para gerar o token da Meta e cadastrá-lo na tela **Números** do portal:
 
 1. **Crie (ou use) um app Meta for Developers** em https://developers.facebook.com/apps, com o
    produto **WhatsApp** adicionado a ele.
 2. Em **WhatsApp → Configuração da API** (ou **Business Settings** do seu Business Manager),
    anote:
-   - o **WABA ID** (ID da conta do WhatsApp Business) — vai ser colado na tela **Números** e no
-     campo "WABA ID" da tela **Templates** ao sincronizar.
+   - o **WABA ID** (ID da conta do WhatsApp Business) — usado ao cadastrar os números na tela **Números**.
    - o **phone_number_id** de cada número que vai disparar mensagens (não é o número de telefone
      em si, é o ID interno da Meta para aquele número).
 3. **Gere um token de acesso de longa duração** (o token temporário que aparece na tela de teste
@@ -97,22 +95,24 @@ tela **Números** do portal:
      existente) com papel de Admin.
    - Em **Adicionar ativos**, dê a esse System User acesso total ao WABA do passo 2.
    - Gere um novo token para o System User com as permissões `whatsapp_business_messaging` e
-     `whatsapp_business_management`. Tokens de System User podem ser gerados sem expiração — é
-     esse o token que vai para `META_ACCESS_TOKEN`.
-4. Cole o token em `META_ACCESS_TOKEN` no `.env` e suba o sistema (`docker compose up --build`).
-5. Dentro do portal, tela **Números**: cadastre cada número com o WABA ID + `phone_number_id` +
-   número exibido (formato livre, é só rótulo).
-6. Tela **Templates**: use **"Sincronizar templates da Meta"** informando o WABA ID para puxar os
-   templates já aprovados, ou crie um novo template pelo próprio portal (com a opção de já
-   submeter para aprovação).
+     `whatsapp_business_management`. Tokens de System User podem ser gerados sem expiração.
+4. **Cadastre o token no portal**:
+   - Suba o sistema (`docker compose up --build`).
+   - Dentro do portal, na tela **Números**, localize o card **Tokens da Meta**.
+   - Cadastre o token com um nome identificador. Ele é cifrado e salvo no banco com `ENCRYPTION_KEY`.
+     Você pode testar a conexão com a Meta diretamente no botão "Testar".
+5. **Cadastre e vincule os números**:
+   - Na mesma tela **Números**, cadastre cada número com WABA ID + `phone_number_id` + número exibido
+     e selecione o token da Meta cadastrado no passo anterior.
+6. Tela **Templates**: use **"Sincronizar templates da Meta"** para puxar os templates já aprovados,
+   ou crie um novo template pelo próprio portal (com a opção de já submeter para aprovação).
 
-Sem um `META_ACCESS_TOKEN` válido, as telas de Números/Templates continuam funcionando para
-cadastro manual, mas sincronizar templates, criar template na Meta e disparar mensagens vão
-falhar com erro da Graph API.
+Sem um token ativo cadastrado e vinculado ao número ou à sua WABA, sincronizar templates, criar template
+na Meta e disparar mensagens vão falhar com aviso de token não configurado.
 
 ## Como rodar localmente
 
-1. Copie `.env.example` para `.env` e preencha pelo menos `META_ACCESS_TOKEN` (ver seção acima).
+1. Copie `.env.example` para `.env` e preencha pelo menos `ENCRYPTION_KEY` (ver seção acima).
 2. Suba tudo:
 
    ```bash
@@ -269,8 +269,10 @@ Não existe suíte de testes automatizados formal ainda. Para validar uma mudan�
 - **Fila em "tempo real"**: o acompanhamento da fila no portal usa polling (nova consulta a cada
   poucos segundos), não WebSocket — simples e suficiente para o volume atual, mas vale revisar se
   o volume de faixas abertas simultaneamente crescer muito.
-- **Autenticação**: login simples (usuário/senha + JWT), sem papéis granulares, conforme escopo
-  combinado para a v1.
+- **Autenticação e segurança**: login simples (usuário/senha + JWT), sem papéis granulares, conforme escopo
+  combinado para a v1. Segredos sensíveis guardados no banco (tokens de acesso da Meta e refresh token do
+  Google OAuth) são cifrados simetricamente com a chave dedicada `ENCRYPTION_KEY`. A perda dessa chave
+  impede a leitura desses segredos e exige cadastrar novamente os tokens da Meta e reconectar a conta Google.
 
 ## Migração a partir do n8n
 

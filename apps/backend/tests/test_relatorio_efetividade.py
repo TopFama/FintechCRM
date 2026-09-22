@@ -24,6 +24,10 @@ import openpyxl
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+import os as _os
+from cryptography.fernet import Fernet as _Fernet
+
+_os.environ.setdefault("ENCRYPTION_KEY", _Fernet.generate_key().decode())  # o backend não sobe sem ela
 from app import cobranca_base, database, google_client, models, seta_client
 from app.main import app
 from app.relatorio_efetividade import montar_relatorio

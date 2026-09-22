@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     admin_email: str = "admin@topfama.com.br"
     admin_password: str = "change-me-admin"
 
-    meta_access_token: str = ""
+    encryption_key: str = ""
     meta_graph_api_version: str = "v21.0"
 
     # SETA (ERP) — Postgres externo, só leitura. Vazio = integração desligada:

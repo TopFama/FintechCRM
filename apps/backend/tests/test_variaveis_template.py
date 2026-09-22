@@ -22,6 +22,10 @@ os.environ["ADMIN_PASSWORD"] = "senha-admin-teste-12345"
 temp_media_dir = tempfile.mkdtemp()
 os.environ["MEDIA_DIR"] = temp_media_dir
 
+import os as _os
+from cryptography.fernet import Fernet as _Fernet
+
+_os.environ.setdefault("ENCRYPTION_KEY", _Fernet.generate_key().decode())  # o backend não sobe sem ela
 import app.variaveis_template as vt
 from app.main import BACKEND_DIR, app
 from app.models import FaixaVariableMapping, QueueItem

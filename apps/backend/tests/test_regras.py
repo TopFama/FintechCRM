@@ -13,12 +13,15 @@ import uuid
 from decimal import Decimal
 from unittest.mock import patch
 
+from cryptography.fernet import Fernet
+
 # --- Configuração mínima de ambiente para o app subir ---
 DB_URL = "postgresql+psycopg://postgres:t@localhost:15432/agy_regras"
 os.environ.setdefault("DATABASE_URL", DB_URL)
 os.environ.setdefault("JWT_SECRET", "test-secret-chave-longa-para-nao-ser-rejeitada-123")
 os.environ.setdefault("ADMIN_PASSWORD", "TestAdmin123!")
 os.environ.setdefault("MEDIA_DIR", tempfile.mkdtemp())
+os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())  # o backend não sobe sem ela
 
 # --- 1. Migration: ciclo upgrade → downgrade → upgrade → check ---
 

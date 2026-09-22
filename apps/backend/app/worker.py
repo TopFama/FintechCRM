@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 from . import models
 from .config import settings
 from .database import SessionLocal
-from .meta_client import MetaAPIError, MetaClient
+from .meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_do_numero
 
 logger = logging.getLogger("dispatch_worker")
 
@@ -46,7 +46,7 @@ def _due(config: models.DispatchConfig, now: datetime) -> bool:
     return elapsed >= config.interval_seconds
 
 
-async def _send_one(client: MetaClient, faixa: models.Faixa, item: models.QueueItem, db: Session) -> None:
+async def _send_one(faixa: models.Faixa, item: models.QueueItem, db: Session) -> None:
     if not faixa.numbers:
         item.status = models.QueueStatus.error
         item.error_message = "Faixa sem número de envio configurado"
@@ -56,6 +56,18 @@ async def _send_one(client: MetaClient, faixa: models.Faixa, item: models.QueueI
     number_entry = faixa.numbers[faixa.last_number_index % len(faixa.numbers)]
     faixa.last_number_index = (faixa.last_number_index + 1) % len(faixa.numbers)
     number = number_entry.whatsapp_number
+
+    try:
+        token = token_do_numero(db, number)
+    except MetaTokenConfigError as exc:
+        item.status = models.QueueStatus.error
+        item.error_message = str(exc)
+        item.whatsapp_number_id = number.id
+        db.add(models.ErrorLog(faixa_id=faixa.id, queue_item_id=item.id, message=item.error_message))
+        logger.warning("Falha ao obter token da Meta para envio %s: %s", item.id, exc)
+        return
+
+    client = MetaClient(access_token=token)
 
     ordered_variables = sorted(faixa.template.variables, key=lambda v: v.position)
     body_params = [str(item.variables_json.get(v.internal_name, "")) for v in ordered_variables]
@@ -102,6 +114,8 @@ async def run_dispatch_cycle() -> None:
             .options(
                 selectinload(models.DispatchConfig.faixa).selectinload(models.Faixa.numbers).selectinload(
                     models.FaixaNumber.whatsapp_number
+                ).selectinload(
+                    models.WhatsappNumber.meta_token
                 ),
                 selectinload(models.DispatchConfig.faixa).selectinload(models.Faixa.template).selectinload(
                     models.Template.variables
@@ -110,7 +124,6 @@ async def run_dispatch_cycle() -> None:
             .all()
         )
         now = datetime.utcnow()
-        client = MetaClient()
 
         for config in configs:
             if not _due(config, now):
@@ -134,7 +147,7 @@ async def run_dispatch_cycle() -> None:
                 db.commit()
 
                 for item in pending_items:
-                    await _send_one(client, faixa, item, db)
+                    await _send_one(faixa, item, db)
                     db.commit()
             except Exception:  # noqa: BLE001 - uma faixa com problema não pode travar as demais
                 db.rollback()
