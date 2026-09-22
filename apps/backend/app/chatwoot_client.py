@@ -66,15 +66,32 @@ class ChatwootClient:
 
         `celular` chega aqui no formato interno do sistema (só dígitos,
         55DDD9XXXXXXXX — ver utils/phone.py); a API do Chatwoot exige E.164
-        (com "+") no campo phone_number, senão responde 422."""
+        (com "+") no campo phone_number, senão responde 422.
+
+        O telefone é único por CONTA no Chatwoot, não por inbox: se o
+        contato já existe (de outro número/inbox que falou com o mesmo
+        cliente) mas ainda não tem canal nesta inbox, tentar criar de novo
+        responde 422 "Phone number has already been taken" — nesse caso só
+        associa um contact_inbox novo ao contato existente."""
 
         celular_e164 = f"+{celular}"
         busca = await self._request("GET", "contacts/search", params={"q": celular_e164})
+        contato_existente = None
         for contato in busca.get("payload", []):
             if contato.get("phone_number") == celular_e164:
+                contato_existente = contato
                 for contact_inbox in contato.get("contact_inboxes", []):
                     if contact_inbox.get("inbox", {}).get("id") == inbox_id:
                         return str(contato["id"]), str(contact_inbox["source_id"])
+                break
+
+        if contato_existente is not None:
+            vinculo = await self._request(
+                "POST",
+                f"contacts/{contato_existente['id']}/contact_inboxes",
+                json={"inbox_id": inbox_id},
+            )
+            return str(contato_existente["id"]), str(vinculo["source_id"])
 
         criado = await self._request(
             "POST",
