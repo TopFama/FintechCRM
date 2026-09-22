@@ -115,6 +115,11 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
+    # necessário para o navegador mandar o cookie httpOnly de sessão em
+    # requisições do frontend (ver app/routers/auth.py); mesmo com
+    # allow_origins=["*"], o Starlette reflete a origem exata da requisição
+    # em vez de "*" quando allow_credentials=True, como o CORS exige.
+    allow_credentials=True,
     # sem isso o navegador esconde o nome do arquivo das exportações .xlsx
     expose_headers=["Content-Disposition"],
 )

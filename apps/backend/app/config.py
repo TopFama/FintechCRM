@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     # configure com o(s) domínio(s) real(is) do frontend.
     cors_allowed_origins: str = "*"
 
+    # Cookie de sessão (ver app/routers/auth.py) só deve ir sem o atributo
+    # Secure em desenvolvimento local sobre http puro — em produção (https)
+    # mantenha True; o navegador ignora Set-Cookie com Secure fora de https.
+    cookie_secure: bool = True
+
     dispatch_worker_interval_seconds: int = 5
     # Fuso horário usado para interpretar a janela de agendamento (dias/hora
     # início/fim) configurada em cada disparo — o servidor roda em UTC, mas

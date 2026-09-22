@@ -74,6 +74,7 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 | `GOOGLE_SHEET_LOJAS_ID` / `GOOGLE_SHEET_LOJAS_GID` | backend | não | planilha de lojas da TopFama | ID da planilha (trecho da URL entre `/d/` e `/edit`) e `gid` da aba (`#gid=…`). Colunas lidas: FILIAL, NOME COM COD, REGIONAL, ESTADO, CLUSTER INAD e CLUSTER POPULAÇÃO. |
 | `REDIS_URL` | backend | não | `redis://redis:6379/0` | Cache das consultas pesadas ao SETA (`GET /cobranca/clientes`, `/cobranca/relatorio` e `POST /leads/gerar` — a tabela de títulos tem mais de 27 milhões de linhas). Ver `app/cache.py`. |
 | `CORS_ALLOWED_ORIGINS` | backend | não | `*` | Origens liberadas no CORS, separadas por vírgula (ex: `https://crm.topfama.com.br`). O padrão `*` mantém o comportamento anterior; em produção, restrinja ao(s) domínio(s) real(is) do frontend. |
+| `COOKIE_SECURE` | backend | não | `true` | Atributo `Secure` do cookie httpOnly de sessão (ver "Limitações conhecidas / próximos passos" abaixo). Exige `https`; em desenvolvimento local sobre `http` puro, defina como `false`, senão o navegador descarta o cookie. |
 | `VITE_API_URL` | frontend (build) | não | `http://localhost:8000` | URL base da API que o frontend chama — usada só no build do Vite (fica embutida no bundle). |
 
 WABA ID, `phone_number_id` e os **tokens de acesso da Meta** **não** vão no `.env` — são cadastrados dentro do
@@ -277,9 +278,13 @@ Não existe suíte de testes automatizados formal ainda. Para validar uma mudan�
   poucos segundos), não WebSocket — simples e suficiente para o volume atual, mas vale revisar se
   o volume de faixas abertas simultaneamente crescer muito.
 - **Autenticação e segurança**: login simples (usuário/senha + JWT), sem papéis granulares, conforme escopo
-  combinado para a v1. Segredos sensíveis guardados no banco (tokens de acesso da Meta e refresh token do
-  Google OAuth) são cifrados simetricamente com a chave dedicada `ENCRYPTION_KEY`. A perda dessa chave
-  impede a leitura desses segredos e exige cadastrar novamente os tokens da Meta e reconectar a conta Google.
+  combinado para a v1. `POST /auth/login` grava o JWT num cookie `access_token` httpOnly (o frontend nunca
+  guarda o token em `localStorage`/JS — mitiga roubo de sessão via XSS) e também devolve o token no corpo da
+  resposta só para uso programático (scripts de validação, integrações), que autenticam via header
+  `Authorization: Bearer`; `POST /auth/logout` limpa o cookie. Segredos sensíveis guardados no banco (tokens
+  de acesso da Meta e refresh token do Google OAuth) são cifrados simetricamente com a chave dedicada
+  `ENCRYPTION_KEY`. A perda dessa chave impede a leitura desses segredos e exige cadastrar novamente os
+  tokens da Meta e reconectar a conta Google.
 
 ## Migração a partir do n8n
 

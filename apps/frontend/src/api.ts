@@ -1,7 +1,20 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-function getToken(): string | null {
-  return localStorage.getItem("token");
+// Sinalizador local só para a UI decidir se mostra a tela de login sem
+// esperar uma chamada à API — não é o que autentica (isso é o cookie
+// httpOnly), então não tem problema em ficar acessível via JS.
+const AUTH_FLAG_KEY = "autenticado";
+
+export function marcarAutenticado() {
+  localStorage.setItem(AUTH_FLAG_KEY, "1");
+}
+
+export function limparAutenticado() {
+  localStorage.removeItem(AUTH_FLAG_KEY);
+}
+
+export function pareceAutenticado(): boolean {
+  return localStorage.getItem(AUTH_FLAG_KEY) === "1";
 }
 
 export class ApiError extends Error {
@@ -15,22 +28,22 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
   const headers: Record<string, string> = {
     ...(options.body && !(options.body instanceof FormData)
       ? { "Content-Type": "application/json" }
       : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...((options.headers as Record<string, string>) || {}),
   };
 
-  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  // O token de sessão vive só num cookie httpOnly (setado por POST /auth/login) —
+  // nunca em localStorage/JS, para não ficar exposto a um eventual XSS no frontend.
+  const response = await fetch(`${API_URL}${path}`, { ...options, headers, credentials: "include" });
   if (response.status === 401) {
-    if (path.startsWith("/auth/login") || !token) {
+    if (path.startsWith("/auth/login")) {
       const body = await response.json().catch(() => ({}));
       throw new ApiError(401, body.detail || "Email ou senha incorretos");
     }
-    localStorage.removeItem("token");
+    limparAutenticado();
     window.location.href = "/login";
     throw new ApiError(401, "Sessão expirada");
   }
@@ -105,6 +118,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
+  logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
 
   listNumbers: () => request<WhatsappNumber[]>("/numbers"),
   createNumber: (payload: Partial<WhatsappNumber>) =>
@@ -296,10 +310,8 @@ export const api = {
 };
 
 async function downloadFile(path: string, nomePadrao: string): Promise<void> {
-  const token = getToken();
-  const response = await fetch(`${API_URL}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  // Autentica pelo cookie httpOnly de sessão (ver comentário em `request`).
+  const response = await fetch(`${API_URL}${path}`, { credentials: "include" });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new ApiError(response.status, body.detail || `Erro ${response.status} ao baixar o arquivo`);
