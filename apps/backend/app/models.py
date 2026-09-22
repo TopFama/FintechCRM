@@ -145,7 +145,9 @@ class FaixaVariableMapping(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     faixa_id: Mapped[str] = mapped_column(ForeignKey("faixas.id"))
     template_variable_id: Mapped[str] = mapped_column(ForeignKey("template_variables.id"))
-    column_name: Mapped[str] = mapped_column(String)
+    fonte_tipo: Mapped[str] = mapped_column(String, default="coluna", server_default="coluna")
+    column_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    expressao: Mapped[str | None] = mapped_column(String, nullable=True)
 
     faixa: Mapped[Faixa] = relationship(back_populates="variable_mappings")
     template_variable: Mapped[TemplateVariable] = relationship()

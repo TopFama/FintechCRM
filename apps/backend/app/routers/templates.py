@@ -1,5 +1,7 @@
 import os
 import uuid
+from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session, selectinload
@@ -9,6 +11,7 @@ from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user
 from ..meta_client import MetaAPIError, MetaClient
+from ..variaveis_template import CAMPOS_CLIENTE, contexto_cliente
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 
@@ -24,6 +27,34 @@ def list_templates(
     return _with_variables(db.query(models.Template)).order_by(
         models.Template.created_at.desc()
     ).all()
+
+
+CLIENTE_EXEMPLO = {
+    "codigo": "123456",
+    "nome": "Maria da Silva Santos",
+    "cpfcnpj": "12345678901",
+    "celular": "5511999998888",
+    "cluster": "ESPECIAL",
+    "faixa": "11 A 20",
+    "dias_atraso": 15,
+    "qtd_parcelas_cobranca": 2,
+    "valor_cobrar": Decimal("1234.56"),
+    "valor_em_aberto": Decimal("1200.00"),
+    "vencimento_mais_antigo": date(2026, 9, 21),
+}
+
+
+@router.get("/variaveis/campos", response_model=list[schemas.CampoClienteOut])
+def list_template_variable_fields(_user: models.User = Depends(get_current_user)):
+    ctx = contexto_cliente(CLIENTE_EXEMPLO)
+    return [
+        schemas.CampoClienteOut(
+            campo=campo,
+            rotulo=rotulo,
+            exemplo=ctx.get(campo, ""),
+        )
+        for campo, rotulo in CAMPOS_CLIENTE.items()
+    ]
 
 
 @router.post("/meta/sync", response_model=list[schemas.TemplateOut])

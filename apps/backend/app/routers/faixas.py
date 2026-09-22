@@ -74,7 +74,9 @@ def create_faixa(
             models.FaixaVariableMapping(
                 faixa_id=faixa.id,
                 template_variable_id=mapping.template_variable_id,
+                fonte_tipo=mapping.fonte_tipo,
                 column_name=mapping.column_name,
+                expressao=mapping.expressao,
             )
         )
 

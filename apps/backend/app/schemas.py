@@ -1,9 +1,11 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from .models import QueueStatus, TemplateHeaderType, TemplateStatus
+from .variaveis_template import CAMPOS_CLIENTE, validar_sintaxe
 
 
 class LoginRequest(BaseModel):
@@ -86,12 +88,39 @@ class TemplateOut(BaseModel):
     variables: list[TemplateVariableOut] = []
 
 
+class CampoClienteOut(BaseModel):
+    campo: str
+    rotulo: str
+    exemplo: str
+
+
 # --- Faixas ---
 
 
 class FaixaVariableMappingIn(BaseModel):
     template_variable_id: str
-    column_name: str
+    column_name: str | None = None
+    fonte_tipo: Literal["coluna", "campo_cliente", "expressao"] = "coluna"
+    expressao: str | None = None
+
+    @model_validator(mode="after")
+    def validar_fonte(self) -> "FaixaVariableMappingIn":
+        if self.fonte_tipo == "coluna":
+            if not self.column_name or not self.column_name.strip():
+                raise ValueError("Tipo 'coluna' exige o preenchimento de 'column_name'")
+        elif self.fonte_tipo == "campo_cliente":
+            if not self.column_name or self.column_name not in CAMPOS_CLIENTE:
+                validos = ", ".join(sorted(CAMPOS_CLIENTE.keys()))
+                raise ValueError(
+                    f"Tipo 'campo_cliente' exige 'column_name' válido ({validos})"
+                )
+        elif self.fonte_tipo == "expressao":
+            if not self.expressao or not self.expressao.strip():
+                raise ValueError("Tipo 'expressao' exige o preenchimento de 'expressao'")
+            erro = validar_sintaxe(self.expressao)
+            if erro:
+                raise ValueError(f"Expressão inválida: {erro}")
+        return self
 
 
 class FaixaCreate(BaseModel):
@@ -106,7 +135,9 @@ class FaixaVariableMappingOut(BaseModel):
 
     id: str
     template_variable_id: str
-    column_name: str
+    fonte_tipo: str = "coluna"
+    column_name: str | None = None
+    expressao: str | None = None
 
 
 class DispatchConfigOut(BaseModel):
@@ -178,6 +209,7 @@ class UploadFieldMapping(BaseModel):
     cpf: str
     valor: str | None = None
     variables: dict[str, str] = {}  # template_variable_id -> nome da coluna
+    expressoes: dict[str, str] = {}  # template_variable_id -> expressao usando cabecalhos da planilha
 
 
 class UploadResult(BaseModel):

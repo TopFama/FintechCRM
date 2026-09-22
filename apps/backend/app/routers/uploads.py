@@ -7,6 +7,13 @@ from ..deps import get_current_user
 from ..utils.document import extract_first_name, format_cpf, normalize_seta_code
 from ..utils.phone import is_valid_phone, normalize_phone
 from ..utils.spreadsheet import parse_uploaded_spreadsheet, read_spreadsheet_headers
+from ..variaveis_template import (
+    extrair_placeholders,
+    normalizar_chave,
+    normalizar_para_meta,
+    renderizar_expressao,
+    validar_sintaxe,
+)
 
 router = APIRouter(prefix="/faixas", tags=["uploads"])
 
@@ -63,7 +70,8 @@ async def upload_planilha(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Mapeamento inválido: {exc}") from exc
 
     variable_by_id = {v.id: v for v in faixa.template.variables}
-    missing_vars = set(variable_by_id) - set(field_mapping.variables)
+    mapped_var_ids = set(field_mapping.variables) | set(field_mapping.expressoes)
+    missing_vars = set(variable_by_id) - mapped_var_ids
     if missing_vars:
         names = ", ".join(variable_by_id[v].internal_name for v in missing_vars)
         raise HTTPException(
@@ -71,10 +79,30 @@ async def upload_planilha(
         )
 
     content = await file.read()
+    filename = file.filename or "planilha.xlsx"
     try:
-        rows = parse_uploaded_spreadsheet(file.filename or "planilha.xlsx", content)
+        headers = read_spreadsheet_headers(filename, content)
+        rows = parse_uploaded_spreadsheet(filename, content)
     except Exception as exc:  # noqa: BLE001 - erro de parsing vira 400 explícito
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Não foi possível ler a planilha: {exc}") from exc
+
+    norm_headers = {normalizar_chave(h) for h in headers if h}
+    for vid, expr in field_mapping.expressoes.items():
+        var = variable_by_id.get(vid)
+        var_name = var.internal_name if var else vid
+        erro_sintaxe = validar_sintaxe(expr)
+        if erro_sintaxe:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Expressão inválida para a variável '{var_name}': {erro_sintaxe}",
+            )
+        placeholders = extrair_placeholders(expr)
+        for p in placeholders:
+            if normalizar_chave(p) not in norm_headers:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"Variável '{var_name}': coluna '{p}' não encontrada na planilha",
+                )
 
     accepted = 0
     rejected = 0
@@ -139,17 +167,29 @@ async def upload_planilha(
             reasons.append(f"Linha {i}: cliente já está na fila desta faixa")
             continue
 
-        missing_var_cols = [
-            v.internal_name
-            for vid, v in variable_by_id.items()
-            if not (row.get(field_mapping.variables[vid]) or "").strip()
-        ]
+        missing_var_cols = []
+        var_values = {}
+        for vid, v in variable_by_id.items():
+            if vid in field_mapping.expressoes:
+                val = renderizar_expressao(field_mapping.expressoes[vid], row)
+                if not val:
+                    missing_var_cols.append(v.internal_name)
+                else:
+                    var_values[v.internal_name] = val
+            else:
+                raw_val = (row.get(field_mapping.variables[vid]) or "").strip()
+                val = normalizar_para_meta(raw_val)
+                if not val:
+                    missing_var_cols.append(v.internal_name)
+                else:
+                    var_values[v.internal_name] = val
+
         if missing_var_cols:
             rejected += 1
             reasons.append(f"Linha {i}: faltando coluna(s) {', '.join(missing_var_cols)}")
             continue
 
-        variables_json = {v.internal_name: row.get(field_mapping.variables[vid], "") for vid, v in variable_by_id.items()}
+        variables_json = var_values
         db.add(
             models.QueueItem(
                 faixa_id=faixa_id,
