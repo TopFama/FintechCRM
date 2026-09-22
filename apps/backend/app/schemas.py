@@ -24,11 +24,13 @@ class LoginResponse(BaseModel):
 class MetaTokenCreate(BaseModel):
     nome: str
     token: str
+    waba_id: str
 
 
 class MetaTokenUpdate(BaseModel):
     nome: str | None = None
     ativo: bool | None = None
+    waba_id: str | None = None
 
 
 class MetaTokenOut(BaseModel):
@@ -37,6 +39,7 @@ class MetaTokenOut(BaseModel):
     id: str
     nome: str
     ultimos4: str
+    waba_id: str | None
     ativo: bool
     created_at: datetime
     numeros_vinculados: int = 0
@@ -45,6 +48,28 @@ class MetaTokenOut(BaseModel):
 class MetaTokenTestResult(BaseModel):
     ok: bool
     detalhe: str
+
+
+class NumeroMetaOut(BaseModel):
+    """Número que a Meta devolve para a WABA do token."""
+
+    phone_number_id: str
+    display_phone_number: str
+    verified_name: str | None = None
+    quality_rating: str | None = None
+    status: str | None = None
+    cadastrado: bool  # já existe na tela Números (mesmo phone_number_id)
+    vinculado_a_este_token: bool
+
+
+class ImportarNumerosIn(BaseModel):
+    phone_number_ids: list[str]
+
+
+class ImportarNumerosOut(BaseModel):
+    importados: int  # números novos criados
+    vinculados: int  # já cadastrados sem token, agora ligados a este
+    ignorados: int  # já cadastrados com outro token (ficam como estão)
 
 
 # --- Números ---

@@ -103,14 +103,20 @@ export const api = {
     request<WhatsappNumber>(`/numbers/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
   listarTokensMeta: () => request<MetaToken[]>("/meta-tokens"),
-  criarTokenMeta: (payload: { nome: string; token: string }) =>
+  criarTokenMeta: (payload: { nome: string; token: string; waba_id: string }) =>
     request<MetaToken>("/meta-tokens", { method: "POST", body: JSON.stringify(payload) }),
-  atualizarTokenMeta: (id: string, payload: { nome?: string; ativo?: boolean }) =>
+  atualizarTokenMeta: (id: string, payload: { nome?: string; ativo?: boolean; waba_id?: string }) =>
     request<MetaToken>(`/meta-tokens/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   excluirTokenMeta: (id: string) =>
     request<void>(`/meta-tokens/${id}`, { method: "DELETE" }),
   testarTokenMeta: (id: string) =>
     request<MetaTokenTestResult>(`/meta-tokens/${id}/testar`, { method: "POST" }),
+  listarNumerosMeta: (id: string) => request<NumeroMeta[]>(`/meta-tokens/${id}/numeros-meta`),
+  importarNumerosMeta: (id: string, phoneNumberIds: string[]) =>
+    request<{ importados: number; vinculados: number; ignorados: number }>(`/meta-tokens/${id}/importar-numeros`, {
+      method: "POST",
+      body: JSON.stringify({ phone_number_ids: phoneNumberIds }),
+    }),
 
   listTemplates: () => request<Template[]>("/templates"),
   createTemplate: (payload: unknown) =>
@@ -263,9 +269,21 @@ export interface MetaToken {
   id: string;
   nome: string;
   ultimos4: string;
+  waba_id: string | null;
   ativo: boolean;
   created_at: string;
   numeros_vinculados: number;
+}
+
+// Número que a Meta devolve para a WABA de um token
+export interface NumeroMeta {
+  phone_number_id: string;
+  display_phone_number: string;
+  verified_name: string | null;
+  quality_rating: string | null;
+  status: string | null;
+  cadastrado: boolean;
+  vinculado_a_este_token: boolean;
 }
 
 export interface MetaTokenTestResult {

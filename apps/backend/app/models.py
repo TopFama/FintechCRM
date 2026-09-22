@@ -41,6 +41,9 @@ class MetaToken(Base):
     nome: Mapped[str] = mapped_column(String)
     token_cifrado: Mapped[str] = mapped_column(String)
     ultimos4: Mapped[str] = mapped_column(String)
+    # WABA que o token acessa: de onde se puxam os números. Nulo só em tokens
+    # antigos, cadastrados antes de a WABA ser pedida junto com o token.
+    waba_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

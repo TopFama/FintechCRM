@@ -31,6 +31,25 @@ def mock_meta_handler(request: httpx.Request) -> httpx.Response:
     auth_header = request.headers.get("authorization", "")
     token = auth_header.replace("Bearer ", "").strip()
 
+    if request.url.path.endswith("/phone_numbers"):
+        waba = request.url.path.split("/")[-2]
+        if token == "TOKEN_INVALIDO_META" or waba == "999":
+            return httpx.Response(
+                400,
+                json={"error": {"message": "Unsupported get request. Object does not exist", "type": "GraphMethodException"}},
+            )
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"id": "PNID_1", "display_phone_number": "+55 63 99999-0001", "verified_name": "TopFama Palmas",
+                     "quality_rating": "GREEN", "status": "CONNECTED"},
+                    {"id": "PNID_2", "display_phone_number": "+55 63 99999-0002", "verified_name": "TopFama Araguaína",
+                     "quality_rating": "YELLOW", "status": "CONNECTED"},
+                ]
+            },
+        )
+
     if "/me" in str(request.url):
         if token == "TOKEN_INVALIDO_META":
             return httpx.Response(
@@ -107,17 +126,17 @@ resp_401_test = client.post("/meta-tokens/fake-id/testar")
 assert resp_401_test.status_code == 401
 
 # 4. Teste: Validação de campos vazios ao criar token (400)
-resp_empty_nome = client.post("/meta-tokens", json={"nome": "   ", "token": "token123"}, headers=headers)
+resp_empty_nome = client.post("/meta-tokens", json={"nome": "   ", "token": "token123", "waba_id": "1111"}, headers=headers)
 assert resp_empty_nome.status_code == 400, f"Esperado 400 para nome vazio, obtido {resp_empty_nome.status_code}"
 
-resp_empty_token = client.post("/meta-tokens", json={"nome": "Token 1", "token": "   "}, headers=headers)
+resp_empty_token = client.post("/meta-tokens", json={"nome": "Token 1", "token": "   ", "waba_id": "1111"}, headers=headers)
 assert resp_empty_token.status_code == 400, f"Esperado 400 para token vazio, obtido {resp_empty_token.status_code}"
 
 # 5. Teste: Criação bem-sucedida e segredo nunca exposto na API e no banco
 secret_token_sp = "EAAX_topfama_segredo_token_sp_4321"
 resp_create_1 = client.post(
     "/meta-tokens",
-    json={"nome": "Token Cobrança SP", "token": secret_token_sp},
+    json={"nome": "Token Cobrança SP", "token": secret_token_sp, "waba_id": "1111"},
     headers=headers,
 )
 assert resp_create_1.status_code == 201, f"Erro ao criar token: {resp_create_1.text}"
@@ -146,14 +165,14 @@ finally:
 # 6. Teste: 409 Duplicata do mesmo valor de token
 resp_dup = client.post(
     "/meta-tokens",
-    json={"nome": "Outro Nome Mesmo Token", "token": secret_token_sp},
+    json={"nome": "Outro Nome Mesmo Token", "token": secret_token_sp, "waba_id": "1111"},
     headers=headers,
 )
 assert resp_dup.status_code == 409, f"Esperado 409 para token duplicado, obtido {resp_dup.status_code}"
 
 resp_dup_strip = client.post(
     "/meta-tokens",
-    json={"nome": "Outro Nome Com Espaços", "token": f"  {secret_token_sp}  "},
+    json={"nome": "Outro Nome Com Espaços", "token": f"  {secret_token_sp}  ", "waba_id": "1111"},
     headers=headers,
 )
 assert resp_dup_strip.status_code == 409
@@ -162,7 +181,7 @@ assert resp_dup_strip.status_code == 409
 secret_token_rj = "EAAX_topfama_segredo_token_rj_9876"
 resp_create_2 = client.post(
     "/meta-tokens",
-    json={"nome": "Token Cobrança RJ", "token": secret_token_rj},
+    json={"nome": "Token Cobrança RJ", "token": secret_token_rj, "waba_id": "1111"},
     headers=headers,
 )
 assert resp_create_2.status_code == 201
@@ -353,7 +372,7 @@ finally:
 # Cria token para teste de sucesso
 resp_test_tok_ok = client.post(
     "/meta-tokens",
-    json={"nome": "Token Valido Teste", "token": "EAAX_TOKEN_VALIDO_123"},
+    json={"nome": "Token Valido Teste", "token": "EAAX_TOKEN_VALIDO_123", "waba_id": "1111"},
     headers=headers,
 )
 tok_ok_id = resp_test_tok_ok.json()["id"]
@@ -365,13 +384,14 @@ assert body_ok["ok"] is True
 assert "TopFama WhatsApp Oficial" in body_ok["detalhe"]
 assert "EAAX" not in body_ok["detalhe"]
 
-# Cria token configurado para disparar erro na Meta
-resp_test_tok_err = client.post(
-    "/meta-tokens",
-    json={"nome": "Token Invalido Teste", "token": "TOKEN_INVALIDO_META"},
-    headers=headers,
-)
-tok_err_id = resp_test_tok_err.json()["id"]
+# Token que a Meta passou a recusar depois de cadastrado (o cadastro pela API já
+# recusaria): inserido direto no banco
+db = SessionLocal()
+tok_err = models.MetaToken(nome="Token Invalido Teste", token_cifrado=crypto.cifrar("TOKEN_INVALIDO_META"), ultimos4="META", ativo=True)
+db.add(tok_err)
+db.commit()
+tok_err_id = tok_err.id
+db.close()
 
 resp_test_call_err = client.post(f"/meta-tokens/{tok_err_id}/testar", headers=headers)
 assert resp_test_call_err.status_code == 200
@@ -379,5 +399,37 @@ body_err = resp_test_call_err.json()
 assert body_err["ok"] is False
 assert "OAuthException" in body_err["detalhe"] or "Invalid OAuth" in body_err["detalhe"]
 assert "TOKEN_INVALIDO" not in body_err["detalhe"]
+assert "número(s) na WABA 1111" in body_ok["detalhe"]
+
+# 15. WABA obrigatória e validada na Meta antes de gravar
+assert client.post("/meta-tokens", json={"nome": "Sem WABA", "token": "EAAX_SEM_WABA"}, headers=headers).status_code == 422
+r = client.post("/meta-tokens", json={"nome": "WABA letras", "token": "EAAX_W", "waba_id": "abc"}, headers=headers)
+assert r.status_code == 400 and "WABA" in r.json()["detail"]
+r = client.post("/meta-tokens", json={"nome": "WABA errada", "token": "EAAX_WABA_ERRADA", "waba_id": "999"}, headers=headers)
+assert r.status_code == 400 and "Meta recusou" in r.json()["detail"], r.json()
+db = SessionLocal()
+assert db.query(models.MetaToken).filter(models.MetaToken.nome == "WABA errada").count() == 0
+db.close()
+assert "EAAX_WABA_ERRADA" not in r.text
+
+# 16. Puxar os números da WABA com o token e importar
+r = client.get(f"/meta-tokens/{tok_ok_id}/numeros-meta", headers=headers)
+assert r.status_code == 200, r.text
+nums = {n["phone_number_id"]: n for n in r.json()}
+assert set(nums) == {"PNID_1", "PNID_2"} and not any(n["cadastrado"] for n in nums.values())
+assert nums["PNID_1"]["verified_name"] == "TopFama Palmas"
+r = client.post(f"/meta-tokens/{tok_ok_id}/importar-numeros", json={"phone_number_ids": ["PNID_1", "PNID_2", "PNID_1"]}, headers=headers)
+assert r.json() == {"importados": 2, "vinculados": 0, "ignorados": 0}, r.json()
+r = client.post(f"/meta-tokens/{tok_ok_id}/importar-numeros", json={"phone_number_ids": ["PNID_1"]}, headers=headers)
+assert r.json() == {"importados": 0, "vinculados": 0, "ignorados": 0}
+nums = {n["phone_number_id"]: n for n in client.get(f"/meta-tokens/{tok_ok_id}/numeros-meta", headers=headers).json()}
+assert all(n["cadastrado"] and n["vinculado_a_este_token"] for n in nums.values())
+numero = next(n for n in client.get("/numbers", headers=headers).json() if n["phone_number_id"] == "PNID_1")
+assert numero["waba_id"] == "1111" and numero["meta_token_id"] == tok_ok_id and numero["label"] == "TopFama Palmas"
+r = client.post(f"/meta-tokens/{tok_ok_id}/importar-numeros", json={"phone_number_ids": ["PNID_X"]}, headers=headers)
+assert r.status_code == 400 and "PNID_X" in r.json()["detail"]
+r = client.get(f"/meta-tokens/{tok_err_id}/numeros-meta", headers=headers)
+assert r.status_code == 400 and "WABA" in r.json()["detail"]  # token antigo sem WABA
+assert client.get("/meta-tokens/nao-existe/numeros-meta", headers=headers).status_code == 404
 
 print("OK")
