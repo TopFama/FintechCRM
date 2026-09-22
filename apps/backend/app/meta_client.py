@@ -7,6 +7,9 @@ enviar mensagens de template.
 
 import httpx
 
+from sqlalchemy.orm import Session
+
+from . import crypto, models
 from .config import settings
 
 
@@ -18,22 +21,36 @@ class MetaAPIError(Exception):
         super().__init__(f"Meta API error ({status_code}): {message}")
 
 
+class MetaTokenConfigError(Exception):
+    pass
+
+
 class MetaClient:
-    def __init__(self, access_token: str | None = None):
+    default_transport: httpx.AsyncBaseTransport | None = None
+
+    def __init__(
+        self,
+        access_token: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
         self.access_token = access_token or settings.meta_access_token
         self.base_url = f"https://graph.facebook.com/{settings.meta_graph_api_version}"
+        self._transport = transport if transport is not None else self.default_transport
 
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}
 
     async def _request(self, method: str, path: str, **kwargs) -> dict:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, transport=self._transport) as client:
             response = await client.request(
                 method, f"{self.base_url}/{path}", headers=self._headers(), **kwargs
             )
         if response.status_code >= 400:
             raise MetaAPIError(response.status_code, response.json())
         return response.json()
+
+    async def test_token(self) -> dict:
+        return await self._request("GET", "me", params={"fields": "id,name"})
 
     async def list_templates(self, waba_id: str) -> list[dict]:
         data = await self._request(
@@ -89,3 +106,40 @@ class MetaClient:
             },
         }
         return await self._request("POST", f"{phone_number_id}/messages", json=payload)
+
+
+def token_da_waba(db: Session, waba_id: str) -> str:
+    """Retorna o token decifrado configurado para a WABA informada.
+
+    Regra de desempate:
+    Caso existam múltiplos números ativos associados à mesma WABA que possuam
+    um MetaToken ativo vinculado, é selecionado o número mais antigo por data de
+    criação (`created_at` ascendente). Isso garante determinismo e estabilidade
+    na escolha do token usado para interações administrativas com a WABA.
+
+    Se nenhum número ativo possuir um token ativo associado, é realizado o fallback
+    para `settings.meta_access_token` (compatibilidade com `.env`).
+    Se este também estiver vazio ou não configurado, lança `MetaTokenConfigError`.
+    """
+    numero = (
+        db.query(models.WhatsappNumber)
+        .join(models.MetaToken, models.WhatsappNumber.meta_token_id == models.MetaToken.id)
+        .filter(
+            models.WhatsappNumber.waba_id == waba_id,
+            models.WhatsappNumber.active.is_(True),
+            models.MetaToken.ativo.is_(True),
+        )
+        .order_by(models.WhatsappNumber.created_at.asc())
+        .first()
+    )
+
+    if numero and numero.meta_token and numero.meta_token.token_cifrado:
+        token_decifrado = crypto.decifrar(numero.meta_token.token_cifrado)
+        if token_decifrado:
+            return token_decifrado
+
+    if settings.meta_access_token and settings.meta_access_token.strip():
+        return settings.meta_access_token.strip()
+
+    raise MetaTokenConfigError(f"Nenhum token da Meta configurado para a WABA {waba_id}")
+

@@ -34,6 +34,23 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class MetaToken(Base):
+    __tablename__ = "meta_tokens"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    nome: Mapped[str] = mapped_column(String)
+    token_cifrado: Mapped[str] = mapped_column(String)
+    ultimos4: Mapped[str] = mapped_column(String)
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    numeros: Mapped[list["WhatsappNumber"]] = relationship(back_populates="meta_token")
+
+    @property
+    def numeros_vinculados(self) -> int:
+        return len(self.numeros)
+
+
 class WhatsappNumber(Base):
     __tablename__ = "whatsapp_numbers"
 
@@ -44,6 +61,17 @@ class WhatsappNumber(Base):
     label: Mapped[str] = mapped_column(String, default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    meta_token_id: Mapped[str | None] = mapped_column(
+        ForeignKey("meta_tokens.id", ondelete="SET NULL"), nullable=True
+    )
+    chatwoot_inbox_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    meta_token: Mapped[MetaToken | None] = relationship(back_populates="numeros")
+
+    @property
+    def meta_token_nome(self) -> str | None:
+        return self.meta_token.nome if self.meta_token else None
+
 
 
 class TemplateStatus(str, enum.Enum):

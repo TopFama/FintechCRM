@@ -10,7 +10,7 @@ from .. import models, schemas
 from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user
-from ..meta_client import MetaAPIError, MetaClient
+from ..meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_da_waba
 from ..variaveis_template import CAMPOS_CLIENTE, contexto_cliente
 
 router = APIRouter(prefix="/templates", tags=["templates"])
@@ -76,8 +76,13 @@ async def sync_from_meta(
             "Cadastre um número de WhatsApp (aba Números) antes de sincronizar templates",
         )
 
-    client = MetaClient()
     for waba_id in waba_ids:
+        try:
+            token = token_da_waba(db, waba_id)
+        except MetaTokenConfigError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+        client = MetaClient(access_token=token)
         try:
             remote_templates = await client.list_templates(waba_id)
         except MetaAPIError as exc:
@@ -213,7 +218,13 @@ async def create_template(
     db.flush()
 
     if payload.submit_to_meta:
-        client = MetaClient()
+        try:
+            token = token_da_waba(db, waba_id)
+        except MetaTokenConfigError as exc:
+            db.commit()
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+        client = MetaClient(access_token=token)
         components = [{"type": "BODY", "text": payload.body_text}]
         if payload.header_type == models.TemplateHeaderType.image:
             components.insert(0, {"type": "HEADER", "format": "IMAGE"})
@@ -254,7 +265,25 @@ async def refresh_template_status(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Template ainda não foi submetido à Meta"
         )
-    client = MetaClient()
+    waba_id = template.waba_id
+    if not waba_id:
+        first_num = (
+            db.query(models.WhatsappNumber)
+            .filter(models.WhatsappNumber.active.is_(True))
+            .first()
+        )
+        waba_id = first_num.waba_id if first_num else None
+    if not waba_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "WABA não identificada para este template"
+        )
+
+    try:
+        token = token_da_waba(db, waba_id)
+    except MetaTokenConfigError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    client = MetaClient(access_token=token)
     try:
         remote = await client.get_template_status(template.meta_template_id)
     except MetaAPIError as exc:

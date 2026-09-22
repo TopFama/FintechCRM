@@ -40,6 +40,26 @@ export const api = {
   listNumbers: () => request<WhatsappNumber[]>("/numbers"),
   createNumber: (payload: Partial<WhatsappNumber>) =>
     request<WhatsappNumber>("/numbers", { method: "POST", body: JSON.stringify(payload) }),
+  atualizarNumero: (
+    id: string,
+    payload: {
+      label?: string;
+      active?: boolean;
+      meta_token_id?: string | null;
+      chatwoot_inbox_id?: number | null;
+    }
+  ) =>
+    request<WhatsappNumber>(`/numbers/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
+  listarTokensMeta: () => request<MetaToken[]>("/meta-tokens"),
+  criarTokenMeta: (payload: { nome: string; token: string }) =>
+    request<MetaToken>("/meta-tokens", { method: "POST", body: JSON.stringify(payload) }),
+  atualizarTokenMeta: (id: string, payload: { nome?: string; ativo?: boolean }) =>
+    request<MetaToken>(`/meta-tokens/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  excluirTokenMeta: (id: string) =>
+    request<void>(`/meta-tokens/${id}`, { method: "DELETE" }),
+  testarTokenMeta: (id: string) =>
+    request<MetaTokenTestResult>(`/meta-tokens/${id}/testar`, { method: "POST" }),
 
   listTemplates: () => request<Template[]>("/templates"),
   createTemplate: (payload: unknown) =>
@@ -122,6 +142,23 @@ export interface WhatsappNumber {
   display_phone_number: string;
   label: string;
   active: boolean;
+  meta_token_id?: string | null;
+  meta_token_nome?: string | null;
+  chatwoot_inbox_id?: number | null;
+}
+
+export interface MetaToken {
+  id: string;
+  nome: string;
+  ultimos4: string;
+  ativo: boolean;
+  created_at: string;
+  numeros_vinculados: number;
+}
+
+export interface MetaTokenTestResult {
+  ok: boolean;
+  detalhe: string;
 }
 
 export interface TemplateVariable {

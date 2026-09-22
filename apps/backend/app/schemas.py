@@ -18,6 +18,35 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
 
 
+# --- Meta Tokens ---
+
+
+class MetaTokenCreate(BaseModel):
+    nome: str
+    token: str
+
+
+class MetaTokenUpdate(BaseModel):
+    nome: str | None = None
+    ativo: bool | None = None
+
+
+class MetaTokenOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    nome: str
+    ultimos4: str
+    ativo: bool
+    created_at: datetime
+    numeros_vinculados: int = 0
+
+
+class MetaTokenTestResult(BaseModel):
+    ok: bool
+    detalhe: str
+
+
 # --- Números ---
 
 
@@ -26,6 +55,15 @@ class WhatsappNumberCreate(BaseModel):
     phone_number_id: str
     display_phone_number: str
     label: str = ""
+    meta_token_id: str | None = None
+    chatwoot_inbox_id: int | None = None
+
+
+class WhatsappNumberUpdate(BaseModel):
+    label: str | None = None
+    active: bool | None = None
+    meta_token_id: str | None = None
+    chatwoot_inbox_id: int | None = None
 
 
 class WhatsappNumberOut(BaseModel):
@@ -38,6 +76,9 @@ class WhatsappNumberOut(BaseModel):
     label: str
     active: bool
     created_at: datetime
+    meta_token_id: str | None = None
+    meta_token_nome: str | None = None
+    chatwoot_inbox_id: int | None = None
 
 
 # --- Templates ---

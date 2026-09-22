@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from . import models
 from .config import settings
 from .database import SessionLocal
-from .routers import auth, blacklist, cobranca, config_cobranca, dashboard, faixas, google, leads, lojas, numbers, reports, seta, templates, uploads
+from .routers import auth, blacklist, cobranca, config_cobranca, dashboard, faixas, google, leads, lojas, meta_tokens, numbers, reports, seta, templates, uploads
 from .security import hash_password
 from .worker import start_scheduler
 
@@ -88,6 +88,7 @@ app.add_middleware(
 app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 
 app.include_router(auth.router)
+app.include_router(meta_tokens.router)
 app.include_router(numbers.router)
 app.include_router(templates.router)
 app.include_router(faixas.router)
