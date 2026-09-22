@@ -7,6 +7,7 @@ mesmas funções, sem repetir limite nenhum em SQL ou na tela.
 Tudo aqui é puro (sem banco): dá para testar só com números.
 """
 
+from dataclasses import dataclass
 from decimal import Decimal
 
 # Cliente que aparece nos filtros das duas planilhas de regra ("codigo não é
@@ -119,3 +120,28 @@ def faixa_de_compra(qtd_compras: int) -> str | None:
     if qtd_compras < 1:
         return None
     return str(qtd_compras) if qtd_compras < 10 else "10+"
+
+
+# --- Valor a cobrar no template do WhatsApp ----------------------------------
+
+
+@dataclass(frozen=True)
+class ParametrosJuros:
+    """Parcela a parcela: com `dias_min` ou mais de atraso, o valor cobrado é
+    valor + valor × juros_dia × dias + valor × multa; abaixo disso, só o valor.
+    O juros mensal é rateado em 30 dias (15,99% a.m. → 0,533% ao dia)."""
+
+    juros_mes_percentual: Decimal = Decimal("15.99")
+    multa_percentual: Decimal = Decimal("2")
+    dias_min: int = 3
+
+    @property
+    def juros_dia(self) -> Decimal:
+        return self.juros_mes_percentual / Decimal(100) / Decimal(30)
+
+    @property
+    def multa(self) -> Decimal:
+        return self.multa_percentual / Decimal(100)
+
+
+PARAMETROS_JUROS_PADRAO = ParametrosJuros()

@@ -21,6 +21,7 @@ from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.engine import URL, Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from .cobranca_regras import PARAMETROS_JUROS_PADRAO, ParametrosJuros
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -113,13 +114,13 @@ CONDICAO_IGNORADA = "130"
 # Datas de `pessoas` fora da janela 1900..hoje são lixo de cadastro (0001 BC,
 # 9999, futuro) e viram NULL.
 _SQL_BASE_COBRANCA = r"""
-WITH abertos AS (
+WITH parcelas AS (
     SELECT ft.pessoa,
-           count(*)                                     AS qtd_titulos,
-           sum(ft.valor)                                AS valor_em_aberto,
-           min(ft.vencimento)                           AS vencimento_mais_antigo,
-           string_agg(DISTINCT trim(ft.empresa), ',')   AS lojas,
-           string_agg(DISTINCT trim(ft.portador), ',')  AS portadores
+           ft.valor,
+           ft.vencimento,
+           trim(ft.empresa)  AS empresa,
+           trim(ft.portador) AS portador,
+           min(ft.vencimento) OVER (PARTITION BY ft.pessoa) AS vencimento_min
       FROM financeiro_titulos ft
      WHERE ft.rp = 'R'
        AND ft.status = 'A'
@@ -127,7 +128,25 @@ WITH abertos AS (
        AND ft.valor > 0
        {filtro_loja_titulo}
        {filtro_portador}
-     GROUP BY ft.pessoa
+),
+abertos AS (
+    SELECT pessoa,
+           count(*)                       AS qtd_titulos,
+           sum(valor)                     AS valor_em_aberto,
+           min(vencimento)                AS vencimento_mais_antigo,
+           string_agg(DISTINCT empresa, ',')  AS lojas,
+           string_agg(DISTINCT portador, ',') AS portadores,
+           count(*) FILTER (WHERE vencimento <= GREATEST(current_date, vencimento_min))
+                                          AS qtd_parcelas_cobranca,
+           round(sum(
+               CASE WHEN vencimento <= GREATEST(current_date, vencimento_min) THEN
+                   CASE WHEN current_date - vencimento >= :dias_min_juros
+                        THEN valor + valor * :juros_dia * (current_date - vencimento) + valor * :multa
+                        ELSE valor END
+               END
+           ), 2)                          AS valor_cobrar
+      FROM parcelas
+     GROUP BY pessoa
 ),
 candidatos AS (
     SELECT a.*, current_date - a.vencimento_mais_antigo AS dias_atraso
@@ -228,6 +247,7 @@ def buscar_base_cobranca(
     status_cliente: list[str] | None = None,
     bloqueados_codigos: list[str] | None = None,
     bloqueados_cpfs: list[str] | None = None,
+    juros: ParametrosJuros = PARAMETROS_JUROS_PADRAO,
 ) -> list[dict]:
     """Clientes (`pessoas.cliente`, status Especial/Ativo/Bloqueado) com
     parcela de recebimento em aberto (`rp='R'`, tipo 4/5, `valor > 0`), já com
@@ -240,6 +260,11 @@ def buscar_base_cobranca(
       faixa) restringem quem volta; `dias_exatos` tem precedência.
     - `lojas` (`ft.empresa`) e `portadores` restringem **quais parcelas** contam:
       dias, valor e quantidade são calculados só sobre elas.
+    - `qtd_titulos` / `valor_em_aberto` cobrem todas as parcelas abertas (RE e
+      VE, inclusive as futuras) e alimentam os visuais, sem juros. Já
+      `qtd_parcelas_cobranca` e `valor_cobrar` valem só para as parcelas da
+      cobrança (`vencimento <= max(hoje, parcela mais antiga)`: as vencidas e,
+      no lembrete, a que vence amanhã) e o valor leva multa e juros (`juros`).
     - `valor_pago` soma parcelas pagas de venda (auxiliar `VE…`), sem seguro.
     - `qtd_compras` conta vendas finalizadas (`status = 'S'`) de condição de
       crediário (tipo 4, menos a 130), só se a venda tem parcela `VE`+código
@@ -255,6 +280,9 @@ def buscar_base_cobranca(
         "bl_cpfs": bloqueados_cpfs or [],
         "descricao_seguro": DESCRICAO_SEGURO,
         "condicao_ignorada": CONDICAO_IGNORADA,
+        "dias_min_juros": juros.dias_min,
+        "juros_dia": juros.juros_dia,
+        "multa": juros.multa,
     }
     expanding: list[str] = []
     filtro_loja = filtro_portador = filtro_status = ""

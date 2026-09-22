@@ -131,6 +131,8 @@ def _montar_cliente(r: dict, faixa: str | None, cluster: str, entra: bool, faixa
         "entra_whatsapp": entra,
         "qtd_titulos": r["qtd_titulos"],
         "valor_em_aberto": r["valor_em_aberto"],
+        "qtd_parcelas_cobranca": r["qtd_parcelas_cobranca"],
+        "valor_cobrar": r["valor_cobrar"],
         "vencimento_mais_antigo": r["vencimento_mais_antigo"],
         "lojas": r["lojas"].split(",") if r["lojas"] else [],
         "portadores": r["portadores"].split(",") if r["portadores"] else [],
