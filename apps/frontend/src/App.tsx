@@ -1,4 +1,5 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { api, limparAutenticado, pareceAutenticado } from "./api";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Templates from "./pages/Templates";
@@ -22,12 +23,8 @@ import {
   IconSettings,
 } from "./icons";
 
-function isAuthenticated() {
-  return Boolean(localStorage.getItem("token"));
-}
-
 function RequireAuth({ children }: { children: JSX.Element }) {
-  if (!isAuthenticated()) return <Navigate to="/login" replace />;
+  if (!pareceAutenticado()) return <Navigate to="/login" replace />;
   return children;
 }
 
@@ -72,7 +69,8 @@ function Layout({ children }: { children: JSX.Element }) {
           <button
             className="logout-btn"
             onClick={() => {
-              localStorage.removeItem("token");
+              limparAutenticado();
+              api.logout().catch(() => {});
               window.location.href = "/login";
             }}
           >

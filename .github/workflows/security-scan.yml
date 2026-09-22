@@ -1,0 +1,61 @@
+name: Scan de segurança das dependências
+
+# Roda a cada push/PR que mexe em dependências, e semanalmente (toda
+# segunda às 9h UTC) para pegar CVEs novas em dependências que não mudaram.
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "apps/backend/requirements.txt"
+      - ".github/workflows/security-scan.yml"
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "apps/backend/requirements.txt"
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  npm-audit:
+    name: npm audit (frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      # "high" pega alto e crítico; moderado/baixo só reprovam se subirem de nível.
+      - run: npm audit --audit-level=high
+
+  pip-audit:
+    name: pip-audit (backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      # Duas exceções conhecidas e documentadas (reavaliar quando alguma delas mudar):
+      # - starlette (via fastapi==0.115.0): o fix exige subir o fastapi de major (fastapi
+      #   trava `starlette<0.39.0`) — upgrade maior, planejado como task própria, igual à
+      #   recomendação já registrada para as dependências do frontend.
+      # - ecdsa: dependência transitiva do python-jose só usada pelos algoritmos ES*
+      #   (nós assinamos com HS256, configurado em app/config.py) — o vazamento de timing
+      #   reportado (PYSEC-2026-1325) é uma limitação conhecida do pacote em Python puro,
+      #   sem correção disponível upstream, e não afeta este app.
+      - run: |
+          pip-audit -r apps/backend/requirements.txt \
+            --ignore-vuln PYSEC-2026-1943 \
+            --ignore-vuln PYSEC-2026-1941 \
+            --ignore-vuln PYSEC-2026-161 \
+            --ignore-vuln PYSEC-2026-2281 \
+            --ignore-vuln PYSEC-2026-2280 \
+            --ignore-vuln PYSEC-2026-249 \
+            --ignore-vuln PYSEC-2026-248 \
+            --ignore-vuln PYSEC-2026-1325

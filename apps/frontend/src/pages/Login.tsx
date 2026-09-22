@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api";
+import { api, marcarAutenticado } from "../api";
 import { IconAlert } from "../icons";
 
 export default function Login() {
@@ -15,8 +15,8 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
-      const { access_token } = await api.login(email, password);
-      localStorage.setItem("token", access_token);
+      await api.login(email, password);
+      marcarAutenticado();
       navigate("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao entrar");

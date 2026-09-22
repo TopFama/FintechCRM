@@ -1,18 +1,22 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from .. import models, rate_limit, schemas
+from ..config import settings
 from ..database import get_db
+from ..deps import get_current_user
 from ..security import create_access_token, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger("auth")
 
+COOKIE_NAME = "access_token"
+
 
 @router.post("/login", response_model=schemas.LoginResponse)
-def login(payload: schemas.LoginRequest, request: Request, db: Session = Depends(get_db)):
+def login(payload: schemas.LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     ip = request.client.host if request.client else "desconhecido"
     chave = f"{payload.email.lower()}:{ip}"
     try:
@@ -28,4 +32,23 @@ def login(payload: schemas.LoginRequest, request: Request, db: Session = Depends
 
     rate_limit.limpar(chave)
     token = create_access_token(subject=user.email)
+    # O portal (frontend) não guarda mais o token em localStorage — fica só neste
+    # cookie httpOnly, inacessível a JavaScript (mitiga roubo de sessão via XSS).
+    # O access_token continua na resposta só para uso programático da API
+    # (scripts de validação, integrações) via header Authorization: Bearer.
+    response.set_cookie(
+        COOKIE_NAME,
+        token,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=settings.access_token_expire_minutes * 60,
+        path="/",
+    )
     return schemas.LoginResponse(access_token=token)
+
+
+@router.post("/logout")
+def logout(response: Response, _user: models.User = Depends(get_current_user)):
+    response.delete_cookie(COOKIE_NAME, path="/")
+    return {"ok": True}
