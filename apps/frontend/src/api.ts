@@ -527,6 +527,7 @@ export interface QueueItem {
 
 export interface UploadColumnsResult {
   columns: string[];
+  sample_row: Record<string, string> | null;
 }
 
 export interface UploadFieldMapping {

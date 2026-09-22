@@ -10,7 +10,7 @@ from ..deps import get_current_user
 from ..utils.document import extract_first_name, format_cpf, normalize_seta_code
 from ..utils.phone import is_valid_phone, normalize_phone
 from ..timezone import hoje_br
-from ..utils.spreadsheet import parse_uploaded_spreadsheet, read_spreadsheet_headers
+from ..utils.spreadsheet import parse_uploaded_spreadsheet, read_spreadsheet_preview
 from ..variaveis_template import (
     contexto_cliente,
     extrair_placeholders,
@@ -70,12 +70,12 @@ async def read_upload_columns(
     _load_faixa(db, faixa_id)
     content = await _ler_planilha_limitada(file)
     try:
-        columns = read_spreadsheet_headers(file.filename or "planilha.xlsx", content)
+        columns, sample_row = read_spreadsheet_preview(file.filename or "planilha.xlsx", content)
     except Exception as exc:  # noqa: BLE001 - erro de parsing vira 400 explícito
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Não foi possível ler a planilha: {exc}") from exc
     if not columns:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A planilha está vazia ou sem cabeçalho")
-    return schemas.UploadColumnsOut(columns=columns)
+    return schemas.UploadColumnsOut(columns=columns, sample_row=sample_row)
 
 
 @router.post("/{faixa_id}/uploads", response_model=schemas.UploadResult)
@@ -123,7 +123,7 @@ async def upload_planilha(
     content = await _ler_planilha_limitada(file)
     filename = file.filename or "planilha.xlsx"
     try:
-        headers = read_spreadsheet_headers(filename, content)
+        headers, _ = read_spreadsheet_preview(filename, content)
         rows = parse_uploaded_spreadsheet(filename, content)
     except Exception as exc:  # noqa: BLE001 - erro de parsing vira 400 explícito
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Não foi possível ler a planilha: {exc}") from exc
@@ -276,26 +276,44 @@ async def upload_planilha(
             else:
                 resolved_by_vid[vid] = val
 
-        if missing_var_cols:
-            rejected += 1
-            reasons.append(f"Linha {i}: faltando coluna(s) {', '.join(missing_var_cols)}")
-            continue
-
         # Faixa com um único template ativo: dict "achatado" (formato de
         # sempre). Mais de um template ativo: um dict por template_id, já
         # que qualquer um dos envios da faixa pode processar este item (ver
         # dispatch_service.montar_parametros_envio).
         if len(templates_ativos) <= 1:
             variables_json = {
-                v.internal_name: resolved_by_vid[v.id]
+                v.internal_name: resolved_by_vid.get(v.id, "")
                 for tpl in templates_ativos.values()
                 for v in tpl.variables
             }
         else:
             variables_json = {
-                tid: {v.internal_name: resolved_by_vid[v.id] for v in tpl.variables}
+                tid: {v.internal_name: resolved_by_vid.get(v.id, "") for v in tpl.variables}
                 for tid, tpl in templates_ativos.items()
             }
+
+        # Campo essencial do template em branco: mantém o cliente na fila,
+        # mas já como erro de envio (não silenciosamente descartado do
+        # upload), pra aparecer na fila/relatórios com o motivo.
+        if missing_var_cols:
+            db.add(
+                models.QueueItem(
+                    faixa_id=faixa_id,
+                    codigo_cliente=codigo_cliente,
+                    nome=nome,
+                    cpf=cpf,
+                    valor=valor or None,
+                    celular=celular,
+                    celular_original=celular_original,
+                    variables_json=variables_json,
+                    status=models.QueueStatus.error,
+                    error_message=f"Faltando coluna(s) {', '.join(missing_var_cols)}",
+                )
+            )
+            rejected += 1
+            reasons.append(f"Linha {i}: faltando coluna(s) {', '.join(missing_var_cols)}")
+            continue
+
         db.add(
             models.QueueItem(
                 faixa_id=faixa_id,

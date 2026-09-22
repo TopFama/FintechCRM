@@ -368,6 +368,7 @@ class QueueItemOut(BaseModel):
 
 class UploadColumnsOut(BaseModel):
     columns: list[str]
+    sample_row: dict[str, str] | None = None
 
 
 class UploadFieldMapping(BaseModel):
