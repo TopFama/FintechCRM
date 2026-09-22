@@ -227,8 +227,10 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
 5. Validação por linha: telefone é normalizado para `55DD9XXXXXXXX` (detecta se falta o DDI `55`
    ou o 9º dígito e completa; se tiver menos dígitos que o padrão, a linha vai para o **relatório
    de telefones inválidos**, com código do cliente e telefone informado). Linhas sem código,
-   nome ou CPF válidos, ou com telefone duplicado na fila, são rejeitadas e listadas no resultado
-   do upload.
+   nome ou CPF válidos são rejeitadas e listadas no resultado do upload. Também é rejeitado quem já
+   está pendente/reservado na fila da mesma faixa (qualquer data) ou já foi enviado nela **hoje** —
+   não cobra o mesmo cliente na mesma faixa duas vezes no mesmo dia, mas permite reentrar em outro
+   dia (cobrança recorrente da mesma faixa).
 6. Configure **intervalo entre rodadas de envio**, **quantidade de cobranças por rodada** e a
    **janela de agendamento** (dias/horário) — ou dispare **"Cobrar esta base agora"** para rodar
    imediatamente, sem esperar o agendamento. A fila da faixa é acompanhada quase em tempo real

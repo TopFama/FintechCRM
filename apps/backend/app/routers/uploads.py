@@ -1,4 +1,7 @@
+from datetime import date, datetime, time
+
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
@@ -111,12 +114,18 @@ async def upload_planilha(
     invalid_phone_count = 0
     reasons: list[str] = []
 
-    existing_phones = {
-        row.celular
-        for row in db.query(models.QueueItem.celular).filter(
+    # Não cobrar o mesmo cliente na mesma faixa mais de uma vez por dia: bloqueia
+    # quem já está pendente/reservado (nunca chegou a sair) em qualquer data, e
+    # quem já foi enviado hoje — enviado em dia anterior pode voltar (cobrança
+    # recorrente da mesma faixa em dias diferentes).
+    inicio_hoje = datetime.combine(date.today(), time.min)
+    clientes_bloqueados = {
+        codigo
+        for (codigo,) in db.query(models.QueueItem.codigo_cliente).filter(
             models.QueueItem.faixa_id == faixa_id,
-            models.QueueItem.status.in_(
-                [models.QueueStatus.pending, models.QueueStatus.reserved, models.QueueStatus.sent]
+            or_(
+                models.QueueItem.status.in_([models.QueueStatus.pending, models.QueueStatus.reserved]),
+                and_(models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.sent_at >= inicio_hoje),
             ),
         )
     }
@@ -134,6 +143,11 @@ async def upload_planilha(
             reasons.append(
                 f"Linha {i}: código SETA inválido ({codigo_raw or 'vazio'}) — use até 8 dígitos numéricos"
             )
+            continue
+
+        if codigo_cliente in clientes_bloqueados:
+            rejected += 1
+            reasons.append(f"Linha {i}: cliente já está na fila ou já foi cobrado nesta faixa hoje")
             continue
 
         if not nome_raw:
@@ -164,10 +178,6 @@ async def upload_planilha(
             continue
 
         celular = normalize_phone(celular_original)
-        if celular in existing_phones:
-            rejected += 1
-            reasons.append(f"Linha {i}: cliente já está na fila desta faixa")
-            continue
 
         missing_var_cols = []
         var_values = {}
@@ -205,7 +215,7 @@ async def upload_planilha(
                 status=models.QueueStatus.pending,
             )
         )
-        existing_phones.add(celular)
+        clientes_bloqueados.add(codigo_cliente)
         accepted += 1
 
     faixa.upload_field_mapping = field_mapping.model_dump()
