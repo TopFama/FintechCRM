@@ -485,3 +485,17 @@ class ParametrosCobranca(Base):
     juros_mes_percentual: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     multa_percentual: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     dias_min_juros: Mapped[int] = mapped_column(Integer)
+
+
+class OrcamentoMensal(Base):
+    """Orçamento (em BRL) de gasto com disparo de WhatsApp por mês/ano —
+    comparado no Dashboard com o custo real das conversas (Meta Pricing
+    Analytics, ver Tarefa 6) pra mostrar a linha de progressão do mês."""
+
+    __tablename__ = "orcamento_mensal"
+    __table_args__ = (UniqueConstraint("ano", "mes", name="uq_orcamento_ano_mes"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    ano: Mapped[int] = mapped_column(Integer, index=True)
+    mes: Mapped[int] = mapped_column(Integer)  # 1-12
+    valor_orcado: Mapped[Decimal] = mapped_column(Numeric(12, 2))

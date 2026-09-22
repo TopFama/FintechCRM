@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .models import QueueStatus, TemplateHeaderType, TemplateStatus
 from .variaveis_template import CAMPOS_CLIENTE, validar_sintaxe
@@ -452,6 +452,32 @@ class LinhaEfetividadeLoja(LinhaEfetividadeBase):
 
 class LinhaEfetividadeTotal(LinhaEfetividadeBase):
     pass
+
+
+class OrcamentoMesOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    ano: int
+    mes: int
+    valor_orcado: Decimal
+
+
+class OrcamentoMesIn(BaseModel):
+    mes: int = Field(ge=1, le=12)
+    valor_orcado: Decimal = Field(ge=0)
+
+
+class OrcamentoProgressaoDiaOut(BaseModel):
+    dia: int
+    gasto_acumulado_brl: Decimal
+
+
+class OrcamentoProgressaoOut(BaseModel):
+    ano: int
+    mes: int
+    valor_orcado: Decimal
+    valor_gasto_brl: Decimal | None
+    dias: list[OrcamentoProgressaoDiaOut]
 
 
 class LinhaEfetividadeClienteOut(BaseModel):

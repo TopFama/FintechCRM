@@ -346,6 +346,13 @@ export const api = {
     request<ConfigCobrancaOut>("/config/cobranca/faixas", { method: "PUT", body: JSON.stringify(faixas) }),
   salvarMatrizCobranca: (celulas: CelulaMatriz[]) =>
     request<ConfigCobrancaOut>("/config/cobranca/matriz", { method: "PUT", body: JSON.stringify(celulas) }),
+
+  // --- Orçamento (Tarefa 4) ---
+  getOrcamento: (ano: number) => request<OrcamentoMes[]>(`/config/cobranca/orcamento?ano=${ano}`),
+  salvarOrcamento: (ano: number, meses: { mes: number; valor_orcado: string }[]) =>
+    request<OrcamentoMes[]>(`/config/cobranca/orcamento?ano=${ano}`, { method: "PUT", body: JSON.stringify(meses) }),
+  getOrcamentoProgressao: (ano: number, mes: number) =>
+    request<OrcamentoProgressao>(`/dashboard/orcamento-progressao?ano=${ano}&mes=${mes}`),
 };
 
 async function downloadFile(path: string, nomePadrao: string): Promise<void> {
@@ -616,6 +623,25 @@ export interface ConfigCobrancaOut {
   faixas: FaixaAtrasoConfig[];
   matriz: CelulaMatriz[];
   parametros: { juros_mes_percentual: string; multa_percentual: string; dias_min_juros: number };
+}
+
+export interface OrcamentoMes {
+  ano: number;
+  mes: number;
+  valor_orcado: string;
+}
+
+export interface OrcamentoProgressaoDia {
+  dia: number;
+  gasto_acumulado_brl: string;
+}
+
+export interface OrcamentoProgressao {
+  ano: number;
+  mes: number;
+  valor_orcado: string;
+  valor_gasto_brl: string | null;
+  dias: OrcamentoProgressaoDia[];
 }
 
 export interface ClienteCobranca {

@@ -4,6 +4,7 @@ import { api, CampoCliente, ChatwootTestResult, pareceAdmin, StatusChatwoot, Sta
 import BlacklistCard from "../components/config/BlacklistCard";
 import DisparoCard from "../components/config/DisparoCard";
 import NumerosCard from "../components/config/NumerosCard";
+import OrcamentoCard from "../components/config/OrcamentoCard";
 import RegrasCobrancaCard from "../components/config/RegrasCobrancaCard";
 import TemplatesCard from "../components/config/TemplatesCard";
 import TokensMetaCard from "../components/config/TokensMetaCard";
@@ -255,7 +256,14 @@ export default function Configuracoes() {
 
       {aba === "templates" && <TemplatesCard />}
       {aba === "horario" && <DisparoCard />}
-      {aba === "indicadores" && <RegrasCobrancaCard />}
+      {aba === "indicadores" && (
+        <>
+          <RegrasCobrancaCard />
+          <div style={{ marginTop: 16 }}>
+            <OrcamentoCard />
+          </div>
+        </>
+      )}
       {aba === "blacklist" && <BlacklistCard />}
       {aba === "usuarios" && admin && <UsuariosCard />}
 

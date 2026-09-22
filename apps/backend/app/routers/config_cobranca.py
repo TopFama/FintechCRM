@@ -280,3 +280,46 @@ def put_config_disparo(
     db.commit()
     db.refresh(config)
     return config
+
+
+@router.get("/orcamento", response_model=list[schemas.OrcamentoMesOut])
+def get_orcamento(ano: int, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+    """Orçamento dos 12 meses do ano — meses sem linha cadastrada voltam com
+    valor_orcado = 0, pra tela sempre mostrar as 12 linhas."""
+
+    if not (2000 <= ano <= 2100):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "ano inválido")
+    existentes = {
+        o.mes: o for o in db.query(models.OrcamentoMensal).filter(models.OrcamentoMensal.ano == ano).all()
+    }
+    return [
+        schemas.OrcamentoMesOut(ano=ano, mes=mes, valor_orcado=existentes[mes].valor_orcado)
+        if mes in existentes
+        else schemas.OrcamentoMesOut(ano=ano, mes=mes, valor_orcado=Decimal("0.00"))
+        for mes in range(1, 13)
+    ]
+
+
+@router.put("/orcamento", response_model=list[schemas.OrcamentoMesOut])
+def put_orcamento(
+    ano: int,
+    body: list[schemas.OrcamentoMesIn],
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    if not (2000 <= ano <= 2100):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "ano inválido")
+    meses_informados = [m.mes for m in body]
+    if len(meses_informados) != len(set(meses_informados)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "mês repetido no orçamento")
+
+    existentes = {
+        o.mes: o for o in db.query(models.OrcamentoMensal).filter(models.OrcamentoMensal.ano == ano).all()
+    }
+    for item in body:
+        if item.mes in existentes:
+            existentes[item.mes].valor_orcado = item.valor_orcado
+        else:
+            db.add(models.OrcamentoMensal(ano=ano, mes=item.mes, valor_orcado=item.valor_orcado))
+    db.commit()
+    return get_orcamento(ano, db=db, _user=_user)

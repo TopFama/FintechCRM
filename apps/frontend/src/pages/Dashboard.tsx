@@ -3,6 +3,7 @@ import { api, DashboardSummary } from "../api";
 import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
+import OrcamentoProgressaoCard from "../components/dashboard/OrcamentoProgressaoCard";
 import SortableTh from "../components/SortableTh";
 import { formatDataHora } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
@@ -37,6 +38,7 @@ export default function Dashboard() {
       {summary && <ResumoFila summary={summary} nomesFaixa={opcoes.regras?.faixas} />}
 
       <MatrizCobrancaCard opcoes={opcoes} />
+      <OrcamentoProgressaoCard />
       <EfetividadeCard opcoes={opcoes} />
       <LeadsCard opcoes={opcoes} />
     </div>
