@@ -331,7 +331,7 @@ export default function DisparoCard() {
                               <option value="nao">Não</option>
                             </select>
                           </td>
-                          <td style={{ display: "flex", gap: 6 }}>
+                          <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                             <button type="button" className="small" onClick={() => salvar(f.id, e.id)} disabled={salvando}>
                               {salvando ? "Salvando..." : "Salvar"}
                             </button>

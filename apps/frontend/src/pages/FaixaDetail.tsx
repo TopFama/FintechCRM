@@ -398,7 +398,7 @@ export default function FaixaDetail() {
                         {e.dispatch_config?.active ? "agendado" : "pausado"}
                       </span>
                     </td>
-                    <td style={{ display: "flex", gap: 8 }}>
+                    <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button type="button" className="secondary small" onClick={() => abrirEditarEnvio(e)}>
                         Editar
                       </button>

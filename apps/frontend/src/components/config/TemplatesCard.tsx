@@ -322,7 +322,7 @@ export default function TemplatesCard() {
                           <span className="text-faint">—</span>
                         )}
                       </td>
-                      <td style={{ display: "flex", gap: 8 }}>
+                      <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button className="secondary small" onClick={() => handleRefreshStatus(t.id)}>
                           Atualizar status
                         </button>

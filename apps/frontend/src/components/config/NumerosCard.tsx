@@ -189,7 +189,7 @@ export default function NumerosCard({ versao }: { versao: number }) {
                     <td>
                       <span className={`status-pill ${n.active ? "on" : "off"}`}>{n.active ? "Sim" : "Não"}</span>
                     </td>
-                    <td style={{ display: "flex", gap: 6 }}>
+                    <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <button type="button" className="danger small" onClick={() => excluir(n)}>
                         Excluir
                       </button>
