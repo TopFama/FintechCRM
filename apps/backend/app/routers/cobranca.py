@@ -9,6 +9,7 @@ from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
+from ..fila_automatica import clientes_bloqueados_hoje
 from ..timezone import hoje_br
 from ..utils.spc import parse_spc
 from .reports import _XLSX_MEDIA_TYPE, _build_xlsx, _formula_safe
@@ -117,6 +118,14 @@ def _ordenar_clientes(clientes: list[dict], sort_by: str, sort_dir: str, db: Ses
     return ordenados
 
 
+def sem_cobrados_hoje(db: Session, clientes: list[dict]) -> list[dict]:
+    """Tira da lista quem já foi cobrado hoje (GMT-3, qualquer faixa) ou já
+    está na fila esperando envio — não deve nem aparecer para nova cobrança."""
+
+    bloqueados = clientes_bloqueados_hoje(db)
+    return [c for c in clientes if c["codigo"] not in bloqueados]
+
+
 @router.get("/clientes", response_model=schemas.ClientesCobrancaAsyncOut)
 def listar_clientes(
     filtros: dict = Depends(filtros_base),
@@ -131,7 +140,7 @@ def listar_clientes(
     if job["status"] != "ready":
         return schemas.ClientesCobrancaAsyncOut(status="processing")
 
-    clientes = job["data"]
+    clientes = sem_cobrados_hoje(db, job["data"])
     if sort_by:
         clientes = _ordenar_clientes(clientes, sort_by, sort_dir, db)
     pagina = clientes[offset : offset + limit]
@@ -174,7 +183,7 @@ def exportar_clientes(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "A base de cobrança ainda está sendo calculada. Tente exportar de novo em instantes."
         )
-    clientes = job["data"]
+    clientes = sem_cobrados_hoje(db, job["data"])
     if sort_by:
         clientes = _ordenar_clientes(clientes, sort_by, sort_dir, db)
 

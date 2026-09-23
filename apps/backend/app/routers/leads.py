@@ -16,7 +16,7 @@ from ..regras_db import carregar_regras
 from ..timezone import BUSINESS_TZ, hoje_br
 from ..utils.leads_xlsx import gerar_xlsx_leads
 from .blacklist import codigos_bloqueados
-from .cobranca import buscar_base_ou_erro, filtros_base
+from .cobranca import buscar_base_ou_erro, filtros_base, sem_cobrados_hoje
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -38,7 +38,7 @@ def gerar_leads(
     job = buscar_base_ou_erro(db, filtros)
     if job["status"] != "ready":
         return schemas.LeadsGerarAsyncOut(status="processing")
-    clientes = job["data"]
+    clientes = sem_cobrados_hoje(db, job["data"])
 
     try:
         criados, ja_existiam, sem_celular = gerar_leads_de_clientes(db, clientes, created_by=user.id)
