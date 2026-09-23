@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, DispatchReportItem, Faixa, InvalidPhoneRecord } from "../api";
+import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { formatDataHora } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
@@ -15,7 +16,11 @@ export default function Relatorios() {
   const [faixaId, setFaixaId] = useState<string>("");
   const [nomesFaixa, setNomesFaixa] = useState<string[]>([]);
   const [invalidPhones, setInvalidPhones] = useState<InvalidPhoneRecord[]>([]);
+  const [invalidTotal, setInvalidTotal] = useState(0);
   const [dispatchReport, setDispatchReport] = useState<DispatchReportItem[]>([]);
+  const [dispatchTotal, setDispatchTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [limit, setLimit] = useState(LIMIT_OPCOES_PADRAO[1]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -45,16 +50,39 @@ export default function Relatorios() {
     enviosSort.sortDir
   );
 
-  function load() {
+  function load(novoOffset: number = offset, novoLimit: number = limit) {
     setLoading(true);
     setError(null);
-    const fid = faixaId || undefined;
+    const params = { faixa_id: faixaId || undefined, limit: novoLimit, offset: novoOffset };
     const request =
-      tab === "invalidos" ? api.listInvalidPhones(fid).then(setInvalidPhones) : api.listDispatchReport(fid).then(setDispatchReport);
+      tab === "invalidos"
+        ? api.listInvalidPhones(params).then((r) => {
+            setInvalidPhones(r.itens);
+            setInvalidTotal(r.total);
+          })
+        : api.listDispatchReport(params).then((r) => {
+            setDispatchReport(r.itens);
+            setDispatchTotal(r.total);
+          });
     request.catch((e) => setError(e.message)).finally(() => setLoading(false));
   }
 
-  useEffect(load, [tab, faixaId]);
+  useEffect(() => {
+    setOffset(0);
+    load(0, limit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, faixaId]);
+
+  function mudarPagina(novoOffset: number) {
+    setOffset(novoOffset);
+    load(novoOffset, limit);
+  }
+
+  function mudarLimite(novoLimit: number) {
+    setLimit(novoLimit);
+    setOffset(0);
+    load(0, novoLimit);
+  }
 
   async function handleDownload() {
     setDownloading(true);
@@ -205,6 +233,15 @@ export default function Relatorios() {
               </tbody>
             </table>
           </div>
+        )}
+        {(tab === "invalidos" ? invalidTotal : dispatchTotal) > 0 && (
+          <Paginacao
+            total={tab === "invalidos" ? invalidTotal : dispatchTotal}
+            limit={limit}
+            offset={offset}
+            onChange={mudarPagina}
+            onLimitChange={mudarLimite}
+          />
         )}
       </div>
     </div>

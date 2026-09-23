@@ -250,13 +250,18 @@ def _invalid_phones_query(db: Session, faixa_id: str | None):
     return query
 
 
-@api.get("/telefones-invalidos", response_model=list[schemas.InvalidPhoneOut])
+@api.get("/telefones-invalidos", response_model=schemas.InvalidPhonePage)
 def list_invalid_phones(
     faixa_id: str | None = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    return _invalid_phones_query(db, faixa_id).limit(1000).all()
+    query = _invalid_phones_query(db, faixa_id)
+    total = query.count()
+    itens = query.offset(offset).limit(limit).all()
+    return schemas.InvalidPhonePage(total=total, itens=itens)
 
 
 @api.get("/telefones-invalidos/export")
@@ -289,19 +294,19 @@ def export_invalid_phones(
     )
 
 
-def _dispatch_report_rows(db: Session, faixa_id: str | None) -> list[models.QueueItem]:
+def _dispatch_report_query(db: Session, faixa_id: str | None):
     query = (
         db.query(models.QueueItem)
         .options(
             selectinload(models.QueueItem.faixa),
             selectinload(models.QueueItem.whatsapp_number),
         )
-        .filter(models.QueueItem.status == models.QueueStatus.sent)
+        .filter(models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.sent_at.isnot(None))
         .order_by(models.QueueItem.sent_at.desc())
     )
     if faixa_id:
         query = query.filter(models.QueueItem.faixa_id == faixa_id)
-    return query.limit(1000).all()
+    return query
 
 
 def _to_report_item(item: models.QueueItem) -> schemas.DispatchReportItemOut:
@@ -315,13 +320,18 @@ def _to_report_item(item: models.QueueItem) -> schemas.DispatchReportItemOut:
     )
 
 
-@api.get("/envios", response_model=list[schemas.DispatchReportItemOut])
+@api.get("/envios", response_model=schemas.DispatchReportPage)
 def list_dispatch_report(
     faixa_id: str | None = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    return [_to_report_item(item) for item in _dispatch_report_rows(db, faixa_id) if item.sent_at]
+    query = _dispatch_report_query(db, faixa_id)
+    total = query.count()
+    itens = [_to_report_item(item) for item in query.offset(offset).limit(limit).all()]
+    return schemas.DispatchReportPage(total=total, itens=itens)
 
 
 @api.get("/envios/export")
@@ -330,7 +340,7 @@ def export_dispatch_report(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    rows_data = _dispatch_report_rows(db, faixa_id)
+    rows_data = _dispatch_report_query(db, faixa_id).all()
     headers = ["Código do cliente", "Faixa de atraso", "Nome", "Valor cobrado", "Telefone que cobrou", "Data/hora"]
     rows = [
         [

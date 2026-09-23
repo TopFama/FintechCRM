@@ -255,10 +255,10 @@ export const api = {
   dashboardSummary: (periodo: { de?: string; ate?: string } = {}) =>
     request<DashboardSummary>(`/dashboard/summary?${montarQuery(periodo)}`),
 
-  listInvalidPhones: (faixaId?: string) =>
-    request<InvalidPhoneRecord[]>(`/relatorios/telefones-invalidos${faixaId ? `?faixa_id=${faixaId}` : ""}`),
-  listDispatchReport: (faixaId?: string) =>
-    request<DispatchReportItem[]>(`/relatorios/envios${faixaId ? `?faixa_id=${faixaId}` : ""}`),
+  listInvalidPhones: (params: { faixa_id?: string; limit: number; offset: number }) =>
+    request<{ total: number; itens: InvalidPhoneRecord[] }>(`/relatorios/telefones-invalidos?${montarQuery(params)}`),
+  listDispatchReport: (params: { faixa_id?: string; limit: number; offset: number }) =>
+    request<{ total: number; itens: DispatchReportItem[] }>(`/relatorios/envios?${montarQuery(params)}`),
 
   // Exportações em Excel exigem o mesmo Bearer token das outras rotas, então
   // baixamos como blob autenticado em vez de um <a href> simples.

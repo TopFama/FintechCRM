@@ -414,6 +414,11 @@ class InvalidPhoneOut(BaseModel):
     created_at: datetime
 
 
+class InvalidPhonePage(BaseModel):
+    total: int
+    itens: list[InvalidPhoneOut]
+
+
 class DispatchReportItemOut(BaseModel):
     codigo_cliente: str
     faixa: str
@@ -421,6 +426,11 @@ class DispatchReportItemOut(BaseModel):
     valor: str | None
     telefone: str
     enviado_em: datetime
+
+
+class DispatchReportPage(BaseModel):
+    total: int
+    itens: list[DispatchReportItemOut]
 
 
 class DashboardSummary(BaseModel):
