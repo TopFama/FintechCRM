@@ -121,6 +121,10 @@ a {
   /* logo tem fundo transparente e texto branco/amarelo — leve sombra ajuda
      a separar do azul-marinho da sidebar sem precisar de uma versão à parte */
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
+  /* a arte tem uma faixa curva com respiro à esquerda antes do "T" de
+     TopFama — sem esse ajuste o texto do logo fica visualmente deslocado
+     à direita da tagline abaixo, mesmo com as duas caixas alinhadas */
+  margin-left: -9px;
 }
 
 .brand-tagline {
@@ -933,6 +937,7 @@ label {
   width: 220px;
   filter: none;
   margin-bottom: 6px;
+  margin-left: 0;
 }
 
 .login-brand h2 {
