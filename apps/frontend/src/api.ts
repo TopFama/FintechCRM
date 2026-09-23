@@ -102,6 +102,11 @@ async function pollAsync<T>(chamar: () => Promise<{ status: "ready" | "processin
 }
 
 // Gera query string com arrays como parâmetros repetidos (?a=1&a=2) e ignora vazios.
+export interface OrdenacaoParams {
+  sort_by?: string;
+  sort_dir?: "asc" | "desc";
+}
+
 export function montarQuery(params: object): string {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -249,15 +254,15 @@ export const api = {
     form.append("mapping", JSON.stringify(mapping));
     return request<UploadResult>(`/faixas/${faixaId}/uploads`, { method: "POST", body: form });
   },
-  listQueue: (faixaId: string, params: { limit: number; offset: number }) =>
+  listQueue: (faixaId: string, params: { limit: number; offset: number } & OrdenacaoParams) =>
     request<{ total: number; itens: QueueItem[] }>(`/faixas/${faixaId}/queue?${montarQuery(params)}`),
 
   dashboardSummary: (periodo: { de?: string; ate?: string } = {}) =>
     request<DashboardSummary>(`/dashboard/summary?${montarQuery(periodo)}`),
 
-  listInvalidPhones: (params: { faixa_id?: string; limit: number; offset: number }) =>
+  listInvalidPhones: (params: { faixa_id?: string; limit: number; offset: number } & OrdenacaoParams) =>
     request<{ total: number; itens: InvalidPhoneRecord[] }>(`/relatorios/telefones-invalidos?${montarQuery(params)}`),
-  listDispatchReport: (params: { faixa_id?: string; limit: number; offset: number }) =>
+  listDispatchReport: (params: { faixa_id?: string; limit: number; offset: number } & OrdenacaoParams) =>
     request<{ total: number; itens: DispatchReportItem[] }>(`/relatorios/envios?${montarQuery(params)}`),
 
   // Exportações em Excel exigem o mesmo Bearer token das outras rotas, então
@@ -273,7 +278,7 @@ export const api = {
   // vez com um filtro novo pode "processar" por alguns segundos/minutos;
   // pollAsync tenta de novo sozinho até vir pronto.
   regrasCobranca: () => request<RegrasCobranca>("/cobranca/regras"),
-  listarClientesCobranca: (params: FiltrosCobranca & { limit: number; offset: number }) =>
+  listarClientesCobranca: (params: FiltrosCobranca & { limit: number; offset: number } & OrdenacaoParams) =>
     pollAsync<{ total: number; itens: ClienteCobranca[] }>(() =>
       request(`/cobranca/clientes?${montarQuery(params)}`)
     ),
@@ -285,7 +290,7 @@ export const api = {
     pollAsync<{ criados: number; ja_existiam: number; sem_celular: number }>(() =>
       request(`/leads/gerar?${montarQuery(params)}`, { method: "POST" })
     ),
-  listarLeads: (params: FiltrosLeads & { limit: number; offset: number }) =>
+  listarLeads: (params: FiltrosLeads & { limit: number; offset: number } & OrdenacaoParams) =>
     request<{ total: number; itens: Lead[] }>(`/leads?${montarQuery(params)}`),
   contarLeads: async (status: "novo" | "cobrado", periodo: Partial<Pick<FiltrosLeads, "criado_de" | "criado_ate" | "enviado_de" | "enviado_ate">> = {}) =>
     (await request<{ total: number }>(`/leads?${montarQuery({ status, limit: 1, ...periodo })}`)).total,

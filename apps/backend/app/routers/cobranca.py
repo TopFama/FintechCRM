@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -83,11 +84,44 @@ def buscar_base_ou_erro(db: Session, filtros: dict) -> dict:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
 
+ClienteSortColumn = Literal[
+    "codigo",
+    "cpfcnpj",
+    "nome",
+    "vencimento_mais_antigo",
+    "valor_cobrar",
+    "qtd_parcelas_cobranca",
+    "dias_atraso",
+    "faixa",
+    "cluster",
+]
+
+
+def _ordenar_clientes(clientes: list[dict], sort_by: str, sort_dir: str, db: Session) -> list[dict]:
+    """Ordena uma cópia da lista já carregada em memória (vinda do cache de
+    `cobranca_base.buscar_base`) — não refaz a consulta ao SETA. `faixa`
+    ordena pela progressão do atraso, mesmo critério da tela."""
+
+    if sort_by == "faixa":
+        nomes_faixa = carregar_regras(db).nomes_faixa
+        ordem_faixa = {nome: i for i, nome in enumerate(nomes_faixa)}
+        valor_fn = lambda c: ordem_faixa.get(c["faixa"], len(ordem_faixa))
+    else:
+        valor_fn = lambda c: c.get(sort_by)
+
+    ordenados = sorted(clientes, key=lambda c: (valor_fn(c) is None, valor_fn(c) if valor_fn(c) is not None else 0))
+    if sort_dir == "desc":
+        ordenados.reverse()
+    return ordenados
+
+
 @router.get("/clientes", response_model=schemas.ClientesCobrancaAsyncOut)
 def listar_clientes(
     filtros: dict = Depends(filtros_base),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    sort_by: ClienteSortColumn | None = Query(None),
+    sort_dir: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
@@ -96,6 +130,8 @@ def listar_clientes(
         return schemas.ClientesCobrancaAsyncOut(status="processing")
 
     clientes = job["data"]
+    if sort_by:
+        clientes = _ordenar_clientes(clientes, sort_by, sort_dir, db)
     pagina = clientes[offset : offset + limit]
 
     # o texto do SPC é pesado: só se busca (para a data da consulta) de quem aparece na página

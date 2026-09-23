@@ -1,6 +1,7 @@
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 from decimal import Decimal, InvalidOperation
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import and_, or_
@@ -399,15 +400,36 @@ async def upload_planilha(
     )
 
 
+QueueSortColumn = Literal["codigo_cliente", "nome", "cpf", "celular", "valor", "status", "error_message"]
+
+_QUEUE_SORT_COLUNAS = {
+    "codigo_cliente": models.QueueItem.codigo_cliente,
+    "nome": models.QueueItem.nome,
+    "cpf": models.QueueItem.cpf,
+    "celular": models.QueueItem.celular,
+    "valor": models.QueueItem.valor,
+    "status": models.QueueItem.status,
+    "error_message": models.QueueItem.error_message,
+}
+
+
 @router.get("/{faixa_id}/queue", response_model=schemas.QueueItemPage)
 def list_queue(
     faixa_id: str,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    sort_by: QueueSortColumn | None = Query(None),
+    sort_dir: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
     query = db.query(models.QueueItem).filter(models.QueueItem.faixa_id == faixa_id)
     total = query.count()
-    itens = query.order_by(models.QueueItem.created_at.desc()).offset(offset).limit(limit).all()
+    coluna = _QUEUE_SORT_COLUNAS.get(sort_by) if sort_by else None
+    if coluna is not None:
+        # id como desempate: mantém a ordem estável entre páginas
+        query = query.order_by(coluna.desc() if sort_dir == "desc" else coluna.asc(), models.QueueItem.id)
+    else:
+        query = query.order_by(models.QueueItem.created_at.desc())
+    itens = query.offset(offset).limit(limit).all()
     return schemas.QueueItemPage(total=total, itens=itens)

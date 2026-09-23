@@ -4,18 +4,24 @@ export type SortDirection = "asc" | "desc";
 
 /** Estado de ordenação de uma tabela: qual coluna e em que direção. Cada
  * página decide o valor de cada coluna (string, número, data já convertida
- * etc.) — este hook só guarda qual coluna está ativa. */
-export function useSort<K extends string>(chaveInicial: K | null = null) {
+ * etc.) — este hook só guarda qual coluna está ativa.
+ *
+ * `aoAlterar`, se passado, é chamado com a nova coluna/direção sempre que o
+ * usuário clica num cabeçalho — usado pelas tabelas paginadas no backend,
+ * que precisam refazer a consulta com a ordenação nova (a lista local tem só
+ * a página atual, então ordenar só ela do lado do cliente estaria errado). */
+export function useSort<K extends string>(
+  chaveInicial: K | null = null,
+  aoAlterar?: (chave: K, dir: SortDirection) => void
+) {
   const [sortKey, setSortKey] = useState<K | null>(chaveInicial);
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
 
   function toggleSort(chave: K) {
-    if (sortKey === chave) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(chave);
-      setSortDir("asc");
-    }
+    const novaDir: SortDirection = sortKey === chave && sortDir === "asc" ? "desc" : "asc";
+    setSortKey(chave);
+    setSortDir(novaDir);
+    aoAlterar?.(chave, novaDir);
   }
 
   return { sortKey, sortDir, toggleSort };

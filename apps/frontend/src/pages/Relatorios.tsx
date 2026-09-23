@@ -4,7 +4,7 @@ import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { formatDataHora } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
-import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
+import { SortDirection, useSort } from "../sort";
 
 type Tab = "invalidos" | "envios";
 type ColunaInvalido = "codigo_cliente" | "celular_original" | "celular_normalizado" | "motivo" | "created_at";
@@ -14,7 +14,6 @@ export default function Relatorios() {
   const [tab, setTab] = useState<Tab>("invalidos");
   const [faixas, setFaixas] = useState<Faixa[]>([]);
   const [faixaId, setFaixaId] = useState<string>("");
-  const [nomesFaixa, setNomesFaixa] = useState<string[]>([]);
   const [invalidPhones, setInvalidPhones] = useState<InvalidPhoneRecord[]>([]);
   const [invalidTotal, setInvalidTotal] = useState(0);
   const [dispatchReport, setDispatchReport] = useState<DispatchReportItem[]>([]);
@@ -24,36 +23,34 @@ export default function Relatorios() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
-  const invalidosSort = useSort<ColunaInvalido>();
-  const enviosSort = useSort<ColunaEnvio>();
-  const ordemFaixa = ordemFaixaFn(nomesFaixa);
+  const invalidosSort = useSort<ColunaInvalido>(null, (chave, dir) => {
+    setOffset(0);
+    load(0, limit, chave, dir);
+  });
+  const enviosSort = useSort<ColunaEnvio>(null, (chave, dir) => {
+    setOffset(0);
+    load(0, limit, chave, dir);
+  });
 
   useEffect(() => {
     api.listFaixas().then(setFaixas).catch(() => undefined);
-    api.regrasCobranca().then((r) => setNomesFaixa(r.faixas)).catch(() => undefined);
   }, []);
 
-  const invalidPhonesOrdenado = ordenarPor(
-    invalidPhones,
-    invalidosSort.sortKey ? (r: InvalidPhoneRecord) => r[invalidosSort.sortKey as ColunaInvalido] : null,
-    invalidosSort.sortDir
-  );
-  const dispatchReportOrdenado = ordenarPor(
-    dispatchReport,
-    enviosSort.sortKey === "faixa"
-      ? (r: DispatchReportItem) => ordemFaixa(r.faixa)
-      : enviosSort.sortKey === "valor"
-      ? (r: DispatchReportItem) => (r.valor != null ? Number(r.valor) : null)
-      : enviosSort.sortKey
-      ? (r: DispatchReportItem) => r[enviosSort.sortKey as ColunaEnvio]
-      : null,
-    enviosSort.sortDir
-  );
-
-  function load(novoOffset: number = offset, novoLimit: number = limit) {
+  function load(
+    novoOffset: number = offset,
+    novoLimit: number = limit,
+    sortBy: string | null = tab === "invalidos" ? invalidosSort.sortKey : enviosSort.sortKey,
+    sortDir: SortDirection = tab === "invalidos" ? invalidosSort.sortDir : enviosSort.sortDir
+  ) {
     setLoading(true);
     setError(null);
-    const params = { faixa_id: faixaId || undefined, limit: novoLimit, offset: novoOffset };
+    const params = {
+      faixa_id: faixaId || undefined,
+      limit: novoLimit,
+      offset: novoOffset,
+      sort_by: sortBy ?? undefined,
+      sort_dir: sortDir,
+    };
     const request =
       tab === "invalidos"
         ? api.listInvalidPhones(params).then((r) => {
@@ -174,7 +171,7 @@ export default function Relatorios() {
                   </tr>
                 </thead>
                 <tbody>
-                  {invalidPhonesOrdenado.map((r) => (
+                  {invalidPhones.map((r) => (
                     <tr key={r.id}>
                       <td className="cell-strong">{r.codigo_cliente}</td>
                       <td>{r.celular_original}</td>
@@ -220,7 +217,7 @@ export default function Relatorios() {
                 </tr>
               </thead>
               <tbody>
-                {dispatchReportOrdenado.map((r, i) => (
+                {dispatchReport.map((r, i) => (
                   <tr key={i}>
                     <td className="cell-strong">{r.codigo_cliente}</td>
                     <td>{r.faixa}</td>

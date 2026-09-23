@@ -13,7 +13,7 @@ import MultiSelect from "../components/MultiSelect";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { IconAlert, IconList } from "../icons";
-import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
+import { SortDirection, useSort } from "../sort";
 
 type ColunaLead =
   | "codigo_cliente"
@@ -57,37 +57,10 @@ export default function Leads() {
   const [offset, setOffset] = useState(0);
   const [limit, setLimit] = useState(LIMIT_OPCOES_PADRAO[1]);
   const [carregando, setCarregando] = useState(false);
-  const leadsSort = useSort<ColunaLead>();
-  const ordemFaixa = ordemFaixaFn(regras?.faixas);
-  function valorOrdenacaoLead(l: Lead): string | number | null {
-    switch (leadsSort.sortKey) {
-      case "codigo_cliente":
-        return l.codigo_cliente;
-      case "cpf":
-        return l.cpf;
-      case "nome":
-        return l.nome;
-      case "vencimento_mais_antigo":
-        return l.vencimento_mais_antigo;
-      case "valor_cobrar":
-        return Number(l.valor_cobrar);
-      case "qtd_parcelas":
-        return l.qtd_parcelas;
-      case "dias_atraso":
-        return l.dias_atraso;
-      case "faixa":
-        return ordemFaixa(l.faixa);
-      case "cluster":
-        return l.cluster;
-      case "status":
-        return l.status;
-      case "cobrado_em":
-        return l.cobrado_em;
-      default:
-        return null;
-    }
-  }
-  const leadsOrdenados = ordenarPor(leads, leadsSort.sortKey ? valorOrdenacaoLead : null, leadsSort.sortDir);
+  const leadsSort = useSort<ColunaLead>(null, (chave, dir) => {
+    setOffset(0);
+    buscar(filtrosAplicados, 0, limit, chave, dir);
+  });
   const [erro, setErro] = useState<string | null>(null);
 
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
@@ -110,13 +83,21 @@ export default function Leads() {
     buscar(FILTROS_PADRAO, 0);
   }, []);
 
-  function buscar(filtros: FiltrosLeads, novoOffset: number, novoLimit: number = limit) {
+  function buscar(
+    filtros: FiltrosLeads,
+    novoOffset: number,
+    novoLimit: number = limit,
+    sortBy: ColunaLead | null = leadsSort.sortKey,
+    sortDir: SortDirection = leadsSort.sortDir
+  ) {
     setErro(null);
     setCarregando(true);
-    const params: FiltrosLeads & { limit: number; offset: number } = {
+    const params: FiltrosLeads & { limit: number; offset: number; sort_by?: string; sort_dir?: SortDirection } = {
       ...filtros,
       limit: novoLimit,
       offset: novoOffset,
+      sort_by: sortBy ?? undefined,
+      sort_dir: sortDir,
     };
     const seq = ++reqRef.current;
     api
@@ -517,7 +498,7 @@ export default function Leads() {
                   </tr>
                 </thead>
                 <tbody>
-                  {leadsOrdenados.map((l) => (
+                  {leads.map((l) => (
                     <tr key={l.id}>
                       <td>
                         <input

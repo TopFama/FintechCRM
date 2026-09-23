@@ -27,7 +27,7 @@ import {
 } from "../icons";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
-import { ordenarPor, useSort } from "../sort";
+import { SortDirection, useSort } from "../sort";
 
 type ColunaFila = "codigo_cliente" | "nome" | "cpf" | "celular" | "valor" | "status" | "error_message";
 type ColunaLeadFaixa = "nome" | "celular" | "cluster" | "dias_atraso" | "valor_cobrar" | "status";
@@ -46,16 +46,10 @@ export default function FaixaDetail() {
   const { id } = useParams<{ id: string }>();
   const [faixa, setFaixa] = useState<Faixa | null>(null);
   const [queue, setQueue] = useState<QueueItem[]>([]);
-  const filaSort = useSort<ColunaFila>();
-  const filaOrdenada = ordenarPor(
-    queue,
-    filaSort.sortKey === "valor"
-      ? (q: QueueItem) => (q.valor != null ? Number(q.valor) : null)
-      : filaSort.sortKey
-      ? (q: QueueItem) => q[filaSort.sortKey as ColunaFila]
-      : null,
-    filaSort.sortDir
-  );
+  const filaSort = useSort<ColunaFila>(null, (chave, dir) => {
+    setQueueOffset(0);
+    loadQueue(0, queueLimit, chave, dir);
+  });
   const [queueTotal, setQueueTotal] = useState(0);
   const [queueOffset, setQueueOffset] = useState(0);
   const [queueLimit, setQueueLimit] = useState(LIMIT_OPCOES_PADRAO[1]);
@@ -83,16 +77,10 @@ export default function FaixaDetail() {
   // Leads gerados (Cobrança → Leads) para esta mesma faixa de atraso, só
   // pra dar visibilidade de quem existe antes de decidir subir a planilha.
   const [leads, setLeads] = useState<Lead[]>([]);
-  const leadsFaixaSort = useSort<ColunaLeadFaixa>();
-  const leadsOrdenados = ordenarPor(
-    leads,
-    leadsFaixaSort.sortKey === "valor_cobrar"
-      ? (l: Lead) => Number(l.valor_cobrar)
-      : leadsFaixaSort.sortKey
-      ? (l: Lead) => l[leadsFaixaSort.sortKey as ColunaLeadFaixa]
-      : null,
-    leadsFaixaSort.sortDir
-  );
+  const leadsFaixaSort = useSort<ColunaLeadFaixa>(null, (chave, dir) => {
+    setLeadsOffset(0);
+    if (faixa) loadLeads(faixa.name, 0, leadsLimit, chave, dir);
+  });
   const [leadsTotal, setLeadsTotal] = useState(0);
   const [leadsOffset, setLeadsOffset] = useState(0);
   const [leadsLimit, setLeadsLimit] = useState(LIMIT_OPCOES_PADRAO[1]);
@@ -106,10 +94,15 @@ export default function FaixaDetail() {
       .catch((e) => setError(e.message));
   }
 
-  function loadQueue(novoOffset: number = queueOffset, novoLimit: number = queueLimit) {
+  function loadQueue(
+    novoOffset: number = queueOffset,
+    novoLimit: number = queueLimit,
+    sortBy: ColunaFila | null = filaSort.sortKey,
+    sortDir: SortDirection = filaSort.sortDir
+  ) {
     if (!id) return;
     api
-      .listQueue(id, { limit: novoLimit, offset: novoOffset })
+      .listQueue(id, { limit: novoLimit, offset: novoOffset, sort_by: sortBy ?? undefined, sort_dir: sortDir })
       .then((r) => {
         setQueue(r.itens);
         setQueueTotal(r.total);
@@ -129,10 +122,16 @@ export default function FaixaDetail() {
     loadQueue(0, novoLimit);
   }
 
-  function loadLeads(nomeFaixa: string, novoOffset: number = leadsOffset, novoLimit: number = leadsLimit) {
+  function loadLeads(
+    nomeFaixa: string,
+    novoOffset: number = leadsOffset,
+    novoLimit: number = leadsLimit,
+    sortBy: ColunaLeadFaixa | null = leadsFaixaSort.sortKey,
+    sortDir: SortDirection = leadsFaixaSort.sortDir
+  ) {
     setLeadsLoading(true);
     api
-      .listarLeads({ faixa: [nomeFaixa], limit: novoLimit, offset: novoOffset })
+      .listarLeads({ faixa: [nomeFaixa], limit: novoLimit, offset: novoOffset, sort_by: sortBy ?? undefined, sort_dir: sortDir })
       .then((r) => {
         setLeads(r.itens);
         setLeadsTotal(r.total);
@@ -590,7 +589,7 @@ export default function FaixaDetail() {
                 </tr>
               </thead>
               <tbody>
-                {filaOrdenada.map((q) => (
+                {queue.map((q) => (
                   <tr key={q.id}>
                     <td className="cell-strong">{q.codigo_cliente}</td>
                     <td>{q.nome || "—"}</td>
@@ -659,7 +658,7 @@ export default function FaixaDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {leadsOrdenados.map((l) => (
+                  {leads.map((l) => (
                     <tr key={l.id}>
                       <td className="cell-strong">{l.nome || "—"}</td>
                       <td>{l.celular || "—"}</td>

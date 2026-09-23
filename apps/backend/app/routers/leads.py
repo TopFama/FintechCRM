@@ -1,5 +1,6 @@
 from datetime import date, datetime, time, timedelta
 import re
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -214,23 +215,67 @@ def exportar_leads_xlsx(
     )
 
 
+LeadSortColumn = Literal[
+    "codigo_cliente",
+    "cpf",
+    "nome",
+    "celular",
+    "vencimento_mais_antigo",
+    "valor_cobrar",
+    "qtd_parcelas",
+    "dias_atraso",
+    "faixa",
+    "cluster",
+    "status",
+    "cobrado_em",
+]
+
+_LEAD_SORT_COLUNAS = {
+    "codigo_cliente": models.Lead.codigo_cliente,
+    "cpf": models.Lead.cpf,
+    "nome": models.Lead.nome,
+    "celular": models.Lead.celular,
+    "vencimento_mais_antigo": models.Lead.vencimento_mais_antigo,
+    "valor_cobrar": models.Lead.valor_cobrar,
+    "qtd_parcelas": models.Lead.qtd_parcelas,
+    "dias_atraso": models.Lead.dias_atraso,
+    "cluster": models.Lead.cluster,
+    "status": models.Lead.status,
+    "cobrado_em": models.Lead.cobrado_em,
+}
+
+
+def _lead_sort_coluna(db: Session, sort_by: str):
+    """Coluna (ou expressão) usada em ORDER BY. `faixa` ordena pela progressão
+    do atraso (mesma ordem de `RegrasCobranca.faixas`), não alfabeticamente."""
+    if sort_by == "faixa":
+        nomes_faixa = carregar_regras(db).nomes_faixa
+        if not nomes_faixa:
+            return models.Lead.faixa
+        return case({nome: i for i, nome in enumerate(nomes_faixa)}, value=models.Lead.faixa, else_=len(nomes_faixa))
+    return _LEAD_SORT_COLUNAS.get(sort_by)
+
+
 @router.get("", response_model=schemas.LeadsPage)
 def listar_leads(
     filtros: dict = Depends(filtros_consulta_leads),
     lead_status: str | None = Query(None, alias="status", pattern="^(novo|cobrado)$"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    sort_by: LeadSortColumn | None = Query(None),
+    sort_dir: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
     query = query_leads_filtrada(db, filtros, lead_status)
     total = query.count()
-    itens = (
-        query.order_by(models.Lead.created_at.desc(), models.Lead.dias_atraso.desc(), models.Lead.codigo_cliente)
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    coluna = _lead_sort_coluna(db, sort_by) if sort_by else None
+    if coluna is not None:
+        # id como desempate: mantém a ordem estável entre páginas
+        query = query.order_by(coluna.desc() if sort_dir == "desc" else coluna.asc(), models.Lead.id)
+    else:
+        query = query.order_by(models.Lead.created_at.desc(), models.Lead.dias_atraso.desc(), models.Lead.codigo_cliente)
+    itens = query.offset(offset).limit(limit).all()
     return schemas.LeadsPage(total=total, itens=itens)
 
 

@@ -8,7 +8,7 @@ import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { IconAlert } from "../icons";
-import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
+import { SortDirection, useSort } from "../sort";
 
 type ColunaCliente = "codigo" | "cpfcnpj" | "nome" | "vencimento_mais_antigo" | "valor_cobrar" | "qtd_parcelas_cobranca" | "dias_atraso" | "faixa" | "cluster";
 
@@ -37,33 +37,10 @@ export default function Cobranca() {
   const [clientesCarregando, setClientesCarregando] = useState(false);
   const [offset, setOffset] = useState(0);
   const [limit, setLimit] = useState(LIMIT_OPCOES_PADRAO[1]);
-  const clientesSort = useSort<ColunaCliente>();
-  const ordemFaixa = ordemFaixaFn(opcoes.regras?.faixas);
-  function valorOrdenacaoCliente(c: ClienteCobranca): string | number | null {
-    switch (clientesSort.sortKey) {
-      case "codigo":
-        return c.codigo;
-      case "cpfcnpj":
-        return c.cpfcnpj;
-      case "nome":
-        return c.nome;
-      case "vencimento_mais_antigo":
-        return c.vencimento_mais_antigo;
-      case "valor_cobrar":
-        return Number(c.valor_cobrar);
-      case "qtd_parcelas_cobranca":
-        return c.qtd_parcelas_cobranca;
-      case "dias_atraso":
-        return c.dias_atraso;
-      case "faixa":
-        return ordemFaixa(c.faixa);
-      case "cluster":
-        return c.cluster;
-      default:
-        return null;
-    }
-  }
-  const clientesOrdenados = ordenarPor(clientes, clientesSort.sortKey ? valorOrdenacaoCliente : null, clientesSort.sortDir);
+  const clientesSort = useSort<ColunaCliente>(null, (chave, dir) => {
+    setOffset(0);
+    buscarClientes(filtrosAplicados, 0, limit, chave, dir);
+  });
 
   const [gerandoLeads, setGerandoLeads] = useState(false);
   const [leadsResultado, setLeadsResultado] = useState<{
@@ -83,12 +60,18 @@ export default function Cobranca() {
   // Descarta respostas de consultas já substituídas por outra mais nova
   const cliReqRef = useRef(0);
 
-  function buscarClientes(filtros: FiltrosCobranca, novoOffset: number, novoLimit: number = limit) {
+  function buscarClientes(
+    filtros: FiltrosCobranca,
+    novoOffset: number,
+    novoLimit: number = limit,
+    sortBy: ColunaCliente | null = clientesSort.sortKey,
+    sortDir: SortDirection = clientesSort.sortDir
+  ) {
     setClientesErro(null);
     setClientesCarregando(true);
     const seq = ++cliReqRef.current;
     api
-      .listarClientesCobranca({ ...filtros, limit: novoLimit, offset: novoOffset })
+      .listarClientesCobranca({ ...filtros, limit: novoLimit, offset: novoOffset, sort_by: sortBy ?? undefined, sort_dir: sortDir })
       .then((r) => {
         if (seq !== cliReqRef.current) return;
         setClientes(r.itens);
@@ -270,7 +253,7 @@ export default function Cobranca() {
                   </tr>
                 </thead>
                 <tbody>
-                  {clientesOrdenados.map((c) => (
+                  {clientes.map((c) => (
                     <tr key={c.codigo}>
                       <td className="cell-strong">{c.codigo}</td>
                       <td className="text-muted">{formatCpf(c.cpfcnpj)}</td>

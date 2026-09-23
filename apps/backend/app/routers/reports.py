@@ -1,5 +1,6 @@
 import io
 from datetime import date, datetime
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -7,11 +8,13 @@ from openpyxl import Workbook
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
+from sqlalchemy import case
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
+from ..regras_db import carregar_regras
 from ..services import efetividade_service
 from ..timezone import BUSINESS_TZ
 
@@ -245,10 +248,30 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
     return buffer.getvalue()
 
 
-def _invalid_phones_query(db: Session, faixa_id: str | None):
-    query = db.query(models.InvalidPhoneRecord).order_by(models.InvalidPhoneRecord.created_at.desc())
+InvalidPhoneSortColumn = Literal["codigo_cliente", "celular_original", "celular_normalizado", "motivo", "created_at"]
+
+_INVALID_PHONE_SORT_COLUNAS = {
+    "codigo_cliente": models.InvalidPhoneRecord.codigo_cliente,
+    "celular_original": models.InvalidPhoneRecord.celular_original,
+    "celular_normalizado": models.InvalidPhoneRecord.celular_normalizado,
+    "motivo": models.InvalidPhoneRecord.motivo,
+    "created_at": models.InvalidPhoneRecord.created_at,
+}
+
+
+def _invalid_phones_query(
+    db: Session, faixa_id: str | None, sort_by: str | None = None, sort_dir: str = "asc"
+):
+    query = db.query(models.InvalidPhoneRecord)
     if faixa_id:
         query = query.filter(models.InvalidPhoneRecord.faixa_id == faixa_id)
+    coluna = _INVALID_PHONE_SORT_COLUNAS.get(sort_by) if sort_by else None
+    if coluna is not None:
+        query = query.order_by(
+            coluna.desc() if sort_dir == "desc" else coluna.asc(), models.InvalidPhoneRecord.id
+        )
+    else:
+        query = query.order_by(models.InvalidPhoneRecord.created_at.desc())
     return query
 
 
@@ -264,10 +287,12 @@ def list_invalid_phones(
     faixa_id: str | None = None,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    sort_by: InvalidPhoneSortColumn | None = Query(None),
+    sort_dir: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    query = _invalid_phones_query(db, faixa_id)
+    query = _invalid_phones_query(db, faixa_id, sort_by, sort_dir)
     total = query.count()
     itens = query.offset(offset).limit(limit).all()
     return schemas.InvalidPhonePage(total=total, itens=itens)
@@ -303,7 +328,12 @@ def export_invalid_phones(
     )
 
 
-def _dispatch_report_query(db: Session, faixa_id: str | None):
+DispatchSortColumn = Literal["codigo_cliente", "faixa", "nome", "valor", "telefone", "enviado_em"]
+
+
+def _dispatch_report_query(
+    db: Session, faixa_id: str | None, sort_by: str | None = None, sort_dir: str = "asc"
+):
     query = (
         db.query(models.QueueItem)
         .options(
@@ -311,10 +341,33 @@ def _dispatch_report_query(db: Session, faixa_id: str | None):
             selectinload(models.QueueItem.whatsapp_number),
         )
         .filter(models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.sent_at.isnot(None))
-        .order_by(models.QueueItem.sent_at.desc())
     )
     if faixa_id:
         query = query.filter(models.QueueItem.faixa_id == faixa_id)
+
+    def _ordenado(coluna):
+        return coluna.desc() if sort_dir == "desc" else coluna.asc()
+
+    if sort_by == "faixa":
+        # ordena pela progressão do atraso (mesma ordem de RegrasCobranca.faixas),
+        # não alfabeticamente — mesmo critério usado em /leads
+        nomes_faixa = carregar_regras(db).nomes_faixa
+        expr = (
+            case({nome: i for i, nome in enumerate(nomes_faixa)}, value=models.Faixa.name, else_=len(nomes_faixa))
+            if nomes_faixa
+            else models.Faixa.name
+        )
+        query = query.join(models.QueueItem.faixa).order_by(_ordenado(expr), models.QueueItem.id)
+    elif sort_by == "telefone":
+        query = query.outerjoin(models.QueueItem.whatsapp_number).order_by(
+            _ordenado(models.WhatsappNumber.display_phone_number), models.QueueItem.id
+        )
+    elif sort_by in ("codigo_cliente", "nome", "valor"):
+        query = query.order_by(_ordenado(getattr(models.QueueItem, sort_by)), models.QueueItem.id)
+    elif sort_by == "enviado_em":
+        query = query.order_by(_ordenado(models.QueueItem.sent_at), models.QueueItem.id)
+    else:
+        query = query.order_by(models.QueueItem.sent_at.desc())
     return query
 
 
@@ -334,10 +387,12 @@ def list_dispatch_report(
     faixa_id: str | None = None,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    sort_by: DispatchSortColumn | None = Query(None),
+    sort_dir: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    query = _dispatch_report_query(db, faixa_id)
+    query = _dispatch_report_query(db, faixa_id, sort_by, sort_dir)
     total = query.count()
     itens = [_to_report_item(item) for item in query.offset(offset).limit(limit).all()]
     return schemas.DispatchReportPage(total=total, itens=itens)
