@@ -23,6 +23,7 @@ CAMPOS_CLIENTE: dict[str, str] = {
     "valor_em_aberto": "Valor em aberto",
     "vencimento": "Vencimento da parcela mais antiga",
     "valor_parcela_amanha": "Valor da parcela que vence amanhã",
+    "valor_atraso": "Valor em atraso",
 }
 
 
@@ -129,6 +130,16 @@ def contexto_cliente(cliente: Mapping) -> dict[str, str]:
         )
         if valor_amanha == 0:
             valor_amanha = None
+    # Valor em atraso: soma simples (sem juros/multa) das parcelas do lead
+    # já vencidas (vencimento antes de hoje, GMT-3).
+    valor_atraso = cliente.get("valor_atraso")
+    if valor_atraso is None and cliente.get("parcelas") is not None:
+        hoje = hoje_br()
+        valor_atraso = sum(
+            (Decimal(str(_campo(p, "valor") or 0)) for p in cliente["parcelas"]
+             if _campo(p, "vencimento") is not None and _campo(p, "vencimento") < hoje),
+            Decimal("0"),
+        )
     codigo_fmt = formatar_codigo(cliente.get("codigo"))
     primeiro = primeiro_nome(cliente.get("nome"))
 
@@ -147,6 +158,7 @@ def contexto_cliente(cliente: Mapping) -> dict[str, str]:
         "valor_em_aberto": formatar_moeda(cliente.get("valor_em_aberto")),
         "vencimento": formatar_data(venc_val),
         "valor_parcela_amanha": formatar_moeda(valor_amanha),
+        "valor_atraso": formatar_moeda(valor_atraso),
     }
 
 
