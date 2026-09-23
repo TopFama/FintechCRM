@@ -195,6 +195,11 @@ export default function OrcamentoProgressaoCard() {
                       <td>{g.qtd_mensagens.toLocaleString("pt-BR")}</td>
                     </tr>
                   ))}
+                  <tr className="linha-total">
+                    <td className="cell-strong">Total</td>
+                    <td>{formatBRL(dados.gasto_por_numero.reduce((t, g) => t + Number(g.gasto_brl), 0))}</td>
+                    <td>{dados.gasto_por_numero.reduce((t, g) => t + g.qtd_mensagens, 0).toLocaleString("pt-BR")}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
