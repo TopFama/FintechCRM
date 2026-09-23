@@ -658,6 +658,9 @@ def _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa):
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
 
+PagamentoSortColumn = Literal[pagamentos_service.COLUNAS_ORDENAVEIS]
+
+
 @api.get("/pagamentos", response_model=schemas.PagamentosClientesPage)
 def relatorio_pagamentos(
     cobrado_de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
@@ -667,10 +670,14 @@ def relatorio_pagamentos(
     faixa: list[str] | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    sort_by: PagamentoSortColumn | None = Query(None),
+    sort_dir: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
     linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa)
+    if sort_by:
+        linhas = pagamentos_service.ordenar(linhas, sort_by, sort_dir, carregar_regras(db).nomes_faixa)
     return schemas.PagamentosClientesPage(
         total=len(linhas),
         valor_cobrado=sum((l["valor_cobrado"] for l in linhas), Decimal("0.00")),

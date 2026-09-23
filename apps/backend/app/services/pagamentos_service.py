@@ -90,3 +90,24 @@ def clientes_que_pagaram(
         )
     linhas.sort(key=lambda l: (l["data_cobranca"], l["nome"] or ""), reverse=True)
     return linhas
+
+
+COLUNAS_ORDENAVEIS = (
+    "codigo_cliente", "nome", "loja", "faixa", "data_cobranca", "valor_cobrado", "valor_pago", "primeiro_pagamento",
+)
+
+
+def ordenar(linhas: list[dict], sort_by: str, sort_dir: str, faixas_ordem: list[str]) -> list[dict]:
+    """Ordena o resultado inteiro antes da paginação. `faixa` segue a ordem de
+    atraso (com mais de uma faixa, vale a menor); vazios vão sempre para o fim."""
+
+    ordem = {nome: i for i, nome in enumerate(faixas_ordem)}
+
+    def valor(l: dict):
+        v = l.get(sort_by)
+        if sort_by == "faixa":
+            return min((ordem.get(f, len(ordem)) for f in (v or "").split(", ") if f), default=None)
+        return v.upper() if isinstance(v, str) else v
+
+    preenchidas = sorted((l for l in linhas if valor(l) is not None), key=valor, reverse=sort_dir == "desc")
+    return preenchidas + [l for l in linhas if valor(l) is None]

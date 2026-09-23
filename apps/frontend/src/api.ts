@@ -274,7 +274,7 @@ export const api = {
     downloadFile(`/relatorios/telefones-invalidos/export?${montarQuery(params)}`, "telefones_invalidos.xlsx"),
   downloadDispatchReportXlsx: (params: { faixa_id?: string; de?: string; ate?: string }) =>
     downloadFile(`/relatorios/envios/export?${montarQuery(params)}`, "relatorio_envios.xlsx"),
-  listPagamentos: (params: FiltrosPagamentos & { limit: number; offset: number }) =>
+  listPagamentos: (params: FiltrosPagamentos & { limit: number; offset: number } & OrdenacaoParams) =>
     request<PagamentosPage>(`/relatorios/pagamentos?${montarQuery(params)}`),
   downloadPagamentosXlsx: (params: FiltrosPagamentos) =>
     downloadFile(`/relatorios/pagamentos/export?${montarQuery(params)}`, "relatorio_pagamentos.xlsx"),

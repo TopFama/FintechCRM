@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { api, OrcamentoProgressao } from "../../api";
 import { formatBRL, formatData } from "../../format";
 import { IconAlert } from "../../icons";
+import { ordenarPor, useSort } from "../../sort";
+import SortableTh from "../SortableTh";
+
+type ColunaNumero = "numero" | "gasto_brl" | "qtd_mensagens";
 
 const NOMES_MES = [
   "janeiro", "fevereiro", "março", "abril", "maio", "junho",
@@ -27,6 +31,8 @@ export default function OrcamentoProgressaoCard() {
   const [ate, setAte] = useState("");
   const [dados, setDados] = useState<OrcamentoProgressao | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  // a lista por número vem inteira (sem paginação), então ordenar no navegador cobre o resultado todo
+  const ordenacao = useSort<ColunaNumero>(null);
 
   useEffect(() => {
     let filtro: { ano?: number; mes?: number; de?: string; ate?: string };
@@ -155,13 +161,34 @@ export default function OrcamentoProgressaoCard() {
               <table>
                 <thead>
                   <tr>
-                    <th>Número</th>
-                    <th>Gasto no período</th>
-                    <th>Qtd mensagens</th>
+                    {(
+                      [
+                        ["numero", "Número"],
+                        ["gasto_brl", "Gasto no período"],
+                        ["qtd_mensagens", "Qtd mensagens"],
+                      ] as [ColunaNumero, string][]
+                    ).map(([coluna, rotulo]) => (
+                      <SortableTh
+                        key={coluna}
+                        active={ordenacao.sortKey === coluna}
+                        dir={ordenacao.sortDir}
+                        onSort={() => ordenacao.toggleSort(coluna)}
+                      >
+                        {rotulo}
+                      </SortableTh>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {dados.gasto_por_numero.map((g) => (
+                  {ordenarPor(
+                    dados.gasto_por_numero,
+                    ordenacao.sortKey === "gasto_brl"
+                      ? (g) => Number(g.gasto_brl)
+                      : ordenacao.sortKey
+                      ? (g) => g[ordenacao.sortKey as "numero" | "qtd_mensagens"]
+                      : null,
+                    ordenacao.sortDir
+                  ).map((g) => (
                     <tr key={g.numero}>
                       <td className="cell-strong">{g.numero}</td>
                       <td>{formatBRL(g.gasto_brl)}</td>

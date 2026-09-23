@@ -8,6 +8,15 @@ import { SortDirection, useSort } from "../sort";
 
 type Tab = "invalidos" | "envios" | "pagamentos";
 type ColunaInvalido = "codigo_cliente" | "celular_original" | "celular_normalizado" | "motivo" | "created_at";
+type ColunaPagamento =
+  | "codigo_cliente"
+  | "nome"
+  | "loja"
+  | "faixa"
+  | "data_cobranca"
+  | "valor_cobrado"
+  | "valor_pago"
+  | "primeiro_pagamento";
 type ColunaEnvio = "codigo_cliente" | "faixa" | "nome" | "valor" | "telefone" | "enviado_em";
 
 export default function Relatorios() {
@@ -37,15 +46,24 @@ export default function Relatorios() {
     load(0, limit, chave, dir);
   });
 
+  const pagamentosSort = useSort<ColunaPagamento>(null, (chave, dir) => {
+    setOffset(0);
+    load(0, limit, chave, dir);
+  });
+
   useEffect(() => {
     api.listFaixas().then(setFaixas).catch(() => undefined);
   }, []);
 
+  function sortAtual() {
+    return tab === "invalidos" ? invalidosSort : tab === "pagamentos" ? pagamentosSort : enviosSort;
+  }
+
   function load(
     novoOffset: number = offset,
     novoLimit: number = limit,
-    sortBy: string | null = tab === "invalidos" ? invalidosSort.sortKey : enviosSort.sortKey,
-    sortDir: SortDirection = tab === "invalidos" ? invalidosSort.sortDir : enviosSort.sortDir
+    sortBy: string | null = sortAtual().sortKey,
+    sortDir: SortDirection = sortAtual().sortDir
   ) {
     setLoading(true);
     setError(null);
@@ -60,7 +78,15 @@ export default function Relatorios() {
     };
     const request =
       tab === "pagamentos"
-        ? api.listPagamentos({ ...filtrosPagamentos(), limit: novoLimit, offset: novoOffset }).then(setPagamentos)
+        ? api
+            .listPagamentos({
+              ...filtrosPagamentos(),
+              limit: novoLimit,
+              offset: novoOffset,
+              sort_by: sortBy ?? undefined,
+              sort_dir: sortDir,
+            })
+            .then(setPagamentos)
         : tab === "invalidos"
         ? api.listInvalidPhones(params).then((r) => {
             setInvalidPhones(r.itens);
@@ -188,7 +214,7 @@ export default function Relatorios() {
         {loading ? (
           <div className="loading-state">Carregando...</div>
         ) : tab === "pagamentos" ? (
-          <TabelaPagamentos dados={pagamentos} />
+          <TabelaPagamentos dados={pagamentos} ordenacao={pagamentosSort} />
         ) : tab === "invalidos" ? (
           invalidPhones.length === 0 ? (
             <div className="empty-state">
@@ -296,7 +322,24 @@ export default function Relatorios() {
   );
 }
 
-function TabelaPagamentos({ dados }: { dados: PagamentosPage | null }) {
+const COLUNAS_PAGAMENTO: [ColunaPagamento, string][] = [
+  ["codigo_cliente", "Código"],
+  ["nome", "Nome"],
+  ["loja", "Loja"],
+  ["faixa", "Faixa"],
+  ["data_cobranca", "Cobrado em"],
+  ["valor_cobrado", "Valor cobrado"],
+  ["valor_pago", "Valor pago"],
+  ["primeiro_pagamento", "Pago em"],
+];
+
+function TabelaPagamentos({
+  dados,
+  ordenacao,
+}: {
+  dados: PagamentosPage | null;
+  ordenacao: ReturnType<typeof useSort<ColunaPagamento>>;
+}) {
   if (!dados || dados.itens.length === 0) {
     return (
       <div className="empty-state">
@@ -332,14 +375,16 @@ function TabelaPagamentos({ dados }: { dados: PagamentosPage | null }) {
         <table>
           <thead>
             <tr>
-              <th>Código</th>
-              <th>Nome</th>
-              <th>Loja</th>
-              <th>Faixa</th>
-              <th>Cobrado em</th>
-              <th>Valor cobrado</th>
-              <th>Valor pago</th>
-              <th>Pago em</th>
+              {COLUNAS_PAGAMENTO.map(([coluna, rotulo]) => (
+                <SortableTh
+                  key={coluna}
+                  active={ordenacao.sortKey === coluna}
+                  dir={ordenacao.sortDir}
+                  onSort={() => ordenacao.toggleSort(coluna)}
+                >
+                  {rotulo}
+                </SortableTh>
+              ))}
             </tr>
           </thead>
           <tbody>
