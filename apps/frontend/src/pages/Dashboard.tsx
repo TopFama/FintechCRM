@@ -4,6 +4,7 @@ import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
 import OrcamentoProgressaoCard from "../components/dashboard/OrcamentoProgressaoCard";
+import FiltroPeriodo, { Periodo, periodoDe } from "../components/FiltroPeriodo";
 import SortableTh from "../components/SortableTh";
 import { formatDataHora } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
@@ -14,10 +15,13 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const opcoes = useOpcoesCobranca();
+  const [periodo, setPeriodo] = useState<Periodo>(() => periodoDe("hoje"));
 
   useEffect(() => {
-    api.dashboardSummary().then(setSummary).catch((e) => setError(e.message));
-  }, []);
+    // Personalizado sem as duas datas ainda: espera completar
+    if (Boolean(periodo.de) !== Boolean(periodo.ate)) return;
+    api.dashboardSummary(periodo).then(setSummary).catch((e) => setError(e.message));
+  }, [periodo]);
 
   return (
     <div>
@@ -34,11 +38,11 @@ export default function Dashboard() {
           <span>{error}</span>
         </div>
       )}
+      <FiltroPeriodo opcoes={["hoje", "7dias", "mes", "personalizado"]} inicial="hoje" onChange={setPeriodo} />
       {!summary && !error && <div className="loading-state">Carregando resumo da fila...</div>}
       {summary && <ResumoFila summary={summary} nomesFaixa={opcoes.regras?.faixas} />}
 
       <MatrizCobrancaCard opcoes={opcoes} />
-      <OrcamentoProgressaoCard />
       <EfetividadeCard opcoes={opcoes} />
       <LeadsCard opcoes={opcoes} />
     </div>
@@ -169,6 +173,8 @@ function ResumoFila({ summary, nomesFaixa }: { summary: DashboardSummary; nomesF
           </div>
         )}
       </div>
+
+      <OrcamentoProgressaoCard />
 
       <div className="card">
         <div className="card-header">

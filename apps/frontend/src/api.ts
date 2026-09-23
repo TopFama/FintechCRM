@@ -251,7 +251,8 @@ export const api = {
   },
   listQueue: (faixaId: string) => request<QueueItem[]>(`/faixas/${faixaId}/queue`),
 
-  dashboardSummary: () => request<DashboardSummary>("/dashboard/summary"),
+  dashboardSummary: (periodo: { de?: string; ate?: string } = {}) =>
+    request<DashboardSummary>(`/dashboard/summary?${montarQuery(periodo)}`),
 
   listInvalidPhones: (faixaId?: string) =>
     request<InvalidPhoneRecord[]>(`/relatorios/telefones-invalidos${faixaId ? `?faixa_id=${faixaId}` : ""}`),
@@ -285,8 +286,8 @@ export const api = {
     ),
   listarLeads: (params: FiltrosLeads & { limit: number; offset: number }) =>
     request<{ total: number; itens: Lead[] }>(`/leads?${montarQuery(params)}`),
-  contarLeads: async (status: "novo" | "cobrado") =>
-    (await request<{ total: number }>(`/leads?${montarQuery({ status, limit: 1 })}`)).total,
+  contarLeads: async (status: "novo" | "cobrado", periodo: { criado_de?: string; criado_ate?: string } = {}) =>
+    (await request<{ total: number }>(`/leads?${montarQuery({ status, limit: 1, ...periodo })}`)).total,
   exportarLeads: (params: FiltrosLeads) =>
     downloadFile(`/leads/exportar.xlsx?${montarQuery(params)}`, "leads.xlsx"),
   marcarLeadsCobrados: (ids: string[]) =>
@@ -351,8 +352,8 @@ export const api = {
   getOrcamento: (ano: number) => request<OrcamentoMes[]>(`/config/cobranca/orcamento?ano=${ano}`),
   salvarOrcamento: (ano: number, meses: { mes: number; valor_orcado: string }[]) =>
     request<OrcamentoMes[]>(`/config/cobranca/orcamento?ano=${ano}`, { method: "PUT", body: JSON.stringify(meses) }),
-  getOrcamentoProgressao: (ano: number, mes: number) =>
-    request<OrcamentoProgressao>(`/dashboard/orcamento-progressao?ano=${ano}&mes=${mes}`),
+  getOrcamentoProgressao: (filtro: { ano?: number; mes?: number; de?: string; ate?: string }) =>
+    request<OrcamentoProgressao>(`/dashboard/orcamento-progressao?${montarQuery(filtro)}`),
 };
 
 async function downloadFile(path: string, nomePadrao: string): Promise<void> {
@@ -633,15 +634,16 @@ export interface OrcamentoMes {
 }
 
 export interface OrcamentoProgressaoDia {
-  dia: number;
+  data: string;
   gasto_acumulado_brl: string;
 }
 
 export interface OrcamentoProgressao {
-  ano: number;
-  mes: number;
+  de: string;
+  ate: string;
   valor_orcado: string;
   valor_gasto_brl: string | null;
+  motivo_sem_gasto: string | null;
   dias: OrcamentoProgressaoDia[];
 }
 

@@ -9,7 +9,6 @@ que ficou de fora do escopo desta primeira extração; o `raise` aqui é
 convertido pelo próprio FastAPI na resposta HTTP igual seria se estivesse
 no router, então não muda comportamento nenhum, só a localização do código."""
 
-import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -17,7 +16,9 @@ from decimal import Decimal
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from .. import cambio, google_client, lojas as lojas_base, meta_client, models, seta_client
+from .. import google_client, lojas as lojas_base, models, seta_client
+from ..timezone import hoje_br
+from . import custo_whatsapp
 from ..regras_db import carregar_regras
 from ..relatorio_efetividade import montar_relatorio
 
@@ -169,30 +170,9 @@ def calcular_valor_a_pagar_brl(db: Session, cobrado_de: date | None, cobrado_ate
     câmbio indisponível) faz o valor voltar None em vez de derrubar o
     relatório inteiro, já que é informação complementar."""
 
-    wabas = {
-        w for (w,) in db.query(models.WhatsappNumber.waba_id).filter(models.WhatsappNumber.waba_id.isnot(None)).distinct()
-    }
-    if not wabas:
+    inicio = cobrado_de or (hoje_br() - timedelta(days=30))
+    fim = cobrado_ate or hoje_br()
+    por_dia, _motivo = custo_whatsapp.gasto_diario_brl(db, inicio, fim)
+    if por_dia is None:
         return None
-
-    inicio = cobrado_de or (date.today() - timedelta(days=30))
-    fim = cobrado_ate or date.today()
-    start_unix = int(datetime.combine(inicio, datetime.min.time()).timestamp())
-    end_unix = int(datetime.combine(fim, datetime.max.time()).timestamp())
-
-    async def _somar() -> Decimal:
-        total_usd = Decimal("0.00")
-        for waba_id in wabas:
-            token = meta_client.token_da_waba(db, waba_id)
-            client = meta_client.MetaClient(token)
-            pontos = await client.conversation_analytics(waba_id, start_unix=start_unix, end_unix=end_unix)
-            for p in pontos:
-                total_usd += Decimal(str(p.get("cost", 0) or 0))
-        cotacao = await cambio.cotacao_usd_brl()
-        return (total_usd * Decimal(str(cotacao))).quantize(Decimal("0.01"))
-
-    try:
-        return asyncio.run(_somar())
-    except Exception as exc:  # noqa: BLE001 - dado complementar, não pode derrubar o relatório
-        logger.warning("Não foi possível calcular o valor a pagar à Meta: %s", exc)
-        return None
+    return sum(por_dia.values(), Decimal("0")).quantize(Decimal("0.01"))
