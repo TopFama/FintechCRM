@@ -6,14 +6,12 @@ import FaixaWizard from "./pages/FaixaWizard";
 import FaixaDetail from "./pages/FaixaDetail";
 import Relatorios from "./pages/Relatorios";
 import Cobranca from "./pages/Cobranca";
-import Leads from "./pages/Leads";
 import Configuracoes from "./pages/Configuracoes";
 import {
   IconDashboard,
   IconLogout,
   IconReport,
   IconUsers,
-  IconList,
   IconSettings,
 } from "./icons";
 
@@ -38,9 +36,6 @@ function Layout({ children }: { children: JSX.Element }) {
           </NavLink>
           <NavLink to="/cobranca" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconUsers /> Cobrança
-          </NavLink>
-          <NavLink to="/leads" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-            <IconList /> Leads
           </NavLink>
           <NavLink to="/relatorios" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconReport /> Relatórios
@@ -92,16 +87,7 @@ export default function App() {
           </RequireAuth>
         }
       />
-      <Route
-        path="/leads"
-        element={
-          <RequireAuth>
-            <Layout>
-              <Leads />
-            </Layout>
-          </RequireAuth>
-        }
-      />
+      <Route path="/leads" element={<Navigate to="/cobranca" replace />} />
       <Route path="/templates" element={<Navigate to="/configuracoes?aba=templates" replace />} />
       <Route path="/usuarios" element={<Navigate to="/configuracoes?aba=usuarios" replace />} />
       <Route path="/blacklist" element={<Navigate to="/configuracoes?aba=blacklist" replace />} />

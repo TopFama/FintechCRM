@@ -43,12 +43,7 @@ export default function Cobranca() {
   });
 
   const [gerandoLeads, setGerandoLeads] = useState(false);
-  const [leadsResultado, setLeadsResultado] = useState<{
-    criados: number;
-    ja_existiam: number;
-    sem_celular: number;
-    na_fila: number;
-  } | null>(null);
+  const [leadsResultado, setLeadsResultado] = useState<string | null>(null);
   const [leadsErro, setLeadsErro] = useState<string | null>(null);
 
   // Importação de planilha: escolher a faixa libera o upload dela.
@@ -115,16 +110,20 @@ export default function Cobranca() {
   async function gerarLeads() {
     const msg =
       totalClientes > 0
-        ? `Gerar leads para ${totalClientes} cliente(s) com os filtros atuais?`
-        : "Gerar leads com os filtros atuais?";
+        ? `Enviar ${totalClientes} cliente(s) com os filtros atuais para a fila de cobrança?`
+        : "Enviar os clientes com os filtros atuais para a fila de cobrança?";
     if (!window.confirm(msg)) return;
     setGerandoLeads(true);
     setLeadsErro(null);
     setLeadsResultado(null);
     try {
-      setLeadsResultado(await api.gerarLeads(filtrosAplicados));
+      await api.gerarLeads(filtrosAplicados);
+      // Depois de enviar, a listagem sai da tela: o acompanhamento é pela fila e pelo Dashboard.
+      setClientes([]);
+      setTotalClientes(0);
+      setLeadsResultado("Clientes enviados para a fila de cobrança.");
     } catch (e) {
-      setLeadsErro(e instanceof Error ? e.message : "Erro ao gerar leads");
+      setLeadsErro(e instanceof Error ? e.message : "Erro ao enviar para a fila de cobrança");
     } finally {
       setGerandoLeads(false);
     }
@@ -136,7 +135,7 @@ export default function Cobranca() {
         <div>
           <h2>Cobrança</h2>
           <div className="subtitle">
-            Consulte clientes em atraso no SETA e gere leads — os relatórios ficam no{" "}
+            Consulte clientes em atraso no SETA e envie para a fila de cobrança — os relatórios ficam no{" "}
             <Link to="/">Dashboard</Link>
           </div>
         </div>
@@ -167,16 +166,12 @@ export default function Cobranca() {
         <div className="card-header">
           <h3>Filtros</h3>
           <button type="button" onClick={gerarLeads} disabled={gerandoLeads} className="secondary">
-            {gerandoLeads ? "Gerando..." : "Gerar leads com estes filtros"}
+            {gerandoLeads ? "Enviando..." : "Enviar para fila de cobrança"}
           </button>
         </div>
 
         {leadsResultado && (
-          <div className="success-box">
-            {leadsResultado.criados} leads criados, {leadsResultado.ja_existiam} já existiam,{" "}
-            {leadsResultado.sem_celular} sem celular válido. {leadsResultado.na_fila} entraram na fila de
-            disparo. <Link to="/leads">Ver leads →</Link>
-          </div>
+          <div className="success-box">{leadsResultado}</div>
         )}
         {leadsErro && (
           <div className="error-box">

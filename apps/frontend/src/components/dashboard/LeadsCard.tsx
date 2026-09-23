@@ -19,7 +19,8 @@ export default function LeadsCard({ opcoes }: { opcoes: OpcoesCobranca }) {
 
   useEffect(() => {
     if (Boolean(periodo.de) !== Boolean(periodo.ate)) return;
-    api.contarLeads("novo", filtroNovos).then(setNovos).catch((e) => setErro(e.message));
+    // Novos = tudo que foi pra fila no período (todo lead gerado entra na fila), enviado ou não.
+    api.contarLeads(undefined, filtroNovos).then(setNovos).catch((e) => setErro(e.message));
     api.contarLeads("cobrado", filtroEnviados).then(setEnviados).catch((e) => setErro(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodo]);
@@ -41,7 +42,6 @@ export default function LeadsCard({ opcoes }: { opcoes: OpcoesCobranca }) {
     <div className="card">
       <div className="card-header">
         <h3>Leads</h3>
-        <Link to="/leads">Ver leads →</Link>
       </div>
 
       <FiltroPeriodo opcoes={["hoje", "personalizado"]} inicial={null} permiteLimpar onChange={setPeriodo} />

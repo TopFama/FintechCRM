@@ -299,7 +299,7 @@ export const api = {
     ),
   listarLeads: (params: FiltrosLeads & { limit: number; offset: number } & OrdenacaoParams) =>
     request<{ total: number; itens: Lead[] }>(`/leads?${montarQuery(params)}`),
-  contarLeads: async (status: "novo" | "cobrado", periodo: Partial<Pick<FiltrosLeads, "criado_de" | "criado_ate" | "enviado_de" | "enviado_ate">> = {}) =>
+  contarLeads: async (status: "novo" | "cobrado" | undefined, periodo: Partial<Pick<FiltrosLeads, "criado_de" | "criado_ate" | "enviado_de" | "enviado_ate">> = {}) =>
     (await request<{ total: number }>(`/leads?${montarQuery({ status, limit: 1, ...periodo })}`)).total,
   exportarLeads: (params: FiltrosLeads) =>
     downloadFile(`/leads/exportar.xlsx?${montarQuery(params)}`, "leads.xlsx"),

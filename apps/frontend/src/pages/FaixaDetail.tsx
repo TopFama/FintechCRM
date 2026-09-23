@@ -614,9 +614,6 @@ export default function FaixaDetail() {
       <div className="card">
         <div className="card-header">
           <h3>Leads gerados nesta faixa de atraso</h3>
-          <Link to="/leads" className="ghost small">
-            Ver em Leads →
-          </Link>
         </div>
         <p className="card-subtitle">
           Clientes já gerados em Cobrança → Leads para a faixa de atraso "{faixa.name}" — não entram automaticamente
