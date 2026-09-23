@@ -712,6 +712,7 @@ class LeadsGerarResult(BaseModel):
     criados: int
     ja_existiam: int
     sem_celular: int  # entre os criados: sem telefone válido em nenhum dos campos
+    na_fila: int = 0  # entraram na fila de disparo da faixa
 
 
 class LeadsGerarAsyncOut(BaseModel):

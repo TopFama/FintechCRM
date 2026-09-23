@@ -294,7 +294,7 @@ export const api = {
 
   // --- Leads ---
   gerarLeads: (params: FiltrosCobranca) =>
-    pollAsync<{ criados: number; ja_existiam: number; sem_celular: number }>(() =>
+    pollAsync<{ criados: number; ja_existiam: number; sem_celular: number; na_fila: number }>(() =>
       request(`/leads/gerar?${montarQuery(params)}`, { method: "POST" })
     ),
   listarLeads: (params: FiltrosLeads & { limit: number; offset: number } & OrdenacaoParams) =>

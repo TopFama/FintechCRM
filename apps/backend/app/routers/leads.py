@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .. import google_client, lojas as lojas_base, models, schemas, seta_client
 from ..database import get_db
+from ..fila_automatica import enfileirar_leads
 from ..deps import get_current_user
 from ..leads_service import _em_lotes, gerar_leads_de_clientes
 from ..regras_db import carregar_regras
@@ -41,12 +42,15 @@ def gerar_leads(
 
     try:
         criados, ja_existiam, sem_celular = gerar_leads_de_clientes(db, clientes, created_by=user.id)
+        na_fila = enfileirar_leads(db, clientes)
     except seta_client.SetaIndisponivel as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
     return schemas.LeadsGerarAsyncOut(
         status="ready",
-        data=schemas.LeadsGerarResult(criados=criados, ja_existiam=ja_existiam, sem_celular=sem_celular),
+        data=schemas.LeadsGerarResult(
+            criados=criados, ja_existiam=ja_existiam, sem_celular=sem_celular, na_fila=na_fila
+        ),
     )
 
 

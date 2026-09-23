@@ -47,6 +47,7 @@ export default function Cobranca() {
     criados: number;
     ja_existiam: number;
     sem_celular: number;
+    na_fila: number;
   } | null>(null);
   const [leadsErro, setLeadsErro] = useState<string | null>(null);
 
@@ -173,7 +174,8 @@ export default function Cobranca() {
         {leadsResultado && (
           <div className="success-box">
             {leadsResultado.criados} leads criados, {leadsResultado.ja_existiam} já existiam,{" "}
-            {leadsResultado.sem_celular} sem celular válido. <Link to="/leads">Ver leads →</Link>
+            {leadsResultado.sem_celular} sem celular válido. {leadsResultado.na_fila} entraram na fila de
+            disparo. <Link to="/leads">Ver leads →</Link>
           </div>
         )}
         {leadsErro && (
