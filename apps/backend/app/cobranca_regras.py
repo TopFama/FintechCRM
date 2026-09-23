@@ -20,13 +20,13 @@ CODIGO_CLIENTE_IGNORADO = "00384572"
 
 @dataclass(frozen=True)
 class ParametrosJuros:
-    """Parcela a parcela: com `dias_min` ou mais de atraso, o valor cobrado é
+    """Parcela a parcela: com mais de `dias_min` dias de atraso (carência), o valor cobrado é
     valor + valor × juros_dia × dias + valor × multa; abaixo disso, só o valor.
     O juros mensal é rateado em 30 dias (15,99% a.m. → 0,533% ao dia)."""
 
     juros_mes_percentual: Decimal = Decimal("15.99")
     multa_percentual: Decimal = Decimal("2")
-    dias_min: int = 3
+    dias_min: int = 2
 
     @property
     def juros_dia(self) -> Decimal:

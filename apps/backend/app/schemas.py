@@ -609,7 +609,7 @@ class ClienteCobrancaOut(BaseModel):
     qtd_titulos: int
     valor_em_aberto: Decimal  # soma de ft.valor de todas as parcelas abertas, sem juros
     qtd_parcelas_cobranca: int  # parcelas vencidas (ou a de amanhã, no lembrete) que entram no valor a cobrar
-    valor_cobrar: Decimal  # o que vai no template: parcelas da cobrança com multa e juros (atraso >= 3 dias)
+    valor_cobrar: Decimal  # o que vai no template: parcelas da cobrança com multa e juros (atraso acima da carência)
     vencimento_mais_antigo: date
     lojas: list[str]
     portadores: list[str]

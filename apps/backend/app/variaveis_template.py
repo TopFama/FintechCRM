@@ -103,7 +103,7 @@ def _campo(obj: Any, nome: str) -> Any:
 
 def valor_em_atraso_com_juros(parcelas: Iterable, juros: Any = None) -> Decimal:
     """Mesma conta do valor a cobrar do SETA, mas contada até hoje: com
-    `dias_min` ou mais de atraso, valor + valor × juros_dia × dias + valor × multa."""
+    mais de `dias_min` dias de atraso (carência), valor + valor × juros_dia × dias + valor × multa."""
     from .cobranca_regras import PARAMETROS_JUROS_PADRAO
 
     juros = juros or PARAMETROS_JUROS_PADRAO
@@ -115,7 +115,7 @@ def valor_em_atraso_com_juros(parcelas: Iterable, juros: Any = None) -> Decimal:
             continue
         valor = Decimal(str(_campo(p, "valor") or 0))
         dias = (hoje - venc).days
-        if dias >= juros.dias_min:
+        if dias > juros.dias_min:
             valor = valor + valor * juros.juros_dia * dias + valor * juros.multa
         total += valor.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return total

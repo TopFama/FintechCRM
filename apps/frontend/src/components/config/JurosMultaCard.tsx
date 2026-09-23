@@ -83,7 +83,7 @@ export default function JurosMultaCard() {
         </div>
       </div>
       <div className="field-hint" style={{ marginTop: 8 }}>
-        Juros e multa passam a contar a partir de {carencia || 0} dia(s) de atraso.
+        Juros e multa valem para parcelas com mais de {carencia || 0} dia(s) de atraso (a partir de {(Number(carencia) || 0) + 1} dias).
       </div>
       <div className="actions-row">
         <button type="button" onClick={salvar} disabled={salvando}>

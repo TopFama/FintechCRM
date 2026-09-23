@@ -143,7 +143,7 @@ abertos AS (
            -- parcelas guardadas no lead (buscar_parcelas_cobranca)
            sum(
                CASE WHEN vencimento <= GREATEST(current_date, vencimento_min) THEN
-                   round(CASE WHEN current_date - vencimento >= :dias_min_juros
+                   round(CASE WHEN current_date - vencimento > :dias_min_juros
                               THEN valor + valor * :juros_dia * (current_date - vencimento) + valor * :multa
                               ELSE valor END, 2)
                END
@@ -379,7 +379,7 @@ SELECT pessoa,
        vencimento,
        valor,
        round(
-           CASE WHEN current_date - vencimento >= :dias_min_juros
+           CASE WHEN current_date - vencimento > :dias_min_juros
                 THEN valor + valor * :juros_dia * (current_date - vencimento) + valor * :multa
                 ELSE valor
            END, 2
