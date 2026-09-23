@@ -348,6 +348,8 @@ export const api = {
     request<ConfigCobrancaOut>("/config/cobranca/faixas", { method: "PUT", body: JSON.stringify(faixas) }),
   salvarMatrizCobranca: (celulas: CelulaMatriz[]) =>
     request<ConfigCobrancaOut>("/config/cobranca/matriz", { method: "PUT", body: JSON.stringify(celulas) }),
+  salvarParametrosCobranca: (p: { juros_mes_percentual: string; multa_percentual: string; dias_min_juros: number }) =>
+    request<ConfigCobrancaOut>("/config/cobranca/parametros", { method: "PUT", body: JSON.stringify(p) }),
 
   // --- Orçamento (Tarefa 4) ---
   getOrcamento: (ano: number) => request<OrcamentoMes[]>(`/config/cobranca/orcamento?ano=${ano}`),

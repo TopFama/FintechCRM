@@ -6,6 +6,7 @@ import DisparoCard from "../components/config/DisparoCard";
 import Faixas from "./Faixas";
 import NumerosCard from "../components/config/NumerosCard";
 import OrcamentoCard from "../components/config/OrcamentoCard";
+import JurosMultaCard from "../components/config/JurosMultaCard";
 import RegrasCobrancaCard from "../components/config/RegrasCobrancaCard";
 import TemplatesCard from "../components/config/TemplatesCard";
 import TokensMetaCard from "../components/config/TokensMetaCard";
@@ -262,6 +263,9 @@ export default function Configuracoes() {
       {aba === "indicadores" && (
         <>
           <RegrasCobrancaCard />
+          <div style={{ marginTop: 16 }}>
+            <JurosMultaCard />
+          </div>
           <div style={{ marginTop: 16 }}>
             <OrcamentoCard />
           </div>
