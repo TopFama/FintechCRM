@@ -1277,3 +1277,13 @@ button.periodo-card.ativo {
   border-top: 2px dashed var(--color-danger);
   height: 0;
 }
+
+/* Exportar Excel: verde com texto branco */
+button.excel {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: #fff;
+}
+button.excel:hover:not(:disabled) {
+  filter: brightness(0.92);
+}

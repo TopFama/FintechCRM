@@ -107,6 +107,24 @@ export default function Cobranca() {
     buscarClientes(filtrosAplicados, 0, novoLimit);
   }
 
+  const [exportando, setExportando] = useState(false);
+
+  async function exportarExcel() {
+    setExportando(true);
+    setLeadsErro(null);
+    try {
+      await api.exportarClientesCobranca({
+        ...filtrosAplicados,
+        sort_by: clientesSort.sortKey ?? undefined,
+        sort_dir: clientesSort.sortDir,
+      });
+    } catch (e) {
+      setLeadsErro(e instanceof Error ? e.message : "Erro ao exportar os clientes");
+    } finally {
+      setExportando(false);
+    }
+  }
+
   async function gerarLeads() {
     const msg =
       totalClientes > 0
@@ -186,6 +204,11 @@ export default function Cobranca() {
           onAplicar={aplicarFiltros}
           opcoes={opcoes}
           idPrefixo="cobranca"
+          acaoDireita={
+            <button type="button" className="excel" onClick={exportarExcel} disabled={exportando}>
+              {exportando ? "Exportando..." : "Exportar Excel"}
+            </button>
+          }
         />
       </div>
 

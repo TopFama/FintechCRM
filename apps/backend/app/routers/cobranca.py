@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from .. import cache, cobranca_base, cobranca_relatorio, google_client, lojas as lojas_base, models, schemas, seta_client
@@ -9,7 +9,9 @@ from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
+from ..timezone import hoje_br
 from ..utils.spc import parse_spc
+from .reports import _XLSX_MEDIA_TYPE, _build_xlsx, _formula_safe
 
 router = APIRouter(prefix="/cobranca", tags=["cobranca"])
 
@@ -144,6 +146,53 @@ def listar_clientes(
 
     return schemas.ClientesCobrancaAsyncOut(
         status="ready", data=schemas.ClientesCobrancaPage(total=len(clientes), itens=pagina)
+    )
+
+
+_COLUNAS_EXPORTACAO = [
+    ("Código", "codigo"), ("Nome", "nome"), ("CPF/CNPJ", "cpfcnpj"), ("Celular", "celular"),
+    ("Cluster", "cluster"), ("Faixa", "faixa"), ("Dias de atraso", "dias_atraso"),
+    ("Parcelas na cobrança", "qtd_parcelas_cobranca"), ("Valor em aberto", "valor_em_aberto"),
+    ("Valor a cobrar", "valor_cobrar"), ("Vencimento mais antigo", "vencimento_mais_antigo"),
+    ("Status", "status_descricao"), ("Loja do cadastro", "loja_cadastro"), ("Lojas", "lojas"),
+    ("Qtd. compras", "qtd_compras"), ("Restrição SPC", "spc_restricao"), ("Entra no WhatsApp", "entra_whatsapp"),
+]
+
+
+@router.get("/clientes/exportar.xlsx")
+def exportar_clientes(
+    filtros: dict = Depends(filtros_base),
+    sort_by: ClienteSortColumn | None = Query(None),
+    sort_dir: Literal["asc", "desc"] = Query("asc"),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Todos os clientes filtrados (não só a página), na mesma ordem da tela."""
+
+    job = buscar_base_ou_erro(db, filtros)
+    if job["status"] != "ready":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "A base de cobrança ainda está sendo calculada. Tente exportar de novo em instantes."
+        )
+    clientes = job["data"]
+    if sort_by:
+        clientes = _ordenar_clientes(clientes, sort_by, sort_dir, db)
+
+    def celula(c: dict, campo: str):
+        v = c.get(campo)
+        if isinstance(v, list):
+            return ", ".join(str(x) for x in v)
+        if isinstance(v, bool):
+            return "Sim" if v else "Não"
+        if isinstance(v, str):
+            return _formula_safe(v)
+        return v
+
+    rows = [[celula(c, campo) for _, campo in _COLUNAS_EXPORTACAO] for c in clientes]
+    return Response(
+        content=_build_xlsx([t for t, _ in _COLUNAS_EXPORTACAO], rows),
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="clientes_cobranca_{hoje_br():%Y%m%d}.xlsx"'},
     )
 
 

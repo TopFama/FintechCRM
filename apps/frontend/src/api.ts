@@ -284,6 +284,8 @@ export const api = {
   // dezenas de milhões de linhas, cacheada no Redis pelo backend — a primeira
   // vez com um filtro novo pode "processar" por alguns segundos/minutos;
   // pollAsync tenta de novo sozinho até vir pronto.
+  exportarClientesCobranca: (params: FiltrosCobranca & OrdenacaoParams) =>
+    downloadFile(`/cobranca/clientes/exportar.xlsx?${montarQuery(params)}`, "clientes_cobranca.xlsx"),
   regrasCobranca: () => request<RegrasCobranca>("/cobranca/regras"),
   listarClientesCobranca: (params: FiltrosCobranca & { limit: number; offset: number } & OrdenacaoParams) =>
     pollAsync<{ total: number; itens: ClienteCobranca[] }>(() =>
