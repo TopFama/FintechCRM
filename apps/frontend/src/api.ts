@@ -872,7 +872,7 @@ export interface RelatorioEfetividade {
   valor_a_pagar_brl: string | null;
 }
 
-export interface FiltrosEfetividade {
+export interface FiltrosEfetividade extends OrdenacaoParams {
   cobrado_de?: string;
   cobrado_ate?: string;
   dias_janela?: number;

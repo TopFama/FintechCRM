@@ -5,6 +5,8 @@ import { IconAlert } from "../../icons";
 import CamposLoja from "../CamposLoja";
 import MultiSelect from "../MultiSelect";
 import { OpcoesCobranca } from "../useOpcoesCobranca";
+import SortableTh from "../SortableTh";
+import { SortDirection, useSort } from "../../sort";
 
 type Aba = "faixa" | "loja";
 
@@ -40,6 +42,9 @@ export function BadgeClusterInad({ valor }: { valor: string | null }) {
   return <span className={`badge cluster-inad-${tom}`}>{valor}</span>;
 }
 
+type ColunaMetrica = "qtd_envios" | "clientes_cobrados" | "clientes_pagaram" | "conversao_clientes" | "valor_pago";
+type Coluna = ColunaMetrica | "faixa" | "loja" | "loja_nome" | "regional" | "cluster_inad";
+
 function Metricas({ linha }: { linha: LinhaEfetividade }) {
   return (
     <>
@@ -52,7 +57,20 @@ function Metricas({ linha }: { linha: LinhaEfetividade }) {
   );
 }
 
-const CABECALHO_METRICAS = ["Qtd. de envios", "Clientes cobrados", "Clientes pagou", "% Conv.", "Recebimento"];
+const CABECALHO_METRICAS: [ColunaMetrica, string][] = [
+  ["qtd_envios", "Qtd. de envios"],
+  ["clientes_cobrados", "Clientes cobrados"],
+  ["clientes_pagaram", "Clientes pagou"],
+  ["conversao_clientes", "% Conv."],
+  ["valor_pago", "Recebimento"],
+];
+
+const COLUNAS_LOJA: [Coluna, string][] = [
+  ["loja", "Código"],
+  ["loja_nome", "Loja"],
+  ["regional", "Regional"],
+  ["cluster_inad", "Cluster INAD"],
+];
 
 export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) {
   const [filtros, setFiltros] = useState<FiltrosEfetividade>(FILTROS_PADRAO);
@@ -65,6 +83,11 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
   const [exportandoClientes, setExportandoClientes] = useState(false);
   const [aba, setAba] = useState<Aba>("faixa");
   const reqRef = useRef(0);
+  // filtros do último "Aplicar": clicar num cabeçalho reordena no servidor sem pegar edições não aplicadas
+  const aplicadosRef = useRef<FiltrosEfetividade | null>(null);
+  const ordenacao = useSort<Coluna>(null, (chave, dir) => {
+    if (aplicadosRef.current) buscar(aplicadosRef.current, chave, dir);
+  });
 
   function filtrosComJanela(): FiltrosEfetividade {
     const dias = janela === "outro" ? janelaOutro : janela;
@@ -74,13 +97,22 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
   const janelaInvalida =
     janela === "outro" && !(janelaOutro !== "" && Number(janelaOutro) >= 0 && Number(janelaOutro) <= 365);
 
+  function comOrdenacao(f: FiltrosEfetividade, sortBy: Coluna | null, sortDir: SortDirection): FiltrosEfetividade {
+    return sortBy ? { ...f, sort_by: sortBy, sort_dir: sortDir } : f;
+  }
+
   function aplicar() {
     if (janelaInvalida) return;
+    aplicadosRef.current = filtrosComJanela();
+    buscar(aplicadosRef.current, ordenacao.sortKey, ordenacao.sortDir);
+  }
+
+  function buscar(f: FiltrosEfetividade, sortBy: Coluna | null, sortDir: SortDirection) {
     setErro(null);
     setCarregando(true);
     const seq = ++reqRef.current;
     api
-      .relatorioEfetividade(filtrosComJanela())
+      .relatorioEfetividade(comOrdenacao(f, sortBy, sortDir))
       .then((r) => seq === reqRef.current && setRelatorio(r))
       .catch((e) => seq === reqRef.current && setErro(mensagemErroSeta(e)))
       .finally(() => seq === reqRef.current && setCarregando(false));
@@ -91,7 +123,7 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
     setExportando(true);
     setErro(null);
     try {
-      await api.exportarEfetividade(filtrosComJanela());
+      await api.exportarEfetividade(comOrdenacao(filtrosComJanela(), ordenacao.sortKey, ordenacao.sortDir));
     } catch (e) {
       setErro(mensagemErroSeta(e));
     } finally {
@@ -271,20 +303,19 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
               <table>
                 <thead>
                   <tr>
-                    {aba === "faixa" ? (
-                      <th scope="col">Faixa</th>
-                    ) : (
-                      <>
-                        <th scope="col">Loja</th>
-                        <th scope="col">Regional</th>
-                        <th scope="col">Cluster INAD</th>
-                      </>
-                    )}
-                    {CABECALHO_METRICAS.map((c) => (
-                      <th scope="col" key={c}>
-                        {c}
-                      </th>
-                    ))}
+                    {(aba === "faixa" ? ([["faixa", "Faixa"]] as [Coluna, string][]) : COLUNAS_LOJA)
+                      .concat(CABECALHO_METRICAS)
+                      .map(([coluna, rotulo]) => (
+                        <SortableTh
+                          scope="col"
+                          key={coluna}
+                          active={ordenacao.sortKey === coluna}
+                          dir={ordenacao.sortDir}
+                          onSort={() => ordenacao.toggleSort(coluna)}
+                        >
+                          {rotulo}
+                        </SortableTh>
+                      ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -297,7 +328,8 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
                       ))
                     : relatorio.por_loja.map((l) => (
                         <tr key={l.loja}>
-                          <td className="cell-strong">{l.loja_nome ?? l.loja}</td>
+                          <td className="cell-strong">{l.loja}</td>
+                          <td>{l.loja_nome ?? "—"}</td>
                           <td>{l.regional ?? "—"}</td>
                           <td>
                             <BadgeClusterInad valor={l.cluster_inad} />
@@ -306,7 +338,7 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
                         </tr>
                       ))}
                   <tr className="linha-total">
-                    <td className="cell-strong" colSpan={aba === "faixa" ? 1 : 3}>
+                    <td className="cell-strong" colSpan={aba === "faixa" ? 1 : 4}>
                       Total
                     </td>
                     <Metricas linha={relatorio.total} />

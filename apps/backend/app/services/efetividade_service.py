@@ -48,6 +48,8 @@ def obter_dados_efetividade(
     regional: list[str] | None = None,
     estado: list[str] | None = None,
     cluster_inad: list[str] | None = None,
+    sort_by: str | None = None,
+    sort_dir: str = "asc",
 ) -> tuple[dict, int, list[dict]]:
     try:
         codigos_loja = lojas_base.combinar_lojas(
@@ -169,7 +171,39 @@ def obter_dados_efetividade(
         )
 
     relatorio = montar_relatorio(itens, lojas_info=lojas_info, faixas_ordem=regras.nomes_faixa)
+    if sort_by:
+        ordenar_relatorio(relatorio, sort_by, sort_dir, regras.nomes_faixa)
     return relatorio, leads_sem_parcelas, itens
+
+
+COLUNAS_ORDENAVEIS = (
+    "faixa", "loja", "loja_nome", "regional", "cluster_inad", "qtd_envios", "clientes_cobrados",
+    "valor_cobrado", "clientes_pagaram", "valor_pago", "conversao_clientes", "recuperacao_valor",
+)
+
+
+def ordenar_relatorio(relatorio: dict, sort_by: str, sort_dir: str, faixas_ordem: list[str]) -> None:
+    """Ordena as linhas por faixa e por loja pela coluna pedida, sobre o
+    resultado inteiro. `faixa` segue a ordem de atraso das regras, não a
+    alfabética; vazios vão sempre para o fim. Colunas que não existem numa
+    das visões (ex.: `regional` na visão por faixa) deixam aquela visão como está."""
+
+    ordem_faixa = {nome: i for i, nome in enumerate(faixas_ordem)}
+
+    def valor(linha: dict):
+        v = linha.get(sort_by)
+        if sort_by == "faixa":
+            return ordem_faixa.get(v, len(ordem_faixa))
+        return v.upper() if isinstance(v, str) else v
+
+    for chave in ("por_faixa", "por_loja"):
+        linhas = relatorio[chave]
+        if not linhas or sort_by not in linhas[0]:
+            continue
+        preenchidas = [l for l in linhas if valor(l) is not None]
+        vazias = [l for l in linhas if valor(l) is None]
+        preenchidas.sort(key=valor, reverse=sort_dir == "desc")
+        relatorio[chave] = preenchidas + vazias
 
 
 def calcular_valor_a_pagar_brl(db: Session, cobrado_de: date | None, cobrado_ate: date | None) -> Decimal | None:

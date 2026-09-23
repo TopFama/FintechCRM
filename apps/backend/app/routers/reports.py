@@ -146,7 +146,8 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
     # Aba 2: Por loja
     ws_loja = wb.create_sheet(title="Por loja")
     headers_loja = [
-        "Loja",
+        "Código loja",
+        "Nome da loja",
         "Regional",
         "Cluster INAD",
         "Qtd. de envios",
@@ -163,6 +164,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
         ws_loja.append(
             [
                 linha["loja"],
+                linha.get("loja_nome") or "",
                 linha.get("regional") or "",
                 linha.get("cluster_inad") or "",
                 linha["qtd_envios"],
@@ -178,6 +180,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
     ws_loja.append(
         [
             "Total",
+            "",
             "",
             "",
             tot["qtd_envios"],
@@ -199,9 +202,9 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
         for col_idx, cell in enumerate(ws_loja[row_idx], start=1):
             if is_total:
                 cell.font = Font(bold=True)
-            if col_idx in (6, 8):
+            if col_idx in (7, 9):
                 cell.number_format = '"R$" #,##0.00'
-            elif col_idx in (9, 10):
+            elif col_idx in (10, 11):
                 cell.number_format = "0.0%"
 
     ws_loja.freeze_panes = "A2"
@@ -216,9 +219,9 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
                 max_len = max(max_len, len(str(val)))
         ws_loja.column_dimensions[col_letter].width = min(max_len + 4, 40)
 
-    # Formatação condicional sobre o intervalo de dados da coluna Cluster INAD (coluna C)
+    # Formatação condicional sobre o intervalo de dados da coluna Cluster INAD (coluna D)
     num_dados_loja = len(relatorio["por_loja"])
-    cf_range = f"C2:C{num_dados_loja + 1}" if num_dados_loja > 0 else "C2:C2"
+    cf_range = f"D2:D{num_dados_loja + 1}" if num_dados_loja > 0 else "D2:D2"
 
     red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
     red_font = Font(color="9C0006")
@@ -228,17 +231,17 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
     green_font = Font(color="006100")
 
     rule_alt = FormulaRule(
-        formula=['NOT(ISERROR(SEARCH("ALT", C2)))'],
+        formula=['NOT(ISERROR(SEARCH("ALT", D2)))'],
         fill=red_fill,
         font=red_font,
     )
     rule_med = FormulaRule(
-        formula=['NOT(ISERROR(SEARCH("MED", C2)))'],
+        formula=['NOT(ISERROR(SEARCH("MED", D2)))'],
         fill=yellow_fill,
         font=yellow_font,
     )
     rule_baix = FormulaRule(
-        formula=['NOT(ISERROR(SEARCH("BAIX", C2)))'],
+        formula=['NOT(ISERROR(SEARCH("BAIX", D2)))'],
         fill=green_fill,
         font=green_font,
     )
@@ -466,6 +469,9 @@ def export_dispatch_report(
 # Regras em services/efetividade_service.py — aqui só validação HTTP e resposta.
 
 
+EfetividadeSortColumn = Literal[efetividade_service.COLUNAS_ORDENAVEIS]
+
+
 @api.get("/efetividade", response_model=schemas.RelatorioEfetividadeOut)
 def relatorio_efetividade(
     cobrado_de: date | None = Query(None, description="Data de cobrança inicial"),
@@ -477,6 +483,8 @@ def relatorio_efetividade(
     regional: list[str] | None = Query(None),
     estado: list[str] | None = Query(None),
     cluster_inad: list[str] | None = Query(None),
+    sort_by: EfetividadeSortColumn | None = Query(None),
+    sort_dir: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
@@ -491,6 +499,8 @@ def relatorio_efetividade(
         regional=regional,
         estado=estado,
         cluster_inad=cluster_inad,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     valor_a_pagar_brl = efetividade_service.calcular_valor_a_pagar_brl(db, cobrado_de, cobrado_ate)
     return schemas.RelatorioEfetividadeOut(
@@ -514,6 +524,8 @@ def export_relatorio_efetividade(
     regional: list[str] | None = Query(None),
     estado: list[str] | None = Query(None),
     cluster_inad: list[str] | None = Query(None),
+    sort_by: EfetividadeSortColumn | None = Query(None),
+    sort_dir: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
@@ -528,6 +540,8 @@ def export_relatorio_efetividade(
         regional=regional,
         estado=estado,
         cluster_inad=cluster_inad,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     content = _build_efetividade_xlsx(dados)
     return Response(
