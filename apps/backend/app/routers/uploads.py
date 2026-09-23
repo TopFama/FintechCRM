@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
 from ..database import get_db
+from ..regras_db import carregar_regras
 from ..fila_automatica import clientes_bloqueados_hoje
 from ..deps import get_current_user
 from ..utils.document import extract_first_name, format_cpf, normalize_seta_code
@@ -173,6 +174,7 @@ async def upload_planilha(
     # de vencimento diferentes), usa o mais recente.
     # Também usada pra criar o Lead de quem só existe na planilha: todo
     # cliente cobrado precisa aparecer em "Leads enviados".
+    juros = carregar_regras(db).juros
     leads_por_codigo: dict[str, models.Lead] = {}
     for lead in (
         db.query(models.Lead)
@@ -254,6 +256,7 @@ async def upload_planilha(
                         "valor_em_aberto": lead.valor_em_aberto,
                         "vencimento_mais_antigo": lead.vencimento_mais_antigo,
                         "parcelas": lead.parcelas,
+                        "juros": juros,
                     }
                 )
             )
@@ -267,7 +270,16 @@ async def upload_planilha(
             mapping = mapping_by_vid.get(vid)
             fonte_tipo = mapping.fonte_tipo if mapping else "coluna"
 
-            if vid in field_mapping.variables:
+            if (
+                vid in field_mapping.variables
+                and field_mapping.valor
+                and field_mapping.variables[vid] == field_mapping.valor
+                and contexto.get("valor_atraso")
+            ):
+                # Variável ligada à coluna de valor da planilha passa a usar o
+                # valor em atraso com juros do cliente (mesma conta da fila).
+                val = contexto["valor_atraso"]
+            elif vid in field_mapping.variables:
                 coluna = field_mapping.variables[vid]
                 raw_val = (row.get(coluna) or "").strip()
                 # Coluna "Nome"/"NOME"/"nome" no template vira só o primeiro nome

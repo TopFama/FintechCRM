@@ -11,6 +11,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
 from . import models
+from .regras_db import carregar_regras
 from .timezone import BUSINESS_TZ
 from .utils.leads_xlsx import formatar_codigo, formatar_cpf, primeiro_nome
 from .utils.phone import is_valid_phone, normalize_phone
@@ -71,7 +72,7 @@ def ja_cobrado_hoje(db: Session, item: models.QueueItem) -> bool:
     )
 
 
-def _contexto_lead(lead: models.Lead) -> dict[str, str]:
+def _contexto_lead(lead: models.Lead, juros=None) -> dict[str, str]:
     # Colunas da planilha de leads exportada vêm primeiro: um mapeamento
     # "coluna Nome" resolve pro primeiro nome, igual ao upload manual dessa planilha.
     contexto = {
@@ -95,6 +96,7 @@ def _contexto_lead(lead: models.Lead) -> dict[str, str]:
                 "valor_em_aberto": lead.valor_em_aberto,
                 "vencimento_mais_antigo": lead.vencimento_mais_antigo,
                 "parcelas": lead.parcelas,
+                "juros": juros,
             }
         )
     )
@@ -138,6 +140,7 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
     }
 
     bloqueados = clientes_bloqueados_hoje(db)
+    juros = carregar_regras(db).juros
     total = 0
 
     por_faixa: dict[str, list[dict]] = {}
@@ -169,7 +172,7 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
                 continue
             if not lead.celular or not is_valid_phone(lead.celular):
                 continue  # sem telefone válido: fica só em Leads
-            contexto = _contexto_lead(lead)
+            contexto = _contexto_lead(lead, juros)
 
             faltando: list[str] = []
             por_template: dict[str, dict[str, str]] = {}

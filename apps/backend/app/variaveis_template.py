@@ -2,7 +2,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Iterable, Literal, Mapping
 
 from .timezone import hoje_br
@@ -101,6 +101,26 @@ def _campo(obj: Any, nome: str) -> Any:
     return obj.get(nome) if isinstance(obj, Mapping) else getattr(obj, nome, None)
 
 
+def valor_em_atraso_com_juros(parcelas: Iterable, juros: Any = None) -> Decimal:
+    """Mesma conta do valor a cobrar do SETA, mas contada até hoje: com
+    `dias_min` ou mais de atraso, valor + valor × juros_dia × dias + valor × multa."""
+    from .cobranca_regras import PARAMETROS_JUROS_PADRAO
+
+    juros = juros or PARAMETROS_JUROS_PADRAO
+    hoje = hoje_br()
+    total = Decimal("0")
+    for p in parcelas:
+        venc = _campo(p, "vencimento")
+        if venc is None or venc >= hoje:
+            continue
+        valor = Decimal(str(_campo(p, "valor") or 0))
+        dias = (hoje - venc).days
+        if dias >= juros.dias_min:
+            valor = valor + valor * juros.juros_dia * dias + valor * juros.multa
+        total += valor.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return total
+
+
 def contexto_cliente(cliente: Mapping) -> dict[str, str]:
     if not isinstance(cliente, Mapping):
         cliente = {}
@@ -130,16 +150,11 @@ def contexto_cliente(cliente: Mapping) -> dict[str, str]:
         )
         if valor_amanha == 0:
             valor_amanha = None
-    # Valor em atraso: soma simples (sem juros/multa) das parcelas do lead
-    # já vencidas (vencimento antes de hoje, GMT-3).
+    # Valor em atraso: parcelas já vencidas (antes de hoje, GMT-3) com juros
+    # e multa corridos até hoje pelos parâmetros de Configurações → Indicadores.
     valor_atraso = cliente.get("valor_atraso")
     if valor_atraso is None and cliente.get("parcelas") is not None:
-        hoje = hoje_br()
-        valor_atraso = sum(
-            (Decimal(str(_campo(p, "valor") or 0)) for p in cliente["parcelas"]
-             if _campo(p, "vencimento") is not None and _campo(p, "vencimento") < hoje),
-            Decimal("0"),
-        )
+        valor_atraso = valor_em_atraso_com_juros(cliente["parcelas"], cliente.get("juros"))
     codigo_fmt = formatar_codigo(cliente.get("codigo"))
     primeiro = primeiro_nome(cliente.get("nome"))
 

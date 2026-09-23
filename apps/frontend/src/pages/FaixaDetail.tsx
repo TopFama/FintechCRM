@@ -203,9 +203,13 @@ export default function FaixaDetail() {
           fonte_tipo: existente.fonte_tipo === "campo_cliente" ? "campo_cliente" : "coluna",
           valor: existente.column_name || "",
         };
+      } else if (v.campo_sugerido) {
+        // Sem mapeamento salvo: começa pelo campo sugerido no template
+        // (ex.: "Valor em atraso" para a variável de valor).
+        result[v.id] = { fonte_tipo: "campo_cliente", valor: v.campo_sugerido };
       }
-      // variável nova (sem mapeamento salvo ainda): fica sem entrada, pra a
-      // lista suspensa mostrar o placeholder até o usuário escolher a origem.
+      // Sem nenhum dos dois: fica sem entrada, pra a lista suspensa mostrar
+      // o placeholder até o usuário escolher a origem.
     }
     return result;
   }
