@@ -303,6 +303,8 @@ export const api = {
     (await request<{ total: number }>(`/leads?${montarQuery({ status, limit: 1, ...periodo })}`)).total,
   exportarLeads: (params: FiltrosLeads) =>
     downloadFile(`/leads/exportar.xlsx?${montarQuery(params)}`, "leads.xlsx"),
+  enfileirarLeadsPendentes: () =>
+    request<{ pendentes: number; na_fila: number }>("/leads/enfileirar-pendentes", { method: "POST" }),
   marcarLeadsCobrados: (ids: string[]) =>
     request<{ atualizados: number }>("/leads/marcar-cobrados", {
       method: "POST",

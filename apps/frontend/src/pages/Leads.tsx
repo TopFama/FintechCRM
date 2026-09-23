@@ -66,6 +66,22 @@ export default function Leads() {
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [marcandoCobrados, setMarcandoCobrados] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
+  const [enfileirando, setEnfileirando] = useState(false);
+
+  async function enfileirarPendentes() {
+    if (!window.confirm("Colocar na fila de disparo os leads pendentes gerados hoje?")) return;
+    setEnfileirando(true);
+    setErro(null);
+    setSucesso(null);
+    try {
+      const r = await api.enfileirarLeadsPendentes();
+      setSucesso(`${r.na_fila} de ${r.pendentes} lead(s) pendente(s) de hoje entraram na fila de disparo.`);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Erro ao colocar leads na fila");
+    } finally {
+      setEnfileirando(false);
+    }
+  }
   const [sucesso, setSucesso] = useState<string | null>(null);
 
   const reqRef = useRef(0);
@@ -416,6 +432,9 @@ export default function Leads() {
               : `Marcar como enviados (${selecionados.size})`}
           </button>
         )}
+        <button type="button" className="secondary" onClick={enfileirarPendentes} disabled={enfileirando}>
+          {enfileirando ? "Enviando para a fila..." : "Colocar pendentes de hoje na fila"}
+        </button>
         <button type="button" className="danger" onClick={excluirLeads} disabled={excluindo}>
           {excluindo
             ? "Excluindo..."

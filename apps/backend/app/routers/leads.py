@@ -302,6 +302,24 @@ def marcar_cobrados(
     return {"atualizados": atualizados}
 
 
+@router.post("/enfileirar-pendentes", response_model=dict)
+def enfileirar_pendentes_de_hoje(
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Coloca na fila de disparo os leads pendentes gerados hoje (horário de
+    Brasília) — para os que foram gerados antes de "Gerar leads" já enfileirar.
+    Mesma regra de sempre: não duplica quem já está na fila ou foi cobrado hoje."""
+
+    leads_hoje = (
+        db.query(models.Lead.codigo_cliente, models.Lead.faixa, models.Lead.vencimento_mais_antigo)
+        .filter(models.Lead.status == "novo", models.Lead.created_at >= _inicio_utc(hoje_br()))
+        .all()
+    )
+    clientes = [{"codigo": c, "faixa": f, "vencimento_mais_antigo": v} for c, f, v in leads_hoje]
+    return {"pendentes": len(clientes), "na_fila": enfileirar_leads(db, clientes)}
+
+
 @router.post("/excluir", response_model=dict)
 def excluir_leads(
     payload: schemas.LeadsExcluir,

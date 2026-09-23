@@ -45,6 +45,7 @@ export default function Dashboard() {
       <MatrizCobrancaCard opcoes={opcoes} />
       <EfetividadeCard opcoes={opcoes} />
       <LeadsCard opcoes={opcoes} />
+      <OrcamentoProgressaoCard />
     </div>
   );
 }
@@ -173,8 +174,6 @@ function ResumoFila({ summary, nomesFaixa }: { summary: DashboardSummary; nomesF
           </div>
         )}
       </div>
-
-      <OrcamentoProgressaoCard />
 
       <div className="card">
         <div className="card-header">
