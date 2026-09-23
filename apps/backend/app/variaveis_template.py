@@ -1,16 +1,18 @@
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Iterable, Literal, Mapping
 
+from .timezone import hoje_br
 from .utils.leads_xlsx import formatar_codigo, formatar_cpf, primeiro_nome
 
 CAMPOS_CLIENTE: dict[str, str] = {
     "codigo": "Código SETA",
     "nome": "Nome completo",
     "primeiro_nome": "Primeiro nome",
+    "codigo_primeiro_nome": "Código - Primeiro nome",
     "cpf": "CPF",
     "celular": "Celular",
     "cluster": "Cluster",
@@ -20,6 +22,7 @@ CAMPOS_CLIENTE: dict[str, str] = {
     "valor_cobrar": "Valor a cobrar",
     "valor_em_aberto": "Valor em aberto",
     "vencimento": "Vencimento da parcela mais antiga",
+    "valor_parcela_amanha": "Valor da parcela que vence amanhã",
 }
 
 
@@ -93,6 +96,10 @@ def formatar_data(valor: Any) -> str:
     return str(valor)
 
 
+def _campo(obj: Any, nome: str) -> Any:
+    return obj.get(nome) if isinstance(obj, Mapping) else getattr(obj, nome, None)
+
+
 def contexto_cliente(cliente: Mapping) -> dict[str, str]:
     if not isinstance(cliente, Mapping):
         cliente = {}
@@ -110,10 +117,26 @@ def contexto_cliente(cliente: Mapping) -> dict[str, str]:
     )
     dias_val = cliente.get("dias_atraso")
 
+    # Lembrete D-1: soma das parcelas do cliente que vencem amanhã (GMT-3).
+    # Aceita o valor já calculado ou a lista de parcelas do lead.
+    valor_amanha = cliente.get("valor_parcela_amanha")
+    if valor_amanha is None and cliente.get("parcelas") is not None:
+        amanha = hoje_br() + timedelta(days=1)
+        valor_amanha = sum(
+            (Decimal(str(_campo(p, "valor") or 0)) for p in cliente["parcelas"]
+             if _campo(p, "vencimento") == amanha),
+            Decimal("0"),
+        )
+        if valor_amanha == 0:
+            valor_amanha = None
+    codigo_fmt = formatar_codigo(cliente.get("codigo"))
+    primeiro = primeiro_nome(cliente.get("nome"))
+
     return {
-        "codigo": formatar_codigo(cliente.get("codigo")),
+        "codigo": codigo_fmt,
         "nome": str(cliente.get("nome") or "").strip(),
-        "primeiro_nome": primeiro_nome(cliente.get("nome")),
+        "primeiro_nome": primeiro,
+        "codigo_primeiro_nome": " - ".join(x for x in (codigo_fmt, primeiro) if x),
         "cpf": formatar_cpf(cpf_val),
         "celular": str(cliente.get("celular") or "").strip(),
         "cluster": str(cliente.get("cluster") or "").strip(),
@@ -123,6 +146,7 @@ def contexto_cliente(cliente: Mapping) -> dict[str, str]:
         "valor_cobrar": formatar_moeda(cliente.get("valor_cobrar")),
         "valor_em_aberto": formatar_moeda(cliente.get("valor_em_aberto")),
         "vencimento": formatar_data(venc_val),
+        "valor_parcela_amanha": formatar_moeda(valor_amanha),
     }
 
 

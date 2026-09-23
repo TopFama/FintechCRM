@@ -186,7 +186,11 @@ async def upload_planilha(
     # Também usada pra criar o Lead de quem só existe na planilha: todo
     # cliente cobrado precisa aparecer em "Leads enviados".
     leads_por_codigo: dict[str, models.Lead] = {}
-    for lead in db.query(models.Lead).filter(models.Lead.faixa == faixa.name):
+    for lead in (
+        db.query(models.Lead)
+        .options(selectinload(models.Lead.parcelas))
+        .filter(models.Lead.faixa == faixa.name)
+    ):
         atual = leads_por_codigo.get(lead.codigo_cliente)
         if atual is None or lead.created_at > atual.created_at:
             leads_por_codigo[lead.codigo_cliente] = lead
@@ -261,6 +265,7 @@ async def upload_planilha(
                         "valor_cobrar": lead.valor_cobrar,
                         "valor_em_aberto": lead.valor_em_aberto,
                         "vencimento_mais_antigo": lead.vencimento_mais_antigo,
+                        "parcelas": lead.parcelas,
                     }
                 )
             )

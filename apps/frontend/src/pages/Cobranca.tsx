@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, ClienteCobranca, FiltrosCobranca, mensagemErroSeta } from "../api";
+import { api, ClienteCobranca, Faixa, FiltrosCobranca, mensagemErroSeta } from "../api";
 import { formatBRL, formatCpf, formatData } from "../format";
 import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../components/BarraFiltrosCobranca";
+import UploadPlanilhaFaixa from "../components/UploadPlanilhaFaixa";
 import Paginacao from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
@@ -72,6 +73,13 @@ export default function Cobranca() {
     sem_celular: number;
   } | null>(null);
   const [leadsErro, setLeadsErro] = useState<string | null>(null);
+
+  // Importação de planilha: escolher a faixa libera o upload dela.
+  const [faixasUpload, setFaixasUpload] = useState<Faixa[]>([]);
+  const [faixaUploadId, setFaixaUploadId] = useState("");
+  useEffect(() => {
+    api.listFaixas().then(setFaixasUpload).catch(() => undefined);
+  }, []);
 
   // Descarta respostas de consultas já substituídas por outra mais nova
   const cliReqRef = useRef(0);
@@ -143,6 +151,27 @@ export default function Cobranca() {
             <Link to="/">Dashboard</Link>
           </div>
         </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <h3>Importar planilha para a fila</h3>
+        </div>
+        <p className="card-subtitle">Escolha a faixa de atraso para liberar o envio da planilha.</p>
+        <div className="form-row">
+          <div className="field">
+            <label>Faixa</label>
+            <select value={faixaUploadId} onChange={(e) => setFaixaUploadId(e.target.value)}>
+              <option value="">Selecione a faixa...</option>
+              {faixasUpload.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {faixaUploadId && <UploadPlanilhaFaixa faixaId={faixaUploadId} />}
       </div>
 
       <div className="card">

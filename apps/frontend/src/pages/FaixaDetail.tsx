@@ -56,9 +56,7 @@ export default function FaixaDetail() {
     filaSort.sortDir
   );
   const [error, setError] = useState<string | null>(null);
-  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [lastQueueUpdate, setLastQueueUpdate] = useState<Date | null>(null);
-  const [downloadingModel, setDownloadingModel] = useState(false);
 
   // Números e templates atribuídos à faixa — cada par (FaixaEnvio) cobra em
   // paralelo, com seu próprio agendamento (configurado em Configurações →
@@ -93,25 +91,6 @@ export default function FaixaDetail() {
   );
   const [leadsTotal, setLeadsTotal] = useState(0);
   const [leadsLoading, setLeadsLoading] = useState(false);
-
-  // Upload em duas etapas: 1) escolher arquivo e ler as colunas reais do
-  // cabeçalho; 2) mapear cada variável/campo para uma dessas colunas antes
-  // de confirmar a importação.
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [columns, setColumns] = useState<string[] | null>(null);
-  const [sampleRow, setSampleRow] = useState<Record<string, string> | null>(null);
-  const [loadingColumns, setLoadingColumns] = useState(false);
-  const [fieldMap, setFieldMap] = useState<UploadFieldMapping>({
-    celular: NO_COLUMN,
-    codigo_cliente: NO_COLUMN,
-    nome: NO_COLUMN,
-    cpf: NO_COLUMN,
-    valor: NO_COLUMN,
-    variables: {},
-  });
-  const [importing, setImporting] = useState(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function loadFaixa() {
     if (!id) return;
@@ -182,83 +161,6 @@ export default function FaixaDetail() {
 
   const algumAgendado = (faixa?.envios || []).some((e) => e.dispatch_config?.active);
 
-  async function handlePickFile(file: File) {
-    setError(null);
-    setUploadResult(null);
-    setPendingFile(file);
-    setColumns(null);
-    setLoadingColumns(true);
-    try {
-      const result = await api.uploadColumns(id!, file);
-      setColumns(result.columns);
-      setSampleRow(result.sample_row);
-      const previous = faixa?.upload_field_mapping;
-      const variableIds = templatesAtivos.flatMap((t) => t.variables.map((v) => v.id));
-      setFieldMap({
-        celular: pickDefault(result.columns, previous?.celular),
-        codigo_cliente: pickDefault(result.columns, previous?.codigo_cliente),
-        nome: pickDefault(result.columns, previous?.nome),
-        cpf: pickDefault(result.columns, previous?.cpf),
-        valor: pickDefault(result.columns, previous?.valor),
-        variables: Object.fromEntries(
-          variableIds.map((vid) => [vid, pickDefault(result.columns, previous?.variables?.[vid])])
-        ),
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao ler colunas da planilha");
-      setPendingFile(null);
-    } finally {
-      setLoadingColumns(false);
-    }
-  }
-
-  function cancelMapping() {
-    setPendingFile(null);
-    setColumns(null);
-    setSampleRow(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
-  const requiredVariableIds = templatesAtivos
-    .flatMap((t) => t.variables)
-    .map((v) => v.id);
-  const mappingComplete =
-    Boolean(fieldMap.celular) &&
-    Boolean(fieldMap.codigo_cliente) &&
-    Boolean(fieldMap.nome) &&
-    Boolean(fieldMap.cpf) &&
-    requiredVariableIds.every((vid) => Boolean(fieldMap.variables[vid]));
-
-  async function confirmImport() {
-    if (!id || !pendingFile || !mappingComplete) return;
-    setError(null);
-    setImporting(true);
-    try {
-      const result = await api.uploadPlanilha(id, pendingFile, fieldMap);
-      setUploadResult(result);
-      cancelMapping();
-      loadFaixa();
-      loadQueue();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao subir planilha");
-    } finally {
-      setImporting(false);
-    }
-  }
-
-  async function handleDownloadModel() {
-    if (!id || !faixa) return;
-    setError(null);
-    setDownloadingModel(true);
-    try {
-      await api.downloadSpreadsheetModel(id, faixa.name);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao baixar modelo");
-    } finally {
-      setDownloadingModel(false);
-    }
-  }
-
   function mapeamentosParaEdicao(templateId: string): Record<string, MapeamentoEdicao> {
     const template = templates.find((t) => t.id === templateId);
     if (!template) return {};
@@ -328,16 +230,6 @@ export default function FaixaDetail() {
         return campo ? campo.exemplo : `${match} (campo não escolhido)`;
       }
       return `[${m.valor || variavel.internal_name}]`;
-    });
-  }
-
-  function renderizarPreviewUpload(t: Template): string {
-    return t.body_text.replace(/\{\{(\d+)\}\}/g, (match, pos) => {
-      const variavel = t.variables.find((v) => v.position === Number(pos));
-      if (!variavel) return match;
-      const coluna = fieldMap.variables[variavel.id];
-      const valor = coluna && sampleRow ? sampleRow[coluna] : "";
-      return valor ? valor : `[${variavel.internal_name}]`;
     });
   }
 
@@ -630,202 +522,6 @@ export default function FaixaDetail() {
         )}
       </div>
 
-      {templatesAtivos.length > 0 && (
-        <div className="card">
-          <div className="card-header">
-            <h3>Subir planilha e mapear colunas</h3>
-            <button className="ghost small" onClick={handleDownloadModel} disabled={downloadingModel}>
-              <IconDownload width={16} height={16} /> {downloadingModel ? "Baixando..." : "Baixar modelo sugerido (.xlsx)"}
-            </button>
-          </div>
-          <p className="card-subtitle">
-            Suba a planilha com a base de clientes desta faixa. O sistema lê o cabeçalho (primeira linha) e você
-            escolhe, em uma lista suspensa, qual coluna alimenta cada campo — não precisa usar os nomes do modelo.
-          </p>
-
-          {!columns && (
-            <label className="dropzone">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx"
-                onChange={(e) => e.target.files && handlePickFile(e.target.files[0])}
-              />
-              <IconUpload width={26} height={26} />
-              <div className="dz-title">{loadingColumns ? "Lendo colunas da planilha..." : "Clique ou arraste a planilha aqui"}</div>
-              <div className="dz-hint">.xlsx</div>
-            </label>
-          )}
-
-          {columns && (
-            <div>
-              <p className="card-subtitle" style={{ marginTop: 0 }}>
-                Arquivo: <strong>{pendingFile?.name}</strong> — {columns.length} coluna(s) encontrada(s)
-              </p>
-
-              <div className="form-row">
-                <div className="field">
-                  <label>Coluna do código (SETA, até 8 dígitos — completa com zero à esquerda) *</label>
-                  <select value={fieldMap.codigo_cliente} onChange={(e) => setFieldMap({ ...fieldMap, codigo_cliente: e.target.value })}>
-                    <option value="">Selecione...</option>
-                    {columns.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Coluna do nome (usa só o primeiro nome) *</label>
-                  <select value={fieldMap.nome} onChange={(e) => setFieldMap({ ...fieldMap, nome: e.target.value })}>
-                    <option value="">Selecione...</option>
-                    {columns.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="field">
-                  <label>Coluna do CPF (formata com pontos e traço) *</label>
-                  <select value={fieldMap.cpf} onChange={(e) => setFieldMap({ ...fieldMap, cpf: e.target.value })}>
-                    <option value="">Selecione...</option>
-                    {columns.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Coluna do celular *</label>
-                  <select value={fieldMap.celular} onChange={(e) => setFieldMap({ ...fieldMap, celular: e.target.value })}>
-                    <option value="">Selecione...</option>
-                    {columns.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="field">
-                  <label>Coluna do valor cobrado (opcional)</label>
-                  <select value={fieldMap.valor || ""} onChange={(e) => setFieldMap({ ...fieldMap, valor: e.target.value })}>
-                    <option value="">Nenhuma</option>
-                    {columns.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {templatesAtivos.some((t) => t.variables.length > 0) && (
-                <>
-                  <label style={{ marginBottom: 8 }}>Variáveis dos templates ativos</label>
-                  <div className="form-row" style={{ flexWrap: "wrap" }}>
-                    {templatesAtivos.flatMap((t) =>
-                      t.variables.map((v) => {
-                        return (
-                          <div className="field" key={v.id} style={{ minWidth: 220 }}>
-                            <label>
-                              {t.name}: {v.internal_name} *
-                            </label>
-                            <select
-                              value={fieldMap.variables[v.id] || ""}
-                              onChange={(e) => setFieldMap({ ...fieldMap, variables: { ...fieldMap.variables, [v.id]: e.target.value } })}
-                            >
-                              <option value="">Selecione...</option>
-                              {columns.map((c) => (
-                                <option key={c} value={c}>
-                                  {c}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </>
-              )}
-
-              {sampleRow && templatesAtivos.length > 0 && (
-                <div className="sub-card" style={{ marginTop: 16 }}>
-                  <label style={{ marginBottom: 8, display: "block" }}>
-                    Pré-visualização (com a primeira linha da planilha subida)
-                  </label>
-                  {templatesAtivos.map((t) => (
-                    <p key={t.id} className="card-subtitle" style={{ whiteSpace: "pre-wrap" }}>
-                      <strong>{t.name}:</strong> {renderizarPreviewUpload(t)}
-                    </p>
-                  ))}
-                </div>
-              )}
-
-              <div className="actions-row">
-                <button className="secondary" onClick={cancelMapping} disabled={importing}>
-                  Cancelar
-                </button>
-                <button onClick={confirmImport} disabled={!mappingComplete || importing}>
-                  {importing ? "Importando..." : "Confirmar e importar"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {uploadResult && (
-            <>
-              <div className="upload-summary">
-                <div className="item">
-                  <span className="num" style={{ color: "var(--color-success)" }}>
-                    {uploadResult.accepted_count}
-                  </span>
-                  aceitos
-                </div>
-                <div className="item">
-                  <span className="num" style={{ color: "var(--color-danger)" }}>
-                    {uploadResult.rejected_count}
-                  </span>
-                  rejeitados
-                </div>
-                {uploadResult.invalid_phone_count > 0 && (
-                  <div className="item">
-                    <span className="num" style={{ color: "var(--color-warning)" }}>
-                      {uploadResult.invalid_phone_count}
-                    </span>
-                    telefone(s) inválido(s)
-                  </div>
-                )}
-                <div className="item">
-                  <span className="num">{uploadResult.row_count}</span>
-                  linhas na planilha
-                </div>
-              </div>
-              {uploadResult.invalid_phone_count > 0 && (
-                <p className="field-hint">
-                  <Link to="/relatorios">Ver no relatório de telefones inválidos →</Link>
-                </p>
-              )}
-              {uploadResult.rejected_reasons.length > 0 && (
-                <ul style={{ fontSize: 13, color: "var(--color-danger)", marginTop: 10 }}>
-                  {uploadResult.rejected_reasons.map((r, i) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
       <div className="card">
         <div className="card-header">
           <h3>Fila desta faixa</h3>
@@ -838,7 +534,7 @@ export default function FaixaDetail() {
           <div className="empty-state">
             <IconInbox width={28} height={28} />
             <div className="title">Fila vazia</div>
-            <p>Suba uma planilha acima para adicionar clientes a esta faixa.</p>
+            <p>Suba uma planilha desta faixa na aba <Link to="/cobranca">Cobrança</Link> para adicionar clientes.</p>
           </div>
         ) : (
           <div className="table-wrap">
