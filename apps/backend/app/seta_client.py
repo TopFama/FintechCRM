@@ -511,7 +511,8 @@ def pagamentos_pos_cobranca(
                     )
                     SELECT c.pessoa AS pessoa, c.data_cobranca AS data_cobranca, min(ft.pagamento) AS data_pagamento
                       FROM cobrancas c
-                      JOIN financeiro_titulos ft ON trim(ft.pessoa) = c.pessoa
+                      -- coluna char(8) bruta, pra usar idx_financeiro_titulos_pessoa
+                      JOIN financeiro_titulos ft ON ft.pessoa = CAST(c.pessoa AS char(8))
                      WHERE ft.status = 'B'
                        AND ft.pagamento >= c.data_cobranca
                        AND (:dias_janela IS NULL OR ft.pagamento <= c.data_cobranca + (:dias_janela * INTERVAL '1 day'))
