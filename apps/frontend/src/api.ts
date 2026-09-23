@@ -287,7 +287,7 @@ export const api = {
     ),
   listarLeads: (params: FiltrosLeads & { limit: number; offset: number }) =>
     request<{ total: number; itens: Lead[] }>(`/leads?${montarQuery(params)}`),
-  contarLeads: async (status: "novo" | "cobrado", periodo: { criado_de?: string; criado_ate?: string } = {}) =>
+  contarLeads: async (status: "novo" | "cobrado", periodo: Partial<Pick<FiltrosLeads, "criado_de" | "criado_ate" | "enviado_de" | "enviado_ate">> = {}) =>
     (await request<{ total: number }>(`/leads?${montarQuery({ status, limit: 1, ...periodo })}`)).total,
   exportarLeads: (params: FiltrosLeads) =>
     downloadFile(`/leads/exportar.xlsx?${montarQuery(params)}`, "leads.xlsx"),
@@ -754,6 +754,8 @@ export interface FiltrosLeads {
   com_celular?: boolean;
   criado_de?: string;
   criado_ate?: string;
+  enviado_de?: string;
+  enviado_ate?: string;
 }
 
 // --- Blacklist ---

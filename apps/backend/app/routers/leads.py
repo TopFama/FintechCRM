@@ -1,5 +1,6 @@
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 import re
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import case, false, or_
@@ -10,7 +11,8 @@ from ..database import get_db
 from ..deps import get_current_user
 from ..leads_service import _em_lotes, gerar_leads_de_clientes
 from ..regras_db import carregar_regras
-from ..timezone import hoje_br
+from ..timezone import BUSINESS_TZ, hoje_br
+from ..utils.leads_xlsx import gerar_xlsx_leads
 from .blacklist import codigos_bloqueados
 from .cobranca import buscar_base_ou_erro, filtros_base
 
@@ -47,6 +49,10 @@ def gerar_leads(
     )
 
 
+def _inicio_utc(dia: date) -> datetime:
+    return datetime.combine(dia, time.min, BUSINESS_TZ).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+
+
 def filtrar_leads(
     db: Session,
     *,
@@ -58,6 +64,8 @@ def filtrar_leads(
     com_celular: bool | None = None,
     criado_de: date | None = None,
     criado_ate: date | None = None,
+    enviado_de: date | None = None,
+    enviado_ate: date | None = None,
 ):
     """Query de leads com os filtros da aba; também serve à exportação. Leads
     de clientes que entraram na blacklist depois de criados ficam de fora."""
@@ -84,10 +92,15 @@ def filtrar_leads(
         query = query.filter(models.Lead.celular.isnot(None))
     elif com_celular is False:
         query = query.filter(models.Lead.celular.is_(None))
+    # Datas do filtro são dias em GMT-3; o banco guarda UTC
     if criado_de:
-        query = query.filter(models.Lead.created_at >= datetime.combine(criado_de, datetime.min.time()))
+        query = query.filter(models.Lead.created_at >= _inicio_utc(criado_de))
     if criado_ate:
-        query = query.filter(models.Lead.created_at <= datetime.combine(criado_ate, datetime.max.time()))
+        query = query.filter(models.Lead.created_at < _inicio_utc(criado_ate + timedelta(days=1)))
+    if enviado_de:
+        query = query.filter(models.Lead.cobrado_em >= _inicio_utc(enviado_de))
+    if enviado_ate:
+        query = query.filter(models.Lead.cobrado_em < _inicio_utc(enviado_ate + timedelta(days=1)))
 
     bl_codigos, bl_cpfs = codigos_bloqueados(db)
     if bl_codigos:
@@ -109,6 +122,8 @@ def filtros_consulta_leads(
     com_celular: bool | None = Query(None),
     criado_de: date | None = Query(None),
     criado_ate: date | None = Query(None),
+    enviado_de: date | None = Query(None, description="Data do envio (cobrado_em), GMT-3"),
+    enviado_ate: date | None = Query(None),
 ) -> dict:
     return {
         "loja": loja,
@@ -122,6 +137,8 @@ def filtros_consulta_leads(
         "com_celular": com_celular,
         "criado_de": criado_de,
         "criado_ate": criado_ate,
+        "enviado_de": enviado_de,
+        "enviado_ate": enviado_ate,
     }
 
 
@@ -147,6 +164,8 @@ def query_leads_filtrada(db: Session, filtros: dict, lead_status: str | None):
         com_celular=filtros["com_celular"],
         criado_de=filtros["criado_de"],
         criado_ate=filtros["criado_ate"],
+        enviado_de=filtros["enviado_de"],
+        enviado_ate=filtros["enviado_ate"],
     )
 
 

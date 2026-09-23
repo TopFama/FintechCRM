@@ -13,12 +13,14 @@ export default function LeadsCard({ opcoes }: { opcoes: OpcoesCobranca }) {
   const [exportando, setExportando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState<Periodo>({});
-  const filtroData = { criado_de: periodo.de, criado_ate: periodo.ate };
+  // Novos contam pela data em que viraram lead; enviados, pela data do envio.
+  const filtroNovos = { criado_de: periodo.de, criado_ate: periodo.ate };
+  const filtroEnviados = { enviado_de: periodo.de, enviado_ate: periodo.ate };
 
   useEffect(() => {
     if (Boolean(periodo.de) !== Boolean(periodo.ate)) return;
-    api.contarLeads("novo", filtroData).then(setNovos).catch((e) => setErro(e.message));
-    api.contarLeads("cobrado", filtroData).then(setEnviados).catch((e) => setErro(e.message));
+    api.contarLeads("novo", filtroNovos).then(setNovos).catch((e) => setErro(e.message));
+    api.contarLeads("cobrado", filtroEnviados).then(setEnviados).catch((e) => setErro(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodo]);
 
@@ -27,7 +29,7 @@ export default function LeadsCard({ opcoes }: { opcoes: OpcoesCobranca }) {
     setErro(null);
     try {
       // sem status: o backend exporta só os leads já enviados
-      await api.exportarLeads({ faixa: faixas, ...filtroData });
+      await api.exportarLeads({ faixa: faixas, ...filtroEnviados });
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao exportar");
     } finally {
