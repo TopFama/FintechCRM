@@ -363,6 +363,11 @@ class QueueItemOut(BaseModel):
     sent_at: datetime | None
 
 
+class QueueItemPage(BaseModel):
+    total: int
+    itens: list[QueueItemOut]
+
+
 # --- Upload da planilha da faixa ---
 
 

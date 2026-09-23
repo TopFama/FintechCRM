@@ -25,6 +25,7 @@ import {
   IconUpload,
   IconUsers,
 } from "../icons";
+import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { ordenarPor, useSort } from "../sort";
 
@@ -55,6 +56,9 @@ export default function FaixaDetail() {
       : null,
     filaSort.sortDir
   );
+  const [queueTotal, setQueueTotal] = useState(0);
+  const [queueOffset, setQueueOffset] = useState(0);
+  const [queueLimit, setQueueLimit] = useState(LIMIT_OPCOES_PADRAO[1]);
   const [error, setError] = useState<string | null>(null);
   const [lastQueueUpdate, setLastQueueUpdate] = useState<Date | null>(null);
 
@@ -90,6 +94,8 @@ export default function FaixaDetail() {
     leadsFaixaSort.sortDir
   );
   const [leadsTotal, setLeadsTotal] = useState(0);
+  const [leadsOffset, setLeadsOffset] = useState(0);
+  const [leadsLimit, setLeadsLimit] = useState(LIMIT_OPCOES_PADRAO[1]);
   const [leadsLoading, setLeadsLoading] = useState(false);
 
   function loadFaixa() {
@@ -100,27 +106,50 @@ export default function FaixaDetail() {
       .catch((e) => setError(e.message));
   }
 
-  function loadQueue() {
+  function loadQueue(novoOffset: number = queueOffset, novoLimit: number = queueLimit) {
     if (!id) return;
     api
-      .listQueue(id)
-      .then((q) => {
-        setQueue(q);
+      .listQueue(id, { limit: novoLimit, offset: novoOffset })
+      .then((r) => {
+        setQueue(r.itens);
+        setQueueTotal(r.total);
         setLastQueueUpdate(new Date());
       })
       .catch((e) => setError(e.message));
   }
 
-  function loadLeads(nomeFaixa: string) {
+  function mudarPaginaQueue(novoOffset: number) {
+    setQueueOffset(novoOffset);
+    loadQueue(novoOffset, queueLimit);
+  }
+
+  function mudarLimiteQueue(novoLimit: number) {
+    setQueueLimit(novoLimit);
+    setQueueOffset(0);
+    loadQueue(0, novoLimit);
+  }
+
+  function loadLeads(nomeFaixa: string, novoOffset: number = leadsOffset, novoLimit: number = leadsLimit) {
     setLeadsLoading(true);
     api
-      .listarLeads({ faixa: [nomeFaixa], limit: 50, offset: 0 })
+      .listarLeads({ faixa: [nomeFaixa], limit: novoLimit, offset: novoOffset })
       .then((r) => {
         setLeads(r.itens);
         setLeadsTotal(r.total);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLeadsLoading(false));
+  }
+
+  function mudarPaginaLeads(novoOffset: number) {
+    setLeadsOffset(novoOffset);
+    if (faixa) loadLeads(faixa.name, novoOffset, leadsLimit);
+  }
+
+  function mudarLimiteLeads(novoLimit: number) {
+    setLeadsLimit(novoLimit);
+    setLeadsOffset(0);
+    if (faixa) loadLeads(faixa.name, 0, novoLimit);
   }
 
   useEffect(() => {
@@ -130,13 +159,15 @@ export default function FaixaDetail() {
   }, []);
 
   useEffect(() => {
-    if (faixa) loadLeads(faixa.name);
+    if (faixa) loadLeads(faixa.name, 0, leadsLimit);
+    setLeadsOffset(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [faixa?.name]);
 
   useEffect(() => {
     loadFaixa();
-    loadQueue();
+    loadQueue(0, queueLimit);
+    setQueueOffset(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -144,10 +175,10 @@ export default function FaixaDetail() {
   // enquanto a tela estiver aberta.
   useEffect(() => {
     if (!id) return;
-    const interval = setInterval(loadQueue, QUEUE_POLL_MS);
+    const interval = setInterval(() => loadQueue(queueOffset, queueLimit), QUEUE_POLL_MS);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, queueOffset, queueLimit]);
 
   // Templates distintos entre os envios ATIVOS — o que a planilha subida
   // precisa alimentar, já que qualquer um pode processar um item da fila.
@@ -576,6 +607,9 @@ export default function FaixaDetail() {
             </table>
           </div>
         )}
+        {queueTotal > 0 && (
+          <Paginacao total={queueTotal} limit={queueLimit} offset={queueOffset} onChange={mudarPaginaQueue} onLimitChange={mudarLimiteQueue} />
+        )}
       </div>
 
       <div className="card">
@@ -640,9 +674,7 @@ export default function FaixaDetail() {
                 </tbody>
               </table>
             </div>
-            {leadsTotal > leads.length && (
-              <p className="field-hint">Mostrando {leads.length} de {leadsTotal} leads — veja o restante em Leads.</p>
-            )}
+            <Paginacao total={leadsTotal} limit={leadsLimit} offset={leadsOffset} onChange={mudarPaginaLeads} onLimitChange={mudarLimiteLeads} />
           </>
         )}
       </div>

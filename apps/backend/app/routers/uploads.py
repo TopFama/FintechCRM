@@ -1,7 +1,7 @@
 from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
@@ -397,14 +397,15 @@ async def upload_planilha(
     )
 
 
-@router.get("/{faixa_id}/queue", response_model=list[schemas.QueueItemOut])
+@router.get("/{faixa_id}/queue", response_model=schemas.QueueItemPage)
 def list_queue(
-    faixa_id: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)
+    faixa_id: str,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
 ):
-    return (
-        db.query(models.QueueItem)
-        .filter(models.QueueItem.faixa_id == faixa_id)
-        .order_by(models.QueueItem.created_at.desc())
-        .limit(500)
-        .all()
-    )
+    query = db.query(models.QueueItem).filter(models.QueueItem.faixa_id == faixa_id)
+    total = query.count()
+    itens = query.order_by(models.QueueItem.created_at.desc()).offset(offset).limit(limit).all()
+    return schemas.QueueItemPage(total=total, itens=itens)

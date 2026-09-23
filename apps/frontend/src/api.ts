@@ -249,7 +249,8 @@ export const api = {
     form.append("mapping", JSON.stringify(mapping));
     return request<UploadResult>(`/faixas/${faixaId}/uploads`, { method: "POST", body: form });
   },
-  listQueue: (faixaId: string) => request<QueueItem[]>(`/faixas/${faixaId}/queue`),
+  listQueue: (faixaId: string, params: { limit: number; offset: number }) =>
+    request<{ total: number; itens: QueueItem[] }>(`/faixas/${faixaId}/queue?${montarQuery(params)}`),
 
   dashboardSummary: (periodo: { de?: string; ate?: string } = {}) =>
     request<DashboardSummary>(`/dashboard/summary?${montarQuery(periodo)}`),
