@@ -19,7 +19,7 @@ from . import models
 from .config import settings
 from .database import SessionLocal
 from .dispatch_service import enviar_item
-from .fila_automatica import enfileirar_leads, expirar_nao_enviados
+from .fila_automatica import enfileirar_leads, expirar_nao_enviados, ja_cobrado_hoje
 from .leads_service import gerar_leads_de_clientes
 from .timezone import BUSINESS_TZ
 
@@ -181,6 +181,12 @@ async def run_dispatch_cycle() -> None:
                 db.commit()
 
                 for item in pending_items:
+                    # Última barreira: o mesmo cliente pode ter entrado em duas filas antes de sair em uma.
+                    if ja_cobrado_hoje(db, item):
+                        item.status = models.QueueStatus.error
+                        item.error_message = "Cliente já cobrado hoje em outra faixa ou envio; não reenviado"
+                        db.commit()
+                        continue
                     await enviar_item(envio, item, db)
                     db.commit()
             except Exception:  # noqa: BLE001 - um envio com problema não pode travar os demais

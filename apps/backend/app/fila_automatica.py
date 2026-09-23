@@ -23,6 +23,43 @@ def _utc_ingenuo(local: datetime) -> datetime:
     return local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
 
+def inicio_hoje_utc() -> datetime:
+    """Meia-noite de hoje em Brasília, em UTC ingênuo (como sent_at é gravado)."""
+    return _utc_ingenuo(datetime.combine(datetime.now(BUSINESS_TZ).date(), time.min, BUSINESS_TZ))
+
+
+def clientes_bloqueados_hoje(db: Session) -> set[str]:
+    """Códigos que não podem entrar na fila agora, em QUALQUER faixa: quem já
+    está pendente/reservado (vai sair) e quem já foi cobrado hoje (GMT-3).
+    Cliente cobrado em dia anterior pode voltar."""
+
+    return {
+        codigo
+        for (codigo,) in db.query(models.QueueItem.codigo_cliente).filter(
+            or_(
+                models.QueueItem.status.in_([models.QueueStatus.pending, models.QueueStatus.reserved]),
+                and_(models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.sent_at >= inicio_hoje_utc()),
+            )
+        )
+    }
+
+
+def ja_cobrado_hoje(db: Session, item: models.QueueItem) -> bool:
+    """Checagem final antes do envio: outro item do mesmo cliente já saiu hoje (qualquer faixa)."""
+
+    return (
+        db.query(models.QueueItem.id)
+        .filter(
+            models.QueueItem.codigo_cliente == item.codigo_cliente,
+            models.QueueItem.id != item.id,
+            models.QueueItem.status == models.QueueStatus.sent,
+            models.QueueItem.sent_at >= inicio_hoje_utc(),
+        )
+        .first()
+        is not None
+    )
+
+
 def _contexto_lead(lead: models.Lead) -> dict[str, str]:
     # Colunas da planilha de leads exportada vêm primeiro: um mapeamento
     # "coluna Nome" resolve pro primeiro nome, igual ao upload manual dessa planilha.
@@ -72,7 +109,7 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
     (já filtrada por primeiro dia da faixa + matriz do WhatsApp). Usa o Lead
     salvo de cada cliente pra resolver as variáveis do template. Mesmo
     bloqueio do upload: não duplica quem está pendente/reservado nem quem já
-    foi cobrado hoje nessa faixa. Devolve quantos entraram na fila."""
+    foi cobrado hoje em qualquer faixa. Devolve quantos entraram na fila."""
 
     if not clientes:
         return 0
@@ -89,7 +126,7 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
         .filter(models.Faixa.active.is_(True))
     }
 
-    inicio_hoje = _utc_ingenuo(datetime.combine(datetime.now(BUSINESS_TZ).date(), time.min, BUSINESS_TZ))
+    bloqueados = clientes_bloqueados_hoje(db)
     total = 0
 
     por_faixa: dict[str, list[dict]] = {}
@@ -106,17 +143,6 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
             logger.warning("Fila automática: faixa '%s' sem número/template ativo; %s cliente(s) ignorado(s)", nome_faixa, len(lista))
             continue
         fontes_por_template = {tid: _fontes(faixa, tpl) for tid, tpl in templates.items()}
-
-        bloqueados = {
-            codigo
-            for (codigo,) in db.query(models.QueueItem.codigo_cliente).filter(
-                models.QueueItem.faixa_id == faixa.id,
-                or_(
-                    models.QueueItem.status.in_([models.QueueStatus.pending, models.QueueStatus.reserved]),
-                    and_(models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.sent_at >= inicio_hoje),
-                ),
-            )
-        }
 
         chaves = {(c["codigo"], c["vencimento_mais_antigo"]) for c in lista}
         leads = {
