@@ -277,6 +277,8 @@ class GlobalDispatchConfigOut(BaseModel):
     leads_auto_extract: bool
     leads_auto_extract_minutos_antes: int
     leads_auto_extract_last_run: date | None = None
+    interval_seconds: int
+    batch_size: int
 
 
 class GlobalDispatchConfigUpdate(BaseModel):
@@ -285,6 +287,8 @@ class GlobalDispatchConfigUpdate(BaseModel):
     schedule_end: str = "18:30"
     leads_auto_extract: bool = False
     leads_auto_extract_minutos_antes: int = 15
+    interval_seconds: int = 5
+    batch_size: int = 3
 
 
 class FaixaEnvioCreate(BaseModel):

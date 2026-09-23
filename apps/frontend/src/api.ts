@@ -488,6 +488,8 @@ export interface GlobalDispatchConfig {
   leads_auto_extract: boolean;
   leads_auto_extract_minutos_antes: number;
   leads_auto_extract_last_run: string | null;
+  interval_seconds: number;
+  batch_size: number;
 }
 
 // Um par (número, template) atribuído a uma faixa, com disparo próprio —

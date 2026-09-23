@@ -19,6 +19,7 @@ from . import models
 from .config import settings
 from .database import SessionLocal
 from .dispatch_service import enviar_item
+from .fila_automatica import enfileirar_leads, expirar_nao_enviados
 from .leads_service import gerar_leads_de_clientes
 from .timezone import BUSINESS_TZ
 
@@ -48,7 +49,9 @@ def _within_schedule_window(global_config: models.GlobalDispatchConfig, now_utc:
     return start <= local_now.time() <= end
 
 
-def _due(config: models.DispatchConfig, dentro_da_janela: bool, now: datetime) -> bool:
+def _due(
+    config: models.DispatchConfig, dentro_da_janela: bool, now: datetime, interval_seconds: int
+) -> bool:
     if config.force_run:
         return True
     if not config.active:
@@ -58,7 +61,7 @@ def _due(config: models.DispatchConfig, dentro_da_janela: bool, now: datetime) -
     if config.last_run_at is None:
         return True
     elapsed = (now - config.last_run_at).total_seconds()
-    return elapsed >= config.interval_seconds
+    return elapsed >= interval_seconds
 
 
 def _deve_extrair_leads(global_config: models.GlobalDispatchConfig, now_utc: datetime) -> bool:
@@ -92,8 +95,10 @@ def _extrair_leads_automatico(db: Session) -> bool:
         logger.info("Extração automática de leads: base de cobrança ainda processando, tenta no próximo ciclo")
         return False
     criados, ja_existiam, sem_celular = gerar_leads_de_clientes(db, job["data"], created_by=None)
+    na_fila = enfileirar_leads(db, job["data"])
     logger.info(
-        "Extração automática de leads: %s criados, %s já existiam, %s sem celular", criados, ja_existiam, sem_celular
+        "Extração automática de leads: %s criados, %s já existiam, %s sem celular, %s na fila de disparo",
+        criados, ja_existiam, sem_celular, na_fila,
     )
     return True
 
@@ -130,6 +135,12 @@ async def run_dispatch_cycle() -> None:
                     global_config.leads_auto_extract_last_run = _local_now(now).date()
                     db.commit()
 
+        try:
+            expirar_nao_enviados(db, global_config, now)
+        except Exception:  # noqa: BLE001 - limpeza não pode travar o disparo
+            db.rollback()
+            logger.exception("Falha ao expirar a fila após o horário final")
+
         dentro_da_janela = _within_schedule_window(global_config, now)
 
         configs = (
@@ -149,7 +160,7 @@ async def run_dispatch_cycle() -> None:
         )
 
         for config in configs:
-            if not _due(config, dentro_da_janela, now):
+            if not _due(config, dentro_da_janela, now, global_config.interval_seconds):
                 continue
 
             envio = config.envio
@@ -161,7 +172,7 @@ async def run_dispatch_cycle() -> None:
                         models.QueueItem.status == models.QueueStatus.pending,
                     )
                     .order_by(models.QueueItem.created_at.asc())
-                    .limit(config.batch_size)
+                    .limit(global_config.batch_size)
                     .all()
                 )
 

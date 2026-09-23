@@ -22,10 +22,9 @@ function toggleWeekday(scheduleDays: string, value: string): string {
   return WEEKDAYS.map((d) => d.value).filter((v) => days.has(v)).join(",");
 }
 
-// Janela de disparo (dias, horário) e extração automática de leads são
-// globais — valem pra todo envio de toda faixa, já que não faz sentido dois
-// envios da mesma operação atirarem em horários diferentes. Intervalo entre
-// rodadas, lote e ativo/inativo continuam por envio (número + template).
+// Janela de disparo (dias, horário), ritmo (intervalo e quantidade por vez)
+// e extração automática de leads são globais — valem pra todo envio de toda
+// faixa. Só ativo/inativo continua por envio (número + template).
 export default function DisparoCard() {
   const [faixas, setFaixas] = useState<Faixa[]>([]);
   const [erro, setErro] = useState<string | null>(null);
@@ -65,6 +64,8 @@ export default function DisparoCard() {
         schedule_end: edicaoGlobal.schedule_end,
         leads_auto_extract: edicaoGlobal.leads_auto_extract,
         leads_auto_extract_minutos_antes: edicaoGlobal.leads_auto_extract_minutos_antes,
+        interval_seconds: edicaoGlobal.interval_seconds,
+        batch_size: edicaoGlobal.batch_size,
       });
       setGlobalConfig(atualizado);
       setEditandoGlobal(false);
@@ -179,6 +180,26 @@ export default function DisparoCard() {
                 />
               </label>
             </div>
+            <div className="form-row">
+              <label>
+                Intervalo entre rodadas (segundos)
+                <input
+                  type="number"
+                  min={1}
+                  value={edicaoGlobal.interval_seconds}
+                  onChange={(ev) => setEdicaoGlobal({ ...edicaoGlobal, interval_seconds: Number(ev.target.value) })}
+                />
+              </label>
+              <label>
+                Mensagens por vez
+                <input
+                  type="number"
+                  min={1}
+                  value={edicaoGlobal.batch_size}
+                  onChange={(ev) => setEdicaoGlobal({ ...edicaoGlobal, batch_size: Number(ev.target.value) })}
+                />
+              </label>
+            </div>
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
                 type="checkbox"
@@ -187,6 +208,12 @@ export default function DisparoCard() {
               />
               Extrair leads automaticamente pouco antes do disparo começar
             </label>
+            {edicaoGlobal.leads_auto_extract && (
+              <div className="field-hint">
+                Nos dias selecionados, os clientes no primeiro dia da faixa (pela regra do WhatsApp) entram sozinhos na
+                fila e são cobrados a partir do início. O que não for enviado até o fim da janela é excluído.
+              </div>
+            )}
             {edicaoGlobal.leads_auto_extract && (
               <label style={{ maxWidth: 260 }}>
                 Minutos antes do início
@@ -228,6 +255,10 @@ export default function DisparoCard() {
               {globalConfig.schedule_start}–{globalConfig.schedule_end}
             </div>
             <div>
+              <strong>Ritmo: </strong>
+              {globalConfig.batch_size} mensagem(ns) a cada {globalConfig.interval_seconds}s por envio
+            </div>
+            <div>
               <strong>Extração automática de leads: </strong>
               {globalConfig.leads_auto_extract
                 ? `Sim, ${globalConfig.leads_auto_extract_minutos_antes} min antes do início`
@@ -244,7 +275,7 @@ export default function DisparoCard() {
           <div>
             <h3>Disparo por envio</h3>
             <div className="card-subtitle">
-              Intervalo entre rodadas, quantidade por lote e ativo/inativo de cada número/template de cada faixa.
+              Ativo/inativo de cada número/template de cada faixa. O ritmo de envio é o geral, definido acima.
             </div>
           </div>
         </div>
@@ -279,8 +310,6 @@ export default function DisparoCard() {
                     <tr>
                       <th>Número</th>
                       <th>Template</th>
-                      <th>Intervalo</th>
-                      <th>Lote</th>
                       <th>Ativo</th>
                       <th></th>
                     </tr>
@@ -292,24 +321,6 @@ export default function DisparoCard() {
                         <tr key={e.id}>
                           <td className="cell-strong">{e.whatsapp_number.label || e.whatsapp_number.display_phone_number}</td>
                           <td>{e.template.name}</td>
-                          <td>
-                            <input
-                              aria-label="Intervalo em segundos"
-                              type="number"
-                              style={{ width: 70 }}
-                              value={edicao.interval_seconds}
-                              onChange={(ev) => setEdicao({ ...edicao, interval_seconds: Number(ev.target.value) })}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              aria-label="Cobranças por rodada"
-                              type="number"
-                              style={{ width: 60 }}
-                              value={edicao.batch_size}
-                              onChange={(ev) => setEdicao({ ...edicao, batch_size: Number(ev.target.value) })}
-                            />
-                          </td>
                           <td>
                             <select
                               aria-label="Ativo"
@@ -338,8 +349,6 @@ export default function DisparoCard() {
                         <tr key={e.id}>
                           <td className="cell-strong">{e.whatsapp_number.label || e.whatsapp_number.display_phone_number}</td>
                           <td>{e.template.name}</td>
-                          <td className="text-muted">{e.dispatch_config ? `${e.dispatch_config.interval_seconds}s` : "—"}</td>
-                          <td className="text-muted">{e.dispatch_config?.batch_size ?? "—"}</td>
                           <td>
                             <span className={`status-pill ${e.dispatch_config?.active ? "on" : "off"}`}>
                               {e.dispatch_config?.active ? "Sim" : "Não"}

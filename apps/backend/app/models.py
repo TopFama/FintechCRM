@@ -317,6 +317,9 @@ class GlobalDispatchConfig(Base):
     leads_auto_extract: Mapped[bool] = mapped_column(Boolean, default=False)
     leads_auto_extract_minutos_antes: Mapped[int] = mapped_column(Integer, default=15)
     leads_auto_extract_last_run: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Ritmo de disparo único pra toda a operação (antes era por envio).
+    interval_seconds: Mapped[int] = mapped_column(Integer, default=5, server_default="5")
+    batch_size: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
 
 
 class ErrorLog(Base):

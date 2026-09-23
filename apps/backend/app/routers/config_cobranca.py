@@ -270,6 +270,10 @@ def put_config_disparo(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "schedule_end deve ser depois de schedule_start")
     if not (0 <= body.leads_auto_extract_minutos_antes <= 240):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "leads_auto_extract_minutos_antes deve estar entre 0 e 240")
+    if not (1 <= body.interval_seconds <= 3600):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "O intervalo deve estar entre 1 e 3600 segundos")
+    if not (1 <= body.batch_size <= 500):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A quantidade por vez deve estar entre 1 e 500")
 
     config = _ler_config_disparo(db)
     config.schedule_days = ",".join(dias)
@@ -277,6 +281,8 @@ def put_config_disparo(
     config.schedule_end = body.schedule_end
     config.leads_auto_extract = body.leads_auto_extract
     config.leads_auto_extract_minutos_antes = body.leads_auto_extract_minutos_antes
+    config.interval_seconds = body.interval_seconds
+    config.batch_size = body.batch_size
     db.commit()
     db.refresh(config)
     return config
