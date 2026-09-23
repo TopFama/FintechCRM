@@ -69,7 +69,7 @@ assert vt.formatar_moeda(Decimal("1234567.891")) == "R$ 1.234.567,89"
 # 1.6 Formatação de data
 assert vt.formatar_data(date(2026, 9, 21)) == "21/09/2026"
 
-# 1.7 contexto_cliente retorna as 12 chaves do catálogo como str
+# 1.7 contexto_cliente retorna as 14 chaves do catálogo como str
 ctx = vt.contexto_cliente(
     {
         "codigo": "123456",
@@ -80,17 +80,18 @@ ctx = vt.contexto_cliente(
         "faixa": "11 A 20",
         "dias_atraso": 15,
         "qtd_parcelas_cobranca": 2,
-        "valor_cobrar": Decimal("1234.56"),
+        "valor_atraso": Decimal("1234.56"),
         "valor_em_aberto": Decimal("1200.00"),
         "vencimento_mais_antigo": date(2026, 9, 21),
     }
 )
-assert len(ctx) == 15
+assert len(ctx) == 14
 assert all(isinstance(v, str) for v in ctx.values())
 assert ctx["codigo"] == "00123456"
 assert ctx["primeiro_nome"] == "Maria"
 assert ctx["cpf"] == "059.982.247-25"
-assert ctx["valor_cobrar"] == "R$ 1.234,56"
+assert ctx["valor_atraso"] == "R$ 1.234,56"
+assert "valor_cobrar" not in ctx
 assert ctx["valor_em_aberto"] == "R$ 1.200,00"
 assert ctx["vencimento"] == "21/09/2026"
 
@@ -204,12 +205,13 @@ with TestClient(app) as client:
     resp = client.get("/templates/variaveis/campos", headers=auth_headers)
     assert resp.status_code == 200
     campos_out = resp.json()
-    assert len(campos_out) == 15
+    assert len(campos_out) == 14
     campos_dict = {item["campo"]: item for item in campos_out}
     assert "codigo" in campos_dict
     assert campos_dict["codigo"]["rotulo"] == "Código SETA"
     assert campos_dict["codigo"]["exemplo"] == "00123456"
-    assert campos_dict["valor_cobrar"]["exemplo"] == "R$ 1.234,56"
+    assert "valor_cobrar" not in campos_dict
+    assert campos_dict["valor_atraso"]["exemplo"] == "R$ 1.100,00"
 
     # Cria número de WhatsApp para as faixas
     num_resp = client.post(
@@ -291,7 +293,7 @@ with TestClient(app) as client:
             "whatsapp_number_ids": [number_id],
             "variable_mappings": [
                 {"template_variable_id": v1_id, "fonte_tipo": "campo_cliente", "column_name": "codigo"},
-                {"template_variable_id": v2_id, "fonte_tipo": "campo_cliente", "column_name": "valor_cobrar"},
+                {"template_variable_id": v2_id, "fonte_tipo": "campo_cliente", "column_name": "valor_atraso"},
             ],
         },
         headers=auth_headers,

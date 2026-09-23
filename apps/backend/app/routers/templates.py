@@ -48,7 +48,6 @@ CLIENTE_EXEMPLO = {
     "faixa": "11 A 20",
     "dias_atraso": 15,
     "qtd_parcelas_cobranca": 2,
-    "valor_cobrar": Decimal("1234.56"),
     "valor_em_aberto": Decimal("1200.00"),
     "vencimento_mais_antigo": date(2026, 9, 21),
     "valor_parcela_amanha": Decimal("189.90"),
