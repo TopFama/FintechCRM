@@ -4,15 +4,13 @@ import { api, ClienteCobranca, Faixa, FiltrosCobranca, mensagemErroSeta } from "
 import { formatBRL, formatCpf, formatData } from "../format";
 import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../components/BarraFiltrosCobranca";
 import UploadPlanilhaFaixa from "../components/UploadPlanilhaFaixa";
-import Paginacao from "../components/Paginacao";
+import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { IconAlert } from "../icons";
 import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
 
 type ColunaCliente = "codigo" | "cpfcnpj" | "nome" | "vencimento_mais_antigo" | "valor_cobrar" | "qtd_parcelas_cobranca" | "dias_atraso" | "faixa" | "cluster";
-
-const LIMIT = 50;
 
 function diasAtrasoLabel(dias: number): string {
   return dias === -1 ? "vence amanhã" : `${dias} dias`;
@@ -38,6 +36,7 @@ export default function Cobranca() {
   const [clientesErro, setClientesErro] = useState<string | null>(null);
   const [clientesCarregando, setClientesCarregando] = useState(false);
   const [offset, setOffset] = useState(0);
+  const [limit, setLimit] = useState(LIMIT_OPCOES_PADRAO[1]);
   const clientesSort = useSort<ColunaCliente>();
   const ordemFaixa = ordemFaixaFn(opcoes.regras?.faixas);
   function valorOrdenacaoCliente(c: ClienteCobranca): string | number | null {
@@ -84,12 +83,12 @@ export default function Cobranca() {
   // Descarta respostas de consultas já substituídas por outra mais nova
   const cliReqRef = useRef(0);
 
-  function buscarClientes(filtros: FiltrosCobranca, novoOffset: number) {
+  function buscarClientes(filtros: FiltrosCobranca, novoOffset: number, novoLimit: number = limit) {
     setClientesErro(null);
     setClientesCarregando(true);
     const seq = ++cliReqRef.current;
     api
-      .listarClientesCobranca({ ...filtros, limit: LIMIT, offset: novoOffset })
+      .listarClientesCobranca({ ...filtros, limit: novoLimit, offset: novoOffset })
       .then((r) => {
         if (seq !== cliReqRef.current) return;
         setClientes(r.itens);
@@ -121,6 +120,12 @@ export default function Cobranca() {
   function mudarPagina(novoOffset: number) {
     setOffset(novoOffset);
     buscarClientes(filtrosAplicados, novoOffset);
+  }
+
+  function mudarLimite(novoLimit: number) {
+    setLimit(novoLimit);
+    setOffset(0);
+    buscarClientes(filtrosAplicados, 0, novoLimit);
   }
 
   async function gerarLeads() {
@@ -288,7 +293,7 @@ export default function Cobranca() {
                 </tbody>
               </table>
             </div>
-            <Paginacao total={totalClientes} limit={LIMIT} offset={offset} onChange={mudarPagina} />
+            <Paginacao total={totalClientes} limit={limit} offset={offset} onChange={mudarPagina} onLimitChange={mudarLimite} />
           </>
         )}
       </div>

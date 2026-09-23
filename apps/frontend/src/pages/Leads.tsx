@@ -10,7 +10,7 @@ import {
 } from "../api";
 import { formatBRL, formatCpf, formatData, formatDataHora } from "../format";
 import MultiSelect from "../components/MultiSelect";
-import Paginacao from "../components/Paginacao";
+import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { IconAlert, IconList } from "../icons";
 import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
@@ -27,8 +27,6 @@ type ColunaLead =
   | "cluster"
   | "status"
   | "cobrado_em";
-
-const LIMIT = 50;
 
 const FILTROS_PADRAO: FiltrosLeads = {
   busca: "",
@@ -57,6 +55,7 @@ export default function Leads() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
+  const [limit, setLimit] = useState(LIMIT_OPCOES_PADRAO[1]);
   const [carregando, setCarregando] = useState(false);
   const leadsSort = useSort<ColunaLead>();
   const ordemFaixa = ordemFaixaFn(regras?.faixas);
@@ -111,12 +110,12 @@ export default function Leads() {
     buscar(FILTROS_PADRAO, 0);
   }, []);
 
-  function buscar(filtros: FiltrosLeads, novoOffset: number) {
+  function buscar(filtros: FiltrosLeads, novoOffset: number, novoLimit: number = limit) {
     setErro(null);
     setCarregando(true);
     const params: FiltrosLeads & { limit: number; offset: number } = {
       ...filtros,
-      limit: LIMIT,
+      limit: novoLimit,
       offset: novoOffset,
     };
     const seq = ++reqRef.current;
@@ -151,6 +150,12 @@ export default function Leads() {
   function mudarPagina(novoOffset: number) {
     setOffset(novoOffset);
     buscar(filtrosAplicados, novoOffset);
+  }
+
+  function mudarLimite(novoLimit: number) {
+    setLimit(novoLimit);
+    setOffset(0);
+    buscar(filtrosAplicados, 0, novoLimit);
   }
 
   function toggleSelecionado(id: string) {
@@ -553,7 +558,7 @@ export default function Leads() {
                 </tbody>
               </table>
             </div>
-            <Paginacao total={total} limit={LIMIT} offset={offset} onChange={mudarPagina} />
+            <Paginacao total={total} limit={limit} offset={offset} onChange={mudarPagina} onLimitChange={mudarLimite} />
           </>
         )}
       </div>

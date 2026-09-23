@@ -109,7 +109,8 @@ a {
 .brand {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  text-align: center;
   gap: 7px;
   padding: 6px 10px 22px;
 }
@@ -121,17 +122,12 @@ a {
   /* logo tem fundo transparente e texto branco/amarelo — leve sombra ajuda
      a separar do azul-marinho da sidebar sem precisar de uma versão à parte */
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
-  /* a arte tem uma faixa curva com respiro à esquerda antes do "T" de
-     TopFama — sem esse ajuste o texto do logo fica visualmente deslocado
-     à direita da tagline abaixo, mesmo com as duas caixas alinhadas */
-  margin-left: -9px;
 }
 
 .brand-tagline {
   font-size: 11.5px;
   font-weight: 600;
   color: #a9b7e0;
-  padding-left: 2px;
 }
 
 .nav-section-label {
@@ -1158,6 +1154,19 @@ label {
 .paginacao-pagina {
   font-size: 13px;
   color: var(--color-text-muted);
+}
+
+.paginacao-limit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.paginacao-limit select {
+  width: auto;
+  padding: 3px 8px;
 }
 
 /* Utilitário acessibilidade */

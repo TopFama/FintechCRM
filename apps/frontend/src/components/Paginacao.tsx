@@ -1,11 +1,22 @@
+export const LIMIT_OPCOES_PADRAO = [25, 50, 100];
+
 interface PaginacaoProps {
   total: number;
   limit: number;
   offset: number;
   onChange: (novoOffset: number) => void;
+  onLimitChange?: (novoLimit: number) => void;
+  limitOpcoes?: number[];
 }
 
-export default function Paginacao({ total, limit, offset, onChange }: PaginacaoProps) {
+export default function Paginacao({
+  total,
+  limit,
+  offset,
+  onChange,
+  onLimitChange,
+  limitOpcoes = LIMIT_OPCOES_PADRAO,
+}: PaginacaoProps) {
   const pagina = Math.floor(offset / limit) + 1;
   const totalPaginas = Math.max(1, Math.ceil(total / limit));
   const inicio = total === 0 ? 0 : offset + 1;
@@ -16,6 +27,18 @@ export default function Paginacao({ total, limit, offset, onChange }: PaginacaoP
       <span className="paginacao-info">
         Mostrando {inicio}–{fim} de {total}
       </span>
+      {onLimitChange && (
+        <label className="paginacao-limit">
+          Por página
+          <select value={limit} onChange={(e) => onLimitChange(Number(e.target.value))}>
+            {limitOpcoes.map((opcao) => (
+              <option key={opcao} value={opcao}>
+                {opcao}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="paginacao-nav">
         <button
           type="button"
