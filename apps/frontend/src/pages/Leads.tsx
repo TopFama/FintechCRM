@@ -167,17 +167,20 @@ export default function Leads() {
     });
   }
 
+  // Lead já enviado não pode ser selecionado: é histórico da Efetividade e não pode ser excluído.
+  const leadsPendentes = leads.filter((l) => l.status !== "cobrado");
+
   function toggleTodaPagina() {
-    if (leads.every((l) => selecionados.has(l.id))) {
+    if (leadsPendentes.every((l) => selecionados.has(l.id))) {
       setSelecionados((prev) => {
         const next = new Set(prev);
-        leads.forEach((l) => next.delete(l.id));
+        leadsPendentes.forEach((l) => next.delete(l.id));
         return next;
       });
     } else {
       setSelecionados((prev) => {
         const next = new Set(prev);
-        leads.forEach((l) => next.add(l.id));
+        leadsPendentes.forEach((l) => next.add(l.id));
         return next;
       });
     }
@@ -206,7 +209,7 @@ export default function Leads() {
     const mensagem =
       ids.length > 0
         ? `Excluir ${ids.length} lead(s) selecionado(s)? Só os que ainda não foram enviados serão excluídos.`
-        : `Excluir TODOS os leads que casam com os filtros aplicados? Só os que ainda não foram enviados serão excluídos.`;
+        : `Excluir TODOS os leads pendentes que casam com os filtros aplicados? Leads já enviados são mantidos.`;
     if (!window.confirm(mensagem)) return;
     setExcluindo(true);
     setErro(null);
@@ -239,7 +242,7 @@ export default function Leads() {
   const opcoesClusterInad = (filtrosLoja?.clusters_inad ?? []).map((c) => ({ value: c, label: c }));
   const opcoesClusterPop = (filtrosLoja?.clusters_populacao ?? []).map((c) => ({ value: c, label: c }));
 
-  const todaPaginaSelecionada = leads.length > 0 && leads.every((l) => selecionados.has(l.id));
+  const todaPaginaSelecionada = leadsPendentes.length > 0 && leadsPendentes.every((l) => selecionados.has(l.id));
 
   return (
     <div>
@@ -486,7 +489,8 @@ export default function Leads() {
                         type="checkbox"
                         checked={todaPaginaSelecionada}
                         onChange={toggleTodaPagina}
-                        aria-label="Selecionar todos da página"
+                        disabled={leadsPendentes.length === 0}
+                        aria-label="Selecionar todos os pendentes da página"
                       />
                     </th>
                     {(
@@ -524,6 +528,8 @@ export default function Leads() {
                           type="checkbox"
                           checked={selecionados.has(l.id)}
                           onChange={() => toggleSelecionado(l.id)}
+                          disabled={l.status === "cobrado"}
+                          title={l.status === "cobrado" ? "Lead já enviado não pode ser selecionado" : undefined}
                           aria-label={`Selecionar ${l.nome}`}
                         />
                       </td>

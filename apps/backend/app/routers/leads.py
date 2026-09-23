@@ -267,6 +267,13 @@ def excluir_leads(
 
     if payload.ids:
         base = db.query(models.Lead).filter(models.Lead.id.in_(payload.ids))
+        ja_enviados = base.filter(models.Lead.status != "novo").count()
+        if ja_enviados:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"{ja_enviados} lead(s) selecionado(s) já foram enviados e não podem ser excluídos. "
+                "Selecione só leads pendentes.",
+            )
     else:
         base = query_leads_filtrada(db, filtros, lead_status)
 
