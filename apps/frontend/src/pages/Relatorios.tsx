@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { api, DispatchReportItem, Faixa, InvalidPhoneRecord } from "../api";
+import { api, DispatchReportItem, Faixa, InvalidPhoneRecord, PagamentoCliente, PagamentosPage } from "../api";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
-import { formatDataHora } from "../format";
+import { formatBRL, formatData, formatDataHora } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
 import { SortDirection, useSort } from "../sort";
 
-type Tab = "invalidos" | "envios";
+type Tab = "invalidos" | "envios" | "pagamentos";
 type ColunaInvalido = "codigo_cliente" | "celular_original" | "celular_normalizado" | "motivo" | "created_at";
 type ColunaEnvio = "codigo_cliente" | "faixa" | "nome" | "valor" | "telefone" | "enviado_em";
 
@@ -23,6 +23,11 @@ export default function Relatorios() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [cobradoDe, setCobradoDe] = useState("");
+  const [cobradoAte, setCobradoAte] = useState("");
+  const [pagoDe, setPagoDe] = useState("");
+  const [pagoAte, setPagoAte] = useState("");
+  const [pagamentos, setPagamentos] = useState<PagamentosPage | null>(null);
   const invalidosSort = useSort<ColunaInvalido>(null, (chave, dir) => {
     setOffset(0);
     load(0, limit, chave, dir);
@@ -46,13 +51,17 @@ export default function Relatorios() {
     setError(null);
     const params = {
       faixa_id: faixaId || undefined,
+      de: cobradoDe || undefined,
+      ate: cobradoAte || undefined,
       limit: novoLimit,
       offset: novoOffset,
       sort_by: sortBy ?? undefined,
       sort_dir: sortDir,
     };
     const request =
-      tab === "invalidos"
+      tab === "pagamentos"
+        ? api.listPagamentos({ ...filtrosPagamentos(), limit: novoLimit, offset: novoOffset }).then(setPagamentos)
+        : tab === "invalidos"
         ? api.listInvalidPhones(params).then((r) => {
             setInvalidPhones(r.itens);
             setInvalidTotal(r.total);
@@ -68,7 +77,18 @@ export default function Relatorios() {
     setOffset(0);
     load(0, limit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, faixaId]);
+  }, [tab, faixaId, cobradoDe, cobradoAte, pagoDe, pagoAte]);
+
+  function filtrosPagamentos() {
+    const nome = faixas.find((f) => f.id === faixaId)?.name;
+    return {
+      faixa: nome ? [nome] : undefined,
+      cobrado_de: cobradoDe || undefined,
+      cobrado_ate: cobradoAte || undefined,
+      pago_de: pagoDe || undefined,
+      pago_ate: pagoAte || undefined,
+    };
+  }
 
   function mudarPagina(novoOffset: number) {
     setOffset(novoOffset);
@@ -85,10 +105,13 @@ export default function Relatorios() {
     setDownloading(true);
     setError(null);
     try {
+      const periodo = { faixa_id: faixaId || undefined, de: cobradoDe || undefined, ate: cobradoAte || undefined };
       if (tab === "invalidos") {
-        await api.downloadInvalidPhonesXlsx(faixaId || undefined);
+        await api.downloadInvalidPhonesXlsx(periodo);
+      } else if (tab === "envios") {
+        await api.downloadDispatchReportXlsx(periodo);
       } else {
-        await api.downloadDispatchReportXlsx(faixaId || undefined);
+        await api.downloadPagamentosXlsx(filtrosPagamentos());
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao baixar relatório");
@@ -102,7 +125,7 @@ export default function Relatorios() {
       <div className="page-header">
         <div>
           <h2>Relatórios</h2>
-          <div className="subtitle">Telefones inválidos e cobranças já enviadas</div>
+          <div className="subtitle">Telefones inválidos, cobranças enviadas e quem pagou</div>
         </div>
       </div>
 
@@ -121,6 +144,9 @@ export default function Relatorios() {
           <button className={tab === "envios" ? "" : "secondary"} onClick={() => setTab("envios")}>
             Envios realizados
           </button>
+          <button className={tab === "pagamentos" ? "" : "secondary"} onClick={() => setTab("pagamentos")}>
+            Quem pagou
+          </button>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <select value={faixaId} onChange={(e) => setFaixaId(e.target.value)} style={{ minWidth: 180 }}>
               <option value="">Todas as faixas</option>
@@ -136,8 +162,33 @@ export default function Relatorios() {
           </div>
         </div>
 
+        <div className="form-row" style={{ flexWrap: "wrap", marginBottom: 12 }}>
+          <div className="field">
+            <label>{tab === "invalidos" ? "Registrado de" : "Cobrado de"}</label>
+            <input type="date" value={cobradoDe} max={cobradoAte || undefined} onChange={(e) => setCobradoDe(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>até</label>
+            <input type="date" value={cobradoAte} min={cobradoDe || undefined} onChange={(e) => setCobradoAte(e.target.value)} />
+          </div>
+          {tab === "pagamentos" && (
+            <>
+              <div className="field">
+                <label>Pago de</label>
+                <input type="date" value={pagoDe} max={pagoAte || undefined} onChange={(e) => setPagoDe(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>até</label>
+                <input type="date" value={pagoAte} min={pagoDe || undefined} onChange={(e) => setPagoAte(e.target.value)} />
+              </div>
+            </>
+          )}
+        </div>
+
         {loading ? (
           <div className="loading-state">Carregando...</div>
+        ) : tab === "pagamentos" ? (
+          <TabelaPagamentos dados={pagamentos} />
         ) : tab === "invalidos" ? (
           invalidPhones.length === 0 ? (
             <div className="empty-state">
@@ -231,9 +282,9 @@ export default function Relatorios() {
             </table>
           </div>
         )}
-        {(tab === "invalidos" ? invalidTotal : dispatchTotal) > 0 && (
+        {(tab === "invalidos" ? invalidTotal : tab === "envios" ? dispatchTotal : pagamentos?.total ?? 0) > 0 && (
           <Paginacao
-            total={tab === "invalidos" ? invalidTotal : dispatchTotal}
+            total={tab === "invalidos" ? invalidTotal : tab === "envios" ? dispatchTotal : pagamentos?.total ?? 0}
             limit={limit}
             offset={offset}
             onChange={mudarPagina}
@@ -242,5 +293,74 @@ export default function Relatorios() {
         )}
       </div>
     </div>
+  );
+}
+
+function TabelaPagamentos({ dados }: { dados: PagamentosPage | null }) {
+  if (!dados || dados.itens.length === 0) {
+    return (
+      <div className="empty-state">
+        <IconInbox width={28} height={28} />
+        <div className="title">Ninguém pagou no período</div>
+        <p>Clientes cobrados que quitaram algum título depois da cobrança aparecem aqui.</p>
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="stat-grid">
+        <div className="stat">
+          <div>
+            <div className="value">{dados.total}</div>
+            <div className="label">Clientes que pagaram</div>
+          </div>
+        </div>
+        <div className="stat">
+          <div>
+            <div className="value">{formatBRL(dados.valor_cobrado)}</div>
+            <div className="label">Valor cobrado deles</div>
+          </div>
+        </div>
+        <div className="stat">
+          <div>
+            <div className="value">{formatBRL(dados.valor_pago)}</div>
+            <div className="label">Valor pago</div>
+          </div>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Nome</th>
+              <th>Loja</th>
+              <th>Faixa</th>
+              <th>Cobrado em</th>
+              <th>Valor cobrado</th>
+              <th>Valor pago</th>
+              <th>Pago em</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dados.itens.map((p: PagamentoCliente) => (
+              <tr key={`${p.codigo_cliente}-${p.data_cobranca}`}>
+                <td className="cell-strong">{p.codigo_cliente}</td>
+                <td>{p.nome || "—"}</td>
+                <td className="text-muted">{p.loja || "—"}</td>
+                <td>{p.faixa}</td>
+                <td>{formatData(p.data_cobranca)}</td>
+                <td>{formatBRL(p.valor_cobrado)}</td>
+                <td>{formatBRL(p.valor_pago)}</td>
+                <td className="text-muted">
+                  {formatData(p.primeiro_pagamento)}
+                  {p.ultimo_pagamento && p.ultimo_pagamento !== p.primeiro_pagamento ? ` a ${formatData(p.ultimo_pagamento)}` : ""}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

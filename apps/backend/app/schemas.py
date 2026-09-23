@@ -848,3 +848,24 @@ class ConfigCobrancaOut(BaseModel):
     faixas: list[FaixaAtrasoConfigOut]
     matriz: list[CelulaMatrizOut]
     parametros: ParametrosCobrancaOut
+
+
+class PagamentoClienteOut(BaseModel):
+    codigo_cliente: str
+    nome: str
+    cpf: str | None
+    loja: str
+    faixa: str
+    data_cobranca: date
+    valor_cobrado: Decimal
+    valor_pago: Decimal
+    qtd_titulos_pagos: int
+    primeiro_pagamento: date | None
+    ultimo_pagamento: date | None
+
+
+class PagamentosClientesPage(BaseModel):
+    total: int
+    valor_cobrado: Decimal
+    valor_pago: Decimal
+    itens: list[PagamentoClienteOut]

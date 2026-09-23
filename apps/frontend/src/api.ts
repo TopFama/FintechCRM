@@ -260,17 +260,24 @@ export const api = {
   dashboardSummary: (periodo: { de?: string; ate?: string } = {}) =>
     request<DashboardSummary>(`/dashboard/summary?${montarQuery(periodo)}`),
 
-  listInvalidPhones: (params: { faixa_id?: string; limit: number; offset: number } & OrdenacaoParams) =>
-    request<{ total: number; itens: InvalidPhoneRecord[] }>(`/relatorios/telefones-invalidos?${montarQuery(params)}`),
-  listDispatchReport: (params: { faixa_id?: string; limit: number; offset: number } & OrdenacaoParams) =>
+  listInvalidPhones: (
+    params: { faixa_id?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+  ) => request<{ total: number; itens: InvalidPhoneRecord[] }>(`/relatorios/telefones-invalidos?${montarQuery(params)}`),
+  listDispatchReport: (
+    params: { faixa_id?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+  ) =>
     request<{ total: number; itens: DispatchReportItem[] }>(`/relatorios/envios?${montarQuery(params)}`),
 
   // Exportações em Excel exigem o mesmo Bearer token das outras rotas, então
   // baixamos como blob autenticado em vez de um <a href> simples.
-  downloadInvalidPhonesXlsx: (faixaId?: string) =>
-    downloadFile(`/relatorios/telefones-invalidos/export${faixaId ? `?faixa_id=${faixaId}` : ""}`, "telefones_invalidos.xlsx"),
-  downloadDispatchReportXlsx: (faixaId?: string) =>
-    downloadFile(`/relatorios/envios/export${faixaId ? `?faixa_id=${faixaId}` : ""}`, "relatorio_envios.xlsx"),
+  downloadInvalidPhonesXlsx: (params: { faixa_id?: string; de?: string; ate?: string }) =>
+    downloadFile(`/relatorios/telefones-invalidos/export?${montarQuery(params)}`, "telefones_invalidos.xlsx"),
+  downloadDispatchReportXlsx: (params: { faixa_id?: string; de?: string; ate?: string }) =>
+    downloadFile(`/relatorios/envios/export?${montarQuery(params)}`, "relatorio_envios.xlsx"),
+  listPagamentos: (params: FiltrosPagamentos & { limit: number; offset: number }) =>
+    request<PagamentosPage>(`/relatorios/pagamentos?${montarQuery(params)}`),
+  downloadPagamentosXlsx: (params: FiltrosPagamentos) =>
+    downloadFile(`/relatorios/pagamentos/export?${montarQuery(params)}`, "relatorio_pagamentos.xlsx"),
 
   // --- Cobrança ---
   // /clientes, /relatorio e /leads/gerar consultam uma tabela do SETA com
@@ -871,4 +878,34 @@ export interface FiltrosEfetividade {
   regional?: string[];
   estado?: string[];
   cluster_inad?: string[];
+}
+
+// --- Relatório de pagamentos por cliente ---
+export interface FiltrosPagamentos {
+  faixa?: string[];
+  cobrado_de?: string;
+  cobrado_ate?: string;
+  pago_de?: string;
+  pago_ate?: string;
+}
+
+export interface PagamentoCliente {
+  codigo_cliente: string;
+  nome: string;
+  cpf: string | null;
+  loja: string;
+  faixa: string;
+  data_cobranca: string;
+  valor_cobrado: string;
+  valor_pago: string;
+  qtd_titulos_pagos: number;
+  primeiro_pagamento: string | null;
+  ultimo_pagamento: string | null;
+}
+
+export interface PagamentosPage {
+  total: number;
+  valor_cobrado: string;
+  valor_pago: string;
+  itens: PagamentoCliente[];
 }
