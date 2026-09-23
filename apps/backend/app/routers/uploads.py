@@ -119,10 +119,10 @@ async def upload_planilha(
     # do cliente (Lead) ou de uma expressão — "campo_cliente" e "expressao"
     # (quando já tem expressão salva) não exigem coluna escolhida no upload.
     mapping_by_vid = {m.template_variable_id: m for m in faixa.variable_mappings}
+    # Na importação toda variável vem de coluna da planilha; "campo_cliente"
+    # da config do envio só vale pra envios gerados dentro do sistema.
     auto_resolved_vids = {
-        vid
-        for vid, m in mapping_by_vid.items()
-        if m.fonte_tipo == "campo_cliente" or (m.fonte_tipo == "expressao" and m.expressao)
+        vid for vid, m in mapping_by_vid.items() if m.fonte_tipo == "expressao" and m.expressao
     }
     mapped_var_ids = set(field_mapping.variables) | set(field_mapping.expressoes) | auto_resolved_vids
     missing_vars = set(variable_by_id) - mapped_var_ids
@@ -274,8 +274,9 @@ async def upload_planilha(
             mapping = mapping_by_vid.get(vid)
             fonte_tipo = mapping.fonte_tipo if mapping else "coluna"
 
-            if fonte_tipo == "campo_cliente":
-                val = normalizar_para_meta(contexto.get(mapping.column_name or "", ""))
+            if vid in field_mapping.variables:
+                raw_val = (row.get(field_mapping.variables[vid]) or "").strip()
+                val = normalizar_para_meta(raw_val)
             elif vid in field_mapping.expressoes:
                 val = renderizar_expressao(field_mapping.expressoes[vid], contexto)
             elif fonte_tipo == "expressao" and mapping and mapping.expressao:

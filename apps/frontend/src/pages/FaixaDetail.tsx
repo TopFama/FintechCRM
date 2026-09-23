@@ -219,28 +219,8 @@ export default function FaixaDetail() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  // Variável com fonte_tipo "campo_cliente" vem direto do cadastro do
-  // cliente (base de leads) — não precisa de coluna na planilha, então não
-  // entra na exigência de mapeamento do upload.
-  const mappingByVid = useMemo(() => {
-    const m: Record<string, string> = {};
-    (faixa?.variable_mappings || []).forEach((vm) => {
-      m[vm.template_variable_id] = vm.fonte_tipo;
-    });
-    return m;
-  }, [faixa]);
-
-  const mappingColumnByVid = useMemo(() => {
-    const m: Record<string, string> = {};
-    (faixa?.variable_mappings || []).forEach((vm) => {
-      if (vm.fonte_tipo === "campo_cliente" && vm.column_name) m[vm.template_variable_id] = vm.column_name;
-    });
-    return m;
-  }, [faixa]);
-
   const requiredVariableIds = templatesAtivos
     .flatMap((t) => t.variables)
-    .filter((v) => (mappingByVid[v.id] || "coluna") === "coluna")
     .map((v) => v.id);
   const mappingComplete =
     Boolean(fieldMap.celular) &&
@@ -355,11 +335,6 @@ export default function FaixaDetail() {
     return t.body_text.replace(/\{\{(\d+)\}\}/g, (match, pos) => {
       const variavel = t.variables.find((v) => v.position === Number(pos));
       if (!variavel) return match;
-      const tipo = mappingByVid[variavel.id] || "coluna";
-      if (tipo === "campo_cliente") {
-        const campo = campos.find((c) => c.campo === mappingColumnByVid[variavel.id]);
-        return campo ? campo.exemplo : match;
-      }
       const coluna = fieldMap.variables[variavel.id];
       const valor = coluna && sampleRow ? sampleRow[coluna] : "";
       return valor ? valor : `[${variavel.internal_name}]`;
@@ -597,7 +572,7 @@ export default function FaixaDetail() {
                 <div className="form-row" style={{ flexWrap: "wrap" }}>
                   {templateDoForm.variables.map((v) => {
                     const m = formMappings[v.id];
-                    const selectValue = !m ? "" : m.fonte_tipo === "campo_cliente" ? `campo:${m.valor}` : "coluna";
+                    const selectValue = m?.fonte_tipo === "campo_cliente" ? `campo:${m.valor}` : "";
                     return (
                       <div className="field" key={v.id} style={{ minWidth: 260 }}>
                         <label>
@@ -614,11 +589,6 @@ export default function FaixaDetail() {
                                   delete proximo[v.id];
                                   return proximo;
                                 });
-                              } else if (valorSelect === "coluna") {
-                                setFormMappings((atual) => ({
-                                  ...atual,
-                                  [v.id]: { fonte_tipo: "coluna", valor: v.internal_name },
-                                }));
                               } else {
                                 setFormMappings((atual) => ({
                                   ...atual,
@@ -628,32 +598,22 @@ export default function FaixaDetail() {
                             }}
                           >
                             <option value="" disabled>
-                              Selecione a origem da variável...
+                              Selecione o campo do cliente...
                             </option>
-                            <option value="coluna">Coluna da planilha</option>
-                            <optgroup label="Campo do cliente">
-                              {campos.map((c) => (
-                                <option key={c.campo} value={`campo:${c.campo}`}>
-                                  {c.rotulo}
-                                </option>
-                              ))}
-                            </optgroup>
+                            {campos.map((c) => (
+                              <option key={c.campo} value={`campo:${c.campo}`}>
+                                {c.rotulo}
+                              </option>
+                            ))}
                           </select>
-                          {m?.fonte_tipo === "coluna" && (
-                            <input
-                              value={m.valor}
-                              onChange={(e) => setFormMappings((atual) => ({ ...atual, [v.id]: { ...m, valor: e.target.value } }))}
-                              placeholder="nome de coluna sugerido"
-                            />
-                          )}
                         </div>
                       </div>
                     );
                   })}
                 </div>
                 <p className="field-hint">
-                  "Coluna da planilha" só define o nome sugerido — ao subir a planilha, você escolhe a coluna real.
-                  "Campo do cliente" usa um valor fixo do cadastro, sem precisar de planilha.
+                  Vale só para envios gerados dentro do sistema. Na importação de planilha, cada variável é
+                  mapeada para uma coluna.
                 </p>
               </>
             )}
@@ -773,19 +733,6 @@ export default function FaixaDetail() {
                   <div className="form-row" style={{ flexWrap: "wrap" }}>
                     {templatesAtivos.flatMap((t) =>
                       t.variables.map((v) => {
-                        const tipo = mappingByVid[v.id] || "coluna";
-                        if (tipo === "campo_cliente") {
-                          return (
-                            <div className="field" key={v.id} style={{ minWidth: 220 }}>
-                              <label>
-                                {t.name}: {v.internal_name}
-                              </label>
-                              <div className="text-muted" style={{ paddingTop: 6 }}>
-                                Preenchido direto do cadastro do cliente
-                              </div>
-                            </div>
-                          );
-                        }
                         return (
                           <div className="field" key={v.id} style={{ minWidth: 220 }}>
                             <label>
