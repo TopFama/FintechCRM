@@ -1,5 +1,6 @@
 import io
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -12,7 +13,8 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
-from ..services import efetividade_service
+from .. import seta_client
+from ..services import efetividade_service, pagamentos_service
 from ..timezone import BUSINESS_TZ
 
 api = APIRouter()
@@ -47,8 +49,10 @@ def _build_xlsx(headers: list[str], rows: list[list]) -> bytes:
     for row in rows:
         ws.append(row)
         for cell in ws[ws.max_row]:
-            if hasattr(cell.value, "strftime"):
+            if isinstance(cell.value, datetime):
                 cell.number_format = _DATETIME_FORMAT
+            elif isinstance(cell.value, date):
+                cell.number_format = "DD/MM/YYYY"
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
     for i, header in enumerate(headers, start=1):
@@ -245,11 +249,24 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
     return buffer.getvalue()
 
 
-def _invalid_phones_query(db: Session, faixa_id: str | None):
+def _inicio_utc(dia: date) -> datetime:
+    return datetime.combine(dia, time.min, BUSINESS_TZ).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+
+
+def _no_periodo(query, coluna, de: date | None, ate: date | None):
+    """Período em dias de Brasília sobre um timestamp UTC do banco."""
+    if de:
+        query = query.filter(coluna >= _inicio_utc(de))
+    if ate:
+        query = query.filter(coluna < _inicio_utc(ate + timedelta(days=1)))
+    return query
+
+
+def _invalid_phones_query(db: Session, faixa_id: str | None, de: date | None = None, ate: date | None = None):
     query = db.query(models.InvalidPhoneRecord).order_by(models.InvalidPhoneRecord.created_at.desc())
     if faixa_id:
         query = query.filter(models.InvalidPhoneRecord.faixa_id == faixa_id)
-    return query
+    return _no_periodo(query, models.InvalidPhoneRecord.created_at, de, ate)
 
 
 def _hora_br(dt: datetime | None) -> datetime | None:
@@ -262,12 +279,14 @@ def _hora_br(dt: datetime | None) -> datetime | None:
 @api.get("/telefones-invalidos", response_model=schemas.InvalidPhonePage)
 def list_invalid_phones(
     faixa_id: str | None = None,
+    de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
+    ate: date | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    query = _invalid_phones_query(db, faixa_id)
+    query = _invalid_phones_query(db, faixa_id, de, ate)
     total = query.count()
     itens = query.offset(offset).limit(limit).all()
     return schemas.InvalidPhonePage(total=total, itens=itens)
@@ -276,11 +295,13 @@ def list_invalid_phones(
 @api.get("/telefones-invalidos/export")
 def export_invalid_phones(
     faixa_id: str | None = None,
+    de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
+    ate: date | None = Query(None),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
     records = (
-        _invalid_phones_query(db, faixa_id)
+        _invalid_phones_query(db, faixa_id, de, ate)
         .options(selectinload(models.InvalidPhoneRecord.faixa))
         .all()
     )
@@ -303,7 +324,7 @@ def export_invalid_phones(
     )
 
 
-def _dispatch_report_query(db: Session, faixa_id: str | None):
+def _dispatch_report_query(db: Session, faixa_id: str | None, de: date | None = None, ate: date | None = None):
     query = (
         db.query(models.QueueItem)
         .options(
@@ -315,7 +336,7 @@ def _dispatch_report_query(db: Session, faixa_id: str | None):
     )
     if faixa_id:
         query = query.filter(models.QueueItem.faixa_id == faixa_id)
-    return query
+    return _no_periodo(query, models.QueueItem.sent_at, de, ate)
 
 
 def _to_report_item(item: models.QueueItem) -> schemas.DispatchReportItemOut:
@@ -332,12 +353,14 @@ def _to_report_item(item: models.QueueItem) -> schemas.DispatchReportItemOut:
 @api.get("/envios", response_model=schemas.DispatchReportPage)
 def list_dispatch_report(
     faixa_id: str | None = None,
+    de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
+    ate: date | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    query = _dispatch_report_query(db, faixa_id)
+    query = _dispatch_report_query(db, faixa_id, de, ate)
     total = query.count()
     itens = [_to_report_item(item) for item in query.offset(offset).limit(limit).all()]
     return schemas.DispatchReportPage(total=total, itens=itens)
@@ -346,10 +369,12 @@ def list_dispatch_report(
 @api.get("/envios/export")
 def export_dispatch_report(
     faixa_id: str | None = None,
+    de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
+    ate: date | None = Query(None),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    rows_data = _dispatch_report_query(db, faixa_id).all()
+    rows_data = _dispatch_report_query(db, faixa_id, de, ate).all()
     headers = ["Código do cliente", "Faixa de atraso", "Nome", "Valor cobrado", "Telefone que cobrou", "Data/hora"]
     rows = [
         [
@@ -537,6 +562,69 @@ def export_relatorio_efetividade_clientes(
         content=content,
         media_type=_XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="relatorio_efetividade_clientes.xlsx"'},
+    )
+
+
+# --- Quem pagou o que foi cobrado (por cliente) -------------------------------
+
+
+def _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa):
+    try:
+        return pagamentos_service.clientes_que_pagaram(
+            db, cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate, faixa=faixa
+        )
+    except seta_client.SetaIndisponivel as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+
+
+@api.get("/pagamentos", response_model=schemas.PagamentosClientesPage)
+def relatorio_pagamentos(
+    cobrado_de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
+    cobrado_ate: date | None = Query(None),
+    pago_de: date | None = Query(None, description="Período de pagamento: início"),
+    pago_ate: date | None = Query(None),
+    faixa: list[str] | None = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa)
+    return schemas.PagamentosClientesPage(
+        total=len(linhas),
+        valor_cobrado=sum((l["valor_cobrado"] for l in linhas), Decimal("0.00")),
+        valor_pago=sum((l["valor_pago"] for l in linhas), Decimal("0.00")),
+        itens=linhas[offset : offset + limit],
+    )
+
+
+@api.get("/pagamentos/export")
+def export_relatorio_pagamentos(
+    cobrado_de: date | None = Query(None),
+    cobrado_ate: date | None = Query(None),
+    pago_de: date | None = Query(None),
+    pago_ate: date | None = Query(None),
+    faixa: list[str] | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa)
+    headers = [
+        "Código do cliente", "Nome", "CPF", "Loja", "Faixa", "Data da cobrança", "Valor cobrado",
+        "Valor pago", "Títulos pagos", "Primeiro pagamento", "Último pagamento",
+    ]
+    rows = [
+        [
+            l["codigo_cliente"], _formula_safe(l["nome"] or ""), l["cpf"] or "", _formula_safe(l["loja"]),
+            l["faixa"], l["data_cobranca"], float(l["valor_cobrado"]), float(l["valor_pago"]),
+            l["qtd_titulos_pagos"], l["primeiro_pagamento"], l["ultimo_pagamento"],
+        ]
+        for l in linhas
+    ]
+    return Response(
+        content=_build_xlsx(headers, rows),
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="relatorio_pagamentos.xlsx"'},
     )
 
 
