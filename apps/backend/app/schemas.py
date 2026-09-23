@@ -499,6 +499,19 @@ class OrcamentoProgressaoOut(BaseModel):
     valor_gasto_brl: Decimal | None
     motivo_sem_gasto: str | None = None
     dias: list[OrcamentoProgressaoDiaOut]
+    avisos: list["AvisoCustoWabaOut"] = []
+    gasto_por_numero: list["GastoNumeroOut"] = []
+
+
+class AvisoCustoWabaOut(BaseModel):
+    waba_id: str
+    numeros: list[str]
+    motivo: str
+
+
+class GastoNumeroOut(BaseModel):
+    numero: str
+    gasto_brl: Decimal
 
 
 class LinhaEfetividadeClienteOut(BaseModel):

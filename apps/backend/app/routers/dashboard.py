@@ -137,7 +137,8 @@ def orcamento_progressao(
         Decimal("0.00"),
     )
 
-    por_dia, motivo = custo_whatsapp.gasto_diario_brl(db, inicio, fim)
+    custo = custo_whatsapp.custo_detalhado(db, inicio, fim)
+    por_dia, motivo = custo.por_dia, custo.motivo
     dias: list[schemas.OrcamentoProgressaoDiaOut] = []
     valor_gasto_brl: Decimal | None = None
     if por_dia is not None:
@@ -156,4 +157,9 @@ def orcamento_progressao(
         valor_gasto_brl=valor_gasto_brl,
         motivo_sem_gasto=motivo,
         dias=dias,
+        avisos=[schemas.AvisoCustoWabaOut(waba_id=a.waba_id, numeros=a.numeros, motivo=a.motivo) for a in custo.avisos],
+        gasto_por_numero=[
+            schemas.GastoNumeroOut(numero=n, gasto_brl=v.quantize(Decimal("0.01")))
+            for n, v in sorted(custo.por_numero.items(), key=lambda kv: -kv[1])
+        ],
     )

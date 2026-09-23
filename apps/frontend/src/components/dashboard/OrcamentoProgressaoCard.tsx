@@ -112,6 +112,23 @@ export default function OrcamentoProgressaoCard() {
       {cabecalho}
       {filtros}
 
+      {gastoInfo && dados.avisos.length > 0 && (
+        <div className="error-box" style={{ alignItems: "flex-start" }}>
+          <IconAlert width={16} height={16} />
+          <div>
+            <strong>Custo incompleto: {dados.avisos.length} WABA(s) não puderam ser lidas e ficaram fora do total.</strong>
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              {dados.avisos.map((a) => (
+                <li key={a.waba_id}>
+                  WABA {a.waba_id}
+                  {a.numeros.length > 0 ? ` (números ${a.numeros.join(", ")})` : " (sem número importado)"}: {a.motivo}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
       {!gastoInfo ? (
         <div className="empty-state">
           <p>Sem custo do WhatsApp para o período. Motivo: {dados.motivo_sem_gasto || "não informado pela Meta"}</p>
@@ -133,6 +150,26 @@ export default function OrcamentoProgressaoCard() {
             </div>
           </div>
           <GraficoGasto dados={dados} />
+          {dados.gasto_por_numero.length > 0 && (
+            <div className="table-wrap" style={{ marginTop: 16 }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Número</th>
+                    <th>Gasto no período</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dados.gasto_por_numero.map((g) => (
+                    <tr key={g.numero}>
+                      <td className="cell-strong">{g.numero}</td>
+                      <td>{formatBRL(g.gasto_brl)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
     </div>
