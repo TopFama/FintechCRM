@@ -159,7 +159,9 @@ def orcamento_progressao(
         dias=dias,
         avisos=[schemas.AvisoCustoWabaOut(waba_id=a.waba_id, numeros=a.numeros, motivo=a.motivo) for a in custo.avisos],
         gasto_por_numero=[
-            schemas.GastoNumeroOut(numero=n, gasto_brl=v.quantize(Decimal("0.01")))
+            schemas.GastoNumeroOut(
+                numero=n, gasto_brl=v.quantize(Decimal("0.01")), qtd_mensagens=custo.mensagens_por_numero.get(n, 0)
+            )
             for n, v in sorted(custo.por_numero.items(), key=lambda kv: -kv[1])
         ],
     )

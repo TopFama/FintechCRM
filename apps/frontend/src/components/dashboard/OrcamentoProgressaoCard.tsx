@@ -157,6 +157,7 @@ export default function OrcamentoProgressaoCard() {
                   <tr>
                     <th>Número</th>
                     <th>Gasto no período</th>
+                    <th>Qtd mensagens</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -164,6 +165,7 @@ export default function OrcamentoProgressaoCard() {
                     <tr key={g.numero}>
                       <td className="cell-strong">{g.numero}</td>
                       <td>{formatBRL(g.gasto_brl)}</td>
+                      <td>{g.qtd_mensagens.toLocaleString("pt-BR")}</td>
                     </tr>
                   ))}
                 </tbody>

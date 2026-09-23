@@ -513,6 +513,7 @@ class AvisoCustoWabaOut(BaseModel):
 class GastoNumeroOut(BaseModel):
     numero: str
     gasto_brl: Decimal
+    qtd_mensagens: int = 0
 
 
 class LinhaEfetividadeClienteOut(BaseModel):

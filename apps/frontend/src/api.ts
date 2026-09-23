@@ -664,7 +664,7 @@ export interface OrcamentoProgressao {
   valor_gasto_brl: string | null;
   motivo_sem_gasto: string | null;
   avisos: { waba_id: string; numeros: string[]; motivo: string }[];
-  gasto_por_numero: { numero: string; gasto_brl: string }[];
+  gasto_por_numero: { numero: string; gasto_brl: string; qtd_mensagens: number }[];
   dias: OrcamentoProgressaoDia[];
 }
 

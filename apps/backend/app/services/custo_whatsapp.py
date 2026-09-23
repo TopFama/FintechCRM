@@ -33,6 +33,8 @@ class CustoWhatsapp:
     avisos: list[AvisoWaba] = field(default_factory=list)
     # número exibido (ou phone_number da Meta) → gasto em BRL no período
     por_numero: dict[str, Decimal] = field(default_factory=dict)
+    # número → mensagens que geraram custo no período
+    mensagens_por_numero: dict[str, int] = field(default_factory=dict)
 
 
 def _digitos(numero: str | None) -> str:
@@ -147,6 +149,7 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
         _digitos(n): n for numeros in numeros_por_waba.values() for n in numeros
     }
     por_dia: dict[date, Decimal] = {}
+    mensagens: dict[str, int] = {}
     por_numero: dict[str, Decimal] = {n: Decimal("0") for numeros in numeros_por_waba.values() for n in numeros}
     for p in pontos:
         if p.get("start") is None:
@@ -158,7 +161,12 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
         if telefone:
             chave = exibicao.get(_digitos(telefone), telefone)
             por_numero[chave] = por_numero.get(chave, Decimal("0")) + custo
-    return CustoWhatsapp(por_dia, None, avisos, por_numero)
+            # Só conta mensagem cobrada: REGULAR na dimensão PRICING_TYPE (as
+            # gratuitas vêm como FREE_*), ou custo > 0 se o tipo não vier.
+            tipo = p.get("pricing_type")
+            if tipo == "REGULAR" or (tipo is None and custo > 0):
+                mensagens[chave] = mensagens.get(chave, 0) + int(p.get("volume", 0) or 0)
+    return CustoWhatsapp(por_dia, None, avisos, por_numero, mensagens)
 
 
 def gasto_diario_brl(db: Session, inicio: date, fim: date) -> tuple[dict[date, Decimal] | None, str | None]:

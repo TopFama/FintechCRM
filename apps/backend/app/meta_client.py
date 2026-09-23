@@ -95,7 +95,7 @@ class MetaClient:
             params={
                 "fields": (
                     'pricing_analytics.start(%d).end(%d).granularity(%s)'
-                    '.metric_types(["COST","VOLUME"]).dimensions(["PHONE"])'
+                    '.metric_types(["COST","VOLUME"]).dimensions(["PHONE","PRICING_TYPE"])'
                 )
                 % (start_unix, end_unix, granularity)
             },
