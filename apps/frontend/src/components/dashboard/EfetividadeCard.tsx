@@ -6,7 +6,7 @@ import CamposLoja from "../CamposLoja";
 import MultiSelect from "../MultiSelect";
 import { OpcoesCobranca } from "../useOpcoesCobranca";
 import SortableTh from "../SortableTh";
-import { SortDirection, useSort } from "../../sort";
+import { ordemFaixaFn, ordenarPor, SortDirection, useSort } from "../../sort";
 
 type Aba = "faixa" | "loja";
 
@@ -83,11 +83,24 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
   const [exportandoClientes, setExportandoClientes] = useState(false);
   const [aba, setAba] = useState<Aba>("faixa");
   const reqRef = useRef(0);
-  // filtros do último "Aplicar": clicar num cabeçalho reordena no servidor sem pegar edições não aplicadas
-  const aplicadosRef = useRef<FiltrosEfetividade | null>(null);
-  const ordenacao = useSort<Coluna>(null, (chave, dir) => {
-    if (aplicadosRef.current) buscar(aplicadosRef.current, chave, dir);
-  });
+  // o relatório vem inteiro (sem paginação): ordenar na tela cobre o resultado todo e não reconsulta o SETA
+  const ordenacao = useSort<Coluna>(null);
+  const ordemFaixa = ordemFaixaFn(opcoes.regras?.faixas);
+
+  function ordenar<T extends LinhaEfetividade>(linhas: T[]): T[] {
+    const chave = ordenacao.sortKey;
+    if (!chave) return linhas;
+    return ordenarPor(
+      linhas,
+      (l) => {
+        const v = (l as unknown as Record<string, string | number | null>)[chave];
+        if (chave === "faixa") return ordemFaixa(v as string);
+        if (chave === "conversao_clientes" || chave === "valor_pago") return v == null ? null : Number(v);
+        return typeof v === "string" ? v.toUpperCase() : v;
+      },
+      ordenacao.sortDir
+    );
+  }
 
   function filtrosComJanela(): FiltrosEfetividade {
     const dias = janela === "outro" ? janelaOutro : janela;
@@ -103,16 +116,12 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
 
   function aplicar() {
     if (janelaInvalida) return;
-    aplicadosRef.current = filtrosComJanela();
-    buscar(aplicadosRef.current, ordenacao.sortKey, ordenacao.sortDir);
-  }
-
-  function buscar(f: FiltrosEfetividade, sortBy: Coluna | null, sortDir: SortDirection) {
+    const f = filtrosComJanela();
     setErro(null);
     setCarregando(true);
     const seq = ++reqRef.current;
     api
-      .relatorioEfetividade(comOrdenacao(f, sortBy, sortDir))
+      .relatorioEfetividade(f)
       .then((r) => seq === reqRef.current && setRelatorio(r))
       .catch((e) => seq === reqRef.current && setErro(mensagemErroSeta(e)))
       .finally(() => seq === reqRef.current && setCarregando(false));
@@ -320,13 +329,13 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
                 </thead>
                 <tbody>
                   {aba === "faixa"
-                    ? relatorio.por_faixa.map((l) => (
+                    ? ordenar(relatorio.por_faixa).map((l) => (
                         <tr key={l.faixa}>
                           <td className="cell-strong">{l.faixa}</td>
                           <Metricas linha={l} />
                         </tr>
                       ))
-                    : relatorio.por_loja.map((l) => (
+                    : ordenar(relatorio.por_loja).map((l) => (
                         <tr key={l.loja}>
                           <td className="cell-strong">{l.loja}</td>
                           <td>{l.loja_nome ?? "—"}</td>

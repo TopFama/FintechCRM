@@ -16,7 +16,7 @@ from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from .. import seta_client
+from .. import cache, seta_client
 from ..services import efetividade_service, pagamentos_service
 from ..timezone import BUSINESS_TZ
 
@@ -649,13 +649,33 @@ def export_relatorio_efetividade_clientes(
 # --- Quem pagou o que foi cobrado (por cliente) -------------------------------
 
 
+_CAMPOS_DATA_PAGAMENTO = ("data_cobranca", "primeiro_pagamento", "ultimo_pagamento")
+
+
 def _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa):
+    """Resultado cacheado por conjunto de filtros (compartilhado entre usuários):
+    ordenar, paginar e exportar com os mesmos filtros não reconsulta o SETA."""
+
+    filtros = dict(cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate, faixa=sorted(faixa or []))
+
+    def calcular():
+        return pagamentos_service.clientes_que_pagaram(db, **{**filtros, "faixa": faixa})
+
     try:
-        return pagamentos_service.clientes_que_pagaram(
-            db, cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate, faixa=faixa
-        )
+        try:
+            linhas = cache.obter_ou_calcular(cache.chave("relatorio-pagamentos", filtros), calcular, ttl_segundos=300)
+        except cache.CacheIndisponivel:
+            linhas = calcular()
     except seta_client.SetaIndisponivel as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    # o cache guarda JSON: devolve datas e valores aos tipos originais
+    for l in linhas:
+        for campo in _CAMPOS_DATA_PAGAMENTO:
+            if isinstance(l.get(campo), str):
+                l[campo] = date.fromisoformat(l[campo])
+        for campo in ("valor_cobrado", "valor_pago"):
+            l[campo] = Decimal(str(l[campo]))
+    return linhas
 
 
 PagamentoSortColumn = Literal[pagamentos_service.COLUNAS_ORDENAVEIS]
