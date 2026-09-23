@@ -603,7 +603,6 @@ export default function Configuracoes() {
 
       <TokensMetaCard onNumerosAlterados={() => setVersaoNumeros((v) => v + 1)} />
       <NumerosCard versao={versaoNumeros} />
-      <RegrasCobrancaCard />
         </>
       )}
     </div>

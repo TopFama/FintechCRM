@@ -280,7 +280,11 @@ async def upload_planilha(
             fonte_tipo = mapping.fonte_tipo if mapping else "coluna"
 
             if vid in field_mapping.variables:
-                raw_val = (row.get(field_mapping.variables[vid]) or "").strip()
+                coluna = field_mapping.variables[vid]
+                raw_val = (row.get(coluna) or "").strip()
+                # Coluna "Nome"/"NOME"/"nome" no template vira só o primeiro nome
+                if normalizar_chave(coluna) == "nome":
+                    raw_val = extract_first_name(raw_val)
                 val = normalizar_para_meta(raw_val)
             elif vid in field_mapping.expressoes:
                 val = renderizar_expressao(field_mapping.expressoes[vid], contexto)

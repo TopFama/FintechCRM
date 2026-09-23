@@ -74,7 +74,7 @@ class MetaClient:
         )
         return data.get("data", [])
 
-    async def conversation_analytics(
+    async def pricing_analytics(
         self,
         waba_id: str,
         *,
@@ -82,28 +82,21 @@ class MetaClient:
         end_unix: int,
         granularity: str = "DAILY",
     ) -> list[dict]:
-        """Custo de conversas cobradas pela Meta no período (Pricing Analytics,
-        https://developers.facebook.com/docs/whatsapp/business-management-api/analytics/conversation-analytics),
-        usado no relatório de efetividade (Tarefa 6) pra mostrar "valor a
-        pagar". Retorna os "data_points" com conversation_category, cost e
-        quantidade — em USD, a conversão para BRL é feita à parte."""
+        """Custo cobrado pela Meta no período, em USD (Pricing Analytics). Desde
+        jul/2025 a Meta cobra por mensagem e o antigo conversation_analytics não
+        traz mais custo — por isso este endpoint. Retorna os "data_points"
+        (start, end, volume, cost)."""
 
         data = await self._request(
             "GET",
             str(waba_id),
             params={
-                "fields": (
-                    "conversation_analytics.start(%d).end(%d).granularity(%s)"
-                    ".conversation_categories([\"AUTHENTICATION\",\"MARKETING\",\"UTILITY\",\"SERVICE\"])"
-                    ".conversation_types([\"REGULAR\",\"FREE_TIER\"])"
-                    ".dimensions([\"conversation_category\"])"
-                ) % (start_unix, end_unix, granularity)
+                "fields": 'pricing_analytics.start(%d).end(%d).granularity(%s).metric_types(["COST","VOLUME"])'
+                % (start_unix, end_unix, granularity)
             },
         )
-        conversation_analytics = data.get("conversation_analytics", {})
-        blocos = conversation_analytics.get("data", [])
         pontos: list[dict] = []
-        for bloco in blocos:
+        for bloco in data.get("pricing_analytics", {}).get("data", []):
             pontos.extend(bloco.get("data_points", []))
         return pontos
 

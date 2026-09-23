@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../api";
 import { IconAlert } from "../../icons";
+import FiltroPeriodo, { Periodo } from "../FiltroPeriodo";
 import MultiSelect from "../MultiSelect";
 import { OpcoesCobranca } from "../useOpcoesCobranca";
 
@@ -11,18 +12,22 @@ export default function LeadsCard({ opcoes }: { opcoes: OpcoesCobranca }) {
   const [faixas, setFaixas] = useState<string[]>([]);
   const [exportando, setExportando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [periodo, setPeriodo] = useState<Periodo>({});
+  const filtroData = { criado_de: periodo.de, criado_ate: periodo.ate };
 
   useEffect(() => {
-    api.contarLeads("novo").then(setNovos).catch((e) => setErro(e.message));
-    api.contarLeads("cobrado").then(setEnviados).catch((e) => setErro(e.message));
-  }, []);
+    if (Boolean(periodo.de) !== Boolean(periodo.ate)) return;
+    api.contarLeads("novo", filtroData).then(setNovos).catch((e) => setErro(e.message));
+    api.contarLeads("cobrado", filtroData).then(setEnviados).catch((e) => setErro(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodo]);
 
   async function exportar() {
     setExportando(true);
     setErro(null);
     try {
       // sem status: o backend exporta só os leads já enviados
-      await api.exportarLeads({ faixa: faixas });
+      await api.exportarLeads({ faixa: faixas, ...filtroData });
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao exportar");
     } finally {
@@ -36,6 +41,8 @@ export default function LeadsCard({ opcoes }: { opcoes: OpcoesCobranca }) {
         <h3>Leads</h3>
         <Link to="/leads">Ver leads →</Link>
       </div>
+
+      <FiltroPeriodo opcoes={["hoje", "personalizado"]} inicial={null} permiteLimpar onChange={setPeriodo} />
 
       <div className="stat-grid">
         <div className="stat">

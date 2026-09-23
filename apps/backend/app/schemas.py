@@ -469,15 +469,16 @@ class OrcamentoMesIn(BaseModel):
 
 
 class OrcamentoProgressaoDiaOut(BaseModel):
-    dia: int
+    data: date
     gasto_acumulado_brl: Decimal
 
 
 class OrcamentoProgressaoOut(BaseModel):
-    ano: int
-    mes: int
+    de: date
+    ate: date
     valor_orcado: Decimal
     valor_gasto_brl: Decimal | None
+    motivo_sem_gasto: str | None = None
     dias: list[OrcamentoProgressaoDiaOut]
 
 

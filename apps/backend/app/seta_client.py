@@ -193,7 +193,7 @@ pagos AS (
        AND ft.status = 'B'
        AND ft.tipo IN ('4', '5')
        AND ft.valor > 0
-       AND ft.auxiliar LIKE 'VE%'
+       AND COALESCE(ft.auxiliar, '') NOT LIKE 'RE%'
        AND trim(ft.descricao) <> :descricao_seguro
      GROUP BY ft.pessoa
 ),
@@ -277,7 +277,7 @@ def buscar_base_cobranca(
       `qtd_parcelas_cobranca` e `valor_cobrar` valem só para as parcelas da
       cobrança (`vencimento <= max(hoje, parcela mais antiga)`: as vencidas e,
       no lembrete, a que vence amanhã) e o valor leva multa e juros (`juros`).
-    - `valor_pago` soma parcelas pagas de venda (auxiliar `VE…`), sem seguro.
+    - `valor_pago` soma tudo que o cliente pagou (menos auxiliar `RE…`), sem seguro.
     - `qtd_compras` conta vendas finalizadas (`status = 'S'`) de condição de
       crediário (tipo 4, menos a 130), só se a venda tem parcela `VE`+código
       de tipo 4/5 — é o que confirma que foi crediário de verdade.

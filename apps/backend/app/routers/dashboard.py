@@ -1,14 +1,15 @@
-import asyncio
 import calendar
 import logging
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_, true
 from sqlalchemy.orm import Session
 
-from .. import cambio, meta_client, models, schemas
+from .. import models, schemas
+from ..services import custo_whatsapp
+from ..timezone import BUSINESS_TZ, hoje_br
 from ..database import get_db
 from ..deps import get_current_user
 
@@ -17,19 +18,53 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
+def _limites_utc(de: date | None, ate: date | None) -> tuple[datetime | None, datetime | None]:
+    """Datas locais (GMT-3) → limites em UTC naive, como está gravado no banco."""
+    ini = datetime.combine(de, time.min, BUSINESS_TZ).astimezone(UTC).replace(tzinfo=None) if de else None
+    fim = (
+        datetime.combine(ate + timedelta(days=1), time.min, BUSINESS_TZ).astimezone(UTC).replace(tzinfo=None)
+        if ate
+        else None
+    )
+    return ini, fim
+
+
+def _no_periodo(coluna, ini: datetime | None, fim: datetime | None):
+    conds = []
+    if ini:
+        conds.append(coluna >= ini)
+    if fim:
+        conds.append(coluna < fim)
+    return and_(true(), *conds)
+
+
 @router.get("/summary", response_model=schemas.DashboardSummary)
-def summary(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+def summary(
+    de: date | None = Query(None),
+    ate: date | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Cards e tabela por faixa respeitam o período: enviado conta pela data
+    do envio, o resto pela data em que entrou na fila."""
+
+    ini, fim = _limites_utc(de, ate)
+    periodo = or_(
+        and_(models.QueueItem.status == models.QueueStatus.sent, _no_periodo(models.QueueItem.sent_at, ini, fim)),
+        and_(models.QueueItem.status != models.QueueStatus.sent, _no_periodo(models.QueueItem.created_at, ini, fim)),
+    )
+
     def count(status_value: models.QueueStatus) -> int:
         return (
             db.query(func.count(models.QueueItem.id))
-            .filter(models.QueueItem.status == status_value)
+            .filter(models.QueueItem.status == status_value, periodo)
             .scalar()
             or 0
         )
 
     por_faixa_rows = (
         db.query(models.Faixa.name, models.QueueItem.status, func.count(models.QueueItem.id))
-        .join(models.QueueItem, models.QueueItem.faixa_id == models.Faixa.id, isouter=True)
+        .join(models.QueueItem, and_(models.QueueItem.faixa_id == models.Faixa.id, periodo), isouter=True)
         .group_by(models.Faixa.name, models.QueueItem.status)
         .all()
     )
@@ -45,7 +80,12 @@ def summary(db: Session = Depends(get_db), _user: models.User = Depends(get_curr
         .all()
     )
 
-    total_invalidos = db.query(func.count(models.InvalidPhoneRecord.id)).scalar() or 0
+    total_invalidos = (
+        db.query(func.count(models.InvalidPhoneRecord.id))
+        .filter(_no_periodo(models.InvalidPhoneRecord.created_at, ini, fim))
+        .scalar()
+        or 0
+    )
 
     return schemas.DashboardSummary(
         total_pendentes=count(models.QueueStatus.pending),
@@ -62,73 +102,58 @@ def summary(db: Session = Depends(get_db), _user: models.User = Depends(get_curr
 
 @router.get("/orcamento-progressao", response_model=schemas.OrcamentoProgressaoOut)
 def orcamento_progressao(
-    ano: int = Query(default_factory=lambda: date.today().year),
-    mes: int = Query(default_factory=lambda: date.today().month, ge=1, le=12),
+    ano: int | None = Query(None, ge=2000, le=2100),
+    mes: int | None = Query(None, ge=1, le=12),
+    de: date | None = Query(None),
+    ate: date | None = Query(None),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    """Linha de progressão do mês (Tarefa 4): gasto real acumulado dia a dia
-    com WhatsApp (Meta Pricing Analytics, convertido em BRL) comparado ao
-    orçamento cadastrado. Gasto real é best-effort — sem WABA configurada ou
-    com a Meta/câmbio fora do ar, volta None em vez de quebrar a tela."""
+    """Gasto real acumulado com WhatsApp (Meta, em BRL) vs. orçamento. Período
+    = um mês (ano/mes, padrão o mês atual) ou personalizado (de/ate); no
+    personalizado o orçado soma o orçamento de cada mês tocado."""
 
-    if not (2000 <= ano <= 2100):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "ano inválido")
+    if de or ate:
+        if not (de and ate) or de > ate:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe data inicial e final válidas")
+        inicio, fim = de, ate
+    else:
+        hoje = hoje_br()
+        ano, mes = ano or hoje.year, mes or hoje.month
+        inicio = date(ano, mes, 1)
+        fim = date(ano, mes, calendar.monthrange(ano, mes)[1])
 
-    orcamento = (
-        db.query(models.OrcamentoMensal)
-        .filter(models.OrcamentoMensal.ano == ano, models.OrcamentoMensal.mes == mes)
-        .first()
+    meses = set()
+    d = inicio.replace(day=1)
+    while d <= fim:
+        meses.add((d.year, d.month))
+        d = (d + timedelta(days=32)).replace(day=1)
+    valor_orcado = sum(
+        (
+            o.valor_orcado
+            for o in db.query(models.OrcamentoMensal)
+            if (o.ano, o.mes) in meses
+        ),
+        Decimal("0.00"),
     )
-    valor_orcado = orcamento.valor_orcado if orcamento else Decimal("0.00")
 
-    wabas = {
-        w for (w,) in db.query(models.WhatsappNumber.waba_id).filter(models.WhatsappNumber.waba_id.isnot(None)).distinct()
-    }
+    por_dia, motivo = custo_whatsapp.gasto_diario_brl(db, inicio, fim)
     dias: list[schemas.OrcamentoProgressaoDiaOut] = []
     valor_gasto_brl: Decimal | None = None
-
-    if wabas:
-        ultimo_dia = calendar.monthrange(ano, mes)[1]
-        inicio = date(ano, mes, 1)
-        fim = date(ano, mes, ultimo_dia)
-        start_unix = int(datetime.combine(inicio, datetime.min.time()).timestamp())
-        end_unix = int(datetime.combine(fim, datetime.max.time()).timestamp())
-
-        async def _buscar() -> list[dict]:
-            pontos: list[dict] = []
-            for waba_id in wabas:
-                token = meta_client.token_da_waba(db, waba_id)
-                client = meta_client.MetaClient(token)
-                pontos.extend(
-                    await client.conversation_analytics(
-                        waba_id, start_unix=start_unix, end_unix=end_unix, granularity="DAILY"
-                    )
-                )
-            return pontos
-
-        try:
-            pontos = asyncio.run(_buscar())
-            cotacao = asyncio.run(cambio.cotacao_usd_brl())
-            gasto_por_dia: dict[int, Decimal] = {}
-            for p in pontos:
-                inicio_ponto = p.get("start")
-                if inicio_ponto is None:
-                    continue
-                dia = datetime.utcfromtimestamp(int(inicio_ponto)).day
-                custo_usd = Decimal(str(p.get("cost", 0) or 0))
-                gasto_por_dia[dia] = gasto_por_dia.get(dia, Decimal("0.00")) + custo_usd * Decimal(str(cotacao))
-
-            acumulado = Decimal("0.00")
-            for dia in range(1, ultimo_dia + 1):
-                acumulado += gasto_por_dia.get(dia, Decimal("0.00"))
-                dias.append(schemas.OrcamentoProgressaoDiaOut(dia=dia, gasto_acumulado_brl=acumulado.quantize(Decimal("0.01"))))
-            valor_gasto_brl = acumulado.quantize(Decimal("0.01"))
-        except Exception as exc:  # noqa: BLE001 - dado complementar, não pode derrubar o dashboard
-            logger.warning("Não foi possível calcular a progressão de gasto: %s", exc)
-            dias = []
-            valor_gasto_brl = None
+    if por_dia is not None:
+        acumulado = Decimal("0.00")
+        d = inicio
+        while d <= fim:
+            acumulado += por_dia.get(d, Decimal("0"))
+            dias.append(schemas.OrcamentoProgressaoDiaOut(data=d, gasto_acumulado_brl=acumulado.quantize(Decimal("0.01"))))
+            d += timedelta(days=1)
+        valor_gasto_brl = acumulado.quantize(Decimal("0.01"))
 
     return schemas.OrcamentoProgressaoOut(
-        ano=ano, mes=mes, valor_orcado=valor_orcado, valor_gasto_brl=valor_gasto_brl, dias=dias
+        de=inicio,
+        ate=fim,
+        valor_orcado=valor_orcado,
+        valor_gasto_brl=valor_gasto_brl,
+        motivo_sem_gasto=motivo,
+        dias=dias,
     )
