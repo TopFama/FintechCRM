@@ -10,19 +10,30 @@ convertido pelo próprio FastAPI na resposta HTTP igual seria se estivesse
 no router, então não muda comportamento nenhum, só a localização do código."""
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from .. import google_client, lojas as lojas_base, models, seta_client
-from ..timezone import hoje_br
+from ..timezone import BUSINESS_TZ, hoje_br
 from . import custo_whatsapp
 from ..regras_db import carregar_regras
 from ..relatorio_efetividade import montar_relatorio
 
 logger = logging.getLogger(__name__)
+
+
+def _inicio_dia_utc(dia: date) -> datetime:
+    """Meia-noite de Brasília do dia, em UTC ingênuo (como `cobrado_em` é gravado)."""
+    return datetime.combine(dia, time.min, BUSINESS_TZ).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+
+
+def _dia_br(dt: datetime) -> date:
+    """Data em Brasília de um timestamp UTC ingênuo."""
+    return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).date()
 
 
 def obter_dados_efetividade(
@@ -61,11 +72,11 @@ def obter_dados_efetividade(
     leads_query = db.query(models.Lead).filter(models.Lead.status == "cobrado")
     if cobrado_de:
         leads_query = leads_query.filter(
-            models.Lead.cobrado_em >= datetime.combine(cobrado_de, datetime.min.time())
+            models.Lead.cobrado_em >= _inicio_dia_utc(cobrado_de)
         )
     if cobrado_ate:
         leads_query = leads_query.filter(
-            models.Lead.cobrado_em <= datetime.combine(cobrado_ate, datetime.max.time())
+            models.Lead.cobrado_em < _inicio_dia_utc(cobrado_ate + timedelta(days=1))
         )
     if faixa:
         leads_query = leads_query.filter(models.Lead.faixa.in_(faixa))
@@ -91,11 +102,11 @@ def obter_dados_efetividade(
     )
     if cobrado_de:
         parc_query = parc_query.filter(
-            models.Lead.cobrado_em >= datetime.combine(cobrado_de, datetime.min.time())
+            models.Lead.cobrado_em >= _inicio_dia_utc(cobrado_de)
         )
     if cobrado_ate:
         parc_query = parc_query.filter(
-            models.Lead.cobrado_em <= datetime.combine(cobrado_ate, datetime.max.time())
+            models.Lead.cobrado_em < _inicio_dia_utc(cobrado_ate + timedelta(days=1))
         )
     if faixa:
         parc_query = parc_query.filter(models.Lead.faixa.in_(faixa))
@@ -118,7 +129,7 @@ def obter_dados_efetividade(
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
     pares_cobranca = {
-        (p.codigo_cliente, p.cobrado_em.date()) for p in parcelas_db if p.cobrado_em is not None
+        (p.codigo_cliente, _dia_br(p.cobrado_em)) for p in parcelas_db if p.cobrado_em is not None
     }
     pagamentos: dict[tuple[str, date], date] = {}
     if pares_cobranca:
@@ -130,7 +141,7 @@ def obter_dados_efetividade(
     itens = []
     for p in parcelas_db:
         sit = situacoes.get(p.titulo_codigo)
-        data_cobranca = p.cobrado_em.date() if p.cobrado_em else None
+        data_cobranca = _dia_br(p.cobrado_em) if p.cobrado_em else None
         pago = False
         renegociada = False
         valor_pago = Decimal("0.00")

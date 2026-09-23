@@ -80,7 +80,7 @@ def _deve_extrair_leads(global_config: models.GlobalDispatchConfig, now_utc: dat
     return janela_inicio <= local_now.time() < inicio_disparo
 
 
-def _extrair_leads_automatico(db: Session) -> None:
+def _extrair_leads_automatico(db: Session) -> bool:
     """Gera leads da base de cobrança com os mesmos filtros padrão da tela
     (nenhuma faixa/cluster/loja específica, só primeiro dia + regra WhatsApp),
     equivalente a clicar em "Gerar leads" sem nenhum filtro aplicado."""
@@ -90,11 +90,12 @@ def _extrair_leads_automatico(db: Session) -> None:
     job = buscar_base(db)
     if job["status"] != "ready":
         logger.info("Extração automática de leads: base de cobrança ainda processando, tenta no próximo ciclo")
-        return
+        return False
     criados, ja_existiam, sem_celular = gerar_leads_de_clientes(db, job["data"], created_by=None)
     logger.info(
         "Extração automática de leads: %s criados, %s já existiam, %s sem celular", criados, ja_existiam, sem_celular
     )
+    return True
 
 
 async def run_dispatch_cycle() -> None:
@@ -118,13 +119,16 @@ async def run_dispatch_cycle() -> None:
 
         if _deve_extrair_leads(global_config, now):
             try:
-                _extrair_leads_automatico(db)
+                concluiu = _extrair_leads_automatico(db)
             except Exception:  # noqa: BLE001 - falha na extração não pode travar o disparo
                 db.rollback()
                 logger.exception("Falha na extração automática de leads")
             else:
-                global_config.leads_auto_extract_last_run = _local_now(now).date()
-                db.commit()
+                # Base ainda calculando (cache frio): não marca o dia como feito,
+                # senão a extração nunca roda de verdade.
+                if concluiu:
+                    global_config.leads_auto_extract_last_run = _local_now(now).date()
+                    db.commit()
 
         dentro_da_janela = _within_schedule_window(global_config, now)
 

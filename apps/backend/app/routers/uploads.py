@@ -1,4 +1,5 @@
 from datetime import datetime, time
+from zoneinfo import ZoneInfo
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
@@ -10,7 +11,7 @@ from ..database import get_db
 from ..deps import get_current_user
 from ..utils.document import extract_first_name, format_cpf, normalize_seta_code
 from ..utils.phone import is_valid_phone, normalize_phone
-from ..timezone import hoje_br
+from ..timezone import BUSINESS_TZ, hoje_br
 from ..utils.spreadsheet import parse_uploaded_spreadsheet, read_spreadsheet_preview
 from ..variaveis_template import (
     contexto_cliente,
@@ -167,7 +168,8 @@ async def upload_planilha(
     # quem já está pendente/reservado (nunca chegou a sair) em qualquer data, e
     # quem já foi enviado hoje — enviado em dia anterior pode voltar (cobrança
     # recorrente da mesma faixa em dias diferentes).
-    inicio_hoje = datetime.combine(hoje_br(), time.min)
+    # sent_at é UTC ingênuo: converte a meia-noite de Brasília pra UTC antes de comparar.
+    inicio_hoje = datetime.combine(hoje_br(), time.min, BUSINESS_TZ).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
     clientes_bloqueados = {
         codigo
         for (codigo,) in db.query(models.QueueItem.codigo_cliente).filter(

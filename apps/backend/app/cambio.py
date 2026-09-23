@@ -5,9 +5,11 @@ de precisão de tempo real, só evitar bater na API a cada requisição."""
 
 import logging
 import time
-from datetime import date, timedelta
+from datetime import timedelta
 
 import httpx
+
+from .timezone import hoje_br
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ async def _awesomeapi(client: httpx.AsyncClient) -> float:
 async def _ptax_bcb(client: httpx.AsyncClient) -> float:
     """PTAX de venda do Banco Central (oficial, sem chave). Busca uma janela
     de 10 dias porque fim de semana/feriado não tem cotação."""
-    hoje = date.today()
+    hoje = hoje_br()
     fmt = lambda d: d.strftime("%m-%d-%Y")  # noqa: E731
     r = await client.get(
         "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/"

@@ -1,5 +1,6 @@
 import io
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from openpyxl import Workbook
@@ -12,6 +13,7 @@ from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
 from ..services import efetividade_service
+from ..timezone import BUSINESS_TZ
 
 api = APIRouter()
 
@@ -250,6 +252,13 @@ def _invalid_phones_query(db: Session, faixa_id: str | None):
     return query
 
 
+def _hora_br(dt: datetime | None) -> datetime | None:
+    """Timestamp UTC ingênuo do banco → horário de Brasília (ingênuo, pro Excel)."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).replace(tzinfo=None)
+
+
 @api.get("/telefones-invalidos", response_model=schemas.InvalidPhonePage)
 def list_invalid_phones(
     faixa_id: str | None = None,
@@ -283,7 +292,7 @@ def export_invalid_phones(
             _formula_safe(r.celular_original),
             r.celular_normalizado or "",
             r.motivo,
-            r.created_at,
+            _hora_br(r.created_at),
         ]
         for r in records
     ]
@@ -349,7 +358,7 @@ def export_dispatch_report(
             _formula_safe(item.nome),
             _formula_safe(item.valor or ""),
             item.whatsapp_number.display_phone_number if item.whatsapp_number else "",
-            item.sent_at,
+            _hora_br(item.sent_at),
         ]
         for item in rows_data
         if item.sent_at
