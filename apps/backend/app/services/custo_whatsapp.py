@@ -19,14 +19,13 @@ def gasto_diario_brl(db: Session, inicio: date, fim: date) -> tuple[dict[date, D
     """(gasto por dia em BRL, motivo) — gasto None quando não deu pra calcular
     nada; o motivo explica por quê (vai pra tela, não só pro log)."""
 
+    # Toda WABA conectada: dos tokens ativos e dos números importados (ativos
+    # ou não). O custo vem da WABA inteira, com ou sem template em faixa.
     wabas = {
-        w
-        for (w,) in db.query(models.WhatsappNumber.waba_id)
-        .filter(models.WhatsappNumber.waba_id.isnot(None), models.WhatsappNumber.active.is_(True))
-        .distinct()
-    }
+        w for (w,) in db.query(models.MetaToken.waba_id).filter(models.MetaToken.ativo.is_(True)) if w
+    } | {w for (w,) in db.query(models.WhatsappNumber.waba_id) if w}
     if not wabas:
-        return None, "Nenhum número de WhatsApp ativo com WABA cadastrado."
+        return None, "Nenhuma WABA conectada (cadastre um token da Meta em Configurações)."
 
     start_unix = int(datetime.combine(inicio, time.min, BUSINESS_TZ).timestamp())
     fim_dt = datetime.combine(fim + timedelta(days=1), time.min, BUSINESS_TZ)
