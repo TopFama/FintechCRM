@@ -515,13 +515,20 @@ def pagamentos_pos_cobranca(
                       JOIN financeiro_titulos ft ON ft.pessoa = CAST(c.pessoa AS char(8))
                      WHERE ft.status = 'B'
                        AND ft.pagamento >= c.data_cobranca
-                       AND (:dias_janela IS NULL OR ft.pagamento <= c.data_cobranca + (:dias_janela * INTERVAL '1 day'))
+                       -- CAST explícito: sem ele, com janela "qualquer data" (NULL) o Postgres não
+                       -- consegue inferir o tipo do parâmetro e a consulta falha (AmbiguousParameter)
+                       AND (CAST(:dias_janela AS integer) IS NULL
+                            OR ft.pagamento <= c.data_cobranca + (CAST(:dias_janela AS integer) * INTERVAL '1 day'))
                      GROUP BY c.pessoa, c.data_cobranca
                 """
                 for r in conn.execute(text(sql), params).mappings():
                     resultado[(r["pessoa"], r["data_cobranca"])] = r["data_pagamento"]
     except SQLAlchemyError as exc:
-        logger.warning("Falha ao consultar pagamentos pós-cobrança no SETA: %s", exc.__class__.__name__)
+        logger.warning(
+            "Falha ao consultar pagamentos pós-cobrança no SETA: %s (%s)",
+            exc.__class__.__name__,
+            getattr(exc, "orig", exc).__class__.__name__,
+        )
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
     return resultado
 
