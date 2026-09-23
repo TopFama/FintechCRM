@@ -73,7 +73,7 @@ export default function OrcamentoProgressaoCard() {
   const cabecalho = (
     <div className="card-header">
       <div>
-        <h3>Orçamento</h3>
+        <h3 style={{ marginBottom: 4 }}>Orçamento</h3>
         {dados && (
           <div className="card-subtitle">
             Gasto real com WhatsApp de {formatData(dados.de)} a {formatData(dados.ate)} vs. orçado (
@@ -105,19 +105,7 @@ export default function OrcamentoProgressaoCard() {
     );
   }
 
-  const orcado = Number(dados.valor_orcado);
   const gastoInfo = dados.valor_gasto_brl !== null;
-  const maiorValor = Math.max(orcado, ...dados.dias.map((d) => Number(d.gasto_acumulado_brl)), 1);
-
-  const largura = 640;
-  const altura = 180;
-  const margem = 28;
-  const pontos = dados.dias.map((d, i) => {
-    const x = margem + (i / Math.max(dados.dias.length - 1, 1)) * (largura - margem * 2);
-    const y = altura - margem - (Number(d.gasto_acumulado_brl) / maiorValor) * (altura - margem * 2);
-    return `${x},${y}`;
-  });
-  const yOrcado = altura - margem - (orcado / maiorValor) * (altura - margem * 2);
 
   return (
     <div className="card">
@@ -130,31 +118,137 @@ export default function OrcamentoProgressaoCard() {
         </div>
       ) : (
         <>
-          <div className="form-row" style={{ marginBottom: 8 }}>
+          <div className="orcamento-totais">
             <div className="stat">
-              <div className="stat-label">Gasto acumulado</div>
-              <div className="stat-value">{formatBRL(dados.valor_gasto_brl!)}</div>
+              <div>
+                <div className="value">{formatBRL(dados.valor_gasto_brl!)}</div>
+                <div className="label">Realizado (gasto acumulado)</div>
+              </div>
             </div>
             <div className="stat">
-              <div className="stat-label">Orçado</div>
-              <div className="stat-value">{formatBRL(dados.valor_orcado)}</div>
+              <div>
+                <div className="value">{formatBRL(dados.valor_orcado)}</div>
+                <div className="label">Orçado</div>
+              </div>
             </div>
           </div>
-          <svg viewBox={`0 0 ${largura} ${altura}`} width="100%" height={altura} role="img" aria-label="Progressão de gasto no período">
-            <line
-              x1={margem}
-              y1={yOrcado}
-              x2={largura - margem}
-              y2={yOrcado}
-              stroke="var(--danger, #d9534f)"
-              strokeDasharray="4 4"
-              strokeWidth={1.5}
-            />
-            <polyline points={pontos.join(" ")} fill="none" stroke="var(--primary, #003090)" strokeWidth={2} />
-            <line x1={margem} y1={altura - margem} x2={largura - margem} y2={altura - margem} stroke="#ccc" />
-          </svg>
+          <GraficoGasto dados={dados} />
         </>
       )}
+    </div>
+  );
+}
+
+const LARGURA = 720;
+const ALTURA = 260;
+const M = { topo: 16, dir: 16, base: 44, esq: 104 };
+
+function dataCurta(iso: string): string {
+  const [, mes, dia] = iso.split("-");
+  return `${dia}/${mes}`;
+}
+
+// Linha do gasto acumulado dia a dia + linha tracejada do limite orçado,
+// com eixos (R$ no Y, datas no X) e tooltip do dia sob o mouse.
+function GraficoGasto({ dados }: { dados: OrcamentoProgressao }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const dias = dados.dias;
+  const orcado = Number(dados.valor_orcado);
+  const valores = dias.map((d) => Number(d.gasto_acumulado_brl));
+  const maximo = Math.max(orcado, ...valores, 1) * 1.1;
+  const areaL = LARGURA - M.esq - M.dir;
+  const areaA = ALTURA - M.topo - M.base;
+  const x = (i: number) => M.esq + (dias.length <= 1 ? areaL / 2 : (i / (dias.length - 1)) * areaL);
+  const y = (v: number) => M.topo + areaA - (v / maximo) * areaA;
+
+  const ticksY = [0, 0.25, 0.5, 0.75, 1].map((f) => f * maximo);
+  const passoX = Math.max(1, Math.ceil(dias.length / 8));
+  const diario = (i: number) => valores[i] - (i > 0 ? valores[i - 1] : 0);
+
+  function aoMover(e: React.MouseEvent<SVGRectElement>) {
+    const caixa = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - caixa.left) / caixa.width) * areaL;
+    const i = dias.length <= 1 ? 0 : Math.round((px / areaL) * (dias.length - 1));
+    setHover(Math.min(Math.max(i, 0), dias.length - 1));
+  }
+
+  const tipX = hover !== null ? Math.min(x(hover) + 10, LARGURA - M.dir - 170) : 0;
+
+  return (
+    <div className="orcamento-grafico">
+      <svg viewBox={`0 0 ${LARGURA} ${ALTURA}`} width="100%" role="img" aria-label="Gasto acumulado por dia vs. orçado">
+        {ticksY.map((v) => (
+          <g key={v}>
+            <line x1={M.esq} x2={LARGURA - M.dir} y1={y(v)} y2={y(v)} stroke="var(--color-border)" />
+            <text x={M.esq - 8} y={y(v) + 4} textAnchor="end" fontSize="11" fill="var(--color-text-muted)">
+              {formatBRL(v.toFixed(2))}
+            </text>
+          </g>
+        ))}
+        {dias.map((d, i) =>
+          i % passoX === 0 || (i === dias.length - 1 && i % passoX >= passoX / 2) ? (
+            <text key={d.data} x={x(i)} y={ALTURA - M.base + 16} textAnchor="middle" fontSize="11" fill="var(--color-text-muted)">
+              {dataCurta(d.data)}
+            </text>
+          ) : null
+        )}
+        <text x={M.esq + areaL / 2} y={ALTURA - 6} textAnchor="middle" fontSize="12" fill="var(--color-text-muted)">
+          Data
+        </text>
+        <text
+          x={14}
+          y={M.topo + areaA / 2}
+          textAnchor="middle"
+          fontSize="12"
+          fill="var(--color-text-muted)"
+          transform={`rotate(-90 14 ${M.topo + areaA / 2})`}
+        >
+          Gasto acumulado (R$)
+        </text>
+
+        <line x1={M.esq} x2={LARGURA - M.dir} y1={y(orcado)} y2={y(orcado)} stroke="var(--color-danger)" strokeDasharray="6 4" strokeWidth={1.5} />
+        <text x={LARGURA - M.dir} y={y(orcado) - 6} textAnchor="end" fontSize="11" fill="var(--color-danger)">
+          Limite orçado {formatBRL(orcado.toFixed(2))}
+        </text>
+
+        <polyline
+          points={dias.map((_, i) => `${x(i)},${y(valores[i])}`).join(" ")}
+          fill="none"
+          stroke="var(--color-primary)"
+          strokeWidth={2}
+        />
+
+        {hover !== null && (
+          <g pointerEvents="none">
+            <line x1={x(hover)} x2={x(hover)} y1={M.topo} y2={M.topo + areaA} stroke="var(--color-text-muted)" strokeDasharray="2 3" />
+            <circle cx={x(hover)} cy={y(valores[hover])} r={4} fill="var(--color-primary)" />
+            <rect x={tipX} y={M.topo} width={160} height={54} rx={6} fill="var(--color-surface)" stroke="var(--color-border)" />
+            <text x={tipX + 10} y={M.topo + 17} fontSize="12" fontWeight="600" fill="var(--color-text)">
+              {formatData(dias[hover].data)}
+            </text>
+            <text x={tipX + 10} y={M.topo + 33} fontSize="11" fill="var(--color-text)">
+              No dia: {formatBRL(diario(hover).toFixed(2))}
+            </text>
+            <text x={tipX + 10} y={M.topo + 47} fontSize="11" fill="var(--color-text-muted)">
+              Acumulado: {formatBRL(valores[hover].toFixed(2))}
+            </text>
+          </g>
+        )}
+
+        <rect
+          x={M.esq}
+          y={M.topo}
+          width={areaL}
+          height={areaA}
+          fill="transparent"
+          onMouseMove={aoMover}
+          onMouseLeave={() => setHover(null)}
+        />
+      </svg>
+      <div className="orcamento-legenda">
+        <span><i style={{ background: "var(--color-primary)" }} /> Gasto acumulado</span>
+        <span><i className="tracejado" /> Limite orçado</span>
+      </div>
     </div>
   );
 }

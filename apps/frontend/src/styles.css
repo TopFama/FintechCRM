@@ -1241,3 +1241,39 @@ button.periodo-card.ativo {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
+
+/* Orçamento no Dashboard */
+.orcamento-totais {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.orcamento-totais .stat {
+  min-width: 200px;
+  justify-content: center;
+  text-align: center;
+}
+
+.orcamento-legenda {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.orcamento-legenda i {
+  display: inline-block;
+  width: 18px;
+  height: 2px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.orcamento-legenda i.tracejado {
+  border-top: 2px dashed var(--color-danger);
+  height: 0;
+}
