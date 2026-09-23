@@ -9,7 +9,7 @@ from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from ..fila_automatica import clientes_bloqueados_hoje
+from ..fila_automatica import cobrados_hoje
 from ..timezone import hoje_br
 from ..utils.spc import parse_spc
 from .reports import _XLSX_MEDIA_TYPE, _build_xlsx, _formula_safe
@@ -119,10 +119,10 @@ def _ordenar_clientes(clientes: list[dict], sort_by: str, sort_dir: str, db: Ses
 
 
 def sem_cobrados_hoje(db: Session, clientes: list[dict]) -> list[dict]:
-    """Tira da lista quem já foi cobrado hoje (GMT-3, qualquer faixa) ou já
-    está na fila esperando envio — não deve nem aparecer para nova cobrança."""
+    """Tira da lista quem já recebeu cobrança hoje (GMT-3, qualquer faixa).
+    Cobrado em dia anterior aparece normalmente."""
 
-    bloqueados = clientes_bloqueados_hoje(db)
+    bloqueados = cobrados_hoje(db)
     return [c for c in clientes if c["codigo"] not in bloqueados]
 
 

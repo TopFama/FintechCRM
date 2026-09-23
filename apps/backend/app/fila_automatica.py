@@ -44,6 +44,17 @@ def clientes_bloqueados_hoje(db: Session) -> set[str]:
     }
 
 
+def cobrados_hoje(db: Session) -> set[str]:
+    """Códigos que já receberam cobrança hoje (GMT-3), em qualquer faixa."""
+
+    return {
+        codigo
+        for (codigo,) in db.query(models.QueueItem.codigo_cliente).filter(
+            models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.sent_at >= inicio_hoje_utc()
+        )
+    }
+
+
 def ja_cobrado_hoje(db: Session, item: models.QueueItem) -> bool:
     """Checagem final antes do envio: outro item do mesmo cliente já saiu hoje (qualquer faixa)."""
 
