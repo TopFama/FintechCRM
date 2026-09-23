@@ -13,6 +13,14 @@ export default function TokensMetaCard({ onNumerosAlterados }: { onNumerosAltera
   const [erro, setErro] = useState<string | null>(null);
   const [testes, setTestes] = useState<Record<string, Resultado & { carregando?: boolean }>>({});
 
+  // Edição do token de um token já cadastrado: o valor atual nunca é
+  // mostrado de volta (só cifrado no banco), então aqui é sempre um campo em
+  // branco pra colar o novo valor.
+  const [editandoTokenId, setEditandoTokenId] = useState<string | null>(null);
+  const [novoTokenValor, setNovoTokenValor] = useState("");
+  const [salvandoToken, setSalvandoToken] = useState(false);
+  const [erroToken, setErroToken] = useState<string | null>(null);
+
   // Painel "Números da Meta" (um token aberto por vez)
   const [abertoId, setAbertoId] = useState<string | null>(null);
   const [numeros, setNumeros] = useState<NumeroMeta[]>([]);
@@ -104,6 +112,37 @@ export default function TokensMetaCard({ onNumerosAlterados }: { onNumerosAltera
       carregarTokens();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Erro ao alterar status do token");
+    }
+  }
+
+  function abrirEdicaoToken(token: MetaToken) {
+    setEditandoTokenId(token.id);
+    setNovoTokenValor("");
+    setErroToken(null);
+  }
+
+  function cancelarEdicaoToken() {
+    setEditandoTokenId(null);
+    setNovoTokenValor("");
+    setErroToken(null);
+  }
+
+  async function salvarNovoToken(token: MetaToken) {
+    const valor = novoTokenValor.trim();
+    if (!valor) {
+      setErroToken("Informe o novo token");
+      return;
+    }
+    setSalvandoToken(true);
+    setErroToken(null);
+    try {
+      await api.atualizarTokenMeta(token.id, { token: valor });
+      cancelarEdicaoToken();
+      carregarTokens();
+    } catch (err) {
+      setErroToken(err instanceof Error ? err.message : "Erro ao salvar o token");
+    } finally {
+      setSalvandoToken(false);
     }
   }
 
@@ -264,6 +303,9 @@ export default function TokensMetaCard({ onNumerosAlterados }: { onNumerosAltera
                         >
                           {teste?.carregando ? "Testando..." : "Testar"}
                         </button>
+                        <button type="button" className="secondary small" onClick={() => abrirEdicaoToken(t)}>
+                          Editar token
+                        </button>
                         <button type="button" className="secondary small" onClick={() => alternarAtivo(t)}>
                           {t.ativo ? "Desativar" : "Ativar"}
                         </button>
@@ -278,6 +320,41 @@ export default function TokensMetaCard({ onNumerosAlterados }: { onNumerosAltera
                         >
                           {teste.ok ? <IconCheckCircle width={14} height={14} /> : <IconAlert width={14} height={14} />}
                           <span>{teste.detalhe}</span>
+                        </div>
+                      )}
+                      {editandoTokenId === t.id && (
+                        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6, maxWidth: 260 }}>
+                          <input
+                            type="password"
+                            autoComplete="off"
+                            value={novoTokenValor}
+                            onChange={(e) => setNovoTokenValor(e.target.value)}
+                            placeholder="Novo token (EAA...)"
+                          />
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button
+                              type="button"
+                              className="small"
+                              onClick={() => salvarNovoToken(t)}
+                              disabled={salvandoToken}
+                            >
+                              {salvandoToken ? "Conferindo na Meta..." : "Salvar"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary small"
+                              onClick={cancelarEdicaoToken}
+                              disabled={salvandoToken}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                          {erroToken && (
+                            <div className="error-box" style={{ padding: "6px 10px", fontSize: 12 }}>
+                              <IconAlert width={14} height={14} />
+                              <span>{erroToken}</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </td>

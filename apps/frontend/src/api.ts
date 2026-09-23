@@ -155,7 +155,7 @@ export const api = {
   listarTokensMeta: () => request<MetaToken[]>("/meta-tokens"),
   criarTokenMeta: (payload: { nome: string; token: string; waba_id: string }) =>
     request<MetaToken>("/meta-tokens", { method: "POST", body: JSON.stringify(payload) }),
-  atualizarTokenMeta: (id: string, payload: { nome?: string; ativo?: boolean; waba_id?: string }) =>
+  atualizarTokenMeta: (id: string, payload: { nome?: string; ativo?: boolean; waba_id?: string; token?: string }) =>
     request<MetaToken>(`/meta-tokens/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   excluirTokenMeta: (id: string) =>
     request<void>(`/meta-tokens/${id}`, { method: "DELETE" }),

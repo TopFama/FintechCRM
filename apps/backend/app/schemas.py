@@ -64,6 +64,7 @@ class MetaTokenUpdate(BaseModel):
     nome: str | None = None
     ativo: bool | None = None
     waba_id: str | None = None
+    token: str | None = None
 
 
 class MetaTokenOut(BaseModel):

@@ -180,7 +180,7 @@ async def importar_numeros(
 
 
 @router.patch("/{token_id}", response_model=schemas.MetaTokenOut)
-def update_meta_token(
+async def update_meta_token(
     token_id: str,
     payload: schemas.MetaTokenUpdate,
     db: Session = Depends(get_db),
@@ -205,6 +205,24 @@ def update_meta_token(
 
     if "waba_id" in payload.model_fields_set:
         token.waba_id = _waba_valida(payload.waba_id)
+
+    if "token" in payload.model_fields_set:
+        token_raw = (payload.token or "").strip()
+        if not token_raw:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Token não pode ser vazio")
+        # Mesma checagem do cadastro: só grava se a Meta aceitar o token (na
+        # WABA já configurada, ou sozinho quando o token ainda não tem WABA).
+        if token.waba_id:
+            await _numeros_da_waba(token_raw, token.waba_id)
+        else:
+            try:
+                await MetaClient(access_token=token_raw).test_token()
+            except MetaAPIError as exc:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, _erro_meta(exc)) from exc
+            except httpx.HTTPError as exc:
+                raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Não foi possível falar com a Meta") from exc
+        token.token_cifrado = crypto.cifrar(token_raw)
+        token.ultimos4 = token_raw[-4:] if len(token_raw) >= 4 else token_raw
 
     db.commit()
     db.refresh(token)
