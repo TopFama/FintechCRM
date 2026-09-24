@@ -28,6 +28,7 @@ const FILTROS_PADRAO: FiltrosEfetividade = {
   regional: [],
   estado: [],
   cluster_inad: [],
+  cobradora: [],
 };
 
 function semAcento(texto: string): string {

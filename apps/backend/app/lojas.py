@@ -1,6 +1,8 @@
-"""Base de lojas da TopFama, lida da planilha do Google (uma linha por loja).
+"""Base de lojas da TopFama (uma linha por loja): tabela `lojas` do banco,
+com carga inicial da planilha Bases_Fintech. A planilha do Google só é lida
+se a tabela estiver vazia.
 
-A planilha só descreve as lojas (regional, estado, clusters); o filtro de
+A base só descreve as lojas (regional, estado, clusters); o filtro de
 cobrança continua sendo por `ft.empresa` — aqui os atributos viram uma lista de
 códigos de filial, que é o que as consultas usam.
 """
@@ -10,7 +12,7 @@ import unicodedata
 
 from sqlalchemy.orm import Session
 
-from . import google_client
+from . import google_client, models
 from .config import settings
 
 TTL_SEGUNDOS = 600
@@ -21,6 +23,7 @@ _CABECALHOS = {
     "nome_com_cod": ("NOME COM COD", "NOME COM CODIGO"),
     "regional": ("REGIONAL",),
     "estado": ("ESTADO", "UF"),
+    "cluster_cobradora": ("CLUSTER COBRADORAS", "CLUSTER COBRADORA", "COBRADORA"),
     "cluster_inad": ("CLUSTER INAD", "CLUSTER INADIMPLENCIA"),
     "cluster_populacao": ("CLUSTER POPULACAO", "CLUSTER POP"),
 }
@@ -76,6 +79,7 @@ def interpretar(linhas: list[list[str]]) -> list[dict]:
                 "nome_com_cod": celula(linha, "nome_com_cod"),
                 "regional": celula(linha, "regional"),
                 "estado": estado.upper() if estado else None,
+                "cluster_cobradora": celula(linha, "cluster_cobradora"),
                 "cluster_inad": celula(linha, "cluster_inad"),
                 "cluster_populacao": celula(linha, "cluster_populacao"),
             }
@@ -84,6 +88,9 @@ def interpretar(linhas: list[list[str]]) -> list[dict]:
 
 
 def listar_lojas(db: Session, *, atualizar: bool = False) -> list[dict]:
+    do_banco = db.query(models.Loja).order_by(models.Loja.filial).all()
+    if do_banco:
+        return [{campo: getattr(l, campo) for campo in _CABECALHOS} for l in do_banco]
     if not atualizar and _cache.get("expira", 0) > time.time():
         return _cache["lojas"]
     linhas = google_client.ler_aba(db, settings.google_sheet_lojas_id, settings.google_sheet_lojas_gid)
@@ -92,12 +99,33 @@ def listar_lojas(db: Session, *, atualizar: bool = False) -> list[dict]:
     return lojas
 
 
+def semear_se_vazio(db: Session) -> None:
+    """Carga inicial da tabela `lojas` a partir da planilha Bases_Fintech."""
+
+    from .lojas_iniciais import LOJAS_INICIAIS
+
+    if db.query(models.Loja).first() is not None:
+        return
+    campos = ("filial", "nome_com_cod", "regional", "estado", "cluster_cobradora", "cluster_inad", "cluster_populacao")
+    db.add_all(models.Loja(**dict(zip(campos, linha))) for linha in LOJAS_INICIAIS)
+    db.commit()
+
+
 def limpar_cache() -> None:
     _cache.clear()
 
 
-def _igual(a: str | None, filtros: list[str] | None) -> bool:
-    return not filtros or (a is not None and _normalizar(a) in {_normalizar(f) for f in filtros})
+# Opção do filtro de cobradora para as lojas sem cluster de cobradora
+SEM_COBRADORA = "Sem cobradora"
+
+
+def _igual(a: str | None, filtros: list[str] | None, *, vazio: str | None = None) -> bool:
+    if not filtros:
+        return True
+    alvos = {_normalizar(f) for f in filtros}
+    if a is None:
+        return vazio is not None and _normalizar(vazio) in alvos
+    return _normalizar(a) in alvos
 
 
 def filtrar_lojas(
@@ -107,6 +135,7 @@ def filtrar_lojas(
     estado: list[str] | None = None,
     cluster_inad: list[str] | None = None,
     cluster_populacao: list[str] | None = None,
+    cobradora: list[str] | None = None,
 ) -> list[dict]:
     return [
         l
@@ -115,6 +144,7 @@ def filtrar_lojas(
         and _igual(l["estado"], estado)
         and _igual(l["cluster_inad"], cluster_inad)
         and _igual(l["cluster_populacao"], cluster_populacao)
+        and _igual(l.get("cluster_cobradora"), cobradora, vazio=SEM_COBRADORA)
     ]
 
 
@@ -125,6 +155,7 @@ def codigos_por_atributos(
     estado: list[str] | None = None,
     cluster_inad: list[str] | None = None,
     cluster_populacao: list[str] | None = None,
+    cobradora: list[str] | None = None,
 ) -> list[str]:
     """Códigos de filial das lojas que casam com os atributos (pode ser vazio)."""
 
@@ -134,6 +165,7 @@ def codigos_por_atributos(
         estado=estado,
         cluster_inad=cluster_inad,
         cluster_populacao=cluster_populacao,
+        cobradora=cobradora,
     )
     return [l["filial"] for l in filtradas]
 
@@ -146,15 +178,21 @@ def combinar_lojas(
     estado: list[str] | None = None,
     cluster_inad: list[str] | None = None,
     cluster_populacao: list[str] | None = None,
+    cobradora: list[str] | None = None,
 ) -> list[str] | None:
     """Junta os códigos de loja escolhidos direto com os que vêm dos atributos
     da planilha (interseção). None = sem filtro de loja; lista vazia = nenhuma
     loja casou, e quem consulta deve devolver zero resultados."""
 
-    if not (regional or estado or cluster_inad or cluster_populacao):
+    if not (regional or estado or cluster_inad or cluster_populacao or cobradora):
         return loja
     dos_atributos = codigos_por_atributos(
-        db, regional=regional, estado=estado, cluster_inad=cluster_inad, cluster_populacao=cluster_populacao
+        db,
+        regional=regional,
+        estado=estado,
+        cluster_inad=cluster_inad,
+        cluster_populacao=cluster_populacao,
+        cobradora=cobradora,
     )
     if loja:
         return [c for c in dos_atributos if c in {_codigo_filial(x) for x in loja}]

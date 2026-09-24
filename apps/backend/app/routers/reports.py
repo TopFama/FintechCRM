@@ -483,6 +483,7 @@ def relatorio_efetividade(
     regional: list[str] | None = Query(None),
     estado: list[str] | None = Query(None),
     cluster_inad: list[str] | None = Query(None),
+    cobradora: list[str] | None = Query(None),
     sort_by: EfetividadeSortColumn | None = Query(None),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
@@ -499,6 +500,7 @@ def relatorio_efetividade(
         regional=regional,
         estado=estado,
         cluster_inad=cluster_inad,
+        cobradora=cobradora,
         sort_by=sort_by,
         sort_dir=sort_dir,
     )
@@ -524,6 +526,7 @@ def export_relatorio_efetividade(
     regional: list[str] | None = Query(None),
     estado: list[str] | None = Query(None),
     cluster_inad: list[str] | None = Query(None),
+    cobradora: list[str] | None = Query(None),
     sort_by: EfetividadeSortColumn | None = Query(None),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
@@ -540,6 +543,7 @@ def export_relatorio_efetividade(
         regional=regional,
         estado=estado,
         cluster_inad=cluster_inad,
+        cobradora=cobradora,
         sort_by=sort_by,
         sort_dir=sort_dir,
     )
@@ -562,6 +566,7 @@ def relatorio_efetividade_clientes(
     regional: list[str] | None = Query(None),
     estado: list[str] | None = Query(None),
     cluster_inad: list[str] | None = Query(None),
+    cobradora: list[str] | None = Query(None),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
@@ -579,6 +584,7 @@ def relatorio_efetividade_clientes(
         regional=regional,
         estado=estado,
         cluster_inad=cluster_inad,
+        cobradora=cobradora,
     )
     return [
         schemas.LinhaEfetividadeClienteOut(
@@ -608,6 +614,7 @@ def export_relatorio_efetividade_clientes(
     regional: list[str] | None = Query(None),
     estado: list[str] | None = Query(None),
     cluster_inad: list[str] | None = Query(None),
+    cobradora: list[str] | None = Query(None),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
@@ -622,6 +629,7 @@ def export_relatorio_efetividade_clientes(
         regional=regional,
         estado=estado,
         cluster_inad=cluster_inad,
+        cobradora=cobradora,
     )
     headers = ["Código", "Nome", "Faixa", "Loja", "Título", "Data cobrança", "Valor cobrado", "Pagou", "Valor pago"]
     rows = [

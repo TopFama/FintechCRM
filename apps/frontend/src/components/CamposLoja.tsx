@@ -8,6 +8,7 @@ export interface ValoresLoja {
   estado?: string[];
   cluster_inad?: string[];
   cluster_populacao?: string[];
+  cobradora?: string[];
 }
 
 interface Props {
@@ -52,6 +53,13 @@ export default function CamposLoja({ valor, onChange, opcoes, semClusterPopulaca
             onChange={(v) => onChange({ ...valor, loja: v })}
           />
         )}
+        <MultiSelect
+          label="Cobradora"
+          options={opcoes.cobradoras}
+          value={valor.cobradora ?? []}
+          onChange={(v) => onChange({ ...valor, cobradora: v })}
+          {...desligado}
+        />
         <MultiSelect
           label="Regional"
           options={opcoes.regionais}

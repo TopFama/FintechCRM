@@ -736,7 +736,7 @@ export interface FiltrosCobranca {
   estado?: string[];
   cluster_inad?: string[];
   cluster_populacao?: string[];
-  portador?: string[];
+  cobradora?: string[];
   status_cliente?: string[];
   restricao_spc?: string[];
   vencimento_de?: string;
@@ -777,6 +777,7 @@ export interface FiltrosLeads {
   estado?: string[];
   cluster_inad?: string[];
   cluster_populacao?: string[];
+  cobradora?: string[];
   faixa?: string[];
   cluster?: string[];
   status?: "novo" | "cobrado";
@@ -805,6 +806,7 @@ export interface Loja {
   nome_com_cod: string | null;
   regional: string | null;
   estado: string | null;
+  cluster_cobradora: string | null;
   cluster_inad: string | null;
   cluster_populacao: string | null;
 }
@@ -813,6 +815,7 @@ export interface FiltrosLoja {
   regionais: string[];
   estados: string[];
   clusters_inad: string[];
+  cobradoras: string[];
   clusters_populacao: string[];
 }
 
@@ -892,6 +895,7 @@ export interface FiltrosEfetividade extends OrdenacaoParams {
   regional?: string[];
   estado?: string[];
   cluster_inad?: string[];
+  cobradora?: string[];
 }
 
 // --- Relatório de pagamentos por cliente ---

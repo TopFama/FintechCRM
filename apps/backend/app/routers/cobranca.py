@@ -42,7 +42,7 @@ def filtros_base(
     estado: list[str] | None = Query(None, description="Estado da loja: TO, PA, MA ou GO"),
     cluster_inad: list[str] | None = Query(None, description="Cluster de inadimplência da loja"),
     cluster_populacao: list[str] | None = Query(None, description="Cluster de população da loja"),
-    portador: list[str] | None = Query(None, description="001 TopFama, 114 SYSCO, 216 MJ"),
+    cobradora: list[str] | None = Query(None, description='Cluster de cobradora da loja (planilha de lojas) ou "Sem cobradora"'),
     status_cliente: list[str] | None = Query(None, description="E, A ou B"),
     restricao_spc: list[str] | None = Query(None, description="sim, nao e/ou indeterminado"),
     vencimento_de: date | None = Query(None, description="Vencimento da parcela mais antiga, a partir de"),
@@ -53,7 +53,8 @@ def filtros_base(
 
     try:
         codigos_loja = lojas_base.combinar_lojas(
-            db, loja, regional=regional, estado=estado, cluster_inad=cluster_inad, cluster_populacao=cluster_populacao
+            db, loja, regional=regional, estado=estado, cluster_inad=cluster_inad, cluster_populacao=cluster_populacao,
+            cobradora=cobradora,
         )
     except google_client.GoogleIndisponivel as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
@@ -65,7 +66,6 @@ def filtros_base(
         clusters=cluster,
         faixas_compra=faixa_compra,
         lojas=codigos_loja,
-        portadores=portador,
         status_cliente=status_cliente,
         restricoes_spc=restricao_spc,
         vencimento_de=vencimento_de,

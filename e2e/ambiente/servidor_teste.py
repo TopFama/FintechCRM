@@ -30,7 +30,7 @@ for var in ("DATABASE_URL", "SETA_DB_HOST", "JWT_SECRET", "ENCRYPTION_KEY", "ADM
 if "seta" in os.environ["DATABASE_URL"].split("/")[-1] and "fake" not in os.environ["DATABASE_URL"]:
     sys.exit("DATABASE_URL parece apontar para o SETA — recusado")
 
-from app import cambio, chatwoot_client, google_client, meta_client  # noqa: E402
+from app import cambio, chatwoot_client, google_client, lojas_iniciais, meta_client  # noqa: E402
 
 WABA = "1111111111"
 NUMEROS = [
@@ -119,6 +119,13 @@ LOJAS = [
     ["10", "10 - LOJA INTERIOR", "CENTRO", "MG", "ALTO", "PEQUENA"],
 ]
 google_client.ler_aba = lambda db, planilha_id, gid: LOJAS
+# a tabela `lojas` nasce com a carga da planilha real: no teste, usa as lojas falsas
+lojas_iniciais.LOJAS_INICIAIS = [
+    ("01", "01 - LOJA CENTRO", "SUL", "SP", "SYSCOB", "ALTO", "GRANDE"),
+    ("02", "02 - LOJA NORTE", "NORTE", "SP", "MJ", "BAIXO", "MEDIA"),
+    ("06", "06 - LOJA PRAIA", "SUL", "RJ", "SYSCOB", "MEDIO", "PEQUENA"),
+    ("10", "10 - LOJA INTERIOR", "CENTRO", "MG", None, "ALTO", "PEQUENA"),
+]
 google_client.is_configured = lambda: True
 
 

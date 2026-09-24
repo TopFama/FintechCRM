@@ -10,7 +10,7 @@ export const FILTROS_COBRANCA_PADRAO: FiltrosCobranca = {
   cluster: [],
   faixa_compra: [],
   loja: [],
-  portador: [],
+  cobradora: [],
   status_cliente: [],
   restricao_spc: [],
   regional: [],
@@ -21,11 +21,6 @@ export const FILTROS_COBRANCA_PADRAO: FiltrosCobranca = {
   vencimento_ate: "",
 };
 
-const OPCOES_PORTADOR = [
-  { value: "001", label: "001 – TopFama" },
-  { value: "114", label: "114 – SYSCO" },
-  { value: "216", label: "216 – MJ" },
-];
 const OPCOES_STATUS = [
   { value: "E", label: "Especial" },
   { value: "A", label: "Ativo" },
@@ -94,12 +89,6 @@ export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, opcoe
       </div>
 
       <div className="form-row" style={{ flexWrap: "wrap" }}>
-        <MultiSelect
-          label="Cobradora"
-          options={OPCOES_PORTADOR}
-          value={valor.portador ?? []}
-          onChange={(v) => set({ portador: v })}
-        />
         <MultiSelect
           label="Status do cliente"
           options={OPCOES_STATUS}

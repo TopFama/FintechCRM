@@ -48,6 +48,7 @@ def obter_dados_efetividade(
     regional: list[str] | None = None,
     estado: list[str] | None = None,
     cluster_inad: list[str] | None = None,
+    cobradora: list[str] | None = None,
     sort_by: str | None = None,
     sort_dir: str = "asc",
 ) -> tuple[dict, int, list[dict]]:
@@ -58,6 +59,7 @@ def obter_dados_efetividade(
             regional=regional,
             estado=estado,
             cluster_inad=cluster_inad,
+            cobradora=cobradora,
         )
     except google_client.GoogleIndisponivel as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc

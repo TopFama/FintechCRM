@@ -789,6 +789,7 @@ class LojaOut(BaseModel):
     nome_com_cod: str | None
     regional: str | None
     estado: str | None
+    cluster_cobradora: str | None
     cluster_inad: str | None
     cluster_populacao: str | None
 
@@ -798,6 +799,7 @@ class LojaFiltrosOut(BaseModel):
     estados: list[str]
     clusters_inad: list[str]
     clusters_populacao: list[str]
+    cobradoras: list[str]  # clusters de cobradora + "Sem cobradora", se houver loja sem
 
 
 # --- Configuração da cobrança ---

@@ -502,3 +502,19 @@ class OrcamentoMensal(Base):
     ano: Mapped[int] = mapped_column(Integer, index=True)
     mes: Mapped[int] = mapped_column(Integer)  # 1-12
     valor_orcado: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+
+
+class Loja(Base):
+    """Base de lojas (uma linha por filial), migrada da aba "Lojas" da
+    planilha Bases_Fintech. `cluster_cobradora` diz qual cobradora atende a
+    loja (SYSCOB, MJ...); vazio = loja sem cobradora."""
+
+    __tablename__ = "lojas"
+
+    filial: Mapped[str] = mapped_column(String(4), primary_key=True)  # ft.empresa (2 caracteres)
+    nome_com_cod: Mapped[str | None] = mapped_column(String, nullable=True)
+    regional: Mapped[str | None] = mapped_column(String, nullable=True)
+    estado: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    cluster_cobradora: Mapped[str | None] = mapped_column(String, nullable=True)
+    cluster_inad: Mapped[str | None] = mapped_column(String, nullable=True)
+    cluster_populacao: Mapped[str | None] = mapped_column(String, nullable=True)

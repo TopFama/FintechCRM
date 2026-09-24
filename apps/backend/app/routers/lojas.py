@@ -21,6 +21,7 @@ def listar(
     estado: list[str] | None = Query(None, description="TO, PA, MA ou GO"),
     cluster_inad: list[str] | None = Query(None),
     cluster_populacao: list[str] | None = Query(None),
+    cobradora: list[str] | None = Query(None, description='Cluster de cobradora da loja, ou "Sem cobradora"'),
     atualizar: bool = Query(False, description="Ignora o cache de 10 minutos e relê a planilha"),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
@@ -31,6 +32,7 @@ def listar(
         estado=estado,
         cluster_inad=cluster_inad,
         cluster_populacao=cluster_populacao,
+        cobradora=cobradora,
     )
 
 
@@ -48,4 +50,6 @@ def filtros(db: Session = Depends(get_db), _user: models.User = Depends(get_curr
         estados=distintos("estado"),
         clusters_inad=distintos("cluster_inad"),
         clusters_populacao=distintos("cluster_populacao"),
+        cobradoras=distintos("cluster_cobradora")
+        + ([lojas.SEM_COBRADORA] if any(not l.get("cluster_cobradora") for l in todas) else []),
     )

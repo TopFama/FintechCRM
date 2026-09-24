@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import models
+from . import lojas as lojas_base, models
 from .config import settings
 from .database import SessionLocal
 from .routers import auth, blacklist, chatwoot, cobranca, config_cobranca, dashboard, faixas, google, leads, lojas, meta_tokens, numbers, reports, seta, templates, uploads, users
@@ -103,6 +103,7 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         recifrar_segredos(db)
+        lojas_base.semear_se_vazio(db)
     finally:
         db.close()
     scheduler = start_scheduler()

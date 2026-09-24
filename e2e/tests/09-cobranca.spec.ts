@@ -124,11 +124,27 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
     await filtros(page).getByRole("button", { name: "Limpar" }).click();
     await semRegrasPadrao(page);
     await escolherMulti(filtros(page), "Loja", ["06 - LOJA PRAIA"]);
-    await escolherMulti(filtros(page), "Cobradora", ["114 – SYSCO"]);
+    await escolherMulti(filtros(page), "Cobradora", ["SYSCOB"]);
     await aplicar(page);
     const total = await linhas(page).count();
     expect(total).toBeGreaterThan(0);
     expect(total).toBeLessThan(34);
+  });
+
+  test("cobradora filtra pelas lojas do cluster dela, com opção Sem cobradora", async ({ page }) => {
+    await semRegrasPadrao(page);
+    await escolherMulti(filtros(page), "Status do cliente", ["Bloqueado", "Especial", "Ativo"]);
+    await escolherMulti(filtros(page), "Cobradora", ["SYSCOB", "MJ", "Sem cobradora"]);
+    await aplicar(page);
+    await expect(titulo(page)).toContainText("(34)");
+
+    await filtros(page).getByRole("button", { name: "Limpar" }).click();
+    await semRegrasPadrao(page);
+    await escolherMulti(filtros(page), "Status do cliente", ["Bloqueado", "Especial", "Ativo"]);
+    await escolherMulti(filtros(page), "Cobradora", ["MJ"]);
+    await aplicar(page);
+    const soMj = await linhas(page).count();
+    expect(soMj).toBeLessThan(34);
   });
 
   test("filtros por atributo da loja (regional, estado)", async ({ page }) => {

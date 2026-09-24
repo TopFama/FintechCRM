@@ -13,7 +13,8 @@ export interface OpcoesCobranca {
   estados: Opcao[];
   clustersInad: Opcao[];
   clustersPopulacao: Opcao[];
-  // Sem a conta Google conectada, /lojas responde 503: os filtros por
+  cobradoras: Opcao[];
+  // Sem lojas no banco e sem a conta Google conectada, /lojas responde 503: os filtros por
   // atributo de loja ficam desligados e a loja vira campo de texto.
   googleIndisponivel: boolean;
 }
@@ -39,6 +40,7 @@ export function useOpcoesCobranca(): OpcoesCobranca {
     estados: paraOpcoes(filtrosLoja?.estados),
     clustersInad: paraOpcoes(filtrosLoja?.clusters_inad),
     clustersPopulacao: paraOpcoes(filtrosLoja?.clusters_populacao),
+    cobradoras: paraOpcoes(filtrosLoja?.cobradoras),
     googleIndisponivel,
   };
 }

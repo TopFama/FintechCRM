@@ -121,6 +121,7 @@ def filtros_consulta_leads(
     estado: list[str] | None = Query(None),
     cluster_inad: list[str] | None = Query(None),
     cluster_populacao: list[str] | None = Query(None),
+    cobradora: list[str] | None = Query(None),
     faixa: list[str] | None = Query(None),
     cluster: list[str] | None = Query(None),
     busca: str | None = Query(None, description="Nome, código ou CPF"),
@@ -136,6 +137,7 @@ def filtros_consulta_leads(
         "estado": estado,
         "cluster_inad": cluster_inad,
         "cluster_populacao": cluster_populacao,
+        "cobradora": cobradora,
         "faixa": faixa,
         "cluster": cluster,
         "busca": busca,
@@ -156,6 +158,7 @@ def query_leads_filtrada(db: Session, filtros: dict, lead_status: str | None):
             estado=filtros["estado"],
             cluster_inad=filtros["cluster_inad"],
             cluster_populacao=filtros["cluster_populacao"],
+            cobradora=filtros["cobradora"],
         )
     except google_client.GoogleIndisponivel as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
