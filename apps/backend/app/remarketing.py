@@ -21,6 +21,7 @@ from .cobranca_base import _montar_cliente, _restaurar_linha_seta
 from .cobranca_regras import faixa_de_compra
 from .fila_automatica import _fontes, clientes_bloqueados_hoje
 from .regras_db import carregar_regras
+from .timezone import BUSINESS_TZ
 from .routers.blacklist import codigos_bloqueados
 from .utils.leads_xlsx import formatar_cpf, primeiro_nome
 from .utils.phone import is_valid_phone, normalize_phone
@@ -118,6 +119,26 @@ def _evento(valor: str) -> datetime:
     if instante.tzinfo is not None:
         instante = instante.astimezone(timezone.utc).replace(tzinfo=None)
     return instante
+
+
+# A entrada do acordo vence 1 dia depois do lançamento no SETA.
+PRAZO_ENTRADA_DIAS = 1
+
+
+def situacao_acordo(lancado_em: str | None, cancelado_em: str) -> str | None:
+    """Acordo que sumiu do SETA depois do vencimento da entrada = "nao_pago";
+    antes = "cancelado". Sem data de lançamento não dá pra saber (None)."""
+
+    if not lancado_em:
+        return None
+    lancado = datetime.fromisoformat(lancado_em)
+    cancelado = datetime.fromisoformat(cancelado_em)
+    if lancado.tzinfo is None:
+        lancado = lancado.replace(tzinfo=timezone.utc)
+    if cancelado.tzinfo is None:
+        cancelado = cancelado.replace(tzinfo=timezone.utc)
+    vencimento_entrada = lancado.astimezone(BUSINESS_TZ).date() + timedelta(days=PRAZO_ENTRADA_DIAS)
+    return "nao_pago" if cancelado.astimezone(BUSINESS_TZ).date() > vencimento_entrada else "cancelado"
 
 
 def _recontatados(db: Session, regra: models.RemarketingSegmento, agora: datetime) -> set[str]:
@@ -219,7 +240,15 @@ def selecionar(
         if c.get("celular") and is_valid_phone(c["celular"]):
             cliente = {**cliente, "celular": c["celular"], "celular_original": c["celular"]}
         resultado[segmento].append(
-            {**cliente, "segmento": segmento, "evento_em": c["evento_em"], "referencia_seta": c.get("referencia_seta")}
+            {
+                **cliente,
+                "segmento": segmento,
+                "evento_em": c["evento_em"],
+                "referencia_seta": c.get("referencia_seta"),
+                "situacao_acordo": (
+                    situacao_acordo(c.get("lancado_em"), c["evento_em"]) if segmento == "ACORDO_SEM_ENTRADA" else None
+                ),
+            }
         )
     for lista in resultado.values():
         lista.sort(key=lambda x: x["evento_em"], reverse=True)

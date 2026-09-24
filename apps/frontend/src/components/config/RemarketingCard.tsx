@@ -85,7 +85,7 @@ export default function RemarketingCard() {
 }
 
 type ClientePrevia = PreviaRemarketing["clientes"][number];
-type ColunaPrevia = "nome" | "celular" | "cluster" | "faixa" | "valor_cobrar" | "evento_em" | "referencia_seta";
+type ColunaPrevia = "nome" | "celular" | "cluster" | "faixa" | "valor_cobrar" | "evento_em" | "referencia_seta" | "situacao_acordo";
 
 const COLUNAS_PREVIA: [ColunaPrevia, string][] = [
   ["nome", "Cliente"],
@@ -96,6 +96,8 @@ const COLUNAS_PREVIA: [ColunaPrevia, string][] = [
   ["evento_em", "Desistiu em"],
   ["referencia_seta", "Proposta"],
 ];
+
+const SITUACAO_ACORDO: Record<string, string> = { nao_pago: "Entrada não paga", cancelado: "Cancelado" };
 
 function paraForm(s: SegmentoRemarketing): SegmentoRemarketingIn {
   return {
@@ -129,6 +131,8 @@ function SegmentoForm({
   const [previaOffset, setPreviaOffset] = useState(0);
   const [previaLimit, setPreviaLimit] = useState(25);
   const previaSort = useSort<ColunaPrevia>("evento_em");
+  const [filtroSituacao, setFiltroSituacao] = useState<"" | "nao_pago" | "cancelado">("");
+  const temSituacao = segmento.segmento === "ACORDO_SEM_ENTRADA";
   const id = segmento.segmento.toLowerCase();
   const alterado = JSON.stringify(form) !== JSON.stringify(paraForm(segmento));
   const chavePrevia = previaSort.sortKey;
@@ -139,9 +143,16 @@ function SegmentoForm({
       : chavePrevia === "valor_cobrar"
         ? (c) => Number(c.valor_cobrar)
         : (c) => (c[chavePrevia] ?? null) as string | null;
-  const paginaPrevia = previa
-    ? ordenarPor(previa.clientes, valorPrevia, previaSort.sortDir).slice(previaOffset, previaOffset + previaLimit)
+  const clientesPrevia = previa
+    ? previa.clientes.filter((c) => !filtroSituacao || c.situacao_acordo === filtroSituacao)
     : [];
+  const paginaPrevia = ordenarPor(clientesPrevia, valorPrevia, previaSort.sortDir).slice(
+    previaOffset,
+    previaOffset + previaLimit,
+  );
+  const colunasPrevia: [ColunaPrevia, string][] = temSituacao
+    ? [...COLUNAS_PREVIA, ["situacao_acordo", "Situação"]]
+    : COLUNAS_PREVIA;
 
   useEffect(() => setForm(paraForm(segmento)), [segmento]);
 
@@ -320,12 +331,37 @@ function SegmentoForm({
             {previa.total} de {previa.total_renegocie} desistência(s) no Renegocie passam nos filtros. Não conta quem
             já foi cobrado hoje em outra faixa.
           </p>
-          {previa.clientes.length > 0 && (
+          {temSituacao && previa.clientes.length > 0 && (
+            <div className="form-row" style={{ marginBottom: 12 }}>
+              <label htmlFor={`${id}-situacao`}>Situação do acordo</label>
+              <select
+                id={`${id}-situacao`}
+                value={filtroSituacao}
+                onChange={(e) => {
+                  setFiltroSituacao(e.target.value as "" | "nao_pago" | "cancelado");
+                  setPreviaOffset(0);
+                }}
+              >
+                <option value="">Todos ({previa.clientes.length})</option>
+                <option value="nao_pago">
+                  Entrada não paga ({previa.clientes.filter((c) => c.situacao_acordo === "nao_pago").length})
+                </option>
+                <option value="cancelado">
+                  Cancelado antes do vencimento ({previa.clientes.filter((c) => c.situacao_acordo === "cancelado").length})
+                </option>
+              </select>
+              <span className="field-hint">
+                A entrada vence 1 dia depois do lançamento no SETA. Sumiu do SETA depois disso = entrada não paga;
+                antes = cancelado.
+              </span>
+            </div>
+          )}
+          {clientesPrevia.length > 0 && (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    {COLUNAS_PREVIA.map(([chave, rotulo]) => (
+                    {colunasPrevia.map(([chave, rotulo]) => (
                       <SortableTh
                         key={chave}
                         scope="col"
@@ -355,15 +391,26 @@ function SegmentoForm({
                       <td>{formatBRL(c.valor_cobrar)}</td>
                       <td>{formatDataHora(c.evento_em)}</td>
                       <td>{c.referencia_seta ?? "—"}</td>
+                      {temSituacao && (
+                        <td>
+                          {c.situacao_acordo ? (
+                            <span className={`badge ${c.situacao_acordo === "nao_pago" ? "error" : "pending"}`}>
+                              {SITUACAO_ACORDO[c.situacao_acordo]}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          {previa.clientes.length > 0 && (
+          {clientesPrevia.length > 0 && (
             <Paginacao
-              total={previa.clientes.length}
+              total={clientesPrevia.length}
               limit={previaLimit}
               offset={previaOffset}
               onChange={setPreviaOffset}

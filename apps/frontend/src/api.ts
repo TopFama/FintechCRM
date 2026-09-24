@@ -994,5 +994,6 @@ export interface PreviaRemarketing {
     cluster: string;
     evento_em: string;
     referencia_seta: string | null;
+    situacao_acordo: "nao_pago" | "cancelado" | null;
   }[];
 }

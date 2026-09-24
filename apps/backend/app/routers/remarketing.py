@@ -136,6 +136,7 @@ def _linha_previa(c: dict) -> dict:
         "evento_em": c["evento_em"],
         # código do acordo no SETA (ft.auxiliar, "RE" + reparcelamento); só existe se chegou a ser lançado
         "referencia_seta": c["referencia_seta"],
+        "situacao_acordo": c["situacao_acordo"],
     }
 
 
