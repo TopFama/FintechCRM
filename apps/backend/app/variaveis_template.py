@@ -50,7 +50,10 @@ def normalizar_chave(chave: str) -> str:
 def normalizar_para_meta(texto: Any) -> str:
     if texto is None:
         return ""
-    return re.sub(r"\s+", " ", str(texto)).strip()
+    texto = re.sub(r"\s+", " ", str(texto)).strip()
+    # Os templates da Meta já trazem "R$ {{n}}": valor vindo com "R$" da
+    # planilha ou de expressão sairia "R$ R$ 506,00" na mensagem.
+    return re.sub(r"^(-?)\s*R\$\s*", r"\1", texto)
 
 
 def formatar_moeda(valor: Any) -> str:
@@ -74,7 +77,8 @@ def formatar_moeda(valor: Any) -> str:
         int_com_pontos = int_part[-3:] + ("." + int_com_pontos if int_com_pontos else "")
         int_part = int_part[:-3]
 
-    return f"{sinal}R$ {int_com_pontos},{dec_part}"
+    # Sem "R$": o texto do template já traz o símbolo antes da variável
+    return f"{sinal}{int_com_pontos},{dec_part}"
 
 
 def formatar_data(valor: Any) -> str:

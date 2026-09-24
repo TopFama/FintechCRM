@@ -23,6 +23,8 @@ test.describe("Disparo pelo worker (Meta simulada)", () => {
       const params = Object.values(e.template_params.processed_params.body) as string[];
       expect(params).toHaveLength(4);
       for (const p of params) expect(p).not.toMatch(/^(None|null|undefined|)$/);
+      // o template já tem "R$ {{2}}": a variável não pode repetir o símbolo
+      for (const p of params) expect(p).not.toContain("R$");
     }
     expect((await apiGet(page, "/__e2e/envios")).filter((e: any) => e.canal === "meta")).toEqual([]);
   });

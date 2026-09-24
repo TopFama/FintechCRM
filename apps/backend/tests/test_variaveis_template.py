@@ -62,9 +62,9 @@ assert vt.renderizar_expressao("{desconhecido}", {"nome": "Maria"}, estrito=Fals
 assert vt.normalizar_para_meta("A\n\n  B\t C") == "A B C"
 
 # 1.5 Formatação de moeda pt-BR sem dependência de locale
-assert vt.formatar_moeda(Decimal("1234.5")) == "R$ 1.234,50"
-assert vt.formatar_moeda("0") == "R$ 0,00"
-assert vt.formatar_moeda(Decimal("1234567.891")) == "R$ 1.234.567,89"
+assert vt.formatar_moeda(Decimal("1234.5")) == "1.234,50"
+assert vt.formatar_moeda("0") == "0,00"
+assert vt.formatar_moeda(Decimal("1234567.891")) == "1.234.567,89"
 
 # 1.6 Formatação de data
 assert vt.formatar_data(date(2026, 9, 21)) == "21/09/2026"
@@ -90,9 +90,9 @@ assert all(isinstance(v, str) for v in ctx.values())
 assert ctx["codigo"] == "00123456"
 assert ctx["primeiro_nome"] == "Maria"
 assert ctx["cpf"] == "059.982.247-25"
-assert ctx["valor_atraso"] == "R$ 1.234,56"
+assert ctx["valor_atraso"] == "1.234,56"
 assert "valor_cobrar" not in ctx
-assert ctx["valor_em_aberto"] == "R$ 1.200,00"
+assert ctx["valor_em_aberto"] == "1.200,00"
 assert ctx["vencimento"] == "21/09/2026"
 
 # 1.8 Validação de sintaxe
@@ -211,7 +211,7 @@ with TestClient(app) as client:
     assert campos_dict["codigo"]["rotulo"] == "Código SETA"
     assert campos_dict["codigo"]["exemplo"] == "00123456"
     assert "valor_cobrar" not in campos_dict
-    assert campos_dict["valor_atraso"]["exemplo"] == "R$ 1.100,00"
+    assert campos_dict["valor_atraso"]["exemplo"] == "1.100,00"
 
     # Cria número de WhatsApp para as faixas
     num_resp = client.post(
@@ -247,6 +247,14 @@ with TestClient(app) as client:
     tmpl = tmpl_resp.json()
     v1_id = tmpl["variables"][0]["id"]
     v2_id = tmpl["variables"][1]["id"]
+
+    # Faixa só aceita template aprovado pela Meta; aqui não há sync, aprova direto no banco
+    from app.database import SessionLocal
+    from app.models import Template, TemplateStatus
+
+    with SessionLocal() as db_aprov:
+        db_aprov.get(Template, tmpl["id"]).status = TemplateStatus.approved
+        db_aprov.commit()
 
     # 3.3 Criação de faixa: fonte_tipo inválido deve retornar erro (422 / 400)
     resp_inv = client.post(
