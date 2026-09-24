@@ -1205,6 +1205,19 @@ label {
   background: var(--color-success-bg);
   color: var(--color-success);
 }
+/* Cores da formatação condicional da planilha de lojas */
+.badge.cluster-inad-top {
+  background: #4b73c3;
+  color: #fff;
+}
+.badge.cluster-inad-uti {
+  background: #f9000b;
+  color: #fff;
+}
+.badge.cluster-inad-uti-mais {
+  background: #702f9f;
+  color: #fff;
+}
 .badge.cluster-inad-neutro {
   background: var(--color-neutral-bg);
   color: var(--color-text-muted);

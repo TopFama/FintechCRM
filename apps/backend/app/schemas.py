@@ -794,6 +794,38 @@ class LojaOut(BaseModel):
     cluster_populacao: str | None
 
 
+class LojaIn(BaseModel):
+    nome_com_cod: str | None = None
+    regional: str | None = None
+    estado: str | None = None
+    cluster_cobradora: str | None = None
+    cluster_inad: str | None = None
+    cluster_populacao: str | None = None
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _vazio_vira_none(cls, v):
+        if isinstance(v, str):
+            v = " ".join(v.split())
+            return v or None
+        return v
+
+    @field_validator("estado")
+    @classmethod
+    def _estado_maiusculo(cls, v):
+        return v.upper() if v else v
+
+
+class LojaNovaIn(LojaIn):
+    filial: str
+
+
+class SincronizacaoLojasOut(BaseModel):
+    novas: int
+    atualizadas: int
+    sem_mudanca: int
+
+
 class LojaFiltrosOut(BaseModel):
     regionais: list[str]
     estados: list[str]

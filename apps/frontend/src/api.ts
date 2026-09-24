@@ -353,6 +353,13 @@ export const api = {
   // --- Lojas ---
   listarLojas: () => request<Loja[]>("/lojas"),
   filtrosLojas: () => request<FiltrosLoja>("/lojas/filtros"),
+  criarLoja: (dados: LojaEditavel & { filial: string }) =>
+    request<Loja>("/lojas", { method: "POST", body: JSON.stringify(dados) }),
+  editarLoja: (filial: string, dados: LojaEditavel) =>
+    request<Loja>(`/lojas/${encodeURIComponent(filial)}`, { method: "PUT", body: JSON.stringify(dados) }),
+  excluirLoja: (filial: string) => request<void>(`/lojas/${encodeURIComponent(filial)}`, { method: "DELETE" }),
+  sincronizarLojas: () =>
+    request<{ novas: number; atualizadas: number; sem_mudanca: number }>("/lojas/sincronizar", { method: "POST" }),
 
   // --- Configurações ---
   statusSeta: () => request<StatusSeta>("/seta/status"),
@@ -810,6 +817,8 @@ export interface Loja {
   cluster_inad: string | null;
   cluster_populacao: string | null;
 }
+
+export type LojaEditavel = Omit<Loja, "filial">;
 
 export interface FiltrosLoja {
   regionais: string[];

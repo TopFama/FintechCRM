@@ -35,11 +35,25 @@ function semAcento(texto: string): string {
   return texto.normalize("NFD").replace(/\p{Diacritic}/gu, "").toUpperCase();
 }
 
-// Formatação condicional do cluster de inadimplência da loja (os valores vêm da planilha)
+// Formatação condicional do cluster de inadimplência da loja: mesmas cores da
+// planilha de lojas (TOP azul, UTI vermelho, UTI + roxo)
 export function BadgeClusterInad({ valor }: { valor: string | null }) {
   if (!valor) return <span className="text-faint">—</span>;
-  const t = semAcento(valor);
-  const tom = t.includes("ALT") ? "alto" : t.includes("MED") ? "medio" : t.includes("BAIX") ? "baixo" : "neutro";
+  const t = semAcento(valor).replace(/\s+/g, " ").trim();
+  const tom =
+    t === "CLUSTER TOP"
+      ? "top"
+      : t === "CLUSTER UTI +"
+        ? "uti-mais"
+        : t === "CLUSTER UTI"
+          ? "uti"
+          : t.includes("ALT")
+            ? "alto"
+            : t.includes("MED")
+              ? "medio"
+              : t.includes("BAIX")
+                ? "baixo"
+                : "neutro";
   return <span className={`badge cluster-inad-${tom}`}>{valor}</span>;
 }
 

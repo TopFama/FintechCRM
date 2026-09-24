@@ -37,15 +37,17 @@ def _normalizar(texto: str) -> str:
     return " ".join(sem_acento.upper().split())
 
 
-def _codigo_filial(valor: str) -> str:
+def codigo_filial(valor: str) -> str:
     valor = valor.strip()
     # a planilha pode mostrar "6" para a filial "06" (ft.empresa tem 2 caracteres)
     return valor.zfill(2) if valor.isdigit() else valor.upper()
 
 
-def interpretar(linhas: list[list[str]]) -> list[dict]:
+def interpretar(linhas: list[list[str]], *, so_colunas_presentes: bool = False) -> list[dict]:
     """Acha a linha de cabeçalho (a primeira que tem FILIAL, entre as 10
-    primeiras) e monta um dict por loja. Colunas além de FILIAL são opcionais."""
+    primeiras) e monta um dict por loja. Colunas além de FILIAL são opcionais;
+    com `so_colunas_presentes`, os campos sem coluna na planilha nem entram no
+    dict (a sincronização não apaga o que a planilha não tem)."""
 
     for indice, linha in enumerate(linhas[:10]):
         normalizados = [_normalizar(c) for c in linha]
@@ -67,6 +69,7 @@ def interpretar(linhas: list[list[str]]) -> list[dict]:
         valor = linha[i].strip() if i is not None and i < len(linha) else ""
         return valor or None
 
+    presentes = {campo for campo, i in posicao.items() if i is not None}
     lojas = []
     for linha in corpo:
         filial = celula(linha, "filial")
@@ -75,7 +78,7 @@ def interpretar(linhas: list[list[str]]) -> list[dict]:
         estado = celula(linha, "estado")
         lojas.append(
             {
-                "filial": _codigo_filial(filial),
+                "filial": codigo_filial(filial),
                 "nome_com_cod": celula(linha, "nome_com_cod"),
                 "regional": celula(linha, "regional"),
                 "estado": estado.upper() if estado else None,
@@ -84,6 +87,8 @@ def interpretar(linhas: list[list[str]]) -> list[dict]:
                 "cluster_populacao": celula(linha, "cluster_populacao"),
             }
         )
+        if so_colunas_presentes:
+            lojas[-1] = {k: v for k, v in lojas[-1].items() if k in presentes}
     return lojas
 
 
@@ -109,6 +114,34 @@ def semear_se_vazio(db: Session) -> None:
     campos = ("filial", "nome_com_cod", "regional", "estado", "cluster_cobradora", "cluster_inad", "cluster_populacao")
     db.add_all(models.Loja(**dict(zip(campos, linha))) for linha in LOJAS_INICIAIS)
     db.commit()
+
+
+def sincronizar_com_planilha(db: Session) -> dict:
+    """Traz a planilha de lojas do Google para a tabela: a planilha vence nos
+    campos que ela tem; lojas que só existem no banco ficam como estão."""
+
+    linhas = google_client.ler_aba(db, settings.google_sheet_lojas_id, settings.google_sheet_lojas_gid)
+    da_planilha = interpretar(linhas, so_colunas_presentes=True)
+    existentes = {l.filial: l for l in db.query(models.Loja).all()}
+    novas = atualizadas = 0
+    for dados in da_planilha:
+        loja = existentes.get(dados["filial"])
+        if loja is None:
+            db.add(models.Loja(**dados))
+            existentes[dados["filial"]] = dados  # filial repetida na planilha: vale a primeira
+            novas += 1
+            continue
+        if not isinstance(loja, models.Loja):
+            continue
+        mudou = False
+        for campo, valor in dados.items():
+            if getattr(loja, campo) != valor:
+                setattr(loja, campo, valor)
+                mudou = True
+        atualizadas += mudou
+    db.commit()
+    limpar_cache()
+    return {"novas": novas, "atualizadas": atualizadas, "sem_mudanca": len(da_planilha) - novas - atualizadas}
 
 
 def limpar_cache() -> None:
@@ -195,5 +228,5 @@ def combinar_lojas(
         cobradora=cobradora,
     )
     if loja:
-        return [c for c in dos_atributos if c in {_codigo_filial(x) for x in loja}]
+        return [c for c in dos_atributos if c in {codigo_filial(x) for x in loja}]
     return dos_atributos

@@ -53,3 +53,66 @@ def filtros(db: Session = Depends(get_db), _user: models.User = Depends(get_curr
         cobradoras=distintos("cluster_cobradora")
         + ([lojas.SEM_COBRADORA] if any(not l.get("cluster_cobradora") for l in todas) else []),
     )
+
+
+# --- Edição (tela Configurações → Lojas) ---
+
+
+def _loja_ou_404(db: Session, filial: str) -> models.Loja:
+    loja = db.get(models.Loja, lojas.codigo_filial(filial))
+    if loja is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Loja não encontrada")
+    return loja
+
+
+def _como_dict(loja: models.Loja) -> dict:
+    return {campo: getattr(loja, campo) for campo in schemas.LojaOut.model_fields}
+
+
+@router.post("", response_model=schemas.LojaOut, status_code=status.HTTP_201_CREATED)
+def criar(dados: schemas.LojaNovaIn, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+    filial = lojas.codigo_filial(dados.filial or "")
+    if not filial:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe o código da filial")
+    if len(filial) > 4:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Código da filial tem no máximo 4 caracteres")
+    if db.get(models.Loja, filial) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"A filial {filial} já está cadastrada")
+    loja = models.Loja(filial=filial, **dados.model_dump(exclude={"filial"}))
+    db.add(loja)
+    db.commit()
+    lojas.limpar_cache()
+    return _como_dict(loja)
+
+
+@router.put("/{filial}", response_model=schemas.LojaOut)
+def editar(
+    filial: str,
+    dados: schemas.LojaIn,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    loja = _loja_ou_404(db, filial)
+    for campo, valor in dados.model_dump().items():
+        setattr(loja, campo, valor)
+    db.commit()
+    lojas.limpar_cache()
+    return _como_dict(loja)
+
+
+@router.delete("/{filial}", status_code=status.HTTP_204_NO_CONTENT)
+def excluir(filial: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+    db.delete(_loja_ou_404(db, filial))
+    db.commit()
+    lojas.limpar_cache()
+
+
+@router.post("/sincronizar", response_model=schemas.SincronizacaoLojasOut)
+def sincronizar(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+    """Atualiza a tabela com a planilha de lojas do Google (a planilha vence
+    nos campos que tem; lojas só do banco ficam)."""
+
+    try:
+        return lojas.sincronizar_com_planilha(db)
+    except google_client.GoogleIndisponivel as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
