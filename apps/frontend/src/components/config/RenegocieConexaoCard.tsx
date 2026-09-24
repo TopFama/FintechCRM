@@ -61,7 +61,7 @@ export default function RenegocieConexaoCard() {
       </div>
       <p className="card-subtitle">
         Portal de renegociação de onde vêm os clientes de remarketing. A chave é gerada no admin do Renegocie, aba
-        Canal de propostas.
+        Contato (só super admin).
       </p>
       {erro && (
         <div className="error-box">

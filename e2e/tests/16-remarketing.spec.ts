@@ -7,7 +7,7 @@ test.describe.serial("Remarketing do Renegocie", () => {
   const acordo = (page: import("@playwright/test").Page) => card(page, "Acordo cancelado sem pagar a entrada");
 
   test("conexão com o Renegocie: chave errada é recusada, a certa conecta", async ({ page }) => {
-    await page.goto("/configuracoes");
+    await page.goto("/remarketing");
     const renegocie = card(page, /^Renegocie/);
     await expect(renegocie.getByLabel("Endereço do Renegocie")).toHaveValue("http://renegocie-api:8000");
     await renegocie.getByLabel("Chave de integração").fill("chave-errada");
@@ -22,7 +22,7 @@ test.describe.serial("Remarketing do Renegocie", () => {
   });
 
   test("segmentos nascem desligados, com faixa própria e descrição", async ({ page }) => {
-    await page.goto("/configuracoes?aba=remarketing");
+    await page.goto("/remarketing");
     for (const nome of ["Só se identificou", "Viu a proposta e não fechou", "Cancelou a proposta"]) {
       await expect(card(page, nome).locator(".status-pill")).toHaveText("Desligado");
     }
@@ -31,7 +31,7 @@ test.describe.serial("Remarketing do Renegocie", () => {
   });
 
   test("prévia: acordo com parcela paga (status B) fica de fora", async ({ page }) => {
-    await page.goto("/configuracoes?aba=remarketing");
+    await page.goto("/remarketing");
     await acordo(page).getByLabel("Enviar remarketing para este segmento").check();
     await acordo(page).getByRole("button", { name: "Salvar" }).click();
     await expect(acordo(page).locator(".status-pill")).toHaveText("Ligado");
@@ -43,7 +43,7 @@ test.describe.serial("Remarketing do Renegocie", () => {
   });
 
   test("janela da desistência e filtro de valor valem na prévia", async ({ page }) => {
-    await page.goto("/configuracoes?aba=remarketing");
+    await page.goto("/remarketing");
     const viu = card(page, "Viu a proposta e não fechou");
     await viu.getByRole("button", { name: "Ver quem entraria hoje" }).click();
     await expect(viu).toContainText("0 de 1 desistência(s)"); // desistiu há 40 dias, janela de 30
@@ -96,7 +96,7 @@ test.describe.serial("Remarketing do Renegocie", () => {
   });
 
   test("buscar agora coloca na fila só quem passou, e não repete dentro do recontato", async ({ page }) => {
-    await page.goto("/configuracoes?aba=remarketing");
+    await page.goto("/remarketing");
     await page.getByRole("button", { name: "Buscar agora" }).click();
     await expect(card(page, "Remarketing do Renegocie").locator(".success-box")).toContainText(
       "1 cliente(s) colocado(s) na fila"

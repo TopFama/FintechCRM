@@ -155,7 +155,7 @@ def previa(segmento: str, db: Session = Depends(get_db), _user: models.User = De
     return {
         "total_renegocie": sum(1 for c in candidatos if c.get("segmento") == segmento),
         "total": len(selecionados),
-        "clientes": [_linha_previa(c) for c in selecionados[:50]],
+        "clientes": [_linha_previa(c) for c in selecionados],
         "gerado_em": datetime.utcnow(),
     }
 

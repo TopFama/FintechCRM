@@ -7,9 +7,11 @@ import FaixaDetail from "./pages/FaixaDetail";
 import Relatorios from "./pages/Relatorios";
 import Cobranca from "./pages/Cobranca";
 import Configuracoes from "./pages/Configuracoes";
+import Remarketing from "./pages/Remarketing";
 import {
   IconDashboard,
   IconLogout,
+  IconMegaphone,
   IconReport,
   IconUsers,
   IconSettings,
@@ -39,6 +41,9 @@ function Layout({ children }: { children: JSX.Element }) {
           </NavLink>
           <NavLink to="/relatorios" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconReport /> Relatórios
+          </NavLink>
+          <NavLink to="/remarketing" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <IconMegaphone /> Remarketing
           </NavLink>
           <NavLink to="/configuracoes" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconSettings /> Configurações
@@ -118,6 +123,16 @@ export default function App() {
           <RequireAuth>
             <Layout>
               <Relatorios />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/remarketing"
+        element={
+          <RequireAuth>
+            <Layout>
+              <Remarketing />
             </Layout>
           </RequireAuth>
         }

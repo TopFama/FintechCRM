@@ -1,13 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { api, CampoCliente, ChatwootTestResult, pareceAdmin, StatusChatwoot, StatusGoogle, StatusSeta, Template, WhatsappNumber } from "../api";
 import BlacklistCard from "../components/config/BlacklistCard";
 import DisparoCard from "../components/config/DisparoCard";
 import Faixas from "./Faixas";
 import NumerosCard from "../components/config/NumerosCard";
 import OrcamentoCard from "../components/config/OrcamentoCard";
-import RemarketingCard from "../components/config/RemarketingCard";
-import RenegocieConexaoCard from "../components/config/RenegocieConexaoCard";
 import LojasCard from "../components/config/LojasCard";
 import JurosMultaCard from "../components/config/JurosMultaCard";
 import RegrasCobrancaCard from "../components/config/RegrasCobrancaCard";
@@ -16,7 +14,7 @@ import TokensMetaCard from "../components/config/TokensMetaCard";
 import UsuariosCard from "../components/config/UsuariosCard";
 import { IconAlert, IconRefresh } from "../icons";
 
-type Aba = "conexoes" | "templates" | "faixas" | "horario" | "indicadores" | "remarketing" | "lojas" | "blacklist" | "usuarios";
+type Aba = "conexoes" | "templates" | "faixas" | "horario" | "indicadores" | "lojas" | "blacklist" | "usuarios";
 
 const ABAS: { valor: Aba; rotulo: string }[] = [
   { valor: "templates", rotulo: "Templates" },
@@ -24,12 +22,11 @@ const ABAS: { valor: Aba; rotulo: string }[] = [
   { valor: "faixas", rotulo: "Faixas de cobrança" },
   { valor: "horario", rotulo: "Horário" },
   { valor: "indicadores", rotulo: "Indicadores" },
-  { valor: "remarketing", rotulo: "Remarketing" },
   { valor: "lojas", rotulo: "Lojas" },
   { valor: "blacklist", rotulo: "Blacklist" },
 ];
 
-const ABAS_VALIDAS: Aba[] = ["conexoes", "templates", "faixas", "horario", "indicadores", "remarketing", "lojas", "blacklist", "usuarios"];
+const ABAS_VALIDAS: Aba[] = ["conexoes", "templates", "faixas", "horario", "indicadores", "lojas", "blacklist", "usuarios"];
 
 export default function Configuracoes() {
   const [versaoNumeros, setVersaoNumeros] = useState(0);
@@ -241,6 +238,8 @@ export default function Configuracoes() {
     }
   }
 
+  if (abaParam === "remarketing") return <Navigate to="/remarketing" replace />;
+
   return (
     <div>
       <div className="page-header">
@@ -280,7 +279,6 @@ export default function Configuracoes() {
           </div>
         </>
       )}
-      {aba === "remarketing" && <RemarketingCard />}
       {aba === "lojas" && <LojasCard />}
       {aba === "blacklist" && <BlacklistCard />}
       {aba === "usuarios" && admin && <UsuariosCard />}
@@ -459,8 +457,6 @@ export default function Configuracoes() {
           </div>
         )}
       </div>
-
-      <RenegocieConexaoCard />
 
       {/* Chatwoot */}
       <div className="card">

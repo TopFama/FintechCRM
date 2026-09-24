@@ -650,7 +650,7 @@ export default function FaixaDetail() {
           <p className="card-subtitle">
             Esta faixa não recebe planilha. Todo dia de disparo o sistema busca no Renegocie quem se encaixa aqui e
             coloca na fila acima. Os filtros ficam em{" "}
-            <Link to="/configuracoes?aba=remarketing">Configurações → Remarketing</Link>.
+            <Link to="/remarketing">Remarketing</Link>.
           </p>
         </div>
       ) : (

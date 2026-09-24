@@ -3,8 +3,8 @@
 Uma vez por dia, antes do disparo, busca no Renegocie (mesma VPS) quem só se
 identificou, viu a proposta e parou, cancelou a proposta ou teve o acordo
 cancelado sem pagar a entrada. Cada tipo é um segmento com faixa própria
-(número + template atribuídos em Faixas) e filtros configurados em
-Configurações → Remarketing. Daí em diante é o fluxo normal da fila: nada de
+(número + template atribuídos em Faixas) e filtros configurados
+na tela Remarketing. Daí em diante é o fluxo normal da fila: nada de
 cobrar duas vezes no mesmo dia, blacklist, expiração no fim da janela.
 """
 
@@ -36,9 +36,10 @@ SEGMENTOS = {
 }
 PREFIXO_FAIXA = "Remarketing: "
 MAX_JANELA_DIAS = 180
-# Pega qualquer dia de atraso (inclusive parcela ainda a vencer): o filtro de
-# faixa de atraso, quando existe, é do segmento.
-_TODOS_OS_DIAS = [(-36500, None)]
+# Só quem tem parcela vencida: quem já renegociou fica só com as parcelas do
+# acordo, ainda a vencer, e não deve receber remarketing. O filtro de faixa de
+# atraso, quando existe, é do segmento.
+_SO_EM_ATRASO = [(1, None)]
 
 
 # Trocado no ambiente de teste (e2e) por um httpx.MockTransport.
@@ -89,7 +90,7 @@ def garantir_segmentos(db: Session) -> list[models.RemarketingSegmento]:
 def buscar_no_renegocie(db: Session, dias: int) -> list[dict]:
     config = db.query(models.IntegracaoRenegocie).first()
     if config is None:
-        raise RemarketingErro("Conexão com o Renegocie não configurada (Configurações → Conexões)")
+        raise RemarketingErro("Conexão com o Renegocie não configurada (tela Remarketing)")
     chave = crypto.decifrar(config.chave_cifrada)
     if not chave:
         raise RemarketingErro("Não foi possível ler a chave do Renegocie; cadastre de novo")
@@ -167,7 +168,7 @@ def selecionar(
     bl_codigos, bl_cpfs = codigos_bloqueados(db)
     codigos = sorted({str(p).strip() for c in no_prazo for p in c["person_ids"]})
     linhas = seta_client.buscar_base_cobranca(
-        faixas=_TODOS_OS_DIAS,
+        faixas=_SO_EM_ATRASO,
         codigos=codigos,
         bloqueados_codigos=bl_codigos,
         bloqueados_cpfs=bl_cpfs,
@@ -198,7 +199,7 @@ def selecionar(
         regra = regras_seg[segmento]
         if segmento == "ACORDO_SEM_ENTRADA" and c.get("referencia_seta") in acordos_pagos:
             continue  # parcela com status 'B': o acordo foi pago
-        # sem parcela em aberto no SETA = já pagou ou está na blacklist
+        # sem parcela vencida no SETA = já pagou, renegociou ou está na blacklist
         cliente = next((por_codigo[str(p).strip()] for p in c["person_ids"] if str(p).strip() in por_codigo), None)
         if cliente is None or cliente["codigo"] in recontato[segmento]:
             continue

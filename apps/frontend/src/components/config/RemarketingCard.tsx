@@ -4,6 +4,9 @@ import { api, pareceAdmin, PreviaRemarketing, SegmentoRemarketing, SegmentoRemar
 import { formatBRL, formatCelular, formatDataHora } from "../../format";
 import { IconAlert, IconEye, IconRefresh } from "../../icons";
 import MultiSelect from "../MultiSelect";
+import Paginacao from "../Paginacao";
+import SortableTh from "../SortableTh";
+import { ordenarPor, useSort } from "../../sort";
 import { useOpcoesCobranca } from "../useOpcoesCobranca";
 
 // Remarketing de quem desistiu no portal Renegocie. Cada segmento tem uma faixa
@@ -81,6 +84,19 @@ export default function RemarketingCard() {
   );
 }
 
+type ClientePrevia = PreviaRemarketing["clientes"][number];
+type ColunaPrevia = "nome" | "celular" | "cluster" | "faixa" | "valor_cobrar" | "evento_em" | "proposta";
+
+const COLUNAS_PREVIA: [ColunaPrevia, string][] = [
+  ["nome", "Cliente"],
+  ["celular", "Celular"],
+  ["cluster", "Cluster"],
+  ["faixa", "Faixa"],
+  ["valor_cobrar", "Valor a cobrar"],
+  ["evento_em", "Desistiu em"],
+  ["proposta", "Proposta"],
+];
+
 function paraForm(s: SegmentoRemarketing): SegmentoRemarketingIn {
   return {
     ativo: s.ativo,
@@ -110,8 +126,22 @@ function SegmentoForm({
   const [salvando, setSalvando] = useState(false);
   const [previa, setPrevia] = useState<PreviaRemarketing | null>(null);
   const [carregandoPrevia, setCarregandoPrevia] = useState(false);
+  const [previaOffset, setPreviaOffset] = useState(0);
+  const [previaLimit, setPreviaLimit] = useState(25);
+  const previaSort = useSort<ColunaPrevia>("evento_em");
   const id = segmento.segmento.toLowerCase();
   const alterado = JSON.stringify(form) !== JSON.stringify(paraForm(segmento));
+  const chavePrevia = previaSort.sortKey;
+  const valorPrevia: ((c: ClientePrevia) => string | number | null) | null = !chavePrevia
+    ? null
+    : chavePrevia === "faixa"
+      ? (c) => c.dias_atraso
+      : chavePrevia === "valor_cobrar"
+        ? (c) => Number(c.valor_cobrar)
+        : (c) => (c[chavePrevia] ?? null) as string | null;
+  const paginaPrevia = previa
+    ? ordenarPor(previa.clientes, valorPrevia, previaSort.sortDir).slice(previaOffset, previaOffset + previaLimit)
+    : [];
 
   useEffect(() => setForm(paraForm(segmento)), [segmento]);
 
@@ -141,6 +171,7 @@ function SegmentoForm({
     setCarregandoPrevia(true);
     try {
       setPrevia(await api.previaRemarketing(segmento.segmento));
+      setPreviaOffset(0);
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Erro ao gerar a prévia");
     } finally {
@@ -286,32 +317,40 @@ function SegmentoForm({
       {previa && (
         <div style={{ marginTop: 16 }}>
           <p className="card-subtitle">
-            {previa.total} de {previa.total_renegocie} desistência(s) no Renegocie passam nos filtros
-            {previa.total > previa.clientes.length ? ` (mostrando ${previa.clientes.length})` : ""}. Não conta quem já
-            foi cobrado hoje em outra faixa.
+            {previa.total} de {previa.total_renegocie} desistência(s) no Renegocie passam nos filtros. Não conta quem
+            já foi cobrado hoje em outra faixa.
           </p>
           {previa.clientes.length > 0 && (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th scope="col">Cliente</th>
-                    <th scope="col">Celular</th>
-                    <th scope="col">Faixa</th>
-                    <th scope="col">Valor a cobrar</th>
-                    <th scope="col">Desistiu em</th>
-                    <th scope="col">Proposta</th>
+                    {COLUNAS_PREVIA.map(([chave, rotulo]) => (
+                      <SortableTh
+                        key={chave}
+                        scope="col"
+                        active={previaSort.sortKey === chave}
+                        dir={previaSort.sortDir}
+                        onSort={() => {
+                          previaSort.toggleSort(chave);
+                          setPreviaOffset(0);
+                        }}
+                      >
+                        {rotulo}
+                      </SortableTh>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {previa.clientes.map((c) => (
+                  {paginaPrevia.map((c) => (
                     <tr key={c.codigo}>
                       <td>
                         {c.codigo} · {c.nome}
                       </td>
                       <td>{formatCelular(c.celular)}</td>
+                      <td>{c.cluster || "—"}</td>
                       <td>
-                        {c.faixa ?? "A vencer"} ({c.dias_atraso} dias)
+                        {c.faixa ?? "—"} ({c.dias_atraso} dias)
                       </td>
                       <td>{formatBRL(c.valor_cobrar)}</td>
                       <td>{formatDataHora(c.evento_em)}</td>
@@ -321,6 +360,18 @@ function SegmentoForm({
                 </tbody>
               </table>
             </div>
+          )}
+          {previa.clientes.length > 0 && (
+            <Paginacao
+              total={previa.clientes.length}
+              limit={previaLimit}
+              offset={previaOffset}
+              onChange={setPreviaOffset}
+              onLimitChange={(n) => {
+                setPreviaLimit(n);
+                setPreviaOffset(0);
+              }}
+            />
           )}
         </div>
       )}
