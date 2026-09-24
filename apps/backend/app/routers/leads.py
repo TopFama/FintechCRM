@@ -192,7 +192,7 @@ def exportar_leads_xlsx(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    """Exporta os leads para planilha Excel (.xlsx) com colunas Codigo, Nome, CPF e Celular."""
+    """Exporta os leads para planilha Excel (.xlsx) com colunas Codigo, Nome, Celular e CPF."""
     query = query_leads_filtrada(db, filtros, lead_status)
     regras = carregar_regras(db)
     nomes_faixa = regras.nomes_faixa

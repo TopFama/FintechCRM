@@ -78,7 +78,7 @@ export default function LeadsCard({ opcoes }: { opcoes: OpcoesCobranca }) {
           </button>
         </div>
       </div>
-      <div className="field-hint">Planilha com Codigo, Nome, CPF e Celular dos leads com mensagem enviada.</div>
+      <div className="field-hint">Planilha com Codigo, Nome, Celular e CPF dos leads com mensagem enviada.</div>
 
       {erro && (
         <div className="error-box">

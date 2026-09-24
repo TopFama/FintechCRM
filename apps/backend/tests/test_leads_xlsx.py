@@ -100,7 +100,7 @@ assert "Leads" in wb.sheetnames
 ws = wb["Leads"]
 
 # Cabeçalho exato
-assert [ws.cell(1, c).value for c in range(1, 5)] == ["Codigo", "Nome", "CPF", "Celular"]
+assert [ws.cell(1, c).value for c in range(1, 5)] == ["Codigo", "Nome", "Celular", "CPF"]
 
 # Cor de preenchimento do cabeçalho termina em FCE4D6
 for col in range(1, 5):
@@ -116,7 +116,7 @@ assert ws.freeze_panes == "A2"
 
 # Larguras de coluna
 from openpyxl.utils import get_column_letter
-larguras_esperadas = {"A": 12, "B": 24, "C": 16, "D": 18}
+larguras_esperadas = {"A": 12, "B": 24, "C": 18, "D": 16}
 for letra, esperada in larguras_esperadas.items():
     real = ws.column_dimensions[letra].width
     assert real == esperada, f"largura coluna {letra}: esperado {esperada}, obteve {real}"
@@ -125,24 +125,24 @@ for letra, esperada in larguras_esperadas.items():
 linha2 = [ws.cell(2, c) for c in range(1, 5)]
 assert linha2[0].value == "00123456"
 assert linha2[1].value == "Maria"
-assert linha2[2].value == "529.982.247-25"
-assert linha2[3].value == "5563991234567"
+assert linha2[2].value == "5563991234567"
+assert linha2[3].value == "529.982.247-25"
 for cell in linha2:
     assert cell.number_format == "@", f"number_format incorreto: {cell.number_format}"
 
 linha3 = [ws.cell(3, c) for c in range(1, 5)]
 assert linha3[0].value == "00000456"
 assert linha3[1].value == "Pedro"
-assert linha3[2].value == "009.982.247-25"
-assert linha3[3].value in ("", None)   # celular None → célula vazia (openpyxl relê "" como None)
+assert linha3[3].value == "009.982.247-25"
+assert linha3[2].value in ("", None)   # celular None → célula vazia (openpyxl relê "" como None)
 for cell in linha3:
     assert cell.number_format == "@"
 
 linha4 = [ws.cell(4, c) for c in range(1, 5)]
 assert linha4[0].value == "00000789"
 assert linha4[1].value == "Ana-Luiza"
-assert linha4[2].value == "11.222.333/0001-81"
-assert linha4[3].value == "5563991234567"
+assert linha4[2].value == "5563991234567"
+assert linha4[3].value == "11.222.333/0001-81"
 for cell in linha4:
     assert cell.number_format == "@"
 
@@ -156,7 +156,7 @@ assert linhas[2][1] == "Ana-Luiza"
 bytes_vazio = gerar_xlsx_leads([])
 ws_vazio = openpyxl.load_workbook(io.BytesIO(bytes_vazio))["Leads"]
 assert ws_vazio.max_row == 1
-assert [ws_vazio.cell(1, c).value for c in range(1, 5)] == ["Codigo", "Nome", "CPF", "Celular"]
+assert [ws_vazio.cell(1, c).value for c in range(1, 5)] == ["Codigo", "Nome", "Celular", "CPF"]
 
 
 # Desempenho: 20.000 leads em menos de 10 s e planilha com 20.001 linhas

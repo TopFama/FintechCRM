@@ -13,8 +13,8 @@ from .phone import is_valid_phone, normalize_phone
 # Cor de preenchimento do cabeçalho definida pelo negócio
 _COR_CABECALHO = "FCE4D6"
 
-_CABECALHO = ("Codigo", "Nome", "CPF", "Celular")
-_LARGURAS = (12, 24, 16, 18)
+_CABECALHO = ("Codigo", "Nome", "Celular", "CPF")
+_LARGURAS = (12, 24, 18, 16)
 
 
 def formatar_codigo(valor: str | None) -> str:
@@ -86,7 +86,7 @@ def linhas_para_exportacao(leads: Iterable) -> list[tuple[str, str, str, str]]:
         nome = primeiro_nome(lead.nome)
         cpf = formatar_cpf(lead.cpf)
         celular = formatar_celular(lead.celular)
-        resultado.append((codigo, nome, cpf, celular))
+        resultado.append((codigo, nome, celular, cpf))
     return resultado
 
 
