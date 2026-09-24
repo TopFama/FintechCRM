@@ -44,6 +44,12 @@ services:
       - "8000:8000"
     volumes:
       - media-data:/app/media
+    networks:
+      - default
+      # Rede compartilhada com o TopFamaRenegocie (outra pasta em /opt): o
+      # remarketing chama http://renegocie-api:8000 sem sair da VPS. Criar uma
+      # vez na VPS com: docker network create topfama-interno
+      - topfama-interno
 
   frontend:
     build:
@@ -55,6 +61,10 @@ services:
       - backend
     ports:
       - "5173:80"
+
+networks:
+  topfama-interno:
+    external: true
 
 volumes:
   postgres-data:

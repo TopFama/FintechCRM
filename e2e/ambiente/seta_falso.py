@@ -97,6 +97,14 @@ def main(url: str) -> None:
                 "INSERT INTO vendas VALUES (%s,%s,%s,'S','004')",
                 (f"{i + 1:06d}", codigo, hoje - timedelta(days=420)),
             )
+        # acordos do Renegocie (remarketing): RE000900 teve a entrada paga
+        # (status B, pagamento antigo para não mexer na efetividade);
+        # RE000901 sumiu do SETA sem pagamento.
+        conn.execute(
+            "INSERT INTO financeiro_titulos VALUES ('T800000001','00000005',90,%s,'06','001','R','B','4',"
+            "'RE000900','ENTRADA',%s,90)",
+            (hoje - timedelta(days=300), hoje - timedelta(days=300)),
+        )
     print(f"SETA falso populado: {len(NOMES)} clientes, {tit} títulos")
 
 

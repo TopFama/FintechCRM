@@ -362,6 +362,7 @@ export default function FaixaDetail() {
       <div className="page-header">
         <div>
           <h2>{faixa.name}</h2>
+          {faixa.descricao && <p className="faixa-descricao">{faixa.descricao}</p>}
           <div className="subtitle">
             {faixa.envios.length === 0
               ? "Sem número/template atribuído"
@@ -641,6 +642,18 @@ export default function FaixaDetail() {
         )}
       </div>
 
+      {faixa.remarketing_segmento ? (
+        <div className="card">
+          <div className="card-header">
+            <h3>De onde vêm os clientes</h3>
+          </div>
+          <p className="card-subtitle">
+            Esta faixa não recebe planilha. Todo dia de disparo o sistema busca no Renegocie quem se encaixa aqui e
+            coloca na fila acima. Os filtros ficam em{" "}
+            <Link to="/configuracoes?aba=remarketing">Configurações → Remarketing</Link>.
+          </p>
+        </div>
+      ) : (
       <div className="card">
         <div className="card-header">
           <h3>Leads gerados nesta faixa de atraso</h3>
@@ -707,6 +720,7 @@ export default function FaixaDetail() {
           </>
         )}
       </div>
+      )}
     </div>
   );
 }

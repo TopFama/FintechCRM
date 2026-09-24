@@ -114,6 +114,7 @@ export default function Faixas() {
                     </div>
                     <div style={{ minWidth: 0 }}>
                       <div className="faixa-row-title">{f.name}</div>
+                      {f.descricao && <div className="faixa-row-sub">{f.descricao}</div>}
                       <div className="faixa-row-sub">
                         {f.envios.length === 0
                           ? "Sem número/template atribuído"
@@ -129,16 +130,18 @@ export default function Faixas() {
                     <IconArrowRight className="text-faint" />
                   </div>
                 </Link>
-                <button
-                  type="button"
-                  className="danger small"
-                  style={{ flexShrink: 0 }}
-                  disabled={excluindo === f.id}
-                  onClick={() => handleExcluir(f)}
-                  title="Excluir faixa"
-                >
-                  <IconTrash width={15} height={15} />
-                </button>
+                {!f.remarketing_segmento && (
+                  <button
+                    type="button"
+                    className="danger small"
+                    style={{ flexShrink: 0 }}
+                    disabled={excluindo === f.id}
+                    onClick={() => handleExcluir(f)}
+                    title="Excluir faixa"
+                  >
+                    <IconTrash width={15} height={15} />
+                  </button>
+                )}
               </div>
               );
             })}

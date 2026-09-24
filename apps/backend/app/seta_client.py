@@ -115,7 +115,7 @@ CONDICAO_IGNORADA = "130"
 # Datas de `pessoas` fora da janela 1900..hoje são lixo de cadastro (0001 BC,
 # 9999, futuro) e viram NULL.
 _SQL_BASE_COBRANCA = r"""
-WITH parcelas AS (
+WITH {cte_alvo}parcelas AS (
     SELECT ft.pessoa,
            ft.valor,
            ft.vencimento,
@@ -129,6 +129,7 @@ WITH parcelas AS (
        AND ft.valor > 0
        {filtro_loja_titulo}
        {filtro_portador}
+       {filtro_alvo}
 ),
 abertos AS (
     SELECT pessoa,
@@ -258,6 +259,7 @@ def buscar_base_cobranca(
     bloqueados_codigos: list[str] | None = None,
     bloqueados_cpfs: list[str] | None = None,
     juros: ParametrosJuros = PARAMETROS_JUROS_PADRAO,
+    codigos: list[str] | None = None,
 ) -> list[dict]:
     """Clientes (`pessoas.cliente`, status Especial/Ativo/Bloqueado) com
     parcela de recebimento em aberto (`rp='R'`, tipo 4/5, `valor > 0`), já com
@@ -281,7 +283,9 @@ def buscar_base_cobranca(
     - `qtd_compras` conta vendas finalizadas (`status = 'S'`) de condição de
       crediário (tipo 4, menos a 130), só se a venda tem parcela `VE`+código
       de tipo 4/5 — é o que confirma que foi crediário de verdade.
-    - blacklist e o código ignorado ficam de fora, com ou sem atraso."""
+    - blacklist e o código ignorado ficam de fora, com ou sem atraso.
+    - `codigos` restringe a esses clientes (remarketing), num CTE com VALUES
+      em lotes de 1000, nunca uma consulta por cliente."""
 
     from .cobranca_regras import CODIGO_CLIENTE_IGNORADO
 
@@ -317,19 +321,34 @@ def buscar_base_cobranca(
         params["status_cliente"] = status_cliente
         expanding.append("status_cliente")
 
-    stmt = text(
-        _SQL_BASE_COBRANCA.format(
-            filtro_loja_titulo=filtro_loja,
-            filtro_portador=filtro_portador,
-            filtro_status=filtro_status,
-            filtro_vencimento=filtro_vencimento,
-            filtro_dias=_sql_dias(dias_exatos, faixas),
-        )
-    ).bindparams(*(bindparam(nome, expanding=True) for nome in expanding))
+    def montar(qtd_alvo: int):
+        cte_alvo = filtro_alvo = ""
+        if qtd_alvo:
+            cte_alvo = "alvo(pessoa) AS (VALUES %s), " % ", ".join(f"(:alvo{j})" for j in range(qtd_alvo))
+            # coluna char(8) bruta, pra usar idx_financeiro_titulos_pessoa
+            filtro_alvo = "AND ft.pessoa IN (SELECT CAST(pessoa AS char(8)) FROM alvo)"
+        return text(
+            _SQL_BASE_COBRANCA.format(
+                cte_alvo=cte_alvo,
+                filtro_loja_titulo=filtro_loja,
+                filtro_portador=filtro_portador,
+                filtro_alvo=filtro_alvo,
+                filtro_status=filtro_status,
+                filtro_vencimento=filtro_vencimento,
+                filtro_dias=_sql_dias(dias_exatos, faixas),
+            )
+        ).bindparams(*(bindparam(nome, expanding=True) for nome in expanding))
+
+    if codigos is not None and not codigos:
+        return []
+    lotes = [codigos[i : i + 1000] for i in range(0, len(codigos), 1000)] if codigos else [[]]
 
     try:
+        rows = []
         with engine.connect() as conn:
-            rows = conn.execute(stmt, params).mappings().all()
+            for lote in lotes:
+                alvo = {f"alvo{j}": c for j, c in enumerate(lote)}
+                rows.extend(conn.execute(montar(len(lote)), {**params, **alvo}).mappings().all())
     except SQLAlchemyError as exc:
         logger.warning("Falha ao consultar o SETA: %s", exc.__class__.__name__)
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
@@ -429,6 +448,37 @@ def buscar_parcelas_cobranca(
         logger.warning("Falha ao consultar parcelas no SETA: %s", exc.__class__.__name__)
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
     return resultado
+
+
+def acordos_com_parcela_paga(referencias: list[str]) -> set[str]:
+    """Das referências de acordo (`ft.auxiliar`, ex.: "RE042851"), as que têm
+    alguma parcela com status 'B' (paga). O Renegocie cancela o acordo quando o
+    título some do SETA; antes de mandar remarketing de "acordo sem entrada"
+    confirmamos que ele não foi pago. Uma consulta por lote (CTE + VALUES)."""
+
+    if not referencias:
+        return set()
+    engine = engine_ou_erro()
+    pagas: set[str] = set()
+    try:
+        with engine.connect() as conn:
+            for i in range(0, len(referencias), 1000):
+                lote = referencias[i : i + 1000]
+                values = ", ".join(f"(:r{j})" for j in range(len(lote)))
+                sql = f"""
+                    WITH acordos(auxiliar) AS (VALUES {values})
+                    SELECT DISTINCT trim(a.auxiliar) AS auxiliar
+                      FROM acordos a
+                      -- auxiliar é char(10): compara bruto, como o JOIN de vendas acima
+                      JOIN financeiro_titulos ft ON ft.auxiliar = CAST(a.auxiliar AS char(10))
+                     WHERE ft.status = 'B'
+                """
+                params = {f"r{j}": ref for j, ref in enumerate(lote)}
+                pagas.update(r[0] for r in conn.execute(text(sql), params))
+    except SQLAlchemyError as exc:
+        logger.warning("Falha ao consultar acordos no SETA: %s", exc.__class__.__name__)
+        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
+    return pagas
 
 
 def situacao_titulos(codigos: list[str]) -> dict[str, dict]:

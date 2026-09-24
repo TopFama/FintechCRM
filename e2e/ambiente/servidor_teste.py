@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -30,7 +31,7 @@ for var in ("DATABASE_URL", "SETA_DB_HOST", "JWT_SECRET", "ENCRYPTION_KEY", "ADM
 if "seta" in os.environ["DATABASE_URL"].split("/")[-1] and "fake" not in os.environ["DATABASE_URL"]:
     sys.exit("DATABASE_URL parece apontar para o SETA — recusado")
 
-from app import cambio, chatwoot_client, google_client, lojas_iniciais, meta_client  # noqa: E402
+from app import cambio, chatwoot_client, google_client, lojas_iniciais, meta_client, remarketing  # noqa: E402
 
 WABA = "1111111111"
 NUMEROS = [
@@ -143,6 +144,35 @@ async def _cotacao() -> float:
 
 
 cambio.cotacao_usd_brl = _cotacao
+
+# Portal TopFamaRenegocie: quem desistiu (códigos do SETA falso). Chave aceita: "chave-teste".
+CHAVE_RENEGOCIE = "chave-teste"
+
+
+def _renegocie(request: httpx.Request) -> httpx.Response:
+    if request.headers.get("X-Integration-Key") != CHAVE_RENEGOCIE:
+        return httpx.Response(401, json={"error": {"code": "INTEGRATION_KEY_INVALID"}})
+    if request.url.path != "/api/v1/integracoes/remarketing":
+        return httpx.Response(404, json={})
+    agora = datetime.now(timezone.utc)
+
+    def cliente(codigo, segmento, dias_atras, celular=None, proposta=None, ref=None):
+        return {
+            "segmento": segmento, "person_ids": [codigo], "nome": f"Cliente {codigo}",
+            "celular": celular, "evento_em": (agora - timedelta(days=dias_atras)).isoformat(),
+            "proposta": proposta, "referencia_seta": ref, "loja": None,
+        }
+
+    return httpx.Response(200, json={"clientes": [
+        cliente("00000003", "SO_IDENTIFICOU", 2, celular="5511988887777"),
+        cliente("00000004", "VIU_PROPOSTA", 40),
+        cliente("00000005", "ACORDO_SEM_ENTRADA", 3, proposta="P-900", ref="RE000900"),
+        cliente("00000027", "ACORDO_SEM_ENTRADA", 3, proposta="P-901", ref="RE000901"),
+        cliente("00000009", "CANCELOU_PROPOSTA", 1, proposta="P-902"),
+    ]})
+
+
+remarketing.TRANSPORTE = httpx.MockTransport(_renegocie)
 
 from app.main import app  # noqa: E402
 

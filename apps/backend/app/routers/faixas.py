@@ -355,6 +355,10 @@ def delete_faixa(
     esta faixa (cobranca_fila, telefones_invalidos etc. referenciam faixa_id),
     só tira a faixa da lista e para qualquer disparo agendado nela."""
 
+    if db.query(models.RemarketingSegmento).filter(models.RemarketingSegmento.faixa_id == faixa_id).first():
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Faixa de remarketing não pode ser excluída; desligue o segmento em Remarketing"
+        )
     faixa = (
         db.query(models.Faixa)
         .options(selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.dispatch_config))

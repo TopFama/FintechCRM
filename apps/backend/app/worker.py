@@ -103,6 +103,23 @@ def _extrair_leads_automatico(db: Session) -> bool:
     return True
 
 
+def _deve_rodar_remarketing(global_config: models.GlobalDispatchConfig, now_utc: datetime) -> bool:
+    """Remarketing do Renegocie: uma vez por dia útil de disparo, a partir do
+    mesmo momento da extração de leads (N min antes do início) até o fim da
+    janela — se o backend subir no meio do dia, ainda roda naquele dia."""
+
+    local_now = _local_now(now_utc)
+    if _WEEKDAY_MAP[local_now.weekday()] not in global_config.schedule_days.split(","):
+        return False
+    if global_config.remarketing_last_run == local_now.date():
+        return False
+    inicio = (
+        datetime.combine(local_now.date(), dt_time.fromisoformat(global_config.schedule_start))
+        - timedelta(minutes=global_config.leads_auto_extract_minutos_antes)
+    ).time()
+    return inicio <= local_now.time() < dt_time.fromisoformat(global_config.schedule_end)
+
+
 async def run_dispatch_cycle() -> None:
     """Varre todo FaixaEnvio (par número+template) com disparo devido.
     Envios da mesma faixa disputam a mesma fila (QueueItem.faixa_id): cada
@@ -133,6 +150,21 @@ async def run_dispatch_cycle() -> None:
                 # senão a extração nunca roda de verdade.
                 if concluiu:
                     global_config.leads_auto_extract_last_run = _local_now(now).date()
+                    db.commit()
+
+        if _deve_rodar_remarketing(global_config, now):
+            from . import remarketing  # import local: evita ciclo de import com worker
+
+            # Só conta o dia como feito quando algum segmento ligado já tem
+            # número + template: ligar antes de atribuir não perde o dia.
+            if any(r.ativo and any(e.active for e in r.faixa.envios) for r in remarketing.garantir_segmentos(db)):
+                try:
+                    remarketing.executar(db)
+                except Exception:  # noqa: BLE001 - Renegocie/SETA fora não pode travar o disparo
+                    db.rollback()
+                    logger.exception("Falha no remarketing do Renegocie")
+                else:
+                    global_config.remarketing_last_run = _local_now(now).date()
                     db.commit()
 
         try:

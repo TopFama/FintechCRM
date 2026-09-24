@@ -345,6 +345,8 @@ class FaixaOut(BaseModel):
     envios: list[FaixaEnvioOut] = []
     variable_mappings: list[FaixaVariableMappingOut] = []
     upload_field_mapping: dict = {}
+    remarketing_segmento: str | None = None
+    descricao: str | None = None
 
 
 class SincronizarFaixasAtrasoOut(BaseModel):

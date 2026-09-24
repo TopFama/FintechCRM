@@ -371,6 +371,19 @@ export const api = {
     request<StatusChatwoot>("/chatwoot/config", { method: "PUT", body: JSON.stringify(payload) }),
   testarChatwoot: () => request<{ ok: boolean; detalhe: string }>("/chatwoot/testar", { method: "POST" }),
 
+  // --- Remarketing de clientes do Renegocie ---
+  conexaoRenegocie: () => request<ConexaoRenegocie>("/remarketing/conexao"),
+  salvarConexaoRenegocie: (payload: { base_url: string; chave: string | null }) =>
+    request<ConexaoRenegocie>("/remarketing/conexao", { method: "PUT", body: JSON.stringify(payload) }),
+  testarConexaoRenegocie: () => request<{ ok: boolean; detalhe: string }>("/remarketing/conexao/testar", { method: "POST" }),
+  segmentosRemarketing: () => request<SegmentoRemarketing[]>("/remarketing/segmentos"),
+  salvarSegmentoRemarketing: (segmento: string, payload: SegmentoRemarketingIn) =>
+    request<SegmentoRemarketing>(`/remarketing/segmentos/${segmento}`, { method: "PUT", body: JSON.stringify(payload) }),
+  previaRemarketing: (segmento: string) =>
+    request<PreviaRemarketing>(`/remarketing/segmentos/${segmento}/previa`, { method: "POST" }),
+  executarRemarketing: () =>
+    request<Record<string, { encontrados: number; na_fila: number }>>("/remarketing/executar", { method: "POST" }),
+
   // --- Regras de cobrança (clusters, faixas de atraso, matriz do WhatsApp) ---
   getConfigCobranca: () => request<ConfigCobrancaOut>("/config/cobranca"),
   salvarClustersCobranca: (clusters: ClusterConfigIn[]) =>
@@ -546,6 +559,9 @@ export interface Faixa {
   envios: FaixaEnvio[];
   variable_mappings: FaixaVariableMapping[];
   upload_field_mapping: Partial<UploadFieldMapping>;
+  // Faixas de remarketing do Renegocie: recebem clientes pelo agendador, nunca por planilha.
+  remarketing_segmento: string | null;
+  descricao: string | null;
 }
 
 export interface QueueItem {
@@ -935,4 +951,48 @@ export interface PagamentosPage {
   valor_cobrado: string;
   valor_pago: string;
   itens: PagamentoCliente[];
+}
+
+export interface ConexaoRenegocie {
+  configurado: boolean;
+  base_url: string | null;
+}
+
+export interface SegmentoRemarketingIn {
+  ativo: boolean;
+  janela_dias: number;
+  recontato_dias: number;
+  cobradoras: string[];
+  faixas_atraso: string[];
+  clusters: string[];
+  valor_min: string | null;
+  valor_max: string | null;
+}
+
+export interface SegmentoRemarketing extends SegmentoRemarketingIn {
+  segmento: string;
+  nome: string;
+  descricao: string;
+  faixa_id: string;
+  faixa_nome: string;
+  envios_ativos: number;
+  ultima_execucao: string | null;
+  ultimo_resultado: { encontrados?: number; na_fila?: number };
+}
+
+export interface PreviaRemarketing {
+  total_renegocie: number;
+  total: number;
+  gerado_em: string;
+  clientes: {
+    codigo: string;
+    nome: string;
+    celular: string | null;
+    faixa: string | null;
+    dias_atraso: number;
+    valor_cobrar: string;
+    cluster: string;
+    evento_em: string;
+    proposta: string | null;
+  }[];
 }

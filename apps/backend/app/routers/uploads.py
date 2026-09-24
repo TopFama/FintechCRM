@@ -100,6 +100,10 @@ async def upload_planilha(
     user: models.User = Depends(get_current_user),
 ):
     faixa = _load_faixa(db, faixa_id)
+    if faixa.remarketing_segmento:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Faixa de remarketing recebe clientes do Renegocie, não por planilha"
+        )
     templates_ativos = _templates_ativos(faixa)
     if not templates_ativos:
         raise HTTPException(

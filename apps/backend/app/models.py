@@ -165,6 +165,27 @@ class Faixa(Base):
     variable_mappings: Mapped[list["FaixaVariableMapping"]] = relationship(
         back_populates="faixa", cascade="all, delete-orphan"
     )
+    # Faixa de remarketing do Renegocie: recebe clientes pelo agendador, nunca
+    # por planilha. None nas faixas de atraso.
+    remarketing: Mapped["RemarketingSegmento | None"] = relationship(
+        primaryjoin="Faixa.id == RemarketingSegmento.faixa_id", uselist=False, viewonly=True, lazy="selectin"
+    )
+
+    @property
+    def remarketing_segmento(self) -> str | None:
+        return self.remarketing.segmento if self.remarketing else None
+
+    @property
+    def descricao(self) -> str | None:
+        return DESCRICOES_REMARKETING.get(self.remarketing.segmento) if self.remarketing else None
+
+
+DESCRICOES_REMARKETING = {
+    "SO_IDENTIFICOU": "Clientes que entraram no Renegocie com CPF e data de nascimento, mas não chegaram a ver a proposta.",
+    "VIU_PROPOSTA": "Clientes que chegaram à tela de proposta do Renegocie e saíram sem fechar o acordo.",
+    "CANCELOU_PROPOSTA": "Clientes que fecharam uma proposta no Renegocie e cancelaram antes de a equipe lançar.",
+    "ACORDO_SEM_ENTRADA": "Clientes com acordo lançado no SETA que foi cancelado porque a entrada não foi paga (sem parcela com status B).",
+}
 
 
 class FaixaEnvio(Base):
@@ -317,6 +338,7 @@ class GlobalDispatchConfig(Base):
     leads_auto_extract: Mapped[bool] = mapped_column(Boolean, default=False)
     leads_auto_extract_minutos_antes: Mapped[int] = mapped_column(Integer, default=15)
     leads_auto_extract_last_run: Mapped[date | None] = mapped_column(Date, nullable=True)
+    remarketing_last_run: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Ritmo de disparo único pra toda a operação (antes era por envio).
     interval_seconds: Mapped[int] = mapped_column(Integer, default=5, server_default="5")
     batch_size: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
@@ -518,3 +540,42 @@ class Loja(Base):
     cluster_cobradora: Mapped[str | None] = mapped_column(String, nullable=True)
     cluster_inad: Mapped[str | None] = mapped_column(String, nullable=True)
     cluster_populacao: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class IntegracaoRenegocie(Base):
+    """Conexão com o portal TopFamaRenegocie (mesma VPS), de onde vêm os
+    clientes de remarketing — linha única, cadastrada em Configurações →
+    Conexões, nunca em .env. A chave é gerada no admin do Renegocie."""
+
+    __tablename__ = "integracao_renegocie"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    base_url: Mapped[str] = mapped_column(String)
+    chave_cifrada: Mapped[str] = mapped_column(String)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RemarketingSegmento(Base):
+    """Regra de remarketing de um tipo de desistência no Renegocie (só se
+    identificou, viu a proposta, cancelou a proposta, acordo sem entrada).
+    Cada segmento tem uma faixa própria, onde se atribui número + template
+    como em qualquer faixa; os filtros vazios não restringem."""
+
+    __tablename__ = "remarketing_segmentos"
+
+    segmento: Mapped[str] = mapped_column(String, primary_key=True)
+    faixa_id: Mapped[str] = mapped_column(ForeignKey("faixas.id", ondelete="CASCADE"))
+    ativo: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Até quantos dias depois da desistência o cliente ainda entra.
+    janela_dias: Mapped[int] = mapped_column(Integer, default=30)
+    # Depois de receber, quantos dias até poder receber de novo neste segmento.
+    recontato_dias: Mapped[int] = mapped_column(Integer, default=7)
+    cobradoras: Mapped[list] = mapped_column(JSON, default=list)
+    faixas_atraso: Mapped[list] = mapped_column(JSON, default=list)
+    clusters: Mapped[list] = mapped_column(JSON, default=list)
+    valor_min: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    valor_max: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    ultima_execucao: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ultimo_resultado: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    faixa: Mapped[Faixa] = relationship()
