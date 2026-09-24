@@ -379,8 +379,15 @@ export const api = {
   segmentosRemarketing: () => request<SegmentoRemarketing[]>("/remarketing/segmentos"),
   salvarSegmentoRemarketing: (segmento: string, payload: SegmentoRemarketingIn) =>
     request<SegmentoRemarketing>(`/remarketing/segmentos/${segmento}`, { method: "PUT", body: JSON.stringify(payload) }),
-  previaRemarketing: (segmento: string) =>
-    request<PreviaRemarketing>(`/remarketing/segmentos/${segmento}/previa`, { method: "POST" }),
+  previaRemarketing: (segmento: string, periodo: { de?: string; ate?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (periodo.de) params.set("de", periodo.de);
+    if (periodo.ate) params.set("ate", periodo.ate);
+    const qs = params.toString();
+    return request<PreviaRemarketing>(`/remarketing/segmentos/${segmento}/previa${qs ? `?${qs}` : ""}`, {
+      method: "POST",
+    });
+  },
   executarRemarketing: () =>
     request<Record<string, { encontrados: number; na_fila: number }>>("/remarketing/executar", { method: "POST" }),
 
@@ -994,6 +1001,6 @@ export interface PreviaRemarketing {
     cluster: string;
     evento_em: string;
     referencia_seta: string | null;
-    situacao_acordo: "nao_pago" | "cancelado" | null;
+    entrada_vencimento: string | null;
   }[];
 }

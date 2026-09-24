@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, pareceAdmin, PreviaRemarketing, SegmentoRemarketing, SegmentoRemarketingIn } from "../../api";
-import { formatBRL, formatCelular, formatDataHora } from "../../format";
+import { formatBRL, formatCelular, formatData, formatDataHora } from "../../format";
 import { IconAlert, IconEye, IconRefresh } from "../../icons";
+import FiltroPeriodo, { Periodo } from "../FiltroPeriodo";
 import MultiSelect from "../MultiSelect";
 import Paginacao from "../Paginacao";
 import SortableTh from "../SortableTh";
@@ -85,19 +86,36 @@ export default function RemarketingCard() {
 }
 
 type ClientePrevia = PreviaRemarketing["clientes"][number];
-type ColunaPrevia = "nome" | "celular" | "cluster" | "faixa" | "valor_cobrar" | "evento_em" | "referencia_seta" | "situacao_acordo";
+type ColunaPrevia =
+  | "nome"
+  | "celular"
+  | "cluster"
+  | "faixa"
+  | "valor_cobrar"
+  | "evento_em"
+  | "referencia_seta"
+  | "entrada_vencimento";
 
-const COLUNAS_PREVIA: [ColunaPrevia, string][] = [
-  ["nome", "Cliente"],
-  ["celular", "Celular"],
-  ["cluster", "Cluster"],
-  ["faixa", "Faixa"],
-  ["valor_cobrar", "Valor a cobrar"],
-  ["evento_em", "Desistiu em"],
-  ["referencia_seta", "Proposta"],
-];
+// Rótulo da data do evento em cada segmento
+const ROTULO_EVENTO: Record<string, string> = {
+  SO_IDENTIFICOU: "Identificou-se em",
+  VIU_PROPOSTA: "Simulou em",
+  ACORDO_ATIVO: "Lançado em",
+};
 
-const SITUACAO_ACORDO: Record<string, string> = { nao_pago: "Entrada não paga", cancelado: "Cancelado" };
+function colunasDaPrevia(segmento: string): [ColunaPrevia, string][] {
+  const colunas: [ColunaPrevia, string][] = [
+    ["nome", "Cliente"],
+    ["celular", "Celular"],
+    ["cluster", "Cluster"],
+    ["faixa", "Faixa"],
+    ["valor_cobrar", "Valor a cobrar"],
+    ["evento_em", ROTULO_EVENTO[segmento] ?? "Data"],
+    ["referencia_seta", "Proposta"],
+  ];
+  if (segmento === "ACORDO_ATIVO") colunas.push(["entrada_vencimento", "Entrada venceu em"]);
+  return colunas;
+}
 
 function paraForm(s: SegmentoRemarketing): SegmentoRemarketingIn {
   return {
@@ -131,8 +149,9 @@ function SegmentoForm({
   const [previaOffset, setPreviaOffset] = useState(0);
   const [previaLimit, setPreviaLimit] = useState(25);
   const previaSort = useSort<ColunaPrevia>("evento_em");
-  const [filtroSituacao, setFiltroSituacao] = useState<"" | "nao_pago" | "cancelado">("");
-  const temSituacao = segmento.segmento === "ACORDO_SEM_ENTRADA";
+  const [periodoPrevia, setPeriodoPrevia] = useState<Periodo>({});
+  const temPeriodo = Boolean(periodoPrevia.de || periodoPrevia.ate);
+  const acordo = segmento.segmento === "ACORDO_ATIVO";
   const id = segmento.segmento.toLowerCase();
   const alterado = JSON.stringify(form) !== JSON.stringify(paraForm(segmento));
   const chavePrevia = previaSort.sortKey;
@@ -143,16 +162,12 @@ function SegmentoForm({
       : chavePrevia === "valor_cobrar"
         ? (c) => Number(c.valor_cobrar)
         : (c) => (c[chavePrevia] ?? null) as string | null;
-  const clientesPrevia = previa
-    ? previa.clientes.filter((c) => !filtroSituacao || c.situacao_acordo === filtroSituacao)
-    : [];
+  const clientesPrevia = previa ? previa.clientes : [];
   const paginaPrevia = ordenarPor(clientesPrevia, valorPrevia, previaSort.sortDir).slice(
     previaOffset,
     previaOffset + previaLimit,
   );
-  const colunasPrevia: [ColunaPrevia, string][] = temSituacao
-    ? [...COLUNAS_PREVIA, ["situacao_acordo", "Situação"]]
-    : COLUNAS_PREVIA;
+  const colunasPrevia = colunasDaPrevia(segmento.segmento);
 
   useEffect(() => setForm(paraForm(segmento)), [segmento]);
 
@@ -181,7 +196,7 @@ function SegmentoForm({
     setErro(null);
     setCarregandoPrevia(true);
     try {
-      setPrevia(await api.previaRemarketing(segmento.segmento));
+      setPrevia(await api.previaRemarketing(segmento.segmento, periodoPrevia));
       setPreviaOffset(0);
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Erro ao gerar a prévia");
@@ -311,6 +326,18 @@ function SegmentoForm({
             </div>
           </div>
         </fieldset>
+        <div className="field" style={{ marginBottom: 12 }}>
+          <span className="field-hint">
+            Período da prévia: sem período, mostra quem entraria hoje pela janela do segmento; com período, lista os
+            clientes cujo evento ({(ROTULO_EVENTO[segmento.segmento] ?? "data").toLowerCase()}) caiu nesse intervalo.
+          </span>
+          <FiltroPeriodo
+            opcoes={["hoje", "7dias", "mes", "personalizado"]}
+            inicial={null}
+            permiteLimpar
+            onChange={setPeriodoPrevia}
+          />
+        </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {podeEditar && (
             <button type="submit" disabled={salvando || !alterado}>
@@ -319,7 +346,7 @@ function SegmentoForm({
           )}
           <button type="button" className="secondary" onClick={verPrevia} disabled={carregandoPrevia || alterado}>
             <IconEye width={16} height={16} />
-            {carregandoPrevia ? "Consultando..." : "Ver quem entraria hoje"}
+            {carregandoPrevia ? "Consultando..." : temPeriodo ? "Ver clientes do período" : "Ver quem entraria hoje"}
           </button>
           {alterado && <span className="field-hint">Salve para ver a prévia com os filtros novos.</span>}
         </div>
@@ -328,34 +355,10 @@ function SegmentoForm({
       {previa && (
         <div style={{ marginTop: 16 }}>
           <p className="card-subtitle">
-            {previa.total} de {previa.total_renegocie} desistência(s) no Renegocie passam nos filtros. Não conta quem
-            já foi cobrado hoje em outra faixa.
+            {previa.total} de {previa.total_renegocie} cliente(s) do Renegocie passam nos filtros
+            {acordo ? " (acordos com a entrada vencida e em aberto no SETA)" : ""}. Não conta quem já foi cobrado hoje em
+            outra faixa.
           </p>
-          {temSituacao && previa.clientes.length > 0 && (
-            <div className="form-row" style={{ marginBottom: 12 }}>
-              <label htmlFor={`${id}-situacao`}>Situação do acordo</label>
-              <select
-                id={`${id}-situacao`}
-                value={filtroSituacao}
-                onChange={(e) => {
-                  setFiltroSituacao(e.target.value as "" | "nao_pago" | "cancelado");
-                  setPreviaOffset(0);
-                }}
-              >
-                <option value="">Todos ({previa.clientes.length})</option>
-                <option value="nao_pago">
-                  Entrada não paga ({previa.clientes.filter((c) => c.situacao_acordo === "nao_pago").length})
-                </option>
-                <option value="cancelado">
-                  Cancelado antes do vencimento ({previa.clientes.filter((c) => c.situacao_acordo === "cancelado").length})
-                </option>
-              </select>
-              <span className="field-hint">
-                A entrada vence 1 dia depois do lançamento no SETA. Sumiu do SETA depois disso = entrada não paga;
-                antes = cancelado.
-              </span>
-            </div>
-          )}
           {clientesPrevia.length > 0 && (
             <div className="table-wrap">
               <table>
@@ -391,17 +394,7 @@ function SegmentoForm({
                       <td>{formatBRL(c.valor_cobrar)}</td>
                       <td>{formatDataHora(c.evento_em)}</td>
                       <td>{c.referencia_seta ?? "—"}</td>
-                      {temSituacao && (
-                        <td>
-                          {c.situacao_acordo ? (
-                            <span className={`badge ${c.situacao_acordo === "nao_pago" ? "error" : "pending"}`}>
-                              {SITUACAO_ACORDO[c.situacao_acordo]}
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                      )}
+                      {acordo && <td>{c.entrada_vencimento ? formatData(c.entrada_vencimento) : "—"}</td>}
                     </tr>
                   ))}
                 </tbody>

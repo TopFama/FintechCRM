@@ -182,9 +182,8 @@ class Faixa(Base):
 
 DESCRICOES_REMARKETING = {
     "SO_IDENTIFICOU": "Clientes que entraram no Renegocie com CPF e data de nascimento, mas não chegaram a ver a proposta.",
-    "VIU_PROPOSTA": "Clientes que chegaram à tela de proposta do Renegocie e saíram sem fechar o acordo.",
-    "CANCELOU_PROPOSTA": "Clientes que fecharam uma proposta no Renegocie e cancelaram antes de a equipe lançar.",
-    "ACORDO_SEM_ENTRADA": "Clientes com acordo lançado no SETA que foi cancelado porque a entrada não foi paga (sem parcela com status B).",
+    "VIU_PROPOSTA": "Clientes que simularam proposta no Renegocie e não fecharam, ou fecharam e tiveram a proposta cancelada.",
+    "ACORDO_ATIVO": "Clientes com acordo lançado no SETA ainda ativo, com a entrada (primeira parcela do RE) vencida e em aberto.",
 }
 
 

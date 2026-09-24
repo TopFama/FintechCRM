@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import httpx
@@ -12,6 +12,7 @@ from ..database import get_db
 from ..deps import get_current_user, require_admin
 from ..regras_db import carregar_regras
 from ..seta_client import SetaIndisponivel
+from ..timezone import hoje_br
 
 router = APIRouter(prefix="/remarketing", tags=["remarketing"])
 
@@ -136,26 +137,46 @@ def _linha_previa(c: dict) -> dict:
         "evento_em": c["evento_em"],
         # código do acordo no SETA (ft.auxiliar, "RE" + reparcelamento); só existe se chegou a ser lançado
         "referencia_seta": c["referencia_seta"],
-        "situacao_acordo": c["situacao_acordo"],
+        "entrada_vencimento": c["entrada_vencimento"],
     }
 
 
 @router.post("/segmentos/{segmento}/previa")
-def previa(segmento: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
-    """Quem entraria hoje com os filtros salvos, sem colocar ninguém na fila."""
+def previa(
+    segmento: str,
+    de: date | None = None,
+    ate: date | None = None,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Quem entraria hoje com os filtros salvos, sem colocar ninguém na fila.
+    Com `de`/`ate`, olha os eventos desse período em vez da janela do segmento."""
 
     if segmento not in rmk.SEGMENTOS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Segmento não encontrado")
     regra = next(r for r in rmk.garantir_segmentos(db) if r.segmento == segmento)
+    periodo = None
+    dias = regra.janela_dias
+    if de or ate:
+        hoje = hoje_br()
+        periodo = (de or hoje - timedelta(days=rmk.MAX_JANELA_DIAS), ate or hoje)
+        if periodo[0] > periodo[1]:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "A data inicial é depois da final")
+        dias = (hoje - periodo[0]).days + 1
     try:
-        candidatos = rmk.buscar_no_renegocie(db, regra.janela_dias)
-        selecionados = rmk.selecionar(db, candidatos, somente={segmento})[segmento]
+        candidatos = rmk.buscar_no_renegocie(db, dias)
+        selecionados = rmk.selecionar(db, candidatos, somente={segmento}, periodo=periodo)[segmento]
     except rmk.RemarketingErro as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
     except SetaIndisponivel as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     return {
-        "total_renegocie": sum(1 for c in candidatos if c.get("segmento") == segmento),
+        "total_renegocie": sum(
+            1
+            for c in candidatos
+            if c.get("segmento") == segmento
+            and (periodo is None or periodo[0] <= rmk.dia_do_evento(c["evento_em"]) <= periodo[1])
+        ),
         "total": len(selecionados),
         "clientes": [_linha_previa(c) for c in selecionados],
         "gerado_em": datetime.utcnow(),

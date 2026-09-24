@@ -1,15 +1,16 @@
 """Remarketing de clientes que desistiram no portal TopFamaRenegocie.
 
-Uma vez por dia, antes do disparo, busca no Renegocie (mesma VPS) quem só se
-identificou, viu a proposta e parou, cancelou a proposta ou teve o acordo
-cancelado sem pagar a entrada. Cada tipo é um segmento com faixa própria
+Uma vez por dia, antes do disparo, busca no Renegocie (mesma VPS) quem se
+identificou no portal, quem simulou proposta sem fechar e quem tem acordo
+lançado no SETA ainda ativo com a entrada vencida sem pagamento. Cada tipo é
+um segmento com faixa própria
 (número + template atribuídos em Faixas) e filtros configurados
 na tela Remarketing. Daí em diante é o fluxo normal da fila: nada de
 cobrar duas vezes no mesmo dia, blacklist, expiração no fim da janela.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import httpx
@@ -30,10 +31,9 @@ from .variaveis_template import contexto_cliente, resolver_variaveis
 logger = logging.getLogger("remarketing")
 
 SEGMENTOS = {
-    "SO_IDENTIFICOU": "Só se identificou",
-    "VIU_PROPOSTA": "Viu a proposta e não fechou",
-    "CANCELOU_PROPOSTA": "Cancelou a proposta",
-    "ACORDO_SEM_ENTRADA": "Acordo cancelado sem pagar a entrada",
+    "SO_IDENTIFICOU": "Clientes identificados no portal",
+    "VIU_PROPOSTA": "Propostas simuladas",
+    "ACORDO_ATIVO": "Acordo ativo com entrada não paga",
 }
 PREFIXO_FAIXA = "Remarketing: "
 MAX_JANELA_DIAS = 180
@@ -91,7 +91,7 @@ def garantir_segmentos(db: Session) -> list[models.RemarketingSegmento]:
 def buscar_no_renegocie(db: Session, dias: int) -> list[dict]:
     config = db.query(models.IntegracaoRenegocie).first()
     if config is None:
-        raise RemarketingErro("Conexão com o Renegocie não configurada (tela Remarketing)")
+        raise RemarketingErro("Conexão com o Renegocie não configurada (Configurações → Conexões)")
     chave = crypto.decifrar(config.chave_cifrada)
     if not chave:
         raise RemarketingErro("Não foi possível ler a chave do Renegocie; cadastre de novo")
@@ -121,24 +121,10 @@ def _evento(valor: str) -> datetime:
     return instante
 
 
-# A entrada do acordo vence 1 dia depois do lançamento no SETA.
-PRAZO_ENTRADA_DIAS = 1
+def dia_do_evento(valor: str) -> date:
+    """Data do evento no fuso de Brasília."""
 
-
-def situacao_acordo(lancado_em: str | None, cancelado_em: str) -> str | None:
-    """Acordo que sumiu do SETA depois do vencimento da entrada = "nao_pago";
-    antes = "cancelado". Sem data de lançamento não dá pra saber (None)."""
-
-    if not lancado_em:
-        return None
-    lancado = datetime.fromisoformat(lancado_em)
-    cancelado = datetime.fromisoformat(cancelado_em)
-    if lancado.tzinfo is None:
-        lancado = lancado.replace(tzinfo=timezone.utc)
-    if cancelado.tzinfo is None:
-        cancelado = cancelado.replace(tzinfo=timezone.utc)
-    vencimento_entrada = lancado.astimezone(BUSINESS_TZ).date() + timedelta(days=PRAZO_ENTRADA_DIAS)
-    return "nao_pago" if cancelado.astimezone(BUSINESS_TZ).date() > vencimento_entrada else "cancelado"
+    return _evento(valor).replace(tzinfo=timezone.utc).astimezone(BUSINESS_TZ).date()
 
 
 def _recontatados(db: Session, regra: models.RemarketingSegmento, agora: datetime) -> set[str]:
@@ -160,10 +146,12 @@ def selecionar(
     candidatos: list[dict],
     agora: datetime | None = None,
     somente: set[str] | None = None,
+    periodo: tuple[date, date] | None = None,
 ) -> dict[str, list[dict]]:
     """Por segmento ativo (ou os de `somente`, ligados ou não, para a prévia),
     os clientes que passam nos filtros, já com os dados do SETA (valor,
-    atraso, telefone) prontos para a fila."""
+    atraso, telefone) prontos para a fila. `periodo` (só na prévia) troca a
+    janela do segmento por um intervalo de datas do evento, no fuso de Brasília."""
 
     agora = agora or datetime.utcnow()
     regras_seg = {
@@ -175,13 +163,12 @@ def selecionar(
     if not regras_seg or not candidatos:
         return resultado
 
-    no_prazo = [
-        c
-        for c in candidatos
-        if c.get("segmento") in regras_seg
-        and c.get("person_ids")
-        and _evento(c["evento_em"]) >= agora - timedelta(days=regras_seg[c["segmento"]].janela_dias)
-    ]
+    def dentro(c: dict) -> bool:
+        if periodo is not None:
+            return periodo[0] <= dia_do_evento(c["evento_em"]) <= periodo[1]
+        return _evento(c["evento_em"]) >= agora - timedelta(days=regras_seg[c["segmento"]].janela_dias)
+
+    no_prazo = [c for c in candidatos if c.get("segmento") in regras_seg and c.get("person_ids") and dentro(c)]
     if not no_prazo:
         return resultado
 
@@ -205,8 +192,8 @@ def selecionar(
         )
         por_codigo[cliente["codigo"]] = cliente
 
-    refs = sorted({c["referencia_seta"] for c in no_prazo if c["segmento"] == "ACORDO_SEM_ENTRADA" and c.get("referencia_seta")})
-    acordos_pagos = seta_client.acordos_com_parcela_paga(refs) if refs else set()
+    refs = sorted({c["referencia_seta"] for c in no_prazo if c["segmento"] == "ACORDO_ATIVO" and c.get("referencia_seta")})
+    entradas_vencidas = seta_client.entradas_vencidas_em_aberto(refs) if refs else {}
 
     lojas_por_cobradora: dict[str, set[str] | None] = {}
     for segmento, regra in regras_seg.items():
@@ -218,8 +205,9 @@ def selecionar(
     for c in no_prazo:
         segmento = c["segmento"]
         regra = regras_seg[segmento]
-        if segmento == "ACORDO_SEM_ENTRADA" and c.get("referencia_seta") in acordos_pagos:
-            continue  # parcela com status 'B': o acordo foi pago
+        # acordo pago, ainda no prazo da entrada ou que já sumiu do SETA fica de fora
+        if segmento == "ACORDO_ATIVO" and c.get("referencia_seta") not in entradas_vencidas:
+            continue
         # sem parcela vencida no SETA = já pagou, renegociou ou está na blacklist
         cliente = next((por_codigo[str(p).strip()] for p in c["person_ids"] if str(p).strip() in por_codigo), None)
         if cliente is None or cliente["codigo"] in recontato[segmento]:
@@ -245,9 +233,7 @@ def selecionar(
                 "segmento": segmento,
                 "evento_em": c["evento_em"],
                 "referencia_seta": c.get("referencia_seta"),
-                "situacao_acordo": (
-                    situacao_acordo(c.get("lancado_em"), c["evento_em"]) if segmento == "ACORDO_SEM_ENTRADA" else None
-                ),
+                "entrada_vencimento": entradas_vencidas.get(c.get("referencia_seta")),
             }
         )
     for lista in resultado.values():

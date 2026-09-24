@@ -7,7 +7,7 @@ test.describe.serial("Remarketing do Renegocie", () => {
   const acordo = (page: import("@playwright/test").Page) => card(page, "Acordo cancelado sem pagar a entrada");
 
   test("conexão com o Renegocie: chave errada é recusada, a certa conecta", async ({ page }) => {
-    await page.goto("/remarketing");
+    await page.goto("/configuracoes");
     const renegocie = card(page, /^Renegocie/);
     await expect(renegocie.getByLabel("Endereço do Renegocie")).toHaveValue("http://renegocie-api:8000");
     await renegocie.getByLabel("Chave de integração").fill("chave-errada");

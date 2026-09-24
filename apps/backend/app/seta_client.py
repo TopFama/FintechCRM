@@ -450,35 +450,40 @@ def buscar_parcelas_cobranca(
     return resultado
 
 
-def acordos_com_parcela_paga(referencias: list[str]) -> set[str]:
-    """Das referências de acordo (`ft.auxiliar`, ex.: "RE042851"), as que têm
-    alguma parcela com status 'B' (paga). O Renegocie cancela o acordo quando o
-    título some do SETA; antes de mandar remarketing de "acordo sem entrada"
-    confirmamos que ele não foi pago. Uma consulta por lote (CTE + VALUES)."""
+def entradas_vencidas_em_aberto(referencias: list[str]) -> dict[str, date]:
+    """Das referências de acordo (`ft.auxiliar`, ex.: "RE042851"), as que ainda
+    existem no SETA com a entrada — a parcela de vencimento mais antigo —
+    em aberto (status 'A') e já vencida. Devolve referência → vencimento da
+    entrada. Uma consulta por lote (CTE + VALUES)."""
 
     if not referencias:
-        return set()
+        return {}
     engine = engine_ou_erro()
-    pagas: set[str] = set()
+    vencidas: dict[str, date] = {}
     try:
         with engine.connect() as conn:
             for i in range(0, len(referencias), 1000):
                 lote = referencias[i : i + 1000]
                 values = ", ".join(f"(:r{j})" for j in range(len(lote)))
                 sql = f"""
-                    WITH acordos(auxiliar) AS (VALUES {values})
-                    SELECT DISTINCT trim(a.auxiliar) AS auxiliar
-                      FROM acordos a
-                      -- auxiliar é char(10): compara bruto, como o JOIN de vendas acima
-                      JOIN financeiro_titulos ft ON ft.auxiliar = CAST(a.auxiliar AS char(10))
-                     WHERE ft.status = 'B'
+                    WITH acordos(auxiliar) AS (VALUES {values}),
+                    entradas AS (
+                        SELECT DISTINCT ON (ft.auxiliar)
+                               trim(ft.auxiliar) AS auxiliar, ft.status, ft.vencimento
+                          FROM acordos a
+                          -- auxiliar é char(10): compara bruto, como o JOIN de vendas acima
+                          JOIN financeiro_titulos ft ON ft.auxiliar = CAST(a.auxiliar AS char(10))
+                         ORDER BY ft.auxiliar, ft.vencimento, ft.documento
+                    )
+                    SELECT auxiliar, vencimento FROM entradas
+                     WHERE status = 'A' AND vencimento < current_date
                 """
                 params = {f"r{j}": ref for j, ref in enumerate(lote)}
-                pagas.update(r[0] for r in conn.execute(text(sql), params))
+                vencidas.update({r[0]: r[1] for r in conn.execute(text(sql), params)})
     except SQLAlchemyError as exc:
         logger.warning("Falha ao consultar acordos no SETA: %s", exc.__class__.__name__)
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
-    return pagas
+    return vencidas
 
 
 def situacao_titulos(codigos: list[str]) -> dict[str, dict]:

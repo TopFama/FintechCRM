@@ -1,5 +1,5 @@
 import RemarketingCard from "../components/config/RemarketingCard";
-import RenegocieConexaoCard from "../components/config/RenegocieConexaoCard";
+import { Link } from "react-router-dom";
 
 export default function Remarketing() {
   return (
@@ -8,16 +8,13 @@ export default function Remarketing() {
         <div>
           <h2>Remarketing</h2>
           <div className="subtitle">
-            Clientes que desistiram da proposta no portal Renegocie: conexão, filtros por segmento e prévia de quem
-            entraria hoje
+            Clientes do portal Renegocie: filtros por segmento e prévia de quem entraria. A conexão com o Renegocie
+            fica em <Link to="/configuracoes">Configurações → Conexões</Link>.
           </div>
         </div>
       </div>
 
-      <RenegocieConexaoCard />
-      <div style={{ marginTop: 16 }}>
-        <RemarketingCard />
-      </div>
+      <RemarketingCard />
     </div>
   );
 }

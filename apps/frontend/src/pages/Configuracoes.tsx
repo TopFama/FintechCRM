@@ -9,6 +9,7 @@ import OrcamentoCard from "../components/config/OrcamentoCard";
 import LojasCard from "../components/config/LojasCard";
 import JurosMultaCard from "../components/config/JurosMultaCard";
 import RegrasCobrancaCard from "../components/config/RegrasCobrancaCard";
+import RenegocieConexaoCard from "../components/config/RenegocieConexaoCard";
 import TemplatesCard from "../components/config/TemplatesCard";
 import TokensMetaCard from "../components/config/TokensMetaCard";
 import UsuariosCard from "../components/config/UsuariosCard";
@@ -457,6 +458,8 @@ export default function Configuracoes() {
           </div>
         )}
       </div>
+
+      <RenegocieConexaoCard />
 
       {/* Chatwoot */}
       <div className="card">
