@@ -136,11 +136,46 @@ def obter_dados_efetividade(
         (p.codigo_cliente, _dia_br(p.cobrado_em)) for p in parcelas_db if p.cobrado_em is not None
     }
     pagamentos: dict[tuple[str, date], date] = {}
+    valores_pagos: dict[tuple[str, date], dict] = {}
     if pares_cobranca:
         try:
             pagamentos = seta_client.pagamentos_pos_cobranca(sorted(pares_cobranca), dias_janela)
+            # Recebimento = o que entrou de fato no SETA na janela (mesma soma do
+            # relatório Quem pagou e do card do Dashboard), não o valor cobrado.
+            valores_pagos = seta_client.valores_pagos_pos_cobranca(
+                sorted(pares_cobranca), dias_janela=dias_janela
+            )
         except seta_client.SetaIndisponivel as exc:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+
+    # O SETA diz quanto o cliente pagou por (cliente, data da cobrança), não
+    # por parcela: reparte proporcionalmente ao valor cobrado de cada parcela
+    # daquela cobrança, pra somar certo por faixa e por loja.
+    cobrado_por_par: dict[tuple[str, date], Decimal] = {}
+    for p in parcelas_db:
+        if p.cobrado_em is not None:
+            par = (p.codigo_cliente, _dia_br(p.cobrado_em))
+            cobrado_por_par[par] = cobrado_por_par.get(par, Decimal("0")) + Decimal(str(p.valor_cobrar or 0))
+    qtd_por_par: dict[tuple[str, date], int] = {}
+    for p in parcelas_db:
+        if p.cobrado_em is not None:
+            par = (p.codigo_cliente, _dia_br(p.cobrado_em))
+            qtd_por_par[par] = qtd_por_par.get(par, 0) + 1
+    ja_repartido: dict[tuple[str, date], Decimal] = {}
+    vistos: dict[tuple[str, date], int] = {}
+
+    def _parte_paga(par: tuple[str, date], valor_cobrar) -> Decimal:
+        total = Decimal(str((valores_pagos.get(par) or {}).get("valor_pago") or 0))
+        vistos[par] = vistos.get(par, 0) + 1
+        if vistos[par] == qtd_por_par[par]:
+            # última parcela leva o resto do arredondamento
+            parte = total - ja_repartido.get(par, Decimal("0"))
+        else:
+            base = cobrado_por_par[par]
+            peso = Decimal(str(valor_cobrar or 0)) / base if base else Decimal(1) / qtd_por_par[par]
+            parte = (total * peso).quantize(Decimal("0.01"))
+        ja_repartido[par] = ja_repartido.get(par, Decimal("0")) + parte
+        return parte
 
     itens = []
     for p in parcelas_db:
@@ -152,7 +187,7 @@ def obter_dados_efetividade(
 
         if data_cobranca and (p.codigo_cliente, data_cobranca) in pagamentos:
             pago = True
-            valor_pago = Decimal(str(p.valor_cobrar or 0))
+            valor_pago = _parte_paga((p.codigo_cliente, data_cobranca), p.valor_cobrar)
         elif sit and sit.get("status") == "S":
             renegociada = True
 
