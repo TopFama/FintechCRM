@@ -484,8 +484,8 @@ export default function Configuracoes() {
         <form onSubmit={salvarChatwoot}>
           <div className="form-row">
             <div className="field">
-              <label>URL base</label>
-              <input
+              <label htmlFor="config-url-base">URL base</label>
+              <input id="config-url-base"
                 placeholder="https://chat.suaempresa.com.br"
                 value={formChatwoot.base_url}
                 onChange={(e) => setFormChatwoot({ ...formChatwoot, base_url: e.target.value })}
@@ -493,8 +493,8 @@ export default function Configuracoes() {
               />
             </div>
             <div className="field">
-              <label>ID da conta</label>
-              <input
+              <label htmlFor="config-id-da-conta">ID da conta</label>
+              <input id="config-id-da-conta"
                 value={formChatwoot.account_id}
                 onChange={(e) => setFormChatwoot({ ...formChatwoot, account_id: e.target.value })}
                 required
@@ -502,8 +502,8 @@ export default function Configuracoes() {
             </div>
           </div>
           <div className="field">
-            <label>Token de acesso da API</label>
-            <input
+            <label htmlFor="config-token-de-acesso">Token de acesso da API</label>
+            <input id="config-token-de-acesso"
               type="password"
               placeholder={chatwoot?.configurado ? "•••••••• (deixe em branco pra manter o atual)" : ""}
               value={formChatwoot.api_access_token}
@@ -540,8 +540,8 @@ export default function Configuracoes() {
               <>
                 <div className="form-row">
                   <div className="field">
-                    <label>Template</label>
-                    <select value={testeTemplateId} onChange={(e) => selecionarTemplateTeste(e.target.value)}>
+                    <label htmlFor="config-template">Template</label>
+                    <select id="config-template" value={testeTemplateId} onChange={(e) => selecionarTemplateTeste(e.target.value)}>
                       <option value="">Selecione...</option>
                       {templates.map((t) => (
                         <option key={t.id} value={t.id}>
@@ -551,8 +551,8 @@ export default function Configuracoes() {
                     </select>
                   </div>
                   <div className="field">
-                    <label>Número de origem</label>
-                    <select value={testeNumeroId} onChange={(e) => setTesteNumeroId(e.target.value)}>
+                    <label htmlFor="config-numero-de-origem">Número de origem</label>
+                    <select id="config-numero-de-origem" value={testeNumeroId} onChange={(e) => setTesteNumeroId(e.target.value)}>
                       <option value="">Selecione...</option>
                       {numerosChatwoot.map((n) => (
                         <option key={n.id} value={n.id}>
@@ -562,8 +562,8 @@ export default function Configuracoes() {
                     </select>
                   </div>
                   <div className="field">
-                    <label>Celular de destino</label>
-                    <input
+                    <label htmlFor="config-celular-de-destino">Celular de destino</label>
+                    <input id="config-celular-de-destino"
                       value={testeCelular}
                       onChange={(e) => setTesteCelular(e.target.value)}
                       placeholder="55DDDNÚMERO"
@@ -578,8 +578,8 @@ export default function Configuracoes() {
                       <div className="template-preview-vars">
                         {testeTemplate.variables.map((v) => (
                           <div className="field" key={v.id}>
-                            <label>{`{{${v.position}}}`} ({v.internal_name})</label>
-                            <input
+                            <label htmlFor={`config-var-${v.id}`}>{`{{${v.position}}}`} ({v.internal_name})</label>
+                            <input id={`config-var-${v.id}`}
                               value={testeVariaveis[v.internal_name] || ""}
                               onChange={(e) =>
                                 setTesteVariaveis((atual) => ({ ...atual, [v.internal_name]: e.target.value }))

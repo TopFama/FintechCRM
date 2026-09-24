@@ -92,16 +92,16 @@ export default function FaixaWizard() {
             <h3>Nome da faixa e template</h3>
             <p className="card-subtitle">O nome é livre — use o rótulo que fizer sentido para a sua régua de cobrança.</p>
             <div className="field">
-              <label>Nome da faixa</label>
-              <input
+              <label htmlFor="wizard-nome-da-faixa">Nome da faixa</label>
+              <input id="wizard-nome-da-faixa"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="ex. RENEGOCIE, 21 A 30"
               />
             </div>
             <div className="field">
-              <label>Template aprovado</label>
-              <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+              <label htmlFor="wizard-template-aprovado">Template aprovado</label>
+              <select id="wizard-template-aprovado" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
                 <option value="">Selecione...</option>
                 {templates
                   .filter((t) => t.status === "approved")
@@ -159,8 +159,8 @@ export default function FaixaWizard() {
             {selectedTemplate.variables.length === 0 && <p className="text-muted">Este template não tem variáveis no corpo.</p>}
             {selectedTemplate.variables.map((v) => (
               <div className="field" key={v.id}>
-                <label>Variável interna: {v.internal_name}</label>
-                <input
+                <label htmlFor={`wizard-var-${v.id}`}>Variável interna: {v.internal_name}</label>
+                <input id={`wizard-var-${v.id}`}
                   value={columnByVariable[v.id] || v.internal_name}
                   onChange={(e) => setColumnByVariable({ ...columnByVariable, [v.id]: e.target.value })}
                 />

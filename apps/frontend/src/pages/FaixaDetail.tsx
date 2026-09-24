@@ -452,8 +452,8 @@ export default function FaixaDetail() {
             <h4>{envioEditandoId ? "Editar envio" : "Novo envio"}</h4>
             <div className="form-row">
               <div className="field">
-                <label>Número de envio</label>
-                <select value={formNumberId} onChange={(e) => setFormNumberId(e.target.value)}>
+                <label htmlFor="faixa-numero-de-envio">Número de envio</label>
+                <select id="faixa-numero-de-envio" value={formNumberId} onChange={(e) => setFormNumberId(e.target.value)}>
                   <option value="">Selecione...</option>
                   {numerosDisponiveis.map((n) => (
                     <option key={n.id} value={n.id}>
@@ -466,9 +466,9 @@ export default function FaixaDetail() {
                 )}
               </div>
               <div className="field">
-                <label>Template</label>
+                <label htmlFor="faixa-template">Template</label>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <select value={formTemplateId} onChange={(e) => selecionarTemplateForm(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
+                  <select id="faixa-template" value={formTemplateId} onChange={(e) => selecionarTemplateForm(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
                     <option value="">Selecione...</option>
                     {templatesAprovados.map((t) => (
                       <option key={t.id} value={t.id}>
@@ -527,11 +527,11 @@ export default function FaixaDetail() {
                     const selectValue = m?.fonte_tipo === "campo_cliente" ? `campo:${m.valor}` : "";
                     return (
                       <div className="field" key={v.id} style={{ minWidth: 260 }}>
-                        <label>
+                        <label htmlFor={`faixa-var-${v.id}`}>
                           {`{{${v.position}}}`} ({v.internal_name})
                         </label>
                         <div style={{ display: "flex", gap: 6, minWidth: 0, flexDirection: "column" }}>
-                          <select
+                          <select id={`faixa-var-${v.id}`}
                             value={selectValue}
                             onChange={(e) => {
                               const valorSelect = e.target.value;

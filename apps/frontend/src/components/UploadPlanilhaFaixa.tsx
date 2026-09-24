@@ -198,8 +198,8 @@ export default function UploadPlanilhaFaixa({ faixaId }: { faixaId: string }) {
 
               <div className="form-row">
                 <div className="field">
-                  <label>Coluna do código (SETA, até 8 dígitos — completa com zero à esquerda) *</label>
-                  <select value={fieldMap.codigo_cliente} onChange={(e) => setFieldMap({ ...fieldMap, codigo_cliente: e.target.value })}>
+                  <label htmlFor="upload-coluna-do-codigo">Coluna do código (SETA, até 8 dígitos — completa com zero à esquerda) *</label>
+                  <select id="upload-coluna-do-codigo" value={fieldMap.codigo_cliente} onChange={(e) => setFieldMap({ ...fieldMap, codigo_cliente: e.target.value })}>
                     <option value="">Selecione...</option>
                     {columns.map((c) => (
                       <option key={c} value={c}>
@@ -209,33 +209,8 @@ export default function UploadPlanilhaFaixa({ faixaId }: { faixaId: string }) {
                   </select>
                 </div>
                 <div className="field">
-                  <label>Coluna do nome (usa só o primeiro nome) *</label>
-                  <select value={fieldMap.nome} onChange={(e) => setFieldMap({ ...fieldMap, nome: e.target.value })}>
-                    <option value="">Selecione...</option>
-                    {columns.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="field">
-                  <label>Coluna do CPF (formata com pontos e traço) *</label>
-                  <select value={fieldMap.cpf} onChange={(e) => setFieldMap({ ...fieldMap, cpf: e.target.value })}>
-                    <option value="">Selecione...</option>
-                    {columns.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Coluna do celular *</label>
-                  <select value={fieldMap.celular} onChange={(e) => setFieldMap({ ...fieldMap, celular: e.target.value })}>
+                  <label htmlFor="upload-coluna-do-nome">Coluna do nome (usa só o primeiro nome) *</label>
+                  <select id="upload-coluna-do-nome" value={fieldMap.nome} onChange={(e) => setFieldMap({ ...fieldMap, nome: e.target.value })}>
                     <option value="">Selecione...</option>
                     {columns.map((c) => (
                       <option key={c} value={c}>
@@ -248,8 +223,33 @@ export default function UploadPlanilhaFaixa({ faixaId }: { faixaId: string }) {
 
               <div className="form-row">
                 <div className="field">
-                  <label>Coluna do valor cobrado (opcional)</label>
-                  <select value={fieldMap.valor || ""} onChange={(e) => setFieldMap({ ...fieldMap, valor: e.target.value })}>
+                  <label htmlFor="upload-coluna-do-cpf">Coluna do CPF (formata com pontos e traço) *</label>
+                  <select id="upload-coluna-do-cpf" value={fieldMap.cpf} onChange={(e) => setFieldMap({ ...fieldMap, cpf: e.target.value })}>
+                    <option value="">Selecione...</option>
+                    {columns.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="upload-coluna-do-celular">Coluna do celular *</label>
+                  <select id="upload-coluna-do-celular" value={fieldMap.celular} onChange={(e) => setFieldMap({ ...fieldMap, celular: e.target.value })}>
+                    <option value="">Selecione...</option>
+                    {columns.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="field">
+                  <label htmlFor="upload-coluna-do-valor">Coluna do valor cobrado (opcional)</label>
+                  <select id="upload-coluna-do-valor" value={fieldMap.valor || ""} onChange={(e) => setFieldMap({ ...fieldMap, valor: e.target.value })}>
                     <option value="">Nenhuma</option>
                     {columns.map((c) => (
                       <option key={c} value={c}>
@@ -268,10 +268,10 @@ export default function UploadPlanilhaFaixa({ faixaId }: { faixaId: string }) {
                       t.variables.map((v) => {
                         return (
                           <div className="field" key={v.id} style={{ minWidth: 220 }}>
-                            <label>
+                            <label htmlFor={`upload-var-${v.id}`}>
                               {t.name}: {v.internal_name} *
                             </label>
-                            <select
+                            <select id={`upload-var-${v.id}`}
                               value={fieldMap.variables[v.id] || ""}
                               onChange={(e) => setFieldMap({ ...fieldMap, variables: { ...fieldMap.variables, [v.id]: e.target.value } })}
                             >

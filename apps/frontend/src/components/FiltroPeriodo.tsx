@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 
 export type OpcaoPeriodo = "hoje" | "7dias" | "mes" | "personalizado";
 export type Periodo = { de?: string; ate?: string };
@@ -42,6 +42,8 @@ export default function FiltroPeriodo({
   onChange: (p: Periodo) => void;
 }) {
   const [ativo, setAtivo] = useState<OpcaoPeriodo | null>(inicial);
+  // Pode haver mais de um filtro de período na mesma tela (ex.: Dashboard)
+  const idBase = useId();
   const [de, setDe] = useState("");
   const [ate, setAte] = useState("");
 
@@ -75,12 +77,12 @@ export default function FiltroPeriodo({
       {ativo === "personalizado" && (
         <div className="form-row">
           <div className="field">
-            <label>Data mínima</label>
-            <input type="date" value={de} max={ate || undefined} onChange={(e) => mudarData(e.target.value, ate)} />
+            <label htmlFor={`${idBase}-de`}>Data mínima</label>
+            <input id={`${idBase}-de`} type="date" value={de} max={ate || undefined} onChange={(e) => mudarData(e.target.value, ate)} />
           </div>
           <div className="field">
-            <label>Data máxima</label>
-            <input type="date" value={ate} min={de || undefined} onChange={(e) => mudarData(de, e.target.value)} />
+            <label htmlFor={`${idBase}-ate`}>Data máxima</label>
+            <input id={`${idBase}-ate`} type="date" value={ate} min={de || undefined} onChange={(e) => mudarData(de, e.target.value)} />
           </div>
         </div>
       )}

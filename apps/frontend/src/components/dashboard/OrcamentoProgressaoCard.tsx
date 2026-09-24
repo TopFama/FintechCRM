@@ -59,8 +59,8 @@ export default function OrcamentoProgressaoCard() {
   const filtros = (
     <div className="form-row">
       <div className="field">
-        <label>Mês/ano</label>
-        <select value={selecao} onChange={(e) => setSelecao(e.target.value)}>
+        <label htmlFor="orcamento-mes-ano">Mês/ano</label>
+        <select id="orcamento-mes-ano" value={selecao} onChange={(e) => setSelecao(e.target.value)}>
           {meses.map((m) => (
             <option key={m.valor} value={m.valor}>
               {m.rotulo}
@@ -72,12 +72,12 @@ export default function OrcamentoProgressaoCard() {
       {selecao === "personalizado" && (
         <>
           <div className="field">
-            <label>Data mínima</label>
-            <input type="date" value={de} max={ate || undefined} onChange={(e) => setDe(e.target.value)} />
+            <label htmlFor="orcamento-data-minima">Data mínima</label>
+            <input id="orcamento-data-minima" type="date" value={de} max={ate || undefined} onChange={(e) => setDe(e.target.value)} />
           </div>
           <div className="field">
-            <label>Data máxima</label>
-            <input type="date" value={ate} min={de || undefined} onChange={(e) => setAte(e.target.value)} />
+            <label htmlFor="orcamento-data-maxima">Data máxima</label>
+            <input id="orcamento-data-maxima" type="date" value={ate} min={de || undefined} onChange={(e) => setAte(e.target.value)} />
           </div>
         </>
       )}

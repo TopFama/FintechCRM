@@ -180,12 +180,12 @@ export default function TemplatesCard() {
           <form onSubmit={handleCreate}>
             <div className="form-row">
               <div className="field">
-                <label>Nome interno</label>
-                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+                <label htmlFor="tpl-nome-interno">Nome interno</label>
+                <input id="tpl-nome-interno" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
               </div>
               <div className="field">
-                <label>Nome do template na Meta (snake_case)</label>
-                <input
+                <label htmlFor="tpl-nome-do-template">Nome do template na Meta (snake_case)</label>
+                <input id="tpl-nome-do-template"
                   value={form.meta_template_name}
                   onChange={(e) => setForm({ ...form, meta_template_name: e.target.value })}
                   required
@@ -195,8 +195,8 @@ export default function TemplatesCard() {
             <div className="form-row">
               {wabaIds.length > 1 && (
                 <div className="field">
-                  <label>WABA</label>
-                  <select value={selectedWabaId} onChange={(e) => setSelectedWabaId(e.target.value)} required>
+                  <label htmlFor="tpl-waba">WABA</label>
+                  <select id="tpl-waba" value={selectedWabaId} onChange={(e) => setSelectedWabaId(e.target.value)} required>
                     <option value="">Selecione...</option>
                     {wabaIds.map((id) => (
                       <option key={id} value={id}>
@@ -207,22 +207,22 @@ export default function TemplatesCard() {
                 </div>
               )}
               <div className="field">
-                <label>Idioma</label>
-                <input value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} />
+                <label htmlFor="tpl-idioma">Idioma</label>
+                <input id="tpl-idioma" value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} />
               </div>
             </div>
             <div className="form-row">
               <div className="field">
-                <label>Categoria</label>
-                <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                <label htmlFor="tpl-categoria">Categoria</label>
+                <select id="tpl-categoria" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                   <option value="UTILITY">UTILITY</option>
                   <option value="MARKETING">MARKETING</option>
                   <option value="AUTHENTICATION">AUTHENTICATION</option>
                 </select>
               </div>
               <div className="field">
-                <label>Cabeçalho com imagem?</label>
-                <select
+                <label htmlFor="tpl-cabecalho-com-imagem">Cabeçalho com imagem?</label>
+                <select id="tpl-cabecalho-com-imagem"
                   value={form.header_type}
                   onChange={(e) => setForm({ ...form, header_type: e.target.value as "none" | "image" })}
                 >
@@ -232,8 +232,8 @@ export default function TemplatesCard() {
               </div>
             </div>
             <div className="field">
-              <label>Corpo do template (use {"{{1}}"}, {"{{2}}"}... para variáveis)</label>
-              <textarea
+              <label htmlFor="tpl-corpo-do-template">Corpo do template (use {"{{1}}"}, {"{{2}}"}... para variáveis)</label>
+              <textarea id="tpl-corpo-do-template"
                 rows={4}
                 value={form.body_text}
                 onChange={(e) => setForm({ ...form, body_text: e.target.value })}
@@ -345,8 +345,8 @@ export default function TemplatesCard() {
                               <div className="template-preview-vars">
                                 {t.variables.map((v) => (
                                   <div className="field" key={v.id}>
-                                    <label>{`{{${v.position}}}`} ({v.internal_name})</label>
-                                    <select
+                                    <label htmlFor={`tpl-var-${v.id}`}>{`{{${v.position}}}`} ({v.internal_name})</label>
+                                    <select id={`tpl-var-${v.id}`}
                                       value={v.campo_sugerido || ""}
                                       onChange={(e) => handleCampoSugerido(t.id, v.id, e.target.value)}
                                     >

@@ -145,8 +145,8 @@ export default function DisparoCard() {
         {globalConfig && editandoGlobal && edicaoGlobal ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div>
-              <label style={{ display: "block", marginBottom: 4 }}>Dias</label>
-              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              <label id="disparo-dias" style={{ display: "block", marginBottom: 4 }}>Dias</label>
+              <div role="group" aria-labelledby="disparo-dias" style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                 {WEEKDAYS.map((d) => {
                   const ativo = edicaoGlobal.schedule_days.split(",").includes(d.value);
                   return (
@@ -154,6 +154,7 @@ export default function DisparoCard() {
                       key={d.value}
                       type="button"
                       className={ativo ? "small" : "secondary small"}
+                      aria-pressed={ativo}
                       onClick={() =>
                         setEdicaoGlobal({ ...edicaoGlobal, schedule_days: toggleWeekday(edicaoGlobal.schedule_days, d.value) })
                       }

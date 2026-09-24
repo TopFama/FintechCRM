@@ -200,22 +200,22 @@ export default function Relatorios() {
 
         <div className="form-row" style={{ flexWrap: "wrap", marginBottom: 12 }}>
           <div className="field">
-            <label>{tab === "invalidos" ? "Registrado de" : "Cobrado de"}</label>
-            <input type="date" value={cobradoDe} max={cobradoAte || undefined} onChange={(e) => setCobradoDe(e.target.value)} />
+            <label htmlFor="rel-cobrado-de">{tab === "invalidos" ? "Registrado de" : "Cobrado de"}</label>
+            <input id="rel-cobrado-de" type="date" value={cobradoDe} max={cobradoAte || undefined} onChange={(e) => setCobradoDe(e.target.value)} />
           </div>
           <div className="field">
-            <label>até</label>
-            <input type="date" value={cobradoAte} min={cobradoDe || undefined} onChange={(e) => setCobradoAte(e.target.value)} />
+            <label htmlFor="rel-cobrado-ate">até</label>
+            <input id="rel-cobrado-ate" type="date" value={cobradoAte} min={cobradoDe || undefined} onChange={(e) => setCobradoAte(e.target.value)} />
           </div>
           {tab === "pagamentos" && (
             <>
               <div className="field">
-                <label>Pago de</label>
-                <input type="date" value={pagoDe} max={pagoAte || undefined} onChange={(e) => setPagoDe(e.target.value)} />
+                <label htmlFor="rel-pago-de">Pago de</label>
+                <input id="rel-pago-de" type="date" value={pagoDe} max={pagoAte || undefined} onChange={(e) => setPagoDe(e.target.value)} />
               </div>
               <div className="field">
-                <label>até</label>
-                <input type="date" value={pagoAte} min={pagoDe || undefined} onChange={(e) => setPagoAte(e.target.value)} />
+                <label htmlFor="rel-pago-ate">até</label>
+                <input id="rel-pago-ate" type="date" value={pagoAte} min={pagoDe || undefined} onChange={(e) => setPagoAte(e.target.value)} />
               </div>
             </>
           )}

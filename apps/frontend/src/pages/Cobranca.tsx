@@ -181,8 +181,8 @@ export default function Cobranca() {
         <p className="card-subtitle">Escolha a faixa de atraso para liberar o envio da planilha.</p>
         <div className="form-row">
           <div className="field">
-            <label>Faixa</label>
-            <select value={faixaUploadId} onChange={(e) => setFaixaUploadId(e.target.value)}>
+            <label htmlFor="cobranca-faixa">Faixa</label>
+            <select id="cobranca-faixa" value={faixaUploadId} onChange={(e) => setFaixaUploadId(e.target.value)}>
               <option value="">Selecione a faixa...</option>
               {faixasUpload.map((f) => (
                 <option key={f.id} value={f.id}>

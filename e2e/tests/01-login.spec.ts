@@ -11,6 +11,13 @@ test.describe("Login e navegação", () => {
     }
   });
 
+  test("campos do login têm rótulo ligado (clicar no título foca o campo)", async ({ page }) => {
+    await page.goto("/login");
+    await expect(page.getByLabel("Email")).toBeVisible();
+    await page.getByText("Senha", { exact: true }).click();
+    await expect(page.getByLabel("Senha")).toBeFocused();
+  });
+
   test("senha errada mostra erro e mantém na tela de login", async ({ page }) => {
     permitirErrosConsole(page, "401");
     await page.goto("/login");
