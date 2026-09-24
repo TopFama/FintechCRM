@@ -8,7 +8,7 @@ from sqlalchemy import and_, func, or_, true
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from .. import cache, seta_client
+from .. import cache, pausas, seta_client
 from ..services import custo_whatsapp, pagos_janela_service
 from ..timezone import BUSINESS_TZ, hoje_br
 from ..database import get_db
@@ -105,6 +105,12 @@ def summary(
 
     return schemas.DashboardSummary(
         total_pendentes=count(models.QueueStatus.pending, models.QueueStatus.reserved),
+        total_pausados=(
+            db.query(func.count(models.QueueItem.id))
+            .filter(models.QueueItem.status.in_(pausas.STATUS_PENDENTE), periodo, pausas.Retencao.carregar(db).condicao())
+            .scalar()
+            or 0
+        ),
         total_enviados=count(models.QueueStatus.sent),
         total_erros=count(models.QueueStatus.error),
         total_telefones_invalidos=total_invalidos,

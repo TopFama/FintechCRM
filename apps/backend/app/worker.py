@@ -16,6 +16,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session, selectinload
 
 from . import models
+from .pausas import Retencao
 from .config import settings
 from .database import SessionLocal
 from .dispatch_service import enviar_item
@@ -174,6 +175,8 @@ async def run_dispatch_cycle() -> None:
             logger.exception("Falha ao expirar a fila após o horário final")
 
         dentro_da_janela = _within_schedule_window(global_config, now)
+        # Pausas ativas lidas uma vez por ciclo; conferidas de novo antes de cada envio
+        retencao = Retencao.carregar(db)
 
         configs = (
             db.query(models.DispatchConfig)
@@ -197,11 +200,14 @@ async def run_dispatch_cycle() -> None:
 
             envio = config.envio
             try:
+                if envio.faixa_id in retencao.faixas:
+                    continue
                 pending_items = (
                     db.query(models.QueueItem)
                     .filter(
                         models.QueueItem.faixa_id == envio.faixa_id,
                         models.QueueItem.status == models.QueueStatus.pending,
+                        ~retencao.condicao(),
                     )
                     .order_by(models.QueueItem.created_at.asc())
                     .limit(global_config.batch_size)
@@ -213,6 +219,14 @@ async def run_dispatch_cycle() -> None:
                 db.commit()
 
                 for item in pending_items:
+                    # Pausa criada ou parada feita depois da reserva: relê o item e as pausas
+                    db.refresh(item)
+                    if item.status != models.QueueStatus.reserved:
+                        continue
+                    if Retencao.carregar(db).retido(item):
+                        item.status = models.QueueStatus.pending
+                        db.commit()
+                        continue
                     # Última barreira: o mesmo cliente pode ter entrado em duas filas antes de sair em uma.
                     if ja_cobrado_hoje(db, item):
                         item.status = models.QueueStatus.error

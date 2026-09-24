@@ -198,10 +198,14 @@ function ResumoFila({
           to={linkRelatorio("pendentes", periodo)}
           valor={summary.total_pendentes}
           rotulo="Pendentes na fila"
-          ariaLabel={`Ver ${summary.total_pendentes} pendentes na fila`}
+          ariaLabel={`Ver ${summary.total_pendentes} pendentes na fila, ${summary.total_pausados} pausados`}
           tom="tone-primary"
           icone={<IconInbox />}
-        />
+        >
+          <div className={`stat-extra${summary.total_pausados > 0 ? " stat-aviso" : ""}`}>
+            {summary.total_pendentes} pendentes · {summary.total_pausados} pausados
+          </div>
+        </StatLink>
         <StatLink
           to={linkRelatorio("envios", periodo)}
           valor={summary.total_enviados}

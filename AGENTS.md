@@ -20,7 +20,7 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
 - `schemas.py` — modelos Pydantic de request/response, um bloco por área (comentários `# --- Área
   ---` separam).
 - `routers/` — um arquivo por área: `auth`, `numbers`, `templates`, `faixas`, `uploads`,
-  `dashboard`, `reports`. Rotas novas de uma área existente entram no arquivo dela.
+  `dashboard`, `reports`, `pausas`. Rotas novas de uma área existente entram no arquivo dela.
 - `meta_client.py` — **único** ponto de integração com a Graph API da Meta. Qualquer chamada nova
   à Meta entra aqui, nunca direto num router.
 - `worker.py` — worker de disparo, roda com APScheduler **dentro do mesmo processo** do backend

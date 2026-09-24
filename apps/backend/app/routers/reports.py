@@ -16,7 +16,7 @@ from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from .. import cache, seta_client
+from .. import cache, pausas, seta_client
 from ..services import efetividade_service, pagamentos_service
 from ..timezone import BUSINESS_TZ
 
@@ -491,6 +491,7 @@ def _fila_report_query(
     ate: date | None,
     sort_by: str | None = None,
     sort_dir: str = "asc",
+    loja: str | None = None,
 ):
     ultimo = _ultimo_erro()
     # erro de upload/extração não passa por log_erros: vale a entrada na fila
@@ -503,6 +504,8 @@ def _fila_report_query(
     )
     if faixa_id:
         query = query.filter(models.QueueItem.faixa_id == faixa_id)
+    if loja:
+        query = query.filter(models.QueueItem.lojas.like(f"%,{pausas.normalizar_valor('loja', loja)},%"))
     query = _no_periodo(query, models.QueueItem.created_at, de, ate)
 
     def _ordenado(coluna):
@@ -531,8 +534,12 @@ def _fila_report_query(
     return query.order_by(padrao.desc(), models.QueueItem.id)
 
 
-def _to_fila_item(item: models.QueueItem, nome_faixa: str, quando: datetime) -> schemas.FilaReportItemOut:
+def _to_fila_item(
+    item: models.QueueItem, nome_faixa: str, quando: datetime, retencao: pausas.Retencao | None = None
+) -> schemas.FilaReportItemOut:
     return schemas.FilaReportItemOut(
+        lojas=[l for l in (item.lojas or "").split(",") if l],
+        pausado=bool(retencao) and item.status in pausas.STATUS_PENDENTE and retencao.retido(item),
         id=item.id,
         codigo_cliente=item.codigo_cliente,
         nome=item.nome,
@@ -546,16 +553,22 @@ def _to_fila_item(item: models.QueueItem, nome_faixa: str, quando: datetime) -> 
     )
 
 
-def _pagina_fila(db, status_fila, faixa_id, de, ate, limit, offset, sort_by, sort_dir):
-    query = _fila_report_query(db, status_fila, faixa_id, de, ate, sort_by, sort_dir)
+def _pagina_fila(db, status_fila, faixa_id, de, ate, limit, offset, sort_by, sort_dir, loja=None):
+    query = _fila_report_query(db, status_fila, faixa_id, de, ate, sort_by, sort_dir, loja)
     total = query.count()
-    itens = [_to_fila_item(*linha) for linha in query.offset(offset).limit(limit).all()]
-    return schemas.FilaReportPage(total=total, itens=itens)
+    retencao = pausas.Retencao.carregar(db)
+    itens = [_to_fila_item(*linha, retencao) for linha in query.offset(offset).limit(limit).all()]
+    pagina = schemas.FilaReportPage(total=total, itens=itens)
+    if status_fila == _STATUS_PENDENTE:
+        pagina.total_pausados = query.filter(retencao.condicao()).order_by(None).count()
+        pagina.total_sem_loja = query.filter(models.QueueItem.lojas == ",").order_by(None).count()
+    return pagina
 
 
 @api.get("/pendentes", response_model=schemas.FilaReportPage)
 def list_pendentes(
     faixa_id: str | None = None,
+    loja: str | None = Query(None, description="Filial (ex.: 07)"),
     de: date | None = Query(None, description="Entrou na fila de (GMT-3)"),
     ate: date | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
@@ -565,22 +578,25 @@ def list_pendentes(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    return _pagina_fila(db, _STATUS_PENDENTE, faixa_id, de, ate, limit, offset, sort_by, sort_dir)
+    return _pagina_fila(db, _STATUS_PENDENTE, faixa_id, de, ate, limit, offset, sort_by, sort_dir, loja)
 
 
 @api.get("/pendentes/export")
 def export_pendentes(
     faixa_id: str | None = None,
+    loja: str | None = Query(None),
     de: date | None = Query(None),
     ate: date | None = Query(None),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _fila_report_query(db, _STATUS_PENDENTE, faixa_id, de, ate).all()
-    headers = ["Código do cliente", "Nome", "Faixa de atraso", "Valor", "Telefone", "Entrou na fila em"]
+    linhas = _fila_report_query(db, _STATUS_PENDENTE, faixa_id, de, ate, loja=loja).all()
+    retencao = pausas.Retencao.carregar(db)
+    headers = ["Código do cliente", "Nome", "Faixa de atraso", "Valor", "Telefone", "Lojas", "Entrou na fila em", "Pausado"]
     rows = [
         [item.codigo_cliente, _formula_safe(item.nome), faixa, _formula_safe(item.valor or ""),
-         _formula_safe(item.celular), _hora_br(item.created_at)]
+         _formula_safe(item.celular), (item.lojas or "").strip(","), _hora_br(item.created_at),
+         "Sim" if retencao.retido(item) else "Não"]
         for item, faixa, _q in linhas
     ]
     return Response(

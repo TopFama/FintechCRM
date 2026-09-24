@@ -285,10 +285,19 @@ export const api = {
   downloadDispatchReportXlsx: (params: { faixa_id?: string; de?: string; ate?: string }) =>
     downloadFile(`/relatorios/envios/export?${montarQuery(params)}`, "relatorio_envios.xlsx"),
   listPendentes: (
-    params: { faixa_id?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+    params: { faixa_id?: string; loja?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
   ) => request<FilaReportPage>(`/relatorios/pendentes?${montarQuery(params)}`),
-  downloadPendentesXlsx: (params: { faixa_id?: string; de?: string; ate?: string }) =>
+  downloadPendentesXlsx: (params: { faixa_id?: string; loja?: string; de?: string; ate?: string }) =>
     downloadFile(`/relatorios/pendentes/export?${montarQuery(params)}`, "relatorio_pendentes.xlsx"),
+  // --- Pausas de envio (aba Pendentes) ---
+  listarPausas: () => request<PausaEnvio[]>("/pausas"),
+  pausarEnvio: (dados: { escopo: EscopoPausa; valor: string; motivo: string; ate?: string }) =>
+    request<PausaEnvio>("/pausas", { method: "POST", body: JSON.stringify(dados) }),
+  retomarEnvio: (id: string) => request<PausaEnvio>(`/pausas/${encodeURIComponent(id)}/retomar`, { method: "POST" }),
+  previaPararEnvio: (escopo: EscopoPausa, valor: string) =>
+    request<{ qtd: number }>(`/pausas/parar/previa?${montarQuery({ escopo, valor })}`),
+  pararEnvio: (escopo: EscopoPausa, valor: string) =>
+    request<{ qtd: number }>("/pausas/parar", { method: "POST", body: JSON.stringify({ escopo, valor }) }),
   listErros: (
     params: { faixa_id?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
   ) => request<FilaReportPage>(`/relatorios/erros?${montarQuery(params)}`),
@@ -591,7 +600,7 @@ export interface QueueItem {
   cpf: string;
   valor: string | null;
   celular: string;
-  status: "pending" | "reserved" | "sent" | "error" | "invalid_phone";
+  status: "pending" | "reserved" | "sent" | "error" | "invalid_phone" | "cancelled";
   error_message: string | null;
   created_at: string;
   sent_at: string | null;
@@ -650,11 +659,29 @@ export interface FilaReportItem {
   entrou_em: string;
   mensagem: string | null;
   quando: string | null;
+  lojas: string[];
+  pausado: boolean;
 }
 
 export interface FilaReportPage {
   total: number;
   itens: FilaReportItem[];
+  total_pausados: number;
+  total_sem_loja: number;
+}
+
+export type EscopoPausa = "cliente" | "faixa" | "loja";
+
+export interface PausaEnvio {
+  id: string;
+  escopo: EscopoPausa;
+  valor: string;
+  valor_legivel: string;
+  motivo: string;
+  ate: string | null;
+  created_by: string | null;
+  created_at: string;
+  qtd_retidos: number;
 }
 
 export interface PagosJanela {
@@ -668,6 +695,7 @@ export interface PagosJanela {
 
 export interface DashboardSummary {
   total_pendentes: number;
+  total_pausados: number;
   total_enviados: number;
   total_erros: number;
   total_telefones_invalidos: number;

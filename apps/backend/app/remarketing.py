@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from . import crypto, models, seta_client
 from . import lojas as lojas_base
+from .pausas import lojas_formatadas
 from .cobranca_base import _montar_cliente, _restaurar_linha_seta
 from .cobranca_regras import faixa_de_compra
 from .fila_automatica import _fontes, clientes_bloqueados_hoje
@@ -297,6 +298,7 @@ def enfileirar(db: Session, selecionados: dict[str, list[dict]]) -> dict[str, in
                 celular_original=cliente.get("celular_original") or cliente["celular"],
                 variables_json=next(iter(por_template.values())) if len(por_template) == 1 else por_template,
                 status=models.QueueStatus.pending,
+                lojas=lojas_formatadas(cliente.get("lojas")),
             )
             if faltando:
                 item.status = models.QueueStatus.error

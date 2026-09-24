@@ -241,11 +241,15 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    as faixas ativas/marcadas para rodar agora, reserva um lote de clientes pendentes, envia via
    Graph API alternando entre os números configurados, e atualiza o status de cada envio
    (enviado/erro), com log de erro consultável no dashboard.
-8. **Dashboard** — pendentes, enviados, erros, telefones inválidos, por faixa, e os erros mais
-   recentes — tudo lido direto do Postgres do próprio sistema.
-9. **Relatórios** — telefones inválidos (código do cliente + telefone) e envios realizados (código
-   do cliente, faixa de atraso, nome, valor cobrado, telefone que cobrou e data/hora), com filtro
-   por faixa e exportação em Excel (.xlsx) já formatado.
+8. **Dashboard** — pendentes (e quantos estão pausados), enviados, erros, telefones inválidos,
+   "Pagaram em até 7 dias" (via SETA), por faixa, e os erros mais recentes. Cada card abre o
+   relatório dele com o mesmo período (`/relatorios?aba=…&de=…&ate=…`).
+9. **Relatórios** — telefones inválidos, envios realizados, pendentes, erros e quem pagou, com
+   filtro por período e faixa (na URL) e exportação em Excel (.xlsx) já formatado.
+10. **Pausas** — na aba Pendentes, qualquer usuário pode pausar (motivo obrigatório, data final
+   opcional), retomar ou parar o envio por cliente, régua (faixa) ou loja. Pausa não muda o status
+   do item: o worker só deixa de pegar o que está retido, inclusive o que entrar na fila depois.
+   Parar marca os pendentes do escopo como `cancelled` (com quem parou e quando), sem apagar.
 
 ## Testes / validação de mudanças
 

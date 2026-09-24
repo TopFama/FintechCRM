@@ -5,11 +5,15 @@ import {
   DispatchReportItem,
   Faixa,
   FilaReportItem,
+  FilaReportPage,
   InvalidPhoneRecord,
+  Loja,
   PagamentoCliente,
   PagamentosPage,
+  PausaEnvio,
 } from "../api";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
+import { AcaoPendentes, PainelAcao, PausasAtivas } from "../components/PausasPendentes";
 import SortableTh from "../components/SortableTh";
 import { formatBRL, formatData, formatDataHora } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
@@ -41,6 +45,7 @@ export default function Relatorios() {
   const cobradoAte = params.get("ate") ?? "";
   // Vem do card "Pagaram em até 7 dias": mesma janela da efetividade
   const diasJanela = params.get("dias_janela") ?? "";
+  const loja = tab === "pendentes" ? params.get("loja") ?? "" : "";
   function mudarUrl(mudancas: Record<string, string>) {
     setParams(
       (atual) => {
@@ -65,6 +70,14 @@ export default function Relatorios() {
   const [faixas, setFaixas] = useState<Faixa[]>([]);
   const [fila, setFila] = useState<FilaReportItem[]>([]);
   const [filaTotal, setFilaTotal] = useState(0);
+  const [filaInfo, setFilaInfo] = useState<Pick<FilaReportPage, "total_pausados" | "total_sem_loja">>({
+    total_pausados: 0,
+    total_sem_loja: 0,
+  });
+  const [lojas, setLojas] = useState<Loja[]>([]);
+  const [pausas, setPausas] = useState<PausaEnvio[]>([]);
+  const [acao, setAcao] = useState<AcaoPendentes | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
   const [invalidPhones, setInvalidPhones] = useState<InvalidPhoneRecord[]>([]);
   const [invalidTotal, setInvalidTotal] = useState(0);
   const [dispatchReport, setDispatchReport] = useState<DispatchReportItem[]>([]);
@@ -102,6 +115,19 @@ export default function Relatorios() {
   useEffect(() => {
     api.listFaixas().then(setFaixas).catch(() => undefined);
   }, []);
+
+  function carregarPausas() {
+    api.listarPausas().then(setPausas).catch((e) => setError(e.message));
+  }
+
+  useEffect(() => {
+    setAcao(null);
+    setAviso(null);
+    if (tab !== "pendentes") return;
+    carregarPausas();
+    if (lojas.length === 0) api.listarLojas().then(setLojas).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   function sortAtual() {
     return tab === "invalidos"
@@ -150,11 +176,14 @@ export default function Relatorios() {
             })
             .then((r) => atual() && setPagamentos(r))
         : tab === "pendentes" || tab === "erros"
-        ? (tab === "pendentes" ? api.listPendentes(params) : api.listErros(params)).then((r) => {
-            if (!atual()) return;
-            setFila(r.itens);
-            setFilaTotal(r.total);
-          })
+        ? (tab === "pendentes" ? api.listPendentes({ ...params, loja: loja || undefined }) : api.listErros(params)).then(
+            (r) => {
+              if (!atual()) return;
+              setFila(r.itens);
+              setFilaTotal(r.total);
+              setFilaInfo({ total_pausados: r.total_pausados, total_sem_loja: r.total_sem_loja });
+            }
+          )
         : tab === "invalidos"
         ? api.listInvalidPhones(params).then((r) => {
             if (!atual()) return;
@@ -175,7 +204,7 @@ export default function Relatorios() {
     setOffset(0);
     load(0, limit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, faixaId, cobradoDe, cobradoAte, pagoDe, pagoAte, diasJanela]);
+  }, [tab, faixaId, loja, cobradoDe, cobradoAte, pagoDe, pagoAte, diasJanela]);
 
   function filtrosPagamentos() {
     const nome = faixas.find((f) => f.id === faixaId)?.name;
@@ -210,7 +239,7 @@ export default function Relatorios() {
       } else if (tab === "envios") {
         await api.downloadDispatchReportXlsx(periodo);
       } else if (tab === "pendentes") {
-        await api.downloadPendentesXlsx(periodo);
+        await api.downloadPendentesXlsx({ ...periodo, loja: loja || undefined });
       } else if (tab === "erros") {
         await api.downloadErrosXlsx(periodo);
       } else {
@@ -221,6 +250,15 @@ export default function Relatorios() {
     } finally {
       setDownloading(false);
     }
+  }
+
+  function acaoEscopo(tipo: "pausar" | "parar", escopo: "faixa" | "loja"): AcaoPendentes {
+    if (escopo === "faixa") {
+      const nome = faixas.find((f) => f.id === faixaId)?.name ?? faixaId;
+      return { tipo, escopo, valor: faixaId, rotulo: `a régua ${nome}` };
+    }
+    const l = lojas.find((x) => x.filial === loja);
+    return { tipo, escopo, valor: loja, rotulo: `a loja ${l?.nome_com_cod || loja}` };
   }
 
   const totalAtual =
@@ -266,7 +304,7 @@ export default function Relatorios() {
             Quem pagou
           </button>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-            <select value={faixaId} onChange={(e) => setFaixaId(e.target.value)} style={{ minWidth: 180 }}>
+            <select aria-label="Faixa" value={faixaId} onChange={(e) => setFaixaId(e.target.value)} style={{ minWidth: 180 }}>
               <option value="">Todas as faixas</option>
               {faixas.map((f) => (
                 <option key={f.id} value={f.id}>
@@ -274,6 +312,21 @@ export default function Relatorios() {
                 </option>
               ))}
             </select>
+            {tab === "pendentes" && (
+              <select
+                aria-label="Loja"
+                value={loja}
+                onChange={(e) => mudarUrl({ loja: e.target.value })}
+                style={{ minWidth: 160 }}
+              >
+                <option value="">Todas as lojas</option>
+                {lojas.map((l) => (
+                  <option key={l.filial} value={l.filial}>
+                    {l.nome_com_cod || l.filial}
+                  </option>
+                ))}
+              </select>
+            )}
             <button className="secondary" onClick={handleDownload} disabled={downloading}>
               <IconDownload width={16} height={16} /> {downloading ? "Baixando..." : "Baixar Excel"}
             </button>
@@ -322,12 +375,86 @@ export default function Relatorios() {
           )}
         </div>
 
+        {tab === "pendentes" && (
+          <>
+            {aviso && <div className="success-box" style={{ marginBottom: 12 }}>{aviso}</div>}
+            <PausasAtivas
+              pausas={pausas}
+              onRetomar={(p) =>
+                api
+                  .retomarEnvio(p.id)
+                  .then(() => {
+                    setAviso(`Envio retomado para ${p.valor_legivel}. Volta a sair no próximo ciclo de disparo.`);
+                    carregarPausas();
+                    load();
+                  })
+                  .catch((e) => setError(e.message))
+              }
+            />
+            {(faixaId || loja) && (
+              <div className="barra-escopo">
+                {faixaId && (
+                  <>
+                    <button className="secondary small" onClick={() => setAcao(acaoEscopo("pausar", "faixa"))}>
+                      Pausar esta régua
+                    </button>
+                    <button className="secondary small" onClick={() => setAcao(acaoEscopo("parar", "faixa"))}>
+                      Parar esta régua
+                    </button>
+                  </>
+                )}
+                {loja && (
+                  <>
+                    <button className="secondary small" onClick={() => setAcao(acaoEscopo("pausar", "loja"))}>
+                      Pausar esta loja
+                    </button>
+                    <button className="secondary small" onClick={() => setAcao(acaoEscopo("parar", "loja"))}>
+                      Parar esta loja
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {acao && (
+              <PainelAcao
+                acao={acao}
+                onCancelar={() => setAcao(null)}
+                onConcluir={(msg) => {
+                  setAcao(null);
+                  setAviso(msg);
+                  carregarPausas();
+                  load();
+                }}
+              />
+            )}
+            {filaTotal > 0 && (
+              <p className="text-muted" style={{ margin: "0 0 10px" }}>
+                {filaTotal} pendente(s) · {filaInfo.total_pausados} pausado(s)
+                {filaInfo.total_sem_loja > 0 &&
+                  ` · ${filaInfo.total_sem_loja} sem loja (vieram de planilha sem cadastro do cliente; pausa por loja não os pega)`}
+              </p>
+            )}
+          </>
+        )}
+
         {loading ? (
           <div className="loading-state">Carregando...</div>
         ) : tab === "pagamentos" ? (
           <TabelaPagamentos dados={pagamentos} ordenacao={pagamentosSort} />
         ) : tab === "pendentes" || tab === "erros" ? (
-          <TabelaFila tipo={tab} itens={fila} ordenacao={tab === "pendentes" ? pendentesSort : errosSort} />
+          <TabelaFila
+            tipo={tab}
+            itens={fila}
+            ordenacao={tab === "pendentes" ? pendentesSort : errosSort}
+            onAcao={(tipo, item) =>
+              setAcao({
+                tipo,
+                escopo: "cliente",
+                valor: item.codigo_cliente,
+                rotulo: `o cliente ${item.codigo_cliente}${item.nome ? ` · ${item.nome}` : ""}`,
+              })
+            }
+          />
         ) : tab === "invalidos" ? (
           invalidPhones.length === 0 ? (
             <div className="empty-state">
@@ -556,10 +683,12 @@ function TabelaFila({
   tipo,
   itens,
   ordenacao,
+  onAcao,
 }: {
   tipo: "pendentes" | "erros";
   itens: FilaReportItem[];
   ordenacao: ReturnType<typeof useSort<ColunaFila>>;
+  onAcao: (tipo: "pausar" | "parar", item: FilaReportItem) => void;
 }) {
   if (itens.length === 0) {
     return (
@@ -585,18 +714,49 @@ function TabelaFila({
                 {rotulo}
               </SortableTh>
             ))}
+            {tipo === "pendentes" && (
+              <>
+                <th scope="col">Loja</th>
+                <th scope="col">
+                  <span className="sr-only">Ações</span>
+                </th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
           {itens.map((r) => (
             <tr key={r.id}>
               <td className="cell-strong">{r.codigo_cliente}</td>
-              <td>{r.nome || "—"}</td>
+              <td>
+                {r.nome || "—"} {r.pausado && <span className="badge pausado">Pausado</span>}
+              </td>
               <td>{r.faixa}</td>
               <td>{r.valor || "—"}</td>
               <td className="text-muted">{r.telefone}</td>
               {tipo === "pendentes" ? (
-                <td className="text-faint">{formatDataHora(r.entrou_em)}</td>
+                <>
+                  <td className="text-faint">{formatDataHora(r.entrou_em)}</td>
+                  <td className="text-muted" title={r.lojas.length ? undefined : "Sem loja: pausa por loja não pega este item"}>
+                    {r.lojas.length ? r.lojas.join(", ") : "sem loja"}
+                  </td>
+                  <td>
+                    <div className="acoes-linha">
+                      {!r.pausado && (
+                        <button
+                          className="secondary small"
+                          onClick={() => onAcao("pausar", r)}
+                          aria-label={`Pausar cliente ${r.codigo_cliente}`}
+                        >
+                          Pausar cliente
+                        </button>
+                      )}
+                      <button className="secondary small" onClick={() => onAcao("parar", r)} aria-label={`Parar ${r.codigo_cliente}`}>
+                        Parar
+                      </button>
+                    </div>
+                  </td>
+                </>
               ) : (
                 <>
                   <td>{r.mensagem}</td>

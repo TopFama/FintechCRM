@@ -11,6 +11,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
 from . import models
+from .pausas import lojas_formatadas
 from .regras_db import carregar_regras
 from .timezone import BUSINESS_TZ
 from .utils.leads_xlsx import formatar_codigo, formatar_cpf, primeiro_nome
@@ -197,6 +198,7 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
                 celular_original=lead.celular_original or lead.celular,
                 variables_json=variables_json,
                 status=models.QueueStatus.pending,
+                lojas=lojas_formatadas(lead.lojas),
             )
             if faltando:
                 item.status = models.QueueStatus.error

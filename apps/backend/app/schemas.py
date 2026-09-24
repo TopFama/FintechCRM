@@ -443,6 +443,10 @@ class DispatchReportPage(BaseModel):
 class FilaReportItemOut(BaseModel):
     """Linha dos relatórios de pendentes e de erros (itens da fila)."""
 
+    lojas: list[str] = []
+    # pendente retido por uma pausa ativa (cliente, faixa ou loja)
+    pausado: bool = False
+
     id: str
     codigo_cliente: str
     nome: str
@@ -458,6 +462,43 @@ class FilaReportItemOut(BaseModel):
 class FilaReportPage(BaseModel):
     total: int
     itens: list[FilaReportItemOut]
+    # só na aba Pendentes: quantos do total estão retidos por pausa
+    total_pausados: int = 0
+    # itens sem loja (planilha sem Lead do cliente): pausa por loja não os pega
+    total_sem_loja: int = 0
+
+
+# --- Pausas de envio ---
+
+EscopoPausa = Literal["cliente", "faixa", "loja"]
+
+
+class PausaEnvioCreate(BaseModel):
+    escopo: EscopoPausa
+    valor: str
+    motivo: str
+    ate: date | None = None
+
+
+class PausaEnvioOut(BaseModel):
+    id: str
+    escopo: EscopoPausa
+    valor: str
+    valor_legivel: str
+    motivo: str
+    ate: date | None
+    created_by: str | None
+    created_at: datetime
+    qtd_retidos: int
+
+
+class PararEnvioIn(BaseModel):
+    escopo: EscopoPausa
+    valor: str
+
+
+class PararEnvioOut(BaseModel):
+    qtd: int
 
 
 class PagosJanelaOut(BaseModel):
@@ -471,6 +512,7 @@ class PagosJanelaOut(BaseModel):
 
 class DashboardSummary(BaseModel):
     total_pendentes: int
+    total_pausados: int = 0
     total_enviados: int
     total_erros: int
     total_telefones_invalidos: int

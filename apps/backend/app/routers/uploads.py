@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, 
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
+from ..pausas import lojas_formatadas
 from ..database import get_db
 from ..regras_db import carregar_regras
 from ..fila_automatica import clientes_bloqueados_hoje
@@ -381,6 +382,20 @@ async def upload_planilha(
         accepted += 1
 
     faixa.upload_field_mapping = field_mapping.model_dump()
+
+    # Loja do item vem do Lead do cliente (qualquer faixa, o mais recente com
+    # loja), numa consulta só. Sem Lead fica "," e pausa por loja não o pega.
+    novos = [o for o in db.new if isinstance(o, models.QueueItem)]
+    if novos:
+        lojas_por_codigo: dict[str, str] = {}
+        for codigo, lojas in (
+            db.query(models.Lead.codigo_cliente, models.Lead.lojas)
+            .filter(models.Lead.codigo_cliente.in_({i.codigo_cliente for i in novos}), models.Lead.lojas != ",")
+            .order_by(models.Lead.created_at.asc())
+        ):
+            lojas_por_codigo[codigo] = lojas
+        for item in novos:
+            item.lojas = lojas_formatadas(lojas_por_codigo.get(item.codigo_cliente, ","))
 
     db.add(
         models.UploadLog(

@@ -244,6 +244,8 @@ class QueueStatus(str, enum.Enum):
     sent = "sent"
     error = "error"
     invalid_phone = "invalid_phone"
+    # parado à mão (Relatórios → Pendentes): não envia e não some da fila
+    cancelled = "cancelled"
 
 
 class QueueItem(Base):
@@ -267,11 +269,34 @@ class QueueItem(Base):
     whatsapp_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     reserved_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Lojas do cliente no mesmo formato de Lead.lojas (",01,07,"), pra pausa
+    # por loja; vazio (",") quando o item veio de planilha sem Lead do cliente.
+    lojas: Mapped[str] = mapped_column(String, default=",", server_default=",")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     faixa: Mapped[Faixa] = relationship()
     whatsapp_number: Mapped["WhatsappNumber | None"] = relationship()
+
+
+class PausaEnvio(Base):
+    """Pausa temporária e reversível do envio dos pendentes de um cliente, de
+    uma faixa (régua) ou de uma loja. Não mexe no status dos itens: vale para
+    o que já está na fila e para o que entrar depois, enquanto estiver ativa
+    (encerrada_em nulo e `ate` nulo ou ainda não passado, em GMT-3)."""
+
+    __tablename__ = "pausas_envio"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    # "cliente" (codigo_cliente de 8 dígitos) | "faixa" (faixa_id) | "loja" (filial)
+    escopo: Mapped[str] = mapped_column(String, index=True)
+    valor: Mapped[str] = mapped_column(String)
+    motivo: Mapped[str] = mapped_column(Text)
+    ate: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    encerrada_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    encerrada_por: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class UploadLog(Base):

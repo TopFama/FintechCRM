@@ -41,6 +41,7 @@ const STATUS_FILA: Record<string, string> = {
   sent: "enviado",
   error: "erro",
   invalid_phone: "telefone inválido",
+  cancelled: "parado",
 };
 
 const NO_COLUMN = "";
