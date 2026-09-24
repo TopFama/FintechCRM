@@ -293,6 +293,14 @@ export const api = {
   listarPausas: () => request<PausaEnvio[]>("/pausas"),
   pausarEnvio: (dados: { escopo: EscopoPausa; valor: string; motivo: string; ate?: string }) =>
     request<PausaEnvio>("/pausas", { method: "POST", body: JSON.stringify(dados) }),
+  opcoesPausaFila: () => request<OpcoesFila>("/pausas/opcoes-fila"),
+  pausarLote: (dados: { escopo: "faixa" | "loja"; valores: string[]; motivo: string; ate?: string }) =>
+    request<PausaEnvio[]>("/pausas/lote", { method: "POST", body: JSON.stringify(dados) }),
+  reaplicarVariaveisFaixa: (faixaId: string) =>
+    request<{ atualizados: number; sem_cadastro: number }>(
+      `/pausas/faixa/${encodeURIComponent(faixaId)}/reaplicar-variaveis`,
+      { method: "POST" }
+    ),
   retomarEnvio: (id: string) => request<PausaEnvio>(`/pausas/${encodeURIComponent(id)}/retomar`, { method: "POST" }),
   previaPararEnvio: (escopo: EscopoPausa, valor: string) =>
     request<{ qtd: number }>(`/pausas/parar/previa?${montarQuery({ escopo, valor })}`),
@@ -668,6 +676,18 @@ export interface FilaReportPage {
   itens: FilaReportItem[];
   total_pausados: number;
   total_sem_loja: number;
+}
+
+export interface OpcaoFila {
+  valor: string;
+  rotulo: string;
+  qtd_pendentes: number;
+  pausado: boolean;
+}
+
+export interface OpcoesFila {
+  faixas: OpcaoFila[];
+  lojas: OpcaoFila[];
 }
 
 export type EscopoPausa = "cliente" | "faixa" | "loja";

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, EscopoPausa, PausaEnvio } from "../api";
+import { Link } from "react-router-dom";
+import { api, EscopoPausa, OpcaoFila, PausaEnvio } from "../api";
 import { formatData, formatDataHora } from "../format";
 
 // Ação pedida na aba Pendentes, esperando confirmação na própria tela
@@ -118,7 +119,15 @@ export function PainelAcao({
   );
 }
 
-export function PausasAtivas({ pausas, onRetomar }: { pausas: PausaEnvio[]; onRetomar: (p: PausaEnvio) => void }) {
+export function PausasAtivas({
+  pausas,
+  onRetomar,
+  onAplicarVariaveis,
+}: {
+  pausas: PausaEnvio[];
+  onRetomar: (p: PausaEnvio) => void;
+  onAplicarVariaveis: (p: PausaEnvio) => void;
+}) {
   if (pausas.length === 0) return null;
   return (
     <section className="pausas-ativas" aria-labelledby="titulo-pausas-ativas">
@@ -150,9 +159,25 @@ export function PausasAtivas({ pausas, onRetomar }: { pausas: PausaEnvio[]; onRe
                 <td className="text-muted">{p.ate ? formatData(p.ate) : "Sem data"}</td>
                 <td>{p.qtd_retidos}</td>
                 <td>
-                  <button className="small secondary" onClick={() => onRetomar(p)} aria-label={`Retomar ${p.valor_legivel}`}>
-                    Retomar
-                  </button>
+                  <div className="acoes-linha">
+                    {p.escopo === "faixa" && (
+                      <>
+                        <Link className="button-link secondary small" to={`/faixas/${p.valor}`}>
+                          Editar variáveis
+                        </Link>
+                        <button
+                          className="small secondary"
+                          onClick={() => onAplicarVariaveis(p)}
+                          aria-label={`Aplicar variáveis atuais aos pendentes de ${p.valor_legivel}`}
+                        >
+                          Aplicar aos pendentes
+                        </button>
+                      </>
+                    )}
+                    <button className="small secondary" onClick={() => onRetomar(p)} aria-label={`Retomar ${p.valor_legivel}`}>
+                      Retomar
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -160,5 +185,134 @@ export function PausasAtivas({ pausas, onRetomar }: { pausas: PausaEnvio[]; onRe
         </table>
       </div>
     </section>
+  );
+}
+
+// Pausar várias faixas ou lojas de uma vez, escolhendo entre as que têm pendentes na fila
+export function PainelPausaLote({
+  escopo,
+  onCancelar,
+  onConcluir,
+}: {
+  escopo: "faixa" | "loja";
+  onCancelar: () => void;
+  onConcluir: (mensagem: string) => void;
+}) {
+  const [opcoes, setOpcoes] = useState<OpcaoFila[] | null>(null);
+  const [marcados, setMarcados] = useState<Set<string>>(new Set());
+  const [motivo, setMotivo] = useState("");
+  const [ate, setAte] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const nome = escopo === "faixa" ? "faixa" : "loja";
+
+  useEffect(() => {
+    setOpcoes(null);
+    setMarcados(new Set());
+    setErro(null);
+    let atual = true;
+    api
+      .opcoesPausaFila()
+      .then((r) => atual && setOpcoes(escopo === "faixa" ? r.faixas : r.lojas))
+      .catch((e) => atual && setErro(e.message));
+    return () => {
+      atual = false;
+    };
+  }, [escopo]);
+
+  const livres = (opcoes ?? []).filter((o) => !o.pausado);
+  const qtdItens = (opcoes ?? []).filter((o) => marcados.has(o.valor)).reduce((t, o) => t + o.qtd_pendentes, 0);
+
+  function alternar(valor: string) {
+    setMarcados((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(valor)) novo.delete(valor);
+      else novo.add(valor);
+      return novo;
+    });
+  }
+
+  async function confirmar() {
+    setSalvando(true);
+    setErro(null);
+    try {
+      const criadas = await api.pausarLote({ escopo, valores: [...marcados], motivo: motivo.trim(), ate: ate || undefined });
+      onConcluir(
+        `${criadas.length} ${nome}(s) pausada(s): ${criadas.map((p) => p.valor_legivel).join(", ")}. Os não enviados ficam retidos até retomar.`
+      );
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Erro ao pausar");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="painel-acao" role="dialog" aria-labelledby="titulo-pausa-lote">
+      <strong id="titulo-pausa-lote">Pausar {escopo === "faixa" ? "faixas" : "lojas"} com pendentes na fila</strong>
+      <p className="text-muted" style={{ margin: "4px 0 10px" }}>
+        Marque quais pausar. Todos os não enviados delas param de sair (inclusive os que entrarem depois) até você retomar.
+      </p>
+      {opcoes === null && !erro && <div className="loading-state">Carregando...</div>}
+      {opcoes !== null && opcoes.length === 0 && <p>Nenhuma {nome} com pendentes na fila.</p>}
+      {opcoes !== null && opcoes.length > 0 && (
+        <>
+          <div style={{ marginBottom: 6 }}>
+            <button
+              type="button"
+              className="secondary small"
+              onClick={() =>
+                setMarcados(marcados.size === livres.length ? new Set() : new Set(livres.map((o) => o.valor)))
+              }
+            >
+              {marcados.size === livres.length && livres.length > 0 ? "Desmarcar todas" : "Marcar todas"}
+            </button>
+          </div>
+          <ul className="lista-escolha" aria-label={`${nome === "faixa" ? "Faixas" : "Lojas"} na fila`}>
+            {opcoes.map((o) => (
+              <li key={o.valor}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={marcados.has(o.valor)}
+                    disabled={o.pausado}
+                    onChange={() => alternar(o.valor)}
+                  />
+                  <span className="cell-strong">{o.rotulo}</span>
+                  <span className="text-muted">
+                    {o.qtd_pendentes} pendente(s){o.pausado ? " · já pausada" : ""}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <div className="form-row" style={{ flexWrap: "wrap" }}>
+            <div className="field" style={{ flex: 2, minWidth: 240 }}>
+              <label htmlFor="pausa-lote-motivo">Motivo</label>
+              <input
+                id="pausa-lote-motivo"
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder="Ex.: corrigir as variáveis do template"
+                aria-required="true"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="pausa-lote-ate">Até (opcional)</label>
+              <input id="pausa-lote-ate" type="date" value={ate} onChange={(e) => setAte(e.target.value)} />
+            </div>
+          </div>
+        </>
+      )}
+      {erro && <div className="error-box" style={{ marginTop: 8 }}>{erro}</div>}
+      <div className="acoes">
+        <button onClick={confirmar} disabled={salvando || marcados.size === 0 || !motivo.trim()}>
+          {salvando ? "Pausando..." : `Pausar ${marcados.size} ${nome}(s) · ${qtdItens} pendente(s)`}
+        </button>
+        <button className="secondary" onClick={onCancelar} disabled={salvando}>
+          Cancelar
+        </button>
+      </div>
+    </div>
   );
 }

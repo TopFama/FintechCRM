@@ -492,6 +492,30 @@ class PausaEnvioOut(BaseModel):
     qtd_retidos: int
 
 
+class PausaLoteIn(BaseModel):
+    escopo: Literal["faixa", "loja"]
+    valores: list[str]
+    motivo: str
+    ate: date | None = None
+
+
+class OpcaoFilaOut(BaseModel):
+    valor: str
+    rotulo: str
+    qtd_pendentes: int
+    pausado: bool
+
+
+class OpcoesFilaOut(BaseModel):
+    faixas: list[OpcaoFilaOut]
+    lojas: list[OpcaoFilaOut]
+
+
+class ReaplicarVariaveisOut(BaseModel):
+    atualizados: int
+    sem_cadastro: int
+
+
 class PararEnvioIn(BaseModel):
     escopo: EscopoPausa
     valor: str

@@ -281,6 +281,11 @@ Não existe suíte de testes automatizados formal ainda. Para validar uma mudan�
 - **Fila em "tempo real"**: o acompanhamento da fila no portal usa polling (nova consulta a cada
   poucos segundos), não WebSocket — simples e suficiente para o volume atual, mas vale revisar se
   o volume de faixas abertas simultaneamente crescer muito.
+- **TODO — Remarketing do Renegocie no e2e**: `e2e/tests/16-remarketing.spec.ts` ainda procura os
+  segmentos antigos ("Só se identificou", "Viu a proposta e não fechou", "Cancelou a proposta",
+  "Acordo cancelado sem pagar a entrada") de antes da mudança para 3 segmentos; o primeiro cenário
+  falha e os 4 seguintes (serial) não rodam. Atualizar os nomes e o Renegocie simulado em
+  `e2e/ambiente/servidor_teste.py` para os segmentos atuais de `app/remarketing.py`.
 - **Autenticação e segurança**: login usuário/senha + JWT. `POST /auth/login` grava o JWT num cookie
   `access_token` httpOnly (o frontend nunca guarda o token em `localStorage`/JS — mitiga roubo de sessão via
   XSS) e também devolve o token no corpo da resposta só para uso programático (scripts de validação,

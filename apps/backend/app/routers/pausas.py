@@ -4,11 +4,13 @@ Liberado para qualquer usuário logado: quem e quando ficam registrados."""
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, selectinload
 
-from .. import models, pausas, schemas
+from .. import fila_automatica, models, pausas, schemas
 from ..database import get_db
 from ..deps import get_current_user
+from ..regras_db import carregar_regras
 from ..timezone import hoje_br
 
 router = APIRouter(prefix="/pausas", tags=["pausas"])
@@ -53,6 +55,74 @@ def _validar(db: Session, escopo: str, valor: str) -> str:
 @router.get("", response_model=list[schemas.PausaEnvioOut])
 def listar_ativas(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
     return [_out(db, p) for p in pausas.ativas(db)]
+
+
+@router.get("/opcoes-fila", response_model=schemas.OpcoesFilaOut)
+def opcoes_fila(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+    """Faixas e lojas que têm pendentes na fila agora, pra escolher o que pausar."""
+
+    ativas = pausas.ativas(db)
+    faixas_pausadas = {p.valor for p in ativas if p.escopo == "faixa"}
+    lojas_pausadas = {p.valor for p in ativas if p.escopo == "loja"}
+    pendente = models.QueueItem.status.in_(pausas.STATUS_PENDENTE)
+
+    faixas = [
+        schemas.OpcaoFilaOut(valor=fid, rotulo=nome, qtd_pendentes=qtd, pausado=fid in faixas_pausadas)
+        for fid, nome, qtd in db.query(models.Faixa.id, models.Faixa.name, func.count(models.QueueItem.id))
+        .join(models.QueueItem, models.QueueItem.faixa_id == models.Faixa.id)
+        .filter(pendente)
+        .group_by(models.Faixa.id, models.Faixa.name)
+    ]
+    ordem = _ordem_faixa(db)
+    faixas.sort(key=lambda o: ordem.get(o.rotulo, len(ordem)))
+
+    por_loja: dict[str, int] = {}
+    for lojas, qtd in db.query(models.QueueItem.lojas, func.count(models.QueueItem.id)).filter(pendente).group_by(
+        models.QueueItem.lojas
+    ):
+        for loja in {l for l in (lojas or "").split(",") if l}:
+            por_loja[loja] = por_loja.get(loja, 0) + qtd
+    nomes = {l.filial: l.nome_com_cod for l in db.query(models.Loja)}
+    lojas_out = [
+        schemas.OpcaoFilaOut(valor=l, rotulo=nomes.get(l) or l, qtd_pendentes=q, pausado=l in lojas_pausadas)
+        for l, q in sorted(por_loja.items())
+    ]
+    return schemas.OpcoesFilaOut(faixas=faixas, lojas=lojas_out)
+
+
+def _ordem_faixa(db: Session) -> dict[str, int]:
+    return {nome: i for i, nome in enumerate(carregar_regras(db).nomes_faixa)}
+
+
+@router.post("/lote", response_model=list[schemas.PausaEnvioOut], status_code=status.HTTP_201_CREATED)
+def pausar_lote(
+    payload: schemas.PausaLoteIn,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Pausa várias faixas ou lojas de uma vez; o que já está pausado fica como está."""
+
+    motivo = payload.motivo.strip()
+    if not motivo:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe o motivo da pausa")
+    if not payload.valores:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Escolha ao menos uma faixa ou loja")
+    if payload.ate and payload.ate < hoje_br():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A data final da pausa já passou")
+    ja_pausados = {p.valor for p in pausas.ativas(db) if p.escopo == payload.escopo}
+    criadas = []
+    for bruto in dict.fromkeys(payload.valores):
+        valor = _validar(db, payload.escopo, bruto)
+        if valor in ja_pausados:
+            continue
+        pausa = models.PausaEnvio(
+            escopo=payload.escopo, valor=valor, motivo=motivo, ate=payload.ate, created_by=user.email
+        )
+        db.add(pausa)
+        criadas.append(pausa)
+        ja_pausados.add(valor)
+    db.commit()
+    return [_out(db, p) for p in criadas]
 
 
 @router.post("", response_model=schemas.PausaEnvioOut, status_code=status.HTTP_201_CREATED)
@@ -111,3 +181,20 @@ def parar(
 ):
     valor = _validar(db, payload.escopo, payload.valor)
     return schemas.PararEnvioOut(qtd=pausas.parar(db, payload.escopo, valor, user.email))
+
+
+@router.post("/faixa/{faixa_id}/reaplicar-variaveis", response_model=schemas.ReaplicarVariaveisOut)
+def reaplicar_variaveis(faixa_id: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+    """Depois de editar as variáveis do template da faixa, atualiza os
+    pendentes que já estavam na fila com o mapeamento novo."""
+
+    faixa = (
+        db.query(models.Faixa)
+        .options(selectinload(models.Faixa.envios), selectinload(models.Faixa.variable_mappings))
+        .filter(models.Faixa.id == faixa_id)
+        .first()
+    )
+    if faixa is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Faixa não encontrada")
+    atualizados, sem_cadastro = fila_automatica.reaplicar_variaveis(db, faixa)
+    return schemas.ReaplicarVariaveisOut(atualizados=atualizados, sem_cadastro=sem_cadastro)

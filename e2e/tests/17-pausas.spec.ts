@@ -41,37 +41,51 @@ test.describe.serial("Pendentes: pausar, retomar e parar", () => {
     await expect(tabela(page).locator(".badge.pausado")).toHaveCount(0);
   });
 
-  test("com faixa filtrada: pausar esta régua (com data final) segura todos os itens dela", async ({ page }) => {
-    await page.getByLabel("Faixa", { exact: true }).selectOption({ label: "11 A 20" });
-    await expect(page).toHaveURL(/faixa_id=/);
-    await expect(page.getByText("Carregando...")).toHaveCount(0);
-    const n = await tabela(page).locator("tbody tr").count();
-    await page.getByRole("button", { name: "Pausar esta régua" }).click();
+  test("Pausar faixa: lista as faixas da fila, pausa as marcadas e oferece editar e aplicar variáveis", async ({ page }) => {
+    await page.getByRole("button", { name: "Pausar faixa" }).click();
     const painel = page.getByRole("dialog");
-    await expect(painel).toContainText("a régua 11 A 20");
-    await painel.getByLabel("Motivo").fill("Revisar o template");
+    const opcao = painel.locator("li", { hasText: "11 A 20" });
+    await expect(opcao).toContainText(/\d+ pendente\(s\)/);
+    const botao = painel.getByRole("button", { name: /^Pausar \d+ faixa/ });
+    await expect(botao).toBeDisabled();
+    await opcao.getByRole("checkbox").check();
+    await painel.getByLabel("Motivo").fill("Corrigir variáveis do template");
     const amanha = new Date(Date.now() + 86_400_000).toLocaleDateString("sv-SE");
     await painel.getByLabel("Até (opcional)").fill(amanha);
-    await painel.getByRole("button", { name: "Pausar" }).click();
-    const pausas = blocoPausas(page);
-    await expect(pausas.locator("tbody tr", { hasText: "Régua" })).toContainText("11 A 20");
-    await expect(tabela(page).locator(".badge.pausado")).toHaveCount(n);
-    await pausas.getByRole("button", { name: "Retomar 11 A 20" }).click();
+    await expect(botao).toHaveText(/Pausar 1 faixa\(s\) · \d+ pendente\(s\)/);
+    await botao.click();
+    await expect(page.locator(".success-box")).toContainText("1 faixa(s) pausada(s): 11 A 20");
+    const linhaPausa = blocoPausas(page).locator("tbody tr", { hasText: "Régua" });
+    await expect(linhaPausa).toContainText("11 A 20");
+    const itensFaixa = tabela(page).locator("tbody tr", { hasText: "11 A 20" });
+    await expect(itensFaixa.locator(".badge.pausado")).toHaveCount(await itensFaixa.count());
+    // já pausada aparece desabilitada numa segunda tentativa
+    await page.getByRole("button", { name: "Pausar faixa" }).click();
+    await expect(page.getByRole("dialog").locator("li", { hasText: "11 A 20" })).toContainText("já pausada");
+    await expect(page.getByRole("dialog").locator("li", { hasText: "11 A 20" }).getByRole("checkbox")).toBeDisabled();
+    await page.getByRole("dialog").getByRole("button", { name: "Cancelar" }).click();
+    // editar variáveis leva para a faixa; aplicar atualiza os pendentes com o mapeamento atual
+    await expect(linhaPausa.getByRole("link", { name: "Editar variáveis" })).toHaveAttribute("href", /\/faixas\/.+/);
+    await linhaPausa.getByRole("button", { name: /Aplicar variáveis atuais/ }).click();
+    await expect(page.locator(".success-box")).toContainText("Variáveis atuais aplicadas a");
+    await linhaPausa.getByRole("button", { name: "Retomar 11 A 20" }).click();
     await expect(blocoPausas(page)).toHaveCount(0);
   });
 
-  test("com loja filtrada: botões da loja aparecem e a pausa mostra o nome da loja", async ({ page }) => {
-    const loja = page.getByLabel("Loja", { exact: true });
-    await expect(loja.locator("option").nth(1)).toBeAttached();
-    await loja.selectOption({ index: 1 });
-    await expect(page).toHaveURL(/loja=/);
-    await expect(page.getByRole("button", { name: "Parar esta loja" })).toBeVisible();
-    await page.getByRole("button", { name: "Pausar esta loja" }).click();
-    await page.getByRole("dialog").getByLabel("Motivo").fill("Mutirão na loja");
-    await page.getByRole("dialog").getByRole("button", { name: "Pausar" }).click();
-    const pausas = blocoPausas(page);
-    await expect(pausas.locator("tbody tr", { hasText: "Loja" })).toContainText("Mutirão na loja");
-    await pausas.getByRole("button", { name: /^Retomar/ }).click();
+  test("Pausar loja: marcar todas pausa cada loja com pendentes; retomar", async ({ page }) => {
+    await page.getByRole("button", { name: "Pausar loja" }).click();
+    const painel = page.getByRole("dialog");
+    await expect(painel.locator("li").first()).toBeVisible();
+    const n = await painel.locator("li").count();
+    await painel.getByRole("button", { name: "Marcar todas" }).click();
+    await painel.getByLabel("Motivo").fill("Mutirão nas lojas");
+    await painel.getByRole("button", { name: new RegExp(`^Pausar ${n} loja`) }).click();
+    await expect(page.locator(".success-box")).toContainText(`${n} loja(s) pausada(s)`);
+    await expect(blocoPausas(page).locator("tbody tr", { hasText: "Mutirão nas lojas" })).toHaveCount(n);
+    for (let i = 0; i < n; i++) {
+      await blocoPausas(page).getByRole("button", { name: /^Retomar/ }).first().click();
+      await expect(page.locator(".success-box")).toContainText("Envio retomado");
+    }
     await expect(blocoPausas(page)).toHaveCount(0);
   });
 

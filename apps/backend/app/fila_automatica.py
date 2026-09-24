@@ -212,6 +212,62 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
     return total
 
 
+def reaplicar_variaveis(db: Session, faixa: models.Faixa) -> tuple[int, int]:
+    """Recalcula as variáveis dos pendentes da faixa com o mapeamento atual
+    (usado depois de editar as variáveis de uma faixa pausada). A fonte é o
+    Lead do cliente; variável que não resolve pelo Lead (ex.: coluna que só
+    existia na planilha) mantém o valor que já estava. Devolve
+    (itens_atualizados, itens_sem_cadastro)."""
+
+    templates = {e.template_id: e.template for e in faixa.envios if e.active and e.template_id}
+    itens = (
+        db.query(models.QueueItem)
+        .filter(
+            models.QueueItem.faixa_id == faixa.id,
+            models.QueueItem.status.in_((models.QueueStatus.pending, models.QueueStatus.reserved)),
+        )
+        .all()
+    )
+    if not templates or not itens:
+        return 0, 0
+    leads: dict[str, models.Lead] = {}
+    for lead in (
+        db.query(models.Lead)
+        .options(selectinload(models.Lead.parcelas))
+        .filter(models.Lead.codigo_cliente.in_({i.codigo_cliente for i in itens}))
+        .order_by(models.Lead.created_at.asc())
+    ):
+        # o da própria faixa vale mais; entre iguais, o mais recente
+        atual = leads.get(lead.codigo_cliente)
+        if atual is None or lead.faixa == faixa.name or atual.faixa != faixa.name:
+            leads[lead.codigo_cliente] = lead
+    juros = carregar_regras(db).juros
+    fontes_por_template = {tid: _fontes(faixa, tpl) for tid, tpl in templates.items()}
+
+    atualizados = sem_cadastro = 0
+    for item in itens:
+        lead = leads.get(item.codigo_cliente)
+        if lead is None:
+            sem_cadastro += 1
+            continue
+        contexto = _contexto_lead(lead, juros)
+        antigo = item.variables_json or {}
+        por_template: dict[str, dict[str, str]] = {}
+        for tid, fontes in fontes_por_template.items():
+            anterior = antigo.get(tid) if isinstance(antigo.get(tid), dict) else antigo
+            valores: dict[str, str] = {}
+            for v, fonte in fontes:
+                val = resolver_variaveis([fonte], contexto)[v.internal_name] if fonte else ""
+                valores[v.internal_name] = val or str(anterior.get(v.internal_name, "") or "")
+            por_template[tid] = valores
+        novo = next(iter(por_template.values())) if len(por_template) == 1 else por_template
+        if novo != antigo:
+            item.variables_json = novo
+            atualizados += 1
+    db.commit()
+    return atualizados, sem_cadastro
+
+
 def ultimo_fim_de_janela(global_config: models.GlobalDispatchConfig, now_utc: datetime) -> datetime:
     """Instante (UTC ingênuo) do fim de janela mais recente já passado."""
 

@@ -13,7 +13,7 @@ import {
   PausaEnvio,
 } from "../api";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
-import { AcaoPendentes, PainelAcao, PausasAtivas } from "../components/PausasPendentes";
+import { AcaoPendentes, PainelAcao, PainelPausaLote, PausasAtivas } from "../components/PausasPendentes";
 import SortableTh from "../components/SortableTh";
 import { formatBRL, formatData, formatDataHora } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
@@ -77,6 +77,7 @@ export default function Relatorios() {
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [pausas, setPausas] = useState<PausaEnvio[]>([]);
   const [acao, setAcao] = useState<AcaoPendentes | null>(null);
+  const [pausaLote, setPausaLote] = useState<"faixa" | "loja" | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [invalidPhones, setInvalidPhones] = useState<InvalidPhoneRecord[]>([]);
   const [invalidTotal, setInvalidTotal] = useState(0);
@@ -122,6 +123,7 @@ export default function Relatorios() {
 
   useEffect(() => {
     setAcao(null);
+    setPausaLote(null);
     setAviso(null);
     if (tab !== "pendentes") return;
     carregarPausas();
@@ -380,6 +382,17 @@ export default function Relatorios() {
             {aviso && <div className="success-box" style={{ marginBottom: 12 }}>{aviso}</div>}
             <PausasAtivas
               pausas={pausas}
+              onAplicarVariaveis={(p) =>
+                api
+                  .reaplicarVariaveisFaixa(p.valor)
+                  .then((r) =>
+                    setAviso(
+                      `Variáveis atuais aplicadas a ${r.atualizados} pendente(s) de ${p.valor_legivel}` +
+                        (r.sem_cadastro ? ` (${r.sem_cadastro} sem cadastro do cliente ficaram como estavam).` : ".")
+                    )
+                  )
+                  .catch((e) => setError(e.message))
+              }
               onRetomar={(p) =>
                 api
                   .retomarEnvio(p.id)
@@ -391,29 +404,49 @@ export default function Relatorios() {
                   .catch((e) => setError(e.message))
               }
             />
-            {(faixaId || loja) && (
-              <div className="barra-escopo">
-                {faixaId && (
-                  <>
-                    <button className="secondary small" onClick={() => setAcao(acaoEscopo("pausar", "faixa"))}>
-                      Pausar esta régua
-                    </button>
-                    <button className="secondary small" onClick={() => setAcao(acaoEscopo("parar", "faixa"))}>
-                      Parar esta régua
-                    </button>
-                  </>
-                )}
-                {loja && (
-                  <>
-                    <button className="secondary small" onClick={() => setAcao(acaoEscopo("pausar", "loja"))}>
-                      Pausar esta loja
-                    </button>
-                    <button className="secondary small" onClick={() => setAcao(acaoEscopo("parar", "loja"))}>
-                      Parar esta loja
-                    </button>
-                  </>
-                )}
-              </div>
+            <div className="barra-escopo">
+              <button
+                className="secondary small"
+                aria-expanded={pausaLote === "faixa"}
+                onClick={() => {
+                  setAcao(null);
+                  setPausaLote(pausaLote === "faixa" ? null : "faixa");
+                }}
+              >
+                Pausar faixa
+              </button>
+              <button
+                className="secondary small"
+                aria-expanded={pausaLote === "loja"}
+                onClick={() => {
+                  setAcao(null);
+                  setPausaLote(pausaLote === "loja" ? null : "loja");
+                }}
+              >
+                Pausar loja
+              </button>
+              {faixaId && (
+                <button className="secondary small" onClick={() => setAcao(acaoEscopo("parar", "faixa"))}>
+                  Parar esta régua
+                </button>
+              )}
+              {loja && (
+                <button className="secondary small" onClick={() => setAcao(acaoEscopo("parar", "loja"))}>
+                  Parar esta loja
+                </button>
+              )}
+            </div>
+            {pausaLote && (
+              <PainelPausaLote
+                escopo={pausaLote}
+                onCancelar={() => setPausaLote(null)}
+                onConcluir={(msg) => {
+                  setPausaLote(null);
+                  setAviso(msg);
+                  carregarPausas();
+                  load();
+                }}
+              />
             )}
             {acao && (
               <PainelAcao
