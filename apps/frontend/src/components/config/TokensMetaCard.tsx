@@ -157,6 +157,8 @@ export default function TokensMetaCard({ onNumerosAlterados }: { onNumerosAltera
       await api.excluirTokenMeta(token.id);
       if (abertoId === token.id) setAbertoId(null);
       carregarTokens();
+      // Os números do token são excluídos junto
+      onNumerosAlterados?.();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Erro ao excluir token");
     }

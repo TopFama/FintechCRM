@@ -67,15 +67,14 @@ test.describe("Cobrança → Importar planilha para a fila", () => {
     for (let i = 0; i < (await variaveis.count()); i++) await variaveis.nth(i).selectOption(alvo[i % alvo.length]);
     await page.getByRole("button", { name: "Confirmar e importar" }).click();
     const resumo = importar(page).locator(".upload-summary");
-    await expect(resumo).toContainText("6linhas na planilha");
-    await expect(resumo).toContainText("2rejeitados"); // sem código e telefone "123"
+    await expect(resumo).toContainText("7linhas na planilha");
+    await expect(resumo).toContainText("4rejeitados"); // sem código, telefone "123", fixo e variável em branco
     await expect(resumo).toContainText("telefone(s) inválido(s)");
     await expect(importar(page).getByRole("link", { name: /relatório de telefones inválidos/ })).toBeVisible();
     await expect(importar(page).locator("ul li").first()).toBeVisible(); // motivos de rejeição listados
   });
 
   test("telefone fixo não vira celular inventado", async ({ page }) => {
-    test.fail(true, "BUG: '(11) 3333-4444' (fixo) é aceito e vira 5511933334444 — um 9 é inserido e a mensagem iria para outro número");
     const f = (await apiGet(page, "/faixas")).find((x: any) => x.name === "11 A 20");
     const fila = await apiGet(page, `/faixas/${f.id}/queue?limit=100&offset=0`);
     expect(fila.itens.map((i: any) => i.celular)).not.toContain("5511933334444");
@@ -105,7 +104,6 @@ test.describe("Detalhe da faixa: fila", () => {
   });
 
   test("status da fila aparece em português", async ({ page }) => {
-    test.fail(true, "BUG: status da fila aparece cru, em inglês ('pending', 'sent', 'error')");
     await abrirFaixa(page, "11 A 20");
     await expect(card(page, "Fila desta faixa").locator("tbody .badge").first()).toBeVisible();
     const badges = await card(page, "Fila desta faixa").locator("tbody .badge").allInnerTexts();
@@ -113,7 +111,6 @@ test.describe("Detalhe da faixa: fila", () => {
   });
 
   test("ordenar a fila por nome continua valendo depois da atualização automática (4s)", async ({ page }) => {
-    test.fail(true, "BUG: a atualização automática da fila volta para a ordenação antiga a cada 4 segundos");
     await abrirFaixa(page, "11 A 20");
     const fila = card(page, "Fila desta faixa");
     await fila.getByRole("columnheader", { name: /^Nome/ }).click();
@@ -132,7 +129,6 @@ test.describe("Detalhe da faixa: fila", () => {
   });
 
   test("texto do card de leads não manda subir planilha (leads já entram na fila)", async ({ page }) => {
-    test.fail(true, "BUG: texto desatualizado diz que leads 'não entram automaticamente na fila' e manda gerar em 'Cobrança → Leads' (tela removida)");
     await abrirFaixa(page, "11 A 20");
     const leads = card(page, "Leads gerados nesta faixa de atraso");
     await expect(leads).not.toContainText("não entram automaticamente");

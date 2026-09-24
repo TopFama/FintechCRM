@@ -32,19 +32,23 @@ def normalize_phone(raw: str | None) -> str:
 
 
 def is_valid_phone(raw: str | None) -> bool:
+    if eh_fixo(raw):
+        return False
     value = normalize_phone(raw)
     if not _RE_VALID_FINAL.match(value):
         return False
     return value not in _INVALID
 
 
-def _eh_fixo(raw: str | None) -> bool:
+def eh_fixo(raw: str | None) -> bool:
     """Número de 10 dígitos (DDD + 8) cujo primeiro dígito do assinante é 2–5 é
     telefone fixo. `normalize_phone` injeta o 9 em qualquer número de 10
-    dígitos e o resultado passaria em `is_valid_phone`, mas fixo não recebe
-    WhatsApp — então no fallback do SETA ele conta como telefone inválido."""
+    dígitos, mas fixo não recebe WhatsApp — então `is_valid_phone` o recusa
+    (upload, fila e fallback do SETA). Aceita também o formato com DDI 55."""
 
     digits = re.sub(r"\D", "", str(raw or ""))
+    if _RE_55_WITHOUT_9.match(digits):
+        digits = digits[2:]
     return bool(_RE_10_DIGITS.match(digits)) and digits[2] in "2345"
 
 
@@ -57,7 +61,7 @@ def escolher_telefone(**candidatos: str | None) -> tuple[str | None, str | None]
     for campo, raw in candidatos.items():
         if not raw or not re.search(r"\d", str(raw)):
             continue
-        if _eh_fixo(raw) or not is_valid_phone(raw):
+        if not is_valid_phone(raw):
             continue
         return normalize_phone(raw), campo
     return None, None

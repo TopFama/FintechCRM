@@ -10,7 +10,7 @@ from ..regras_db import carregar_regras
 from ..fila_automatica import clientes_bloqueados_hoje
 from ..deps import get_current_user
 from ..utils.document import extract_first_name, format_cpf, normalize_seta_code
-from ..utils.phone import is_valid_phone, normalize_phone
+from ..utils.phone import eh_fixo, is_valid_phone, normalize_phone
 from ..timezone import hoje_br
 from ..utils.spreadsheet import parse_uploaded_spreadsheet, read_spreadsheet_preview
 from ..variaveis_template import (
@@ -224,7 +224,11 @@ async def upload_planilha(
                     codigo_cliente=codigo_cliente,
                     celular_original=celular_original,
                     celular_normalizado=normalize_phone(celular_original) or None,
-                    motivo="Telefone fora do padrão 55DD9XXXXXXXX (dígitos insuficientes ou inválidos)",
+                    motivo=(
+                        "Telefone fixo (não recebe WhatsApp)"
+                        if eh_fixo(celular_original)
+                        else "Telefone fora do padrão 55DD9XXXXXXXX (dígitos insuficientes ou inválidos)"
+                    ),
                 )
             )
             invalid_phone_count += 1

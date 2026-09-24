@@ -37,7 +37,6 @@ test.describe("Configurações → Indicadores", () => {
   });
 
   test("salvar um bloco não descarta o que foi digitado (e não salvo) em outro bloco", async ({ page }) => {
-    test.fail(true, "BUG: 'Salvar clusters' recarrega a config inteira e apaga a edição não salva das faixas");
     const r = card(page, "Regras de cobrança");
     await r.getByLabel("Nome da faixa").nth(2).fill("3 A 10 EDITADA");
     await r.getByRole("button", { name: "Salvar clusters" }).click();
@@ -77,7 +76,6 @@ test.describe("Configurações → Indicadores", () => {
   });
 
   test("juros em branco não deveria virar 0% sem aviso", async ({ page }) => {
-    test.fail(true, "BUG: campo de juros vazio é salvo como 0% sem confirmação");
     const j = card(page, "Juros e multa");
     await expect(j.getByLabel("Juros ao mês (%)")).not.toHaveValue("");
     await j.getByLabel("Juros ao mês (%)").fill("");

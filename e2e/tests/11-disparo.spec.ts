@@ -30,7 +30,8 @@ test.describe("Disparo pelo worker (Meta simulada)", () => {
   test("faixa com disparo pausado não envia nada", async ({ page }) => {
     const f = (await apiGet(page, "/faixas")).find((x: any) => x.name === "11 A 20");
     const fila = await apiGet(page, `/faixas/${f.id}/queue?limit=100&offset=0`);
-    expect(fila.itens.every((i: any) => i.status === "pending")).toBe(true);
+    // o item com erro de importação (variável em branco) nunca é enviado
+    expect(fila.itens.filter((i: any) => i.status !== "error").every((i: any) => i.status === "pending")).toBe(true);
   });
 
   test("mesmo cliente não é cobrado duas vezes no dia ao reenviar para a fila", async ({ page }) => {

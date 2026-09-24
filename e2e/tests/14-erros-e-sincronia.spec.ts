@@ -5,7 +5,6 @@ import { card, expect, permitirErrosConsole, responderDialogo, test } from "./fi
 
 test.describe("Erros e sincronia entre cards", () => {
   test("Dashboard: erro do resumo some quando o próximo período carrega", async ({ page }) => {
-    test.fail(true, "BUG: o error-box do Dashboard nunca é limpo; continua na tela depois que o resumo volta a carregar");
     permitirErrosConsole(page, "500");
     let falhar = true;
     await page.route("**/dashboard/summary?*", (r) =>
@@ -30,7 +29,6 @@ test.describe("Erros e sincronia entre cards", () => {
   });
 
   test("Conexões: inbox informada em Números libera o 'Testar envio' sem recarregar", async ({ page }) => {
-    test.fail(true, "BUG: o bloco 'Testar envio de template' só enxerga números carregados na abertura da página");
     await page.goto("/configuracoes?aba=conexoes");
     const numeros = card(page, "Números de WhatsApp");
     const l2 = numeros.locator("tbody tr", { hasText: "+55 11 4000-0002" });
@@ -43,7 +41,6 @@ test.describe("Erros e sincronia entre cards", () => {
   });
 
   test("Conexões: excluir o token também tira os números dele da lista na hora", async ({ page }) => {
-    test.fail(true, "BUG: depois de excluir o token, o card Números de WhatsApp continua mostrando os números excluídos até recarregar");
     await page.goto("/configuracoes?aba=conexoes");
     const numeros = card(page, "Números de WhatsApp");
     await expect(numeros.locator("tbody tr")).toHaveCount(2);

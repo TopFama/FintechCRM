@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, DispatchReportItem, Faixa, InvalidPhoneRecord, PagamentoCliente, PagamentosPage } from "../api";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
@@ -59,6 +59,10 @@ export default function Relatorios() {
     return tab === "invalidos" ? invalidosSort : tab === "pagamentos" ? pagamentosSort : enviosSort;
   }
 
+  // Descarta resposta de consulta já substituída (ex.: data mínima preenchida
+  // antes da máxima dispara duas consultas ao SETA e a primeira pode chegar por último)
+  const reqRef = useRef(0);
+
   function load(
     novoOffset: number = offset,
     novoLimit: number = limit,
@@ -67,6 +71,8 @@ export default function Relatorios() {
   ) {
     setLoading(true);
     setError(null);
+    const seq = ++reqRef.current;
+    const atual = () => seq === reqRef.current;
     const params = {
       faixa_id: faixaId || undefined,
       de: cobradoDe || undefined,
@@ -86,17 +92,21 @@ export default function Relatorios() {
               sort_by: sortBy ?? undefined,
               sort_dir: sortDir,
             })
-            .then(setPagamentos)
+            .then((r) => atual() && setPagamentos(r))
         : tab === "invalidos"
         ? api.listInvalidPhones(params).then((r) => {
+            if (!atual()) return;
             setInvalidPhones(r.itens);
             setInvalidTotal(r.total);
           })
         : api.listDispatchReport(params).then((r) => {
+            if (!atual()) return;
             setDispatchReport(r.itens);
             setDispatchTotal(r.total);
           });
-    request.catch((e) => setError(e.message)).finally(() => setLoading(false));
+    request
+      .catch((e) => atual() && setError(e.message))
+      .finally(() => atual() && setLoading(false));
   }
 
   useEffect(() => {
@@ -264,8 +274,17 @@ export default function Relatorios() {
         ) : dispatchReport.length === 0 ? (
           <div className="empty-state">
             <IconInbox width={28} height={28} />
-            <div className="title">Nenhum envio realizado ainda</div>
-            <p>Assim que uma cobrança for enviada, ela aparece aqui.</p>
+            {faixaId || cobradoDe || cobradoAte ? (
+              <>
+                <div className="title">Nenhum envio encontrado com esses filtros</div>
+                <p>Troque a faixa ou o período para ver outros envios.</p>
+              </>
+            ) : (
+              <>
+                <div className="title">Nenhum envio realizado ainda</div>
+                <p>Assim que uma cobrança for enviada, ela aparece aqui.</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="table-wrap">

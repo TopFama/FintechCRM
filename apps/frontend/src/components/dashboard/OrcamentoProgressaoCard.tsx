@@ -35,6 +35,9 @@ export default function OrcamentoProgressaoCard() {
   const ordenacao = useSort<ColunaNumero>(null);
 
   useEffect(() => {
+    // Limpa antes de tudo: Personalizado sem datas não pode mostrar o mês anterior
+    setErro(null);
+    setDados(null);
     let filtro: { ano?: number; mes?: number; de?: string; ate?: string };
     if (selecao === "personalizado") {
       if (!de || !ate) return;
@@ -43,9 +46,14 @@ export default function OrcamentoProgressaoCard() {
       const [ano, mes] = selecao.split("-").map(Number);
       filtro = { ano, mes };
     }
-    setErro(null);
-    setDados(null);
-    api.getOrcamentoProgressao(filtro).then(setDados).catch((e) => setErro(e.message));
+    let atual = true;
+    api
+      .getOrcamentoProgressao(filtro)
+      .then((d) => atual && setDados(d))
+      .catch((e) => atual && setErro(e.message));
+    return () => {
+      atual = false;
+    };
   }, [selecao, de, ate]);
 
   const filtros = (

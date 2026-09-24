@@ -22,7 +22,7 @@ test.describe("Configurações → Faixas de cobrança", () => {
     await expect(proximo).toBeDisabled();
     await campo(page, "Nome da faixa").fill("RENEGOCIE");
     await expect(proximo).toBeDisabled();
-    await campo(page, "Template aprovado").selectOption({ label: "cobranca_atraso (approved)" });
+    await campo(page, "Template aprovado").selectOption({ label: "cobranca_atraso (pt_BR)" });
     await proximo.click();
 
     await expect(page.getByRole("heading", { name: "Números de envio" })).toBeVisible();
@@ -55,7 +55,6 @@ test.describe("Configurações → Faixas de cobrança", () => {
   });
 
   test("assistente: só oferece templates aprovados (campo diz 'Template aprovado')", async ({ page }) => {
-    test.fail(true, "BUG: o assistente lista templates reprovados/rascunho e o backend aceita criar faixa com eles");
     await page.goto("/faixas/nova");
     await expect(campo(page, "Template aprovado").locator("option")).not.toHaveCount(1);
     const opcoes = await campo(page, "Template aprovado").locator("option").allInnerTexts();
@@ -130,7 +129,6 @@ test.describe("Configurações → Faixas de cobrança", () => {
   });
 
   test("detalhe de faixa inexistente mostra erro em vez de carregar para sempre", async ({ page }) => {
-    test.fail(true, "BUG: /faixas/<id inválido> fica eternamente em 'Carregando faixa...'");
     permitirErrosConsole(page, /40[04]|422/);
     await page.goto("/faixas/00000000-0000-0000-0000-000000000000");
     await expect(page.getByText(/não encontrada|erro/i)).toBeVisible({ timeout: 8_000 });

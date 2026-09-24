@@ -17,10 +17,23 @@ export default function Dashboard() {
   const opcoes = useOpcoesCobranca();
   const [periodo, setPeriodo] = useState<Periodo>(() => periodoDe("hoje"));
 
+  // Aqui não há "sem filtro": período sem as duas datas é Personalizado incompleto
+  const periodoIncompleto = !periodo.de || !periodo.ate;
+
   useEffect(() => {
-    // Personalizado sem as duas datas ainda: espera completar
-    if (Boolean(periodo.de) !== Boolean(periodo.ate)) return;
-    api.dashboardSummary(periodo).then(setSummary).catch((e) => setError(e.message));
+    setError(null);
+    // Não deixa na tela os números de outro período enquanto as datas não vêm
+    setSummary(null);
+    if (periodoIncompleto) return;
+    let atual = true;
+    api
+      .dashboardSummary(periodo)
+      .then((s) => atual && setSummary(s))
+      .catch((e) => atual && setError(e.message));
+    return () => {
+      atual = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodo]);
 
   return (
@@ -39,7 +52,8 @@ export default function Dashboard() {
         </div>
       )}
       <FiltroPeriodo opcoes={["hoje", "7dias", "mes", "personalizado"]} inicial="hoje" onChange={setPeriodo} />
-      {!summary && !error && <div className="loading-state">Carregando resumo da fila...</div>}
+      {periodoIncompleto && <div className="empty-state"><p>Escolha a data mínima e a máxima.</p></div>}
+      {!periodoIncompleto && !summary && !error && <div className="loading-state">Carregando resumo da fila...</div>}
       {summary && <ResumoFila summary={summary} nomesFaixa={opcoes.regras?.faixas} />}
 
       <MatrizCobrancaCard opcoes={opcoes} />
@@ -123,7 +137,7 @@ function ResumoFila({ summary, nomesFaixa }: { summary: DashboardSummary; nomesF
           <div className="empty-state">
             <IconBolt width={28} height={28} />
             <div className="title">Nenhuma faixa com movimento ainda</div>
-            <p>Crie uma faixa de cobrança e suba uma planilha para começar.</p>
+            <p>Nenhum cliente entrou na fila de nenhuma faixa neste período.</p>
           </div>
         ) : (
           <div className="table-wrap">
@@ -182,7 +196,7 @@ function ResumoFila({ summary, nomesFaixa }: { summary: DashboardSummary; nomesF
         {summary.erros_recentes.length === 0 ? (
           <div className="empty-state">
             <IconCheckCircle width={28} height={28} />
-            <div className="title">Sem erros recentes</div>
+            <div className="title">Sem erros no período</div>
             <p>Tudo certo por aqui.</p>
           </div>
         ) : (
@@ -197,6 +211,8 @@ function ResumoFila({ summary, nomesFaixa }: { summary: DashboardSummary; nomesF
                   >
                     Quando
                   </SortableTh>
+                  <th scope="col">Faixa</th>
+                  <th scope="col">Cliente</th>
                   <SortableTh
                     active={errosSort.sortKey === "mensagem"}
                     dir={errosSort.sortDir}
@@ -210,6 +226,8 @@ function ResumoFila({ summary, nomesFaixa }: { summary: DashboardSummary; nomesF
                 {errosOrdenado.map((row, i) => (
                   <tr key={i}>
                     <td className="text-muted">{formatDataHora(String(row.created_at))}</td>
+                    <td>{String(row.faixa ?? "—")}</td>
+                    <td>{String(row.cliente ?? "—")}</td>
                     <td>{String(row.message)}</td>
                   </tr>
                 ))}

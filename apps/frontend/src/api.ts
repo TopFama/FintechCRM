@@ -34,6 +34,14 @@ export class ApiError extends Error {
   }
 }
 
+// Erro de validação do FastAPI (422) vem como lista de objetos com nomes de
+// campo internos — não faz sentido para o usuário.
+function textoDoErro(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) return "Dados inválidos: confira os campos preenchidos.";
+  return "";
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     ...(options.body && !(options.body instanceof FormData)
@@ -56,7 +64,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new ApiError(response.status, body.detail || `Erro ${response.status}`);
+    throw new ApiError(response.status, textoDoErro(body.detail) || `Erro ${response.status}`);
   }
   if (
     response.status === 204 ||
@@ -380,7 +388,7 @@ async function downloadFile(path: string, nomePadrao: string): Promise<void> {
   const response = await fetch(`${API_URL}${path}`, { credentials: "include" });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new ApiError(response.status, body.detail || `Erro ${response.status} ao baixar o arquivo`);
+    throw new ApiError(response.status, textoDoErro(body.detail) || `Erro ${response.status} ao baixar o arquivo`);
   }
   // O backend manda o nome do arquivo (ex. com as faixas e a data) no Content-Disposition
   const disposicao = response.headers.get("content-disposition") ?? "";

@@ -64,18 +64,31 @@ def summary(
 
     por_faixa_rows = (
         db.query(models.Faixa.name, models.QueueItem.status, func.count(models.QueueItem.id))
-        .join(models.QueueItem, and_(models.QueueItem.faixa_id == models.Faixa.id, periodo), isouter=True)
+        # Só faixas com movimento no período (sem listar faixa zerada ou excluída)
+        .join(models.QueueItem, and_(models.QueueItem.faixa_id == models.Faixa.id, periodo))
         .group_by(models.Faixa.name, models.QueueItem.status)
         .all()
     )
     por_faixa: dict[str, dict] = {}
     for faixa_name, status_value, total in por_faixa_rows:
         entry = por_faixa.setdefault(faixa_name, {"faixa": faixa_name})
-        entry[status_value.value if status_value else "sem_envios"] = total
+        entry[status_value.value] = total
 
+    # Mesma fonte do card "Erros de envio" (itens da fila com erro no período).
+    # log_erros só é gravado no disparo; erro de upload, da extração automática
+    # e de "já cobrado hoje" não passa por lá, e o card mostrava erro com a lista vazia.
+    ultimo_log = (
+        db.query(models.ErrorLog.queue_item_id, func.max(models.ErrorLog.created_at).label("quando"))
+        .group_by(models.ErrorLog.queue_item_id)
+        .subquery()
+    )
+    quando = func.coalesce(ultimo_log.c.quando, models.QueueItem.created_at)
     erros = (
-        db.query(models.ErrorLog)
-        .order_by(models.ErrorLog.created_at.desc())
+        db.query(models.QueueItem, models.Faixa.name, quando)
+        .join(models.Faixa, models.Faixa.id == models.QueueItem.faixa_id)
+        .outerjoin(ultimo_log, ultimo_log.c.queue_item_id == models.QueueItem.id)
+        .filter(models.QueueItem.status == models.QueueStatus.error, periodo)
+        .order_by(quando.desc())
         .limit(20)
         .all()
     )
@@ -94,8 +107,15 @@ def summary(
         total_telefones_invalidos=total_invalidos,
         por_faixa=list(por_faixa.values()),
         erros_recentes=[
-            {"id": e.id, "faixa_id": e.faixa_id, "message": e.message, "created_at": e.created_at.isoformat()}
-            for e in erros
+            {
+                "id": item.id,
+                "faixa_id": item.faixa_id,
+                "faixa": nome_faixa,
+                "cliente": f"{item.codigo_cliente} · {item.nome}" if item.nome else item.codigo_cliente,
+                "message": item.error_message or "Erro sem detalhe",
+                "created_at": momento.isoformat(),
+            }
+            for item, nome_faixa, momento in erros
         ],
     )
 

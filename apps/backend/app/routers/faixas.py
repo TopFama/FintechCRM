@@ -66,7 +66,7 @@ def _tem_mapeamento(db: Session, faixa_id: str, template_id: str) -> bool:
     )
 
 
-def _get_template(db: Session, template_id: str) -> models.Template:
+def _get_template(db: Session, template_id: str, exigir_aprovado: bool = True) -> models.Template:
     template = (
         db.query(models.Template)
         .options(selectinload(models.Template.variables))
@@ -75,6 +75,10 @@ def _get_template(db: Session, template_id: str) -> models.Template:
     )
     if not template:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
+    if exigir_aprovado and template.status != models.TemplateStatus.approved:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Só é possível usar template aprovado pela Meta"
+        )
     return template
 
 
@@ -234,7 +238,8 @@ def update_envio(
     if not envio:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Envio não encontrado")
 
-    template = _get_template(db, payload.template_id)
+    # Envio que já usava o template continua editável mesmo se ele deixar de ser aprovado
+    template = _get_template(db, payload.template_id, exigir_aprovado=payload.template_id != envio.template_id)
     number = db.query(models.WhatsappNumber).filter(models.WhatsappNumber.id == payload.whatsapp_number_id).first()
     if not number:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Número não encontrado")

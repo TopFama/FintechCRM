@@ -31,7 +31,6 @@ test.describe("Configurações → Horário", () => {
   });
 
   test("mensagens de validação usam linguagem do usuário, não nomes de campo da API", async ({ page }) => {
-    test.fail(true, "BUG: a tela mostra 'schedule_end deve ser depois de schedule_start' (nomes internos)");
     permitirErrosConsole(page, "400");
     const h = card(page, "Horário de disparo");
     await h.getByRole("button", { name: "Editar" }).click();

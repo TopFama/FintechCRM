@@ -26,12 +26,21 @@ export default function JurosMultaCard() {
   async function salvar() {
     setErro(null);
     setSucesso(null);
+    const vazio = [
+      [juros, "Juros ao mês"],
+      [multa, "Multa"],
+      [carencia, "Carência"],
+    ].find(([valor]) => valor.trim() === "");
+    if (vazio) {
+      setErro(`Preencha o campo "${vazio[1]}" (use 0 para não aplicar).`);
+      return;
+    }
     setSalvando(true);
     try {
       const c = await api.salvarParametrosCobranca({
-        juros_mes_percentual: juros || "0",
-        multa_percentual: multa || "0",
-        dias_min_juros: Number(carencia) || 0,
+        juros_mes_percentual: juros,
+        multa_percentual: multa,
+        dias_min_juros: Number(carencia),
       });
       setJuros(String(c.parametros.juros_mes_percentual));
       setMulta(String(c.parametros.multa_percentual));

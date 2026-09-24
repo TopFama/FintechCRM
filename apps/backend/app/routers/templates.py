@@ -403,7 +403,7 @@ async def testar_envio_chatwoot(
         )
 
     celular = normalize_phone(payload.celular)
-    if not is_valid_phone(celular):
+    if not is_valid_phone(payload.celular):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Celular de destino inválido")
 
     try:

@@ -16,7 +16,22 @@ test.describe("Dashboard", () => {
     await expect(stat(page, "Telefones inválidos")).not.toHaveText("0");
     const porFaixa = card(page, "Por faixa");
     await expect(porFaixa.locator("tbody tr", { hasText: "3 A 10" })).toBeVisible();
-    await expect(card(page, "Erros recentes")).toContainText("Sem erros recentes");
+  });
+
+  test("erros recentes lista os mesmos erros que o card 'Erros de envio' conta", async ({ page }) => {
+    // Erro que não vem do disparo (variável em branco na planilha) também precisa aparecer
+    await expect(stat(page, "Erros de envio")).not.toHaveText("0");
+    const n = Number(await stat(page, "Erros de envio").innerText());
+    const erros = card(page, "Erros recentes");
+    await expect(erros.locator("tbody tr")).toHaveCount(Math.min(n, 20));
+    await expect(erros.locator("tbody tr", { hasText: "Lúcia" })).toContainText("Faltando coluna");
+    // Período sem movimento: card e lista zerados juntos
+    await page.locator(".periodo-card", { hasText: "Personalizado" }).first().click();
+    const periodo = page.locator(".periodo-filtro").first();
+    await periodo.locator('input[type="date"]').first().fill("2020-01-01");
+    await periodo.locator('input[type="date"]').nth(1).fill("2020-01-31");
+    await expect(stat(page, "Erros de envio")).toHaveText("0");
+    await expect(erros).toContainText("Sem erros no período");
   });
 
   test("cards de período: 7 dias, mês e personalizado com datas", async ({ page }) => {
@@ -33,7 +48,6 @@ test.describe("Dashboard", () => {
   });
 
   test("período sem movimento mostra o estado vazio, sem faixas excluídas", async ({ page }) => {
-    test.fail(true, "BUG: 'Por faixa' lista todas as faixas zeradas (inclusive excluídas, ex. RENEGOCIE) e o estado vazio nunca aparece");
     await page.locator(".periodo-card", { hasText: "Personalizado" }).first().click();
     const periodo = page.locator(".periodo-filtro").first();
     await periodo.locator('input[type="date"]').first().fill("2020-01-01");
@@ -44,7 +58,6 @@ test.describe("Dashboard", () => {
   });
 
   test("'Personalizado' sem datas não troca os números por um período diferente do mostrado", async ({ page }) => {
-    test.fail(true, "BUG: clicar em Personalizado sem datas busca o período inteiro (desde sempre) sem avisar");
     let pediuSemData = false;
     page.on("request", (r) => {
       const u = new URL(r.url());
@@ -170,7 +183,6 @@ test.describe("Dashboard", () => {
   });
 
   test("orçamento: escolher 'Personalizado' sem datas não deixa os números do mês anterior na tela", async ({ page }) => {
-    test.fail(true, "BUG: ao trocar para Personalizado o card continua mostrando o gasto do mês anterior, sem datas escolhidas");
     const o = card(page, "Orçamento");
     await expect(o.locator("table")).toBeVisible({ timeout: 30_000 });
     await o.locator("select").selectOption("personalizado");

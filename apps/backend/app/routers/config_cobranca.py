@@ -60,7 +60,7 @@ def put_clusters(
     valores = [c.valor_min for c in body]
     for v in valores:
         if v < 0:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"valor_min não pode ser negativo (recebido: {v})")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"O valor mínimo do cluster não pode ser negativo (recebido: {v})")
 
     if len(valores) != len(set(valores)):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Valores mínimos de cluster repetidos")
@@ -124,12 +124,12 @@ def put_faixas(
     LIMITE_DIAS = (-365, 100000)
     for f in body:
         if not (LIMITE_DIAS[0] <= f.dia_min <= LIMITE_DIAS[1]):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"dia_min {f.dia_min} fora do intervalo permitido (-365 a 100000)")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Dia inicial {f.dia_min} fora do intervalo permitido (-365 a 100000)")
         if f.dia_max is not None:
             if not (LIMITE_DIAS[0] <= f.dia_max <= LIMITE_DIAS[1]):
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"dia_max {f.dia_max} fora do intervalo permitido (-365 a 100000)")
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Dia final {f.dia_max} fora do intervalo permitido (-365 a 100000)")
             if f.dia_max < f.dia_min:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"dia_max ({f.dia_max}) deve ser >= dia_min ({f.dia_min}) na faixa '{f.nome}'")
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"O dia final ({f.dia_max}) não pode ser menor que o dia inicial ({f.dia_min}) na faixa '{f.nome}'")
 
     # Ordenar e verificar sobreposições
     ordenadas = sorted(body, key=lambda f: f.dia_min)
@@ -219,11 +219,11 @@ def put_parametros(
 ):
     # --- Validações ---
     if not (Decimal(0) <= body.juros_mes_percentual <= Decimal(1000)):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "juros_mes_percentual deve estar entre 0 e 1000")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Juros ao mês deve estar entre 0% e 1000%")
     if not (Decimal(0) <= body.multa_percentual <= Decimal(100)):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "multa_percentual deve estar entre 0 e 100")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Multa deve estar entre 0% e 100%")
     if not (0 <= body.dias_min_juros <= 3650):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "dias_min_juros deve estar entre 0 e 3650")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Carência deve estar entre 0 e 3650 dias")
 
     params = db.query(models.ParametrosCobranca).first()
     if params is None:
@@ -260,16 +260,16 @@ def put_config_disparo(
     dias_validos = {"1", "2", "3", "4", "5", "6", "7"}
     dias = [d.strip() for d in body.schedule_days.split(",") if d.strip()]
     if not dias or any(d not in dias_validos for d in dias):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "schedule_days deve conter dias de 1 (segunda) a 7 (domingo)")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Escolha ao menos um dia da semana para o disparo")
     try:
         inicio = datetime.strptime(body.schedule_start, "%H:%M")
         fim = datetime.strptime(body.schedule_end, "%H:%M")
     except ValueError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "schedule_start/schedule_end devem estar no formato HH:MM") from exc
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Início e fim do disparo devem estar no formato HH:MM") from exc
     if fim <= inicio:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "schedule_end deve ser depois de schedule_start")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "O horário de fim deve ser depois do horário de início")
     if not (0 <= body.leads_auto_extract_minutos_antes <= 240):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "leads_auto_extract_minutos_antes deve estar entre 0 e 240")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A extração automática de leads deve ser entre 0 e 240 minutos antes do disparo")
     if not (1 <= body.interval_seconds <= 3600):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "O intervalo deve estar entre 1 e 3600 segundos")
     if not (1 <= body.batch_size <= 500):

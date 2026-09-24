@@ -33,7 +33,7 @@ def create_number(
         .first()
     )
     if existing:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Esse phone_number_id já está cadastrado")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Esse número (Phone Number ID) já está cadastrado")
 
     if payload.meta_token_id:
         token = db.get(models.MetaToken, payload.meta_token_id)

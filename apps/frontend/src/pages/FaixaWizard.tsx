@@ -103,11 +103,13 @@ export default function FaixaWizard() {
               <label>Template aprovado</label>
               <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
                 <option value="">Selecione...</option>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.status})
-                  </option>
-                ))}
+                {templates
+                  .filter((t) => t.status === "approved")
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.language})
+                    </option>
+                  ))}
               </select>
             </div>
             <div className="actions-row">

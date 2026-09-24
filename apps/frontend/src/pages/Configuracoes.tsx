@@ -137,9 +137,13 @@ export default function Configuracoes() {
     carregarGoogle();
     carregarChatwoot();
     api.listTemplates().then(setTemplates).catch(() => undefined);
-    api.listNumbers().then(setNumbers).catch(() => undefined);
     api.listCamposCliente().then(setCampos).catch(() => undefined);
   }, []);
+
+  // Números mudam nos cards de token e de números: o teste de envio acompanha
+  useEffect(() => {
+    api.listNumbers().then(setNumbers).catch(() => undefined);
+  }, [versaoNumeros]);
 
   function selecionarTemplateTeste(templateId: string) {
     setTesteTemplateId(templateId);
@@ -606,7 +610,7 @@ export default function Configuracoes() {
       </div>
 
       <TokensMetaCard onNumerosAlterados={() => setVersaoNumeros((v) => v + 1)} />
-      <NumerosCard versao={versaoNumeros} />
+      <NumerosCard versao={versaoNumeros} onSalvo={() => setVersaoNumeros((v) => v + 1)} />
         </>
       )}
     </div>

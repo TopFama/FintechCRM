@@ -34,16 +34,15 @@ test.describe("Relatórios", () => {
     await aba(page, "Envios realizados").click();
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
     await page.locator("select").first().selectOption({ label: "11 A 20" });
-    await expect(page.getByText("Nenhum envio realizado ainda")).toBeVisible();
+    await expect(page.getByText("Nenhum envio encontrado com esses filtros")).toBeVisible();
     await page.locator("select").first().selectOption({ label: "Todas as faixas" });
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
     await page.locator('input[type="date"]').first().fill("2020-01-01");
     await page.locator('input[type="date"]').nth(1).fill("2020-01-02");
-    await expect(page.getByText("Nenhum envio realizado ainda")).toBeVisible();
+    await expect(page.getByText("Nenhum envio encontrado com esses filtros")).toBeVisible();
   });
 
   test("estado vazio de envios com filtro não diz 'ainda' como se nunca tivesse havido envio", async ({ page }) => {
-    test.fail(true, "BUG (texto): com filtro sem resultado a tela diz 'Nenhum envio realizado ainda'");
     await aba(page, "Envios realizados").click();
     await page.locator("select").first().selectOption({ label: "11 A 20" });
     await expect(page.getByText("Carregando...")).toHaveCount(0);
@@ -71,7 +70,7 @@ test.describe("Relatórios", () => {
     await page.locator('input[type="date"]').nth(1).fill("2020-01-02");
     await aba(page, "Envios realizados").click();
     await expect(page.locator('input[type="date"]').first()).toHaveValue("2020-01-01");
-    await expect(page.getByText("Nenhum envio realizado ainda")).toBeVisible();
+    await expect(page.getByText("Nenhum envio encontrado com esses filtros")).toBeVisible();
   });
 
   test("erro do servidor aparece no topo e some ao trocar de aba com sucesso", async ({ page }) => {

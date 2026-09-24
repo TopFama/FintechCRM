@@ -11,7 +11,7 @@ interface Edicao {
 
 // Números de WhatsApp importados da Meta (card Tokens da Meta). Aqui se liga cada
 // número à sua inbox do Chatwoot, ao token que ele usa e se ele envia ou não.
-export default function NumerosCard({ versao }: { versao: number }) {
+export default function NumerosCard({ versao, onSalvo }: { versao: number; onSalvo?: () => void }) {
   const [numeros, setNumeros] = useState<WhatsappNumber[]>([]);
   const [tokens, setTokens] = useState<MetaToken[]>([]);
   const [erro, setErro] = useState<string | null>(null);
@@ -48,7 +48,9 @@ export default function NumerosCard({ versao }: { versao: number }) {
         chatwoot_inbox_id: edicao.chatwoot_inbox_id ? parseInt(edicao.chatwoot_inbox_id, 10) : null,
       });
       setEditandoId(null);
-      carregar();
+      // Com onSalvo a página recarrega todos os cards que usam números, este incluso
+      if (onSalvo) onSalvo();
+      else carregar();
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao salvar o número");
     } finally {

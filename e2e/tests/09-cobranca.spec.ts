@@ -157,7 +157,6 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
   });
 
   test("filtro sem resultado mostra mensagem de 'nenhum cliente'", async ({ page }) => {
-    test.fail(true, "BUG: consulta sem resultado mostra 'Aplique os filtros para listar clientes.', como se nada tivesse sido feito");
     await filtros(page).getByLabel("Vencimento de").fill("2000-01-01");
     await filtros(page).getByLabel("Vencimento até").fill("2000-01-02");
     await aplicar(page);
@@ -190,7 +189,6 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
   });
 
   test("filtro editado e não aplicado não é usado em silêncio por 'Enviar para fila'", async ({ page }) => {
-    test.fail(true, "BUG: Enviar para fila e Exportar usam os últimos filtros APLICADOS, não os que estão na tela");
     await aplicar(page);
     await escolherMulti(filtros(page), "Faixa de atraso", ["151+"]);
     let url = "";
@@ -206,14 +204,13 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
   });
 
   test("enviar para fila numa faixa sem número/template avisa que nada entrou na fila", async ({ page }) => {
-    test.fail(true, "BUG: a tela diz 'Clientes enviados para a fila' mesmo quando na_fila = 0");
     await escolherMulti(filtros(page), "Faixa de atraso", ["151+"]);
     await aplicar(page);
     const dialogo = responderDialogo(page, true);
     await filtros(page).getByRole("button", { name: "Enviar para fila de cobrança" }).click();
     await dialogo;
-    await expect(filtros(page).locator(".success-box, .error-box")).toBeVisible();
-    await expect(filtros(page).locator(".success-box")).not.toHaveText("Clientes enviados para a fila de cobrança.");
+    await expect(filtros(page).locator(".error-box")).toContainText("Nenhum cliente entrou na fila");
+    await expect(filtros(page).locator(".success-box")).toHaveCount(0);
   });
 
   test("cancelar a confirmação não envia nada", async ({ page }) => {
@@ -236,7 +233,7 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
     const msg = responderDialogo(page, true);
     await filtros(page).getByRole("button", { name: "Enviar para fila de cobrança" }).click();
     expect(await msg).toContain(`Enviar ${n} cliente(s)`);
-    await expect(filtros(page).locator(".success-box")).toHaveText("Clientes enviados para a fila de cobrança.", { timeout: 30_000 });
+    await expect(filtros(page).locator(".success-box")).toHaveText(/^\d+ cliente\(s\) enviado\(s\) para a fila de cobrança\./, { timeout: 30_000 });
     await expect(page.getByText("Aplique os filtros para listar clientes.")).toBeVisible();
 
     const faixas = await apiGet(page, "/faixas");
@@ -253,6 +250,6 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
     await expect(filtros(page).locator(".ms-btn", { hasText: "ESPECIAL" })).toBeVisible();
     await expect(filtros(page).locator(".ms-btn", { hasText: "151+" })).toBeVisible();
     await expect(page.getByText("Consultando o SETA")).toHaveCount(0, { timeout: 30_000 });
-    await expect(page.getByText("Aplique os filtros para listar clientes.").or(linhas(page).first())).toBeVisible();
+    await expect(page.getByText("Nenhum cliente encontrado com esses filtros.").or(linhas(page).first())).toBeVisible();
   });
 });

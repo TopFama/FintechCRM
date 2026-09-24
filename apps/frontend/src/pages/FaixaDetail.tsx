@@ -35,6 +35,14 @@ type MapeamentoEdicao = { fonte_tipo: "coluna" | "campo_cliente"; valor: string 
 
 const QUEUE_POLL_MS = 4000;
 
+const STATUS_FILA: Record<string, string> = {
+  pending: "pendente",
+  reserved: "enviando",
+  sent: "enviado",
+  error: "erro",
+  invalid_phone: "telefone inválido",
+};
+
 const NO_COLUMN = "";
 
 function pickDefault(columns: string[], previous: string | null | undefined): string {
@@ -54,6 +62,7 @@ export default function FaixaDetail() {
   const [queueOffset, setQueueOffset] = useState(0);
   const [queueLimit, setQueueLimit] = useState(LIMIT_OPCOES_PADRAO[1]);
   const [error, setError] = useState<string | null>(null);
+  const [faixaErro, setFaixaErro] = useState<string | null>(null);
   const [lastQueueUpdate, setLastQueueUpdate] = useState<Date | null>(null);
 
   // Números e templates atribuídos à faixa — cada par (FaixaEnvio) cobra em
@@ -74,8 +83,8 @@ export default function FaixaDetail() {
   const [excluindoEnvioId, setExcluindoEnvioId] = useState<string | null>(null);
   const [envioMsg, setEnvioMsg] = useState<string | null>(null);
 
-  // Leads gerados (Cobrança → Leads) para esta mesma faixa de atraso, só
-  // pra dar visibilidade de quem existe antes de decidir subir a planilha.
+  // Leads gerados para esta mesma faixa de atraso (pela Cobrança ou pela
+  // extração automática), só pra dar visibilidade de quem existe.
   const [leads, setLeads] = useState<Lead[]>([]);
   const leadsFaixaSort = useSort<ColunaLeadFaixa>(null, (chave, dir) => {
     setLeadsOffset(0);
@@ -90,8 +99,11 @@ export default function FaixaDetail() {
     if (!id) return;
     api
       .getFaixa(id)
-      .then(setFaixa)
-      .catch((e) => setError(e.message));
+      .then((f) => {
+        setFaixa(f);
+        setFaixaErro(null);
+      })
+      .catch((e) => setFaixaErro(e.message));
   }
 
   function loadQueue(
@@ -176,8 +188,9 @@ export default function FaixaDetail() {
     if (!id) return;
     const interval = setInterval(() => loadQueue(queueOffset, queueLimit), QUEUE_POLL_MS);
     return () => clearInterval(interval);
+    // Ordenação entra nas dependências: senão o intervalo usa a ordenação antiga
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, queueOffset, queueLimit]);
+  }, [id, queueOffset, queueLimit, filaSort.sortKey, filaSort.sortDir]);
 
   // Templates distintos entre os envios ATIVOS — o que a planilha subida
   // precisa alimentar, já que qualquer um pode processar um item da fila.
@@ -326,7 +339,20 @@ export default function FaixaDetail() {
     }
   }
 
-  if (!faixa) return <div className="loading-state">Carregando faixa...</div>;
+  if (!faixa) {
+    if (!faixaErro) return <div className="loading-state">Carregando faixa...</div>;
+    return (
+      <div>
+        <Link to="/faixas" className="back-link">
+          ← Faixas de cobrança
+        </Link>
+        <div className="error-box">
+          <IconAlert width={16} height={16} />
+          <span>Não foi possível abrir a faixa: {faixaErro}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -601,7 +627,7 @@ export default function FaixaDetail() {
                     <td>{q.celular}</td>
                     <td className="text-muted">{q.valor || "—"}</td>
                     <td>
-                      <span className={`badge ${q.status}`}>{q.status}</span>
+                      <span className={`badge ${q.status}`}>{STATUS_FILA[q.status] ?? q.status}</span>
                     </td>
                     <td className="text-faint">{q.error_message || "—"}</td>
                   </tr>
@@ -620,8 +646,8 @@ export default function FaixaDetail() {
           <h3>Leads gerados nesta faixa de atraso</h3>
         </div>
         <p className="card-subtitle">
-          Clientes já gerados em Cobrança → Leads para a faixa de atraso "{faixa.name}" — não entram automaticamente
-          na fila acima, é preciso subir a planilha com esta base.
+          Clientes da faixa de atraso "{faixa.name}" enviados para a fila pela tela Cobrança ou pela extração
+          automática.
         </p>
         {leadsLoading ? (
           <div className="loading-state">Carregando leads...</div>
@@ -629,7 +655,10 @@ export default function FaixaDetail() {
           <div className="empty-state">
             <IconUsers width={28} height={28} />
             <div className="title">Nenhum lead gerado para esta faixa</div>
-            <p>Gere leads em Cobrança → Leads filtrando por esta faixa de atraso.</p>
+            <p>
+              Em <Link to="/cobranca">Cobrança</Link>, filtre por esta faixa de atraso e clique em "Enviar para fila de
+              cobrança".
+            </p>
           </div>
         ) : (
           <>

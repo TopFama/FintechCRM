@@ -35,6 +35,8 @@ export default function Cobranca() {
   const [totalClientes, setTotalClientes] = useState(0);
   const [clientesErro, setClientesErro] = useState<string | null>(null);
   const [clientesCarregando, setClientesCarregando] = useState(false);
+  // Diferencia "ainda não consultou" de "consultou e não veio ninguém"
+  const [consultado, setConsultado] = useState(false);
   const [offset, setOffset] = useState(0);
   const [limit, setLimit] = useState(LIMIT_OPCOES_PADRAO[1]);
   const clientesSort = useSort<ColunaCliente>(null, (chave, dir) => {
@@ -72,6 +74,7 @@ export default function Cobranca() {
         if (seq !== cliReqRef.current) return;
         setClientes(r.itens);
         setTotalClientes(r.total);
+        setConsultado(true);
       })
       .catch((e) => {
         if (seq !== cliReqRef.current) return;
@@ -109,12 +112,15 @@ export default function Cobranca() {
 
   const [exportando, setExportando] = useState(false);
 
+  // Enviar e Exportar usam o que está na tela, mesmo que ainda não aplicado
+  const filtrosMudaram = JSON.stringify(filtrosEdit) !== JSON.stringify(filtrosAplicados);
+
   async function exportarExcel() {
     setExportando(true);
     setLeadsErro(null);
     try {
       await api.exportarClientesCobranca({
-        ...filtrosAplicados,
+        ...filtrosEdit,
         sort_by: clientesSort.sortKey ?? undefined,
         sort_dir: clientesSort.sortDir,
       });
@@ -127,7 +133,7 @@ export default function Cobranca() {
 
   async function gerarLeads() {
     const msg =
-      totalClientes > 0
+      totalClientes > 0 && !filtrosMudaram
         ? `Enviar ${totalClientes} cliente(s) com os filtros atuais para a fila de cobrança?`
         : "Enviar os clientes com os filtros atuais para a fila de cobrança?";
     if (!window.confirm(msg)) return;
@@ -135,11 +141,20 @@ export default function Cobranca() {
     setLeadsErro(null);
     setLeadsResultado(null);
     try {
-      await api.gerarLeads(filtrosAplicados);
+      const r = await api.gerarLeads(filtrosEdit);
+      const semCelular = r.sem_celular > 0 ? ` ${r.sem_celular} sem celular válido.` : "";
+      if (r.na_fila === 0) {
+        setLeadsErro(
+          "Nenhum cliente entrou na fila. Confira se a faixa tem número e template ativos e se os clientes " +
+            "já não estão na fila ou foram cobrados hoje." + semCelular
+        );
+        return;
+      }
       // Depois de enviar, a listagem sai da tela: o acompanhamento é pela fila e pelo Dashboard.
       setClientes([]);
       setTotalClientes(0);
-      setLeadsResultado("Clientes enviados para a fila de cobrança.");
+      setConsultado(false);
+      setLeadsResultado(`${r.na_fila.toLocaleString("pt-BR")} cliente(s) enviado(s) para a fila de cobrança.${semCelular}`);
     } catch (e) {
       setLeadsErro(e instanceof Error ? e.message : "Erro ao enviar para a fila de cobrança");
     } finally {
@@ -237,7 +252,7 @@ export default function Cobranca() {
 
         {!clientesCarregando && clientes.length === 0 && !clientesErro && (
           <div className="empty-state">
-            <p>Aplique os filtros para listar clientes.</p>
+            <p>{consultado ? "Nenhum cliente encontrado com esses filtros." : "Aplique os filtros para listar clientes."}</p>
           </div>
         )}
 

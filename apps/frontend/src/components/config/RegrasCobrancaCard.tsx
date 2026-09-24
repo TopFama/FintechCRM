@@ -31,11 +31,16 @@ export default function RegrasCobrancaCard() {
     return `${clusterId}::${faixaId}`;
   }
 
-  function aplicarConfig(c: ConfigCobrancaOut) {
+  // Ao salvar um bloco só ele é recarregado do servidor, para não apagar o
+  // que foi editado e ainda não salvo nos outros blocos.
+  function aplicarConfig(c: ConfigCobrancaOut, bloco: "clusters" | "faixas" | "matriz" | "tudo" = "tudo") {
     setConfig(c);
-    setClusters(c.clusters.map((x: ClusterConfig) => ({ id: x.id, nome: x.nome, valor_min: x.valor_min })));
-    setFaixas(c.faixas.map((x: FaixaAtrasoConfig) => ({ id: x.id, nome: x.nome, dia_min: x.dia_min, dia_max: x.dia_max })));
-    setMatriz(new Set(c.matriz.map((m: CelulaMatriz) => chave(m.cluster_id, m.faixa_id))));
+    if (bloco === "clusters" || bloco === "tudo")
+      setClusters(c.clusters.map((x: ClusterConfig) => ({ id: x.id, nome: x.nome, valor_min: x.valor_min })));
+    if (bloco === "faixas" || bloco === "tudo")
+      setFaixas(c.faixas.map((x: FaixaAtrasoConfig) => ({ id: x.id, nome: x.nome, dia_min: x.dia_min, dia_max: x.dia_max })));
+    if (bloco === "matriz" || bloco === "tudo")
+      setMatriz(new Set(c.matriz.map((m: CelulaMatriz) => chave(m.cluster_id, m.faixa_id))));
   }
 
   function carregar() {
@@ -51,7 +56,7 @@ export default function RegrasCobrancaCard() {
     setSalvandoClusters(true);
     try {
       const c = await api.salvarClustersCobranca(clusters);
-      aplicarConfig(c);
+      aplicarConfig(c, "clusters");
       setSucesso("Clusters salvos");
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao salvar clusters");
@@ -66,7 +71,7 @@ export default function RegrasCobrancaCard() {
     setSalvandoFaixas(true);
     try {
       const c = await api.salvarFaixasCobranca(faixas);
-      aplicarConfig(c);
+      aplicarConfig(c, "faixas");
       setSucesso("Faixas de atraso salvas");
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao salvar faixas de atraso");
@@ -90,7 +95,7 @@ export default function RegrasCobrancaCard() {
         }
       }
       const c = await api.salvarMatrizCobranca(celulas);
-      aplicarConfig(c);
+      aplicarConfig(c, "matriz");
       setSucesso("Regra do WhatsApp salva");
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao salvar a matriz do WhatsApp");
