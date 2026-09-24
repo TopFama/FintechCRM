@@ -452,7 +452,7 @@ with TestClient(app) as client:
             q_row = cur.fetchone()
             assert q_row is not None
             vars_json = q_row[0]
-            assert vars_json["codigo_e_nome"] == "Joao da Silva"
+            assert vars_json["codigo_e_nome"] == "Joao"  # nome sempre reduzido ao primeiro nome
             assert vars_json["valor_cobrar"] == "75.00"
 
 print("OK")
