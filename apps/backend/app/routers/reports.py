@@ -9,7 +9,7 @@ from openpyxl import Workbook
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
-from sqlalchemy import case
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
@@ -462,6 +462,168 @@ def export_dispatch_report(
         content=_build_xlsx(headers, rows),
         media_type=_XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="relatorio_envios.xlsx"'},
+    )
+
+
+# --- Pendentes e erros (itens da fila) ---------------------------------------
+# Mesmas regras de data dos cards do Dashboard: pendente e erro contam pela
+# data em que entraram na fila (created_at), pra contagem bater com o card.
+
+
+FilaSortColumn = Literal["codigo_cliente", "nome", "faixa", "valor", "telefone", "entrou_em", "quando", "mensagem"]
+
+_STATUS_PENDENTE = (models.QueueStatus.pending, models.QueueStatus.reserved)
+
+
+def _ultimo_erro():
+    return (
+        select(models.ErrorLog.queue_item_id, func.max(models.ErrorLog.created_at).label("quando"))
+        .group_by(models.ErrorLog.queue_item_id)
+        .subquery()
+    )
+
+
+def _fila_report_query(
+    db: Session,
+    status_fila: tuple[models.QueueStatus, ...],
+    faixa_id: str | None,
+    de: date | None,
+    ate: date | None,
+    sort_by: str | None = None,
+    sort_dir: str = "asc",
+):
+    ultimo = _ultimo_erro()
+    # erro de upload/extração não passa por log_erros: vale a entrada na fila
+    quando = func.coalesce(ultimo.c.quando, models.QueueItem.created_at)
+    query = (
+        db.query(models.QueueItem, models.Faixa.name, quando)
+        .join(models.Faixa, models.Faixa.id == models.QueueItem.faixa_id)
+        .outerjoin(ultimo, ultimo.c.queue_item_id == models.QueueItem.id)
+        .filter(models.QueueItem.status.in_(status_fila))
+    )
+    if faixa_id:
+        query = query.filter(models.QueueItem.faixa_id == faixa_id)
+    query = _no_periodo(query, models.QueueItem.created_at, de, ate)
+
+    def _ordenado(coluna):
+        return coluna.desc() if sort_dir == "desc" else coluna.asc()
+
+    if sort_by == "faixa":
+        nomes_faixa = carregar_regras(db).nomes_faixa
+        expr = (
+            case({nome: i for i, nome in enumerate(nomes_faixa)}, value=models.Faixa.name, else_=len(nomes_faixa))
+            if nomes_faixa
+            else models.Faixa.name
+        )
+        return query.order_by(_ordenado(expr), models.QueueItem.id)
+    colunas = {
+        "codigo_cliente": models.QueueItem.codigo_cliente,
+        "nome": models.QueueItem.nome,
+        "valor": models.QueueItem.valor,
+        "telefone": models.QueueItem.celular,
+        "entrou_em": models.QueueItem.created_at,
+        "quando": quando,
+        "mensagem": models.QueueItem.error_message,
+    }
+    if sort_by in colunas:
+        return query.order_by(_ordenado(colunas[sort_by]), models.QueueItem.id)
+    padrao = quando if models.QueueStatus.error in status_fila else models.QueueItem.created_at
+    return query.order_by(padrao.desc(), models.QueueItem.id)
+
+
+def _to_fila_item(item: models.QueueItem, nome_faixa: str, quando: datetime) -> schemas.FilaReportItemOut:
+    return schemas.FilaReportItemOut(
+        id=item.id,
+        codigo_cliente=item.codigo_cliente,
+        nome=item.nome,
+        faixa_id=item.faixa_id,
+        faixa=nome_faixa,
+        valor=item.valor,
+        telefone=item.celular,
+        entrou_em=item.created_at,
+        mensagem=(item.error_message or "Erro sem detalhe") if item.status == models.QueueStatus.error else None,
+        quando=quando,
+    )
+
+
+def _pagina_fila(db, status_fila, faixa_id, de, ate, limit, offset, sort_by, sort_dir):
+    query = _fila_report_query(db, status_fila, faixa_id, de, ate, sort_by, sort_dir)
+    total = query.count()
+    itens = [_to_fila_item(*linha) for linha in query.offset(offset).limit(limit).all()]
+    return schemas.FilaReportPage(total=total, itens=itens)
+
+
+@api.get("/pendentes", response_model=schemas.FilaReportPage)
+def list_pendentes(
+    faixa_id: str | None = None,
+    de: date | None = Query(None, description="Entrou na fila de (GMT-3)"),
+    ate: date | None = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    sort_by: FilaSortColumn | None = Query(None),
+    sort_dir: Literal["asc", "desc"] = Query("asc"),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    return _pagina_fila(db, _STATUS_PENDENTE, faixa_id, de, ate, limit, offset, sort_by, sort_dir)
+
+
+@api.get("/pendentes/export")
+def export_pendentes(
+    faixa_id: str | None = None,
+    de: date | None = Query(None),
+    ate: date | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    linhas = _fila_report_query(db, _STATUS_PENDENTE, faixa_id, de, ate).all()
+    headers = ["Código do cliente", "Nome", "Faixa de atraso", "Valor", "Telefone", "Entrou na fila em"]
+    rows = [
+        [item.codigo_cliente, _formula_safe(item.nome), faixa, _formula_safe(item.valor or ""),
+         _formula_safe(item.celular), _hora_br(item.created_at)]
+        for item, faixa, _q in linhas
+    ]
+    return Response(
+        content=_build_xlsx(headers, rows),
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="relatorio_pendentes.xlsx"'},
+    )
+
+
+@api.get("/erros", response_model=schemas.FilaReportPage)
+def list_erros(
+    faixa_id: str | None = None,
+    de: date | None = Query(None, description="Entrou na fila de (GMT-3)"),
+    ate: date | None = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    sort_by: FilaSortColumn | None = Query(None),
+    sort_dir: Literal["asc", "desc"] = Query("asc"),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    return _pagina_fila(db, (models.QueueStatus.error,), faixa_id, de, ate, limit, offset, sort_by, sort_dir)
+
+
+@api.get("/erros/export")
+def export_erros(
+    faixa_id: str | None = None,
+    de: date | None = Query(None),
+    ate: date | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    linhas = _fila_report_query(db, (models.QueueStatus.error,), faixa_id, de, ate).all()
+    headers = ["Código do cliente", "Nome", "Faixa de atraso", "Valor", "Telefone", "Mensagem de erro", "Quando"]
+    rows = [
+        [item.codigo_cliente, _formula_safe(item.nome), faixa, _formula_safe(item.valor or ""),
+         _formula_safe(item.celular), _formula_safe(item.error_message or "Erro sem detalhe"), _hora_br(quando)]
+        for item, faixa, quando in linhas
+    ]
+    return Response(
+        content=_build_xlsx(headers, rows),
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="relatorio_erros.xlsx"'},
     )
 
 

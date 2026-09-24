@@ -73,6 +73,43 @@ test.describe("Relatórios", () => {
     await expect(page.getByText("Nenhum envio encontrado com esses filtros")).toBeVisible();
   });
 
+  test("abre direto pela URL na aba e período certos e F5 mantém", async ({ page }) => {
+    await page.goto("/relatorios?aba=envios&de=2020-01-01&ate=2020-01-02");
+    await expect(aba(page, "Envios realizados")).not.toHaveClass(/secondary/);
+    await expect(page.locator('input[type="date"]').first()).toHaveValue("2020-01-01");
+    await expect(page.getByText("Nenhum envio encontrado com esses filtros")).toBeVisible();
+    await page.reload();
+    await expect(page.locator('input[type="date"]').nth(1)).toHaveValue("2020-01-02");
+    await aba(page, "Pendentes").click();
+    await expect(page).toHaveURL(/aba=pendentes/);
+    await page.goBack();
+    await expect(page).toHaveURL(/aba=envios/);
+  });
+
+  test("pendentes: lista a fila, ordena, exporta com o mesmo total", async ({ page }) => {
+    await aba(page, "Pendentes").click();
+    await expect(page.getByText("Entrou na fila de")).toBeVisible();
+    await expect(page.getByText("Carregando...")).toHaveCount(0);
+    const linhasTela = tabela(page).locator("tbody tr");
+    await expect(linhasTela.first()).toBeVisible();
+    await tabela(page).getByRole("columnheader", { name: /^Código/ }).click();
+    await expect(page.getByText("Carregando...")).toHaveCount(0);
+    const cods = await tabela(page).locator("tbody tr td:nth-child(1)").allInnerTexts();
+    expect(cods).toEqual([...cods].sort());
+    const { nome, linhas } = await baixar(page, () => page.getByRole("button", { name: /Baixar Excel/ }).click());
+    expect(nome).toBe("relatorio_pendentes.xlsx");
+    const total = Number((await page.locator(".paginacao-info").innerText()).match(/de (\d+)/)![1]);
+    expect(linhas.length - 1).toBe(total);
+  });
+
+  test("erros: mostra a mensagem do erro e exporta", async ({ page }) => {
+    await page.goto("/relatorios?aba=erros");
+    await expect(tabela(page).locator("tbody tr", { hasText: "Lúcia" })).toContainText("Faltando coluna");
+    const { nome, linhas } = await baixar(page, () => page.getByRole("button", { name: /Baixar Excel/ }).click());
+    expect(nome).toBe("relatorio_erros.xlsx");
+    expect(linhas[0]).toContain("Mensagem de erro");
+  });
+
   test("erro do servidor aparece no topo e some ao trocar de aba com sucesso", async ({ page }) => {
     permitirErrosConsole(page, "500");
     await page.route("**/relatorios/telefones-invalidos?*", (r) =>

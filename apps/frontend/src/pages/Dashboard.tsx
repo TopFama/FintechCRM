@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { api, DashboardSummary } from "../api";
 import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
@@ -54,7 +55,7 @@ export default function Dashboard() {
       <FiltroPeriodo opcoes={["hoje", "7dias", "mes", "personalizado"]} inicial="hoje" onChange={setPeriodo} />
       {periodoIncompleto && <div className="empty-state"><p>Escolha a data mínima e a máxima.</p></div>}
       {!periodoIncompleto && !summary && !error && <div className="loading-state">Carregando resumo da fila...</div>}
-      {summary && <ResumoFila summary={summary} nomesFaixa={opcoes.regras?.faixas} />}
+      {summary && <ResumoFila summary={summary} periodo={periodo} nomesFaixa={opcoes.regras?.faixas} />}
 
       <MatrizCobrancaCard opcoes={opcoes} />
       <EfetividadeCard opcoes={opcoes} />
@@ -64,7 +65,54 @@ export default function Dashboard() {
   );
 }
 
-function ResumoFila({ summary, nomesFaixa }: { summary: DashboardSummary; nomesFaixa: string[] | undefined }) {
+// Link pro relatório do card com o mesmo período do Dashboard (a contagem bate)
+function linkRelatorio(aba: string, periodo: Periodo, extra: Record<string, string> = {}) {
+  const q = new URLSearchParams({ aba, ...(periodo.de ? { de: periodo.de } : {}), ...(periodo.ate ? { ate: periodo.ate } : {}), ...extra });
+  return `/relatorios?${q.toString()}`;
+}
+
+function StatLink({
+  to,
+  valor,
+  rotulo,
+  ariaLabel,
+  tom,
+  icone,
+  children,
+}: {
+  to: string;
+  valor: React.ReactNode;
+  rotulo: string;
+  ariaLabel: string;
+  tom: string;
+  icone: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <Link to={to} className="stat stat-link" aria-label={ariaLabel}>
+      <div className={`stat-icon ${tom}`}>{icone}</div>
+      <div className="stat-corpo">
+        <div className="value">{valor}</div>
+        <div className="label">{rotulo}</div>
+        {children}
+        <div className="stat-detalhes" aria-hidden="true">
+          Ver detalhes →
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function ResumoFila({
+  summary,
+  periodo,
+  nomesFaixa,
+}: {
+  summary: DashboardSummary;
+  periodo: Periodo;
+  nomesFaixa: string[] | undefined;
+}) {
+  const navigate = useNavigate();
   const ordemFaixa = ordemFaixaFn(nomesFaixa);
   const porFaixaSort = useSort<"faixa" | "pending" | "sent" | "error">("faixa");
   const porFaixaOrdenado = ordenarPor(
@@ -91,42 +139,38 @@ function ResumoFila({ summary, nomesFaixa }: { summary: DashboardSummary; nomesF
   return (
     <>
       <div className="stat-grid">
-        <div className="stat">
-          <div className="stat-icon tone-primary">
-            <IconInbox />
-          </div>
-          <div>
-            <div className="value">{summary.total_pendentes}</div>
-            <div className="label">Pendentes na fila</div>
-          </div>
-        </div>
-        <div className="stat">
-          <div className="stat-icon tone-success">
-            <IconCheckCircle />
-          </div>
-          <div>
-            <div className="value">{summary.total_enviados}</div>
-            <div className="label">Cobrados (enviados)</div>
-          </div>
-        </div>
-        <div className="stat">
-          <div className="stat-icon tone-danger">
-            <IconAlert />
-          </div>
-          <div>
-            <div className="value">{summary.total_erros}</div>
-            <div className="label">Erros de envio</div>
-          </div>
-        </div>
-        <div className="stat">
-          <div className="stat-icon tone-warning">
-            <IconPhone />
-          </div>
-          <div>
-            <div className="value">{summary.total_telefones_invalidos}</div>
-            <div className="label">Telefones inválidos</div>
-          </div>
-        </div>
+        <StatLink
+          to={linkRelatorio("pendentes", periodo)}
+          valor={summary.total_pendentes}
+          rotulo="Pendentes na fila"
+          ariaLabel={`Ver ${summary.total_pendentes} pendentes na fila`}
+          tom="tone-primary"
+          icone={<IconInbox />}
+        />
+        <StatLink
+          to={linkRelatorio("envios", periodo)}
+          valor={summary.total_enviados}
+          rotulo="Cobrados (enviados)"
+          ariaLabel={`Ver ${summary.total_enviados} cobranças enviadas`}
+          tom="tone-success"
+          icone={<IconCheckCircle />}
+        />
+        <StatLink
+          to={linkRelatorio("erros", periodo)}
+          valor={summary.total_erros}
+          rotulo="Erros de envio"
+          ariaLabel={`Ver ${summary.total_erros} erros de envio`}
+          tom="tone-danger"
+          icone={<IconAlert />}
+        />
+        <StatLink
+          to={linkRelatorio("invalidos", periodo)}
+          valor={summary.total_telefones_invalidos}
+          rotulo="Telefones inválidos"
+          ariaLabel={`Ver ${summary.total_telefones_invalidos} telefones inválidos`}
+          tom="tone-warning"
+          icone={<IconPhone />}
+        />
       </div>
 
       <div className="card">
@@ -175,14 +219,35 @@ function ResumoFila({ summary, nomesFaixa }: { summary: DashboardSummary; nomesF
                 </tr>
               </thead>
               <tbody>
-                {porFaixaOrdenado.map((row, i) => (
-                  <tr key={i}>
-                    <td className="cell-strong">{String(row.faixa)}</td>
-                    <td>{String(row.pending ?? 0)}</td>
-                    <td>{String(row.sent ?? 0)}</td>
-                    <td>{String(row.error ?? 0)}</td>
-                  </tr>
-                ))}
+                {porFaixaOrdenado.map((row) => {
+                  const faixaId = String(row.faixa_id);
+                  const link = (aba: string) => linkRelatorio(aba, periodo, { faixa_id: faixaId });
+                  const celula = (aba: string, valor: unknown, rotulo: string) => (
+                    <td>
+                      <Link
+                        to={link(aba)}
+                        className="link-celula"
+                        aria-label={`Ver ${String(valor ?? 0)} ${rotulo} da faixa ${String(row.faixa)}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {String(valor ?? 0)}
+                      </Link>
+                    </td>
+                  );
+                  return (
+                    // A linha inteira abre os envios da faixa; cada número abre o próprio relatório
+                    <tr key={faixaId} className="linha-clicavel" onClick={() => navigate(link("envios"))}>
+                      <td className="cell-strong">
+                        <Link to={link("envios")} className="link-celula" onClick={(e) => e.stopPropagation()}>
+                          {String(row.faixa)}
+                        </Link>
+                      </td>
+                      {celula("pendentes", row.pending, "pendentes")}
+                      {celula("envios", row.sent, "enviados")}
+                      {celula("erros", row.error, "erros")}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

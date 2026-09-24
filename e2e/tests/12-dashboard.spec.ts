@@ -68,6 +68,44 @@ test.describe("Dashboard", () => {
     expect(pediuSemData).toBe(false);
   });
 
+  for (const [rotulo, aba] of [
+    ["Pendentes na fila", "pendentes"],
+    ["Cobrados (enviados)", "envios"],
+    ["Erros de envio", "erros"],
+    ["Telefones inválidos", "invalidos"],
+  ] as const) {
+    test(`card '${rotulo}' abre o relatório '${aba}' do mesmo período com o mesmo total`, async ({ page }) => {
+      const valor = stat(page, rotulo);
+      await expect(valor).not.toHaveText("…");
+      const n = Number(await valor.innerText());
+      const link = page.getByRole("link", { name: new RegExp(`^Ver ${n} `) }).filter({ has: page.locator(".label", { hasText: rotulo }) });
+      await link.hover();
+      await link.click();
+      const hoje = new Date().toLocaleDateString("sv-SE");
+      await expect(page).toHaveURL(new RegExp(`/relatorios\\?aba=${aba}&de=${hoje}&ate=${hoje}$`));
+      await expect(page.getByText("Carregando...")).toHaveCount(0, { timeout: 30_000 });
+      if (n === 0) {
+        await expect(page.locator(".empty-state")).toBeVisible();
+      } else {
+        await expect(page.locator(".paginacao-info")).toContainText(`de ${n}`);
+      }
+    });
+  }
+
+  test("card é navegável pelo teclado e a linha da faixa abre o relatório filtrado", async ({ page }) => {
+    const pend = page.locator("a.stat-link").first();
+    await pend.focus();
+    await expect(pend).toBeFocused();
+    await expect(pend).toContainText("Ver detalhes →");
+    const linha = card(page, "Por faixa").locator("tbody tr", { hasText: "3 A 10" });
+    const enviados = (await linha.locator("td").nth(2).innerText()).trim();
+    await linha.locator("td").nth(2).getByRole("link").click();
+    await expect(page).toHaveURL(/aba=envios.*faixa_id=/);
+    await expect(page.locator("select").first()).toHaveValue(/.+/);
+    await expect(page.getByText("Carregando...")).toHaveCount(0);
+    if (enviados !== "0") await expect(page.locator(".paginacao-info")).toContainText(`de ${enviados}`);
+  });
+
   test("tabela por faixa ordena pela ordem de atraso e por números", async ({ page }) => {
     const porFaixa = card(page, "Por faixa");
     await porFaixa.getByRole("columnheader", { name: /^Enviado/ }).click();

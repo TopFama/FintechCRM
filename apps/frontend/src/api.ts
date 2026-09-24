@@ -282,6 +282,16 @@ export const api = {
     downloadFile(`/relatorios/telefones-invalidos/export?${montarQuery(params)}`, "telefones_invalidos.xlsx"),
   downloadDispatchReportXlsx: (params: { faixa_id?: string; de?: string; ate?: string }) =>
     downloadFile(`/relatorios/envios/export?${montarQuery(params)}`, "relatorio_envios.xlsx"),
+  listPendentes: (
+    params: { faixa_id?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+  ) => request<FilaReportPage>(`/relatorios/pendentes?${montarQuery(params)}`),
+  downloadPendentesXlsx: (params: { faixa_id?: string; de?: string; ate?: string }) =>
+    downloadFile(`/relatorios/pendentes/export?${montarQuery(params)}`, "relatorio_pendentes.xlsx"),
+  listErros: (
+    params: { faixa_id?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+  ) => request<FilaReportPage>(`/relatorios/erros?${montarQuery(params)}`),
+  downloadErrosXlsx: (params: { faixa_id?: string; de?: string; ate?: string }) =>
+    downloadFile(`/relatorios/erros/export?${montarQuery(params)}`, "relatorio_erros.xlsx"),
   listPagamentos: (params: FiltrosPagamentos & { limit: number; offset: number } & OrdenacaoParams) =>
     request<PagamentosPage>(`/relatorios/pagamentos?${montarQuery(params)}`),
   downloadPagamentosXlsx: (params: FiltrosPagamentos) =>
@@ -625,6 +635,24 @@ export interface DispatchReportItem {
   valor: string | null;
   telefone: string;
   enviado_em: string;
+}
+
+export interface FilaReportItem {
+  id: string;
+  codigo_cliente: string;
+  nome: string;
+  faixa_id: string;
+  faixa: string;
+  valor: string | null;
+  telefone: string;
+  entrou_em: string;
+  mensagem: string | null;
+  quando: string | null;
+}
+
+export interface FilaReportPage {
+  total: number;
+  itens: FilaReportItem[];
 }
 
 export interface DashboardSummary {

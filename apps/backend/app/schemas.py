@@ -440,6 +440,26 @@ class DispatchReportPage(BaseModel):
     itens: list[DispatchReportItemOut]
 
 
+class FilaReportItemOut(BaseModel):
+    """Linha dos relatórios de pendentes e de erros (itens da fila)."""
+
+    id: str
+    codigo_cliente: str
+    nome: str
+    faixa_id: str
+    faixa: str
+    valor: str | None
+    telefone: str
+    entrou_em: datetime
+    mensagem: str | None = None
+    quando: datetime | None = None
+
+
+class FilaReportPage(BaseModel):
+    total: int
+    itens: list[FilaReportItemOut]
+
+
 class DashboardSummary(BaseModel):
     total_pendentes: int
     total_enviados: int

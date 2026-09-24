@@ -1,12 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { api, DispatchReportItem, Faixa, InvalidPhoneRecord, PagamentoCliente, PagamentosPage } from "../api";
+import { useSearchParams } from "react-router-dom";
+import {
+  api,
+  DispatchReportItem,
+  Faixa,
+  FilaReportItem,
+  InvalidPhoneRecord,
+  PagamentoCliente,
+  PagamentosPage,
+} from "../api";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { formatBRL, formatData, formatDataHora } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
 import { SortDirection, useSort } from "../sort";
 
-type Tab = "invalidos" | "envios" | "pagamentos";
+type Tab = "invalidos" | "envios" | "pagamentos" | "pendentes" | "erros";
+const ABAS: Tab[] = ["invalidos", "envios", "pagamentos", "pendentes", "erros"];
+type ColunaFila = "codigo_cliente" | "nome" | "faixa" | "valor" | "telefone" | "entrou_em" | "quando" | "mensagem";
 type ColunaInvalido = "codigo_cliente" | "celular_original" | "celular_normalizado" | "motivo" | "created_at";
 type ColunaPagamento =
   | "codigo_cliente"
@@ -20,9 +31,38 @@ type ColunaPagamento =
 type ColunaEnvio = "codigo_cliente" | "faixa" | "nome" | "valor" | "telefone" | "enviado_em";
 
 export default function Relatorios() {
-  const [tab, setTab] = useState<Tab>("invalidos");
+  // Aba, período e faixa vivem na URL: um link do Dashboard abre direto no
+  // relatório certo e F5/voltar mantêm o que estava na tela.
+  const [params, setParams] = useSearchParams();
+  const abaUrl = params.get("aba") as Tab | null;
+  const tab: Tab = abaUrl && ABAS.includes(abaUrl) ? abaUrl : "invalidos";
+  const faixaId = params.get("faixa_id") ?? "";
+  const cobradoDe = params.get("de") ?? "";
+  const cobradoAte = params.get("ate") ?? "";
+  function mudarUrl(mudancas: Record<string, string>) {
+    setParams(
+      (atual) => {
+        const proximo = new URLSearchParams(atual);
+        for (const [k, v] of Object.entries(mudancas)) {
+          if (v) proximo.set(k, v);
+          else proximo.delete(k);
+        }
+        return proximo;
+      },
+      { replace: true }
+    );
+  }
+  const setTab = (t: Tab) => setParams((atual) => {
+    const proximo = new URLSearchParams(atual);
+    proximo.set("aba", t);
+    return proximo;
+  });
+  const setFaixaId = (v: string) => mudarUrl({ faixa_id: v });
+  const setCobradoDe = (v: string) => mudarUrl({ de: v });
+  const setCobradoAte = (v: string) => mudarUrl({ ate: v });
   const [faixas, setFaixas] = useState<Faixa[]>([]);
-  const [faixaId, setFaixaId] = useState<string>("");
+  const [fila, setFila] = useState<FilaReportItem[]>([]);
+  const [filaTotal, setFilaTotal] = useState(0);
   const [invalidPhones, setInvalidPhones] = useState<InvalidPhoneRecord[]>([]);
   const [invalidTotal, setInvalidTotal] = useState(0);
   const [dispatchReport, setDispatchReport] = useState<DispatchReportItem[]>([]);
@@ -32,8 +72,6 @@ export default function Relatorios() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
-  const [cobradoDe, setCobradoDe] = useState("");
-  const [cobradoAte, setCobradoAte] = useState("");
   const [pagoDe, setPagoDe] = useState("");
   const [pagoAte, setPagoAte] = useState("");
   const [pagamentos, setPagamentos] = useState<PagamentosPage | null>(null);
@@ -50,13 +88,29 @@ export default function Relatorios() {
     setOffset(0);
     load(0, limit, chave, dir);
   });
+  const pendentesSort = useSort<ColunaFila>(null, (chave, dir) => {
+    setOffset(0);
+    load(0, limit, chave, dir);
+  });
+  const errosSort = useSort<ColunaFila>(null, (chave, dir) => {
+    setOffset(0);
+    load(0, limit, chave, dir);
+  });
 
   useEffect(() => {
     api.listFaixas().then(setFaixas).catch(() => undefined);
   }, []);
 
   function sortAtual() {
-    return tab === "invalidos" ? invalidosSort : tab === "pagamentos" ? pagamentosSort : enviosSort;
+    return tab === "invalidos"
+      ? invalidosSort
+      : tab === "pagamentos"
+      ? pagamentosSort
+      : tab === "pendentes"
+      ? pendentesSort
+      : tab === "erros"
+      ? errosSort
+      : enviosSort;
   }
 
   // Descarta resposta de consulta já substituída (ex.: data mínima preenchida
@@ -93,6 +147,12 @@ export default function Relatorios() {
               sort_dir: sortDir,
             })
             .then((r) => atual() && setPagamentos(r))
+        : tab === "pendentes" || tab === "erros"
+        ? (tab === "pendentes" ? api.listPendentes(params) : api.listErros(params)).then((r) => {
+            if (!atual()) return;
+            setFila(r.itens);
+            setFilaTotal(r.total);
+          })
         : tab === "invalidos"
         ? api.listInvalidPhones(params).then((r) => {
             if (!atual()) return;
@@ -146,6 +206,10 @@ export default function Relatorios() {
         await api.downloadInvalidPhonesXlsx(periodo);
       } else if (tab === "envios") {
         await api.downloadDispatchReportXlsx(periodo);
+      } else if (tab === "pendentes") {
+        await api.downloadPendentesXlsx(periodo);
+      } else if (tab === "erros") {
+        await api.downloadErrosXlsx(periodo);
       } else {
         await api.downloadPagamentosXlsx(filtrosPagamentos());
       }
@@ -156,12 +220,21 @@ export default function Relatorios() {
     }
   }
 
+  const totalAtual =
+    tab === "invalidos"
+      ? invalidTotal
+      : tab === "envios"
+      ? dispatchTotal
+      : tab === "pendentes" || tab === "erros"
+      ? filaTotal
+      : pagamentos?.total ?? 0;
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h2>Relatórios</h2>
-          <div className="subtitle">Telefones inválidos, cobranças enviadas e quem pagou</div>
+          <div className="subtitle">Telefones inválidos, cobranças enviadas, pendentes, erros e quem pagou</div>
         </div>
       </div>
 
@@ -179,6 +252,12 @@ export default function Relatorios() {
           </button>
           <button className={tab === "envios" ? "" : "secondary"} onClick={() => setTab("envios")}>
             Envios realizados
+          </button>
+          <button className={tab === "pendentes" ? "" : "secondary"} onClick={() => setTab("pendentes")}>
+            Pendentes
+          </button>
+          <button className={tab === "erros" ? "" : "secondary"} onClick={() => setTab("erros")}>
+            Erros
           </button>
           <button className={tab === "pagamentos" ? "" : "secondary"} onClick={() => setTab("pagamentos")}>
             Quem pagou
@@ -200,7 +279,9 @@ export default function Relatorios() {
 
         <div className="form-row" style={{ flexWrap: "wrap", marginBottom: 12 }}>
           <div className="field">
-            <label htmlFor="rel-cobrado-de">{tab === "invalidos" ? "Registrado de" : "Cobrado de"}</label>
+            <label htmlFor="rel-cobrado-de">
+              {tab === "invalidos" ? "Registrado de" : tab === "pendentes" || tab === "erros" ? "Entrou na fila de" : "Cobrado de"}
+            </label>
             <input id="rel-cobrado-de" type="date" value={cobradoDe} max={cobradoAte || undefined} onChange={(e) => setCobradoDe(e.target.value)} />
           </div>
           <div className="field">
@@ -225,6 +306,8 @@ export default function Relatorios() {
           <div className="loading-state">Carregando...</div>
         ) : tab === "pagamentos" ? (
           <TabelaPagamentos dados={pagamentos} ordenacao={pagamentosSort} />
+        ) : tab === "pendentes" || tab === "erros" ? (
+          <TabelaFila tipo={tab} itens={fila} ordenacao={tab === "pendentes" ? pendentesSort : errosSort} />
         ) : tab === "invalidos" ? (
           invalidPhones.length === 0 ? (
             <div className="empty-state">
@@ -327,9 +410,9 @@ export default function Relatorios() {
             </table>
           </div>
         )}
-        {(tab === "invalidos" ? invalidTotal : tab === "envios" ? dispatchTotal : pagamentos?.total ?? 0) > 0 && (
+        {(totalAtual) > 0 && (
           <Paginacao
-            total={tab === "invalidos" ? invalidTotal : tab === "envios" ? dispatchTotal : pagamentos?.total ?? 0}
+            total={totalAtual}
             limit={limit}
             offset={offset}
             onChange={mudarPagina}
@@ -426,5 +509,84 @@ function TabelaPagamentos({
         </table>
       </div>
     </>
+  );
+}
+
+const COLUNAS_FILA: Record<"pendentes" | "erros", [ColunaFila, string][]> = {
+  pendentes: [
+    ["codigo_cliente", "Código"],
+    ["nome", "Nome"],
+    ["faixa", "Faixa"],
+    ["valor", "Valor"],
+    ["telefone", "Telefone"],
+    ["entrou_em", "Entrou na fila em"],
+  ],
+  erros: [
+    ["codigo_cliente", "Código"],
+    ["nome", "Nome"],
+    ["faixa", "Faixa"],
+    ["valor", "Valor"],
+    ["telefone", "Telefone"],
+    ["mensagem", "Mensagem"],
+    ["quando", "Quando"],
+  ],
+};
+
+function TabelaFila({
+  tipo,
+  itens,
+  ordenacao,
+}: {
+  tipo: "pendentes" | "erros";
+  itens: FilaReportItem[];
+  ordenacao: ReturnType<typeof useSort<ColunaFila>>;
+}) {
+  if (itens.length === 0) {
+    return (
+      <div className="empty-state">
+        {tipo === "pendentes" ? <IconInbox width={28} height={28} /> : <IconCheckCircle width={28} height={28} />}
+        <div className="title">{tipo === "pendentes" ? "Nenhum pendente na fila" : "Nenhum erro de envio"}</div>
+        <p>Troque a faixa ou o período para ver outros itens da fila.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            {COLUNAS_FILA[tipo].map(([coluna, rotulo]) => (
+              <SortableTh
+                key={coluna}
+                active={ordenacao.sortKey === coluna}
+                dir={ordenacao.sortDir}
+                onSort={() => ordenacao.toggleSort(coluna)}
+              >
+                {rotulo}
+              </SortableTh>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {itens.map((r) => (
+            <tr key={r.id}>
+              <td className="cell-strong">{r.codigo_cliente}</td>
+              <td>{r.nome || "—"}</td>
+              <td>{r.faixa}</td>
+              <td>{r.valor || "—"}</td>
+              <td className="text-muted">{r.telefone}</td>
+              {tipo === "pendentes" ? (
+                <td className="text-faint">{formatDataHora(r.entrou_em)}</td>
+              ) : (
+                <>
+                  <td>{r.mensagem}</td>
+                  <td className="text-faint">{r.quando ? formatDataHora(r.quando) : "—"}</td>
+                </>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

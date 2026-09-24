@@ -54,25 +54,27 @@ def summary(
         and_(models.QueueItem.status != models.QueueStatus.sent, _no_periodo(models.QueueItem.created_at, ini, fim)),
     )
 
-    def count(status_value: models.QueueStatus) -> int:
+    def count(*status_values: models.QueueStatus) -> int:
         return (
             db.query(func.count(models.QueueItem.id))
-            .filter(models.QueueItem.status == status_value, periodo)
+            .filter(models.QueueItem.status.in_(status_values), periodo)
             .scalar()
             or 0
         )
 
     por_faixa_rows = (
-        db.query(models.Faixa.name, models.QueueItem.status, func.count(models.QueueItem.id))
+        db.query(models.Faixa.id, models.Faixa.name, models.QueueItem.status, func.count(models.QueueItem.id))
         # Só faixas com movimento no período (sem listar faixa zerada ou excluída)
         .join(models.QueueItem, and_(models.QueueItem.faixa_id == models.Faixa.id, periodo))
-        .group_by(models.Faixa.name, models.QueueItem.status)
+        .group_by(models.Faixa.id, models.Faixa.name, models.QueueItem.status)
         .all()
     )
     por_faixa: dict[str, dict] = {}
-    for faixa_name, status_value, total in por_faixa_rows:
-        entry = por_faixa.setdefault(faixa_name, {"faixa": faixa_name})
-        entry[status_value.value] = total
+    for faixa_id, faixa_name, status_value, total in por_faixa_rows:
+        entry = por_faixa.setdefault(faixa_id, {"faixa": faixa_name, "faixa_id": faixa_id})
+        # reservado = pendente que um envio já pegou; pro operador é pendente
+        chave = "pending" if status_value == models.QueueStatus.reserved else status_value.value
+        entry[chave] = entry.get(chave, 0) + total
 
     # Mesma fonte do card "Erros de envio" (itens da fila com erro no período).
     # log_erros só é gravado no disparo; erro de upload, da extração automática
@@ -101,7 +103,7 @@ def summary(
     )
 
     return schemas.DashboardSummary(
-        total_pendentes=count(models.QueueStatus.pending),
+        total_pendentes=count(models.QueueStatus.pending, models.QueueStatus.reserved),
         total_enviados=count(models.QueueStatus.sent),
         total_erros=count(models.QueueStatus.error),
         total_telefones_invalidos=total_invalidos,

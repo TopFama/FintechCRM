@@ -3,15 +3,18 @@ import { apiGet, campo, card, expect, permitirErrosConsole, responderDialogo, te
 test.describe("Configurações → Faixas de cobrança", () => {
   test("lista vazia e sincronizar com as faixas de atraso (e de novo, sem duplicar)", async ({ page }) => {
     await page.goto("/configuracoes?aba=faixas");
-    await expect(page.getByText("Nenhuma faixa cadastrada")).toBeVisible();
+    // As faixas do remarketing do Renegocie nascem sozinhas; as de atraso não
+    const deAtraso = page.locator(".faixa-row").filter({ hasNotText: "Remarketing:" });
+    await expect(page.locator(".faixa-row", { hasText: "Remarketing:" }).first()).toBeVisible();
+    await expect(deAtraso).toHaveCount(0);
     await page.getByRole("button", { name: "Sincronizar com faixas de atraso" }).click();
     await expect(page.locator(".success-box")).toContainText("13 faixa(s) criada(s)");
-    await expect(page.locator(".faixa-row")).toHaveCount(13);
+    await expect(deAtraso).toHaveCount(13);
     await expect(page.locator(".faixa-row", { hasText: "3 A 10" })).toContainText("Sem número/template atribuído");
     await expect(page.locator(".faixa-row", { hasText: "3 A 10" }).locator(".status-pill")).toHaveText("Pausado");
     await page.getByRole("button", { name: "Sincronizar com faixas de atraso" }).click();
     await expect(page.locator(".success-box")).toContainText("Todas as faixas de atraso já têm");
-    await expect(page.locator(".faixa-row")).toHaveCount(13);
+    await expect(deAtraso).toHaveCount(13);
   });
 
   test("assistente de nova faixa: validação por etapa, voltar e criar", async ({ page }) => {
@@ -143,7 +146,8 @@ test.describe("Configurações → Faixas de cobrança", () => {
 
   test("excluir faixa: cancelar mantém, confirmar remove", async ({ page }) => {
     await page.goto("/configuracoes?aba=faixas");
-    const linha = page.locator(".faixa-row", { hasText: "RENEGOCIE" });
+    // "Remarketing: …" também cita o Renegocie na descrição
+    const linha = page.locator(".faixa-row", { hasText: /^RENEGOCIE/ });
     let msg = responderDialogo(page, false);
     await linha.getByTitle("Excluir faixa").click();
     expect(await msg).toContain('Excluir a faixa "RENEGOCIE"?');
