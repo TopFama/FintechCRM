@@ -1,20 +1,41 @@
 # Testes ponta a ponta (Playwright)
 
-Exercitam as telas de Cobrança, Leads, Blacklist e Configurações contra um frontend e um backend
-já em execução — a suíte não sobe nem derruba servidores.
+Agente de QA do FintechCRM: 118 cenários que usam o app pelo navegador, tela por tela, contra um
+ambiente **de teste** montado do zero. Nada aqui fala com produção: o SETA é um Postgres local com
+clientes fictícios, e a Meta, o Chatwoot, o Google Sheets e o câmbio são simulados dentro do
+próprio backend de teste. Nenhuma mensagem de WhatsApp sai de verdade.
+
+## Como rodar
+
+Pré-requisitos: Postgres local (usuário `postgres` com permissão de criar bancos), Redis local,
+Python 3.11 e Node 20+.
 
 ```bash
+cd e2e
 npm install
-npx playwright install chromium
-npx playwright test
+./ambiente/subir.sh          # recria os bancos de teste, sobe backend (8010) e frontend (4174)
+npx playwright test          # roda os 118 cenários em série
+npx playwright show-report   # relatório HTML com screenshots e traces das falhas
 ```
 
-| Variável | Padrão | Uso |
-|---|---|---|
-| `E2E_BASE_URL` | `http://localhost:4174` | frontend (ex.: `vite preview` de um build com `VITE_API_URL` apontando para o backend abaixo) |
-| `E2E_API_URL` | `http://localhost:8010` | backend, usado para limpar dados criados pelos testes |
-| `E2E_EMAIL` / `E2E_SENHA` | admin de teste | usuário com acesso ao portal |
+Os cenários dependem uns dos outros (cadastram token, números, faixas, fila e envios em sequência),
+então rode sempre a suíte inteira depois de um `./ambiente/subir.sh` novo. Se o Chromium do
+Playwright não estiver baixado, a configuração usa o que estiver em `$CHROMIUM_PATH` ou em
+`/opt/pw-browsers` (não precisa de `playwright install` nesse caso).
 
-Efeitos colaterais: cria leads (cenário 3) e marca dois como enviados (cenário 4) — rode contra um banco de
-aplicação descartável, nunca produção. As entradas criadas na blacklist são removidas ao final. As telas de
-Cobrança consultam o ERP de verdade e podem levar até um minuto por consulta.
+## O que tem em cada pasta
+
+| Caminho | O que é |
+|---|---|
+| `ambiente/subir.sh` | Recria `crm_app` e `seta_fake`, popula o SETA falso e sobe backend + frontend |
+| `ambiente/env.teste.sh` | Variáveis só de teste (nunca usa o `.env` do projeto) |
+| `ambiente/seta_falso.py` | Tabelas do SETA que o backend lê (`pessoas`, `financeiro_titulos`, `vendas`, `condicoes`) com 36 clientes fictícios cobrindo todas as faixas de atraso |
+| `ambiente/servidor_teste.py` | Sobe o backend com Meta, Chatwoot, Google e câmbio simulados; `GET /__e2e/envios` lista o que teria sido enviado |
+| `ambiente/gerar_planilhas.py` | Gera as planilhas fictícias de `tests/dados/` |
+| `tests/01…14-*.spec.ts` | Cenários por tela: login, Conexões, Templates, Faixas, Horário, Indicadores, Blacklist, Usuários, Cobrança, importação/fila, disparo, Dashboard, Relatórios, erros |
+
+## Bugs conhecidos
+
+Cenários marcados com `test.fail(true, "BUG: …")` descrevem o comportamento correto e hoje falham
+por causa de um bug do app. Eles aparecem como aprovados enquanto o bug existir; quando o bug for
+corrigido, o Playwright acusa "Expected to fail, but passed" — é só remover a linha `test.fail`.
