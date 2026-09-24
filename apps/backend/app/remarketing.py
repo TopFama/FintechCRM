@@ -219,7 +219,7 @@ def selecionar(
         if c.get("celular") and is_valid_phone(c["celular"]):
             cliente = {**cliente, "celular": c["celular"], "celular_original": c["celular"]}
         resultado[segmento].append(
-            {**cliente, "segmento": segmento, "evento_em": c["evento_em"], "proposta": c.get("proposta")}
+            {**cliente, "segmento": segmento, "evento_em": c["evento_em"], "referencia_seta": c.get("referencia_seta")}
         )
     for lista in resultado.values():
         lista.sort(key=lambda x: x["evento_em"], reverse=True)

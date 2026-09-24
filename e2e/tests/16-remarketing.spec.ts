@@ -39,7 +39,7 @@ test.describe.serial("Remarketing do Renegocie", () => {
     await expect(acordo(page)).toContainText("1 de 2 desistência(s)");
     await expect(acordo(page).locator("tbody tr")).toHaveCount(1);
     await expect(acordo(page).locator("tbody")).toContainText("00000027");
-    await expect(acordo(page).locator("tbody")).toContainText("P-901");
+    await expect(acordo(page).locator("tbody")).toContainText("RE000901");
   });
 
   test("janela da desistência e filtro de valor valem na prévia", async ({ page }) => {

@@ -85,7 +85,7 @@ export default function RemarketingCard() {
 }
 
 type ClientePrevia = PreviaRemarketing["clientes"][number];
-type ColunaPrevia = "nome" | "celular" | "cluster" | "faixa" | "valor_cobrar" | "evento_em" | "proposta";
+type ColunaPrevia = "nome" | "celular" | "cluster" | "faixa" | "valor_cobrar" | "evento_em" | "referencia_seta";
 
 const COLUNAS_PREVIA: [ColunaPrevia, string][] = [
   ["nome", "Cliente"],
@@ -94,7 +94,7 @@ const COLUNAS_PREVIA: [ColunaPrevia, string][] = [
   ["faixa", "Faixa"],
   ["valor_cobrar", "Valor a cobrar"],
   ["evento_em", "Desistiu em"],
-  ["proposta", "Proposta"],
+  ["referencia_seta", "Proposta"],
 ];
 
 function paraForm(s: SegmentoRemarketing): SegmentoRemarketingIn {
@@ -354,7 +354,7 @@ function SegmentoForm({
                       </td>
                       <td>{formatBRL(c.valor_cobrar)}</td>
                       <td>{formatDataHora(c.evento_em)}</td>
-                      <td>{c.proposta ?? "—"}</td>
+                      <td>{c.referencia_seta ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
