@@ -8,7 +8,8 @@ from sqlalchemy import and_, func, or_, true
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..services import custo_whatsapp
+from .. import cache, seta_client
+from ..services import custo_whatsapp, pagos_janela_service
 from ..timezone import BUSINESS_TZ, hoje_br
 from ..database import get_db
 from ..deps import get_current_user
@@ -187,3 +188,28 @@ def orcamento_progressao(
             for n, v in sorted(custo.por_numero.items(), key=lambda kv: -kv[1])
         ],
     )
+
+
+@router.get("/pagos-7-dias", response_model=schemas.PagosJanelaOut)
+def pagos_7_dias(
+    de: date | None = Query(None),
+    ate: date | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Clientes cobrados no período que pagaram em até 7 dias corridos da
+    cobrança (regra da Tarefa 5). Cache curto igual ao relatório Quem pagou."""
+
+    def calcular():
+        return pagos_janela_service.resumo(db, de, ate, dias_janela=7)
+
+    try:
+        try:
+            dados = cache.obter_ou_calcular(
+                cache.chave("dashboard-pagos-7-dias", {"de": de, "ate": ate}), calcular, ttl_segundos=300
+            )
+        except cache.CacheIndisponivel:
+            dados = calcular()
+    except seta_client.SetaIndisponivel as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "SETA indisponível") from exc
+    return schemas.PagosJanelaOut(**dados)

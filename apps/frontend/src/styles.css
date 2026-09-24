@@ -352,6 +352,14 @@ a {
   margin-top: 4px;
 }
 
+.stat .stat-aviso {
+  color: var(--color-warning);
+}
+
+.stat .texto-erro {
+  color: var(--color-danger);
+}
+
 tr.linha-clicavel {
   cursor: pointer;
 }

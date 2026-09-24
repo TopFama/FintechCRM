@@ -822,11 +822,14 @@ def export_relatorio_efetividade_clientes(
 _CAMPOS_DATA_PAGAMENTO = ("data_cobranca", "primeiro_pagamento", "ultimo_pagamento")
 
 
-def _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa):
+def _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela=None):
     """Resultado cacheado por conjunto de filtros (compartilhado entre usuários):
     ordenar, paginar e exportar com os mesmos filtros não reconsulta o SETA."""
 
-    filtros = dict(cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate, faixa=sorted(faixa or []))
+    filtros = dict(
+        cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate,
+        faixa=sorted(faixa or []), dias_janela=dias_janela,
+    )
 
     def calcular():
         return pagamentos_service.clientes_que_pagaram(db, **{**filtros, "faixa": faixa})
@@ -858,6 +861,7 @@ def relatorio_pagamentos(
     pago_de: date | None = Query(None, description="Período de pagamento: início"),
     pago_ate: date | None = Query(None),
     faixa: list[str] | None = Query(None),
+    dias_janela: int | None = Query(None, ge=0, le=365, description="Pagou em até N dias corridos da cobrança"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort_by: PagamentoSortColumn | None = Query(None),
@@ -865,11 +869,12 @@ def relatorio_pagamentos(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa)
+    linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela)
     if sort_by:
         linhas = pagamentos_service.ordenar(linhas, sort_by, sort_dir, carregar_regras(db).nomes_faixa)
     return schemas.PagamentosClientesPage(
         total=len(linhas),
+        total_clientes=len({l["codigo_cliente"] for l in linhas}),
         valor_cobrado=sum((l["valor_cobrado"] for l in linhas), Decimal("0.00")),
         valor_pago=sum((l["valor_pago"] for l in linhas), Decimal("0.00")),
         itens=linhas[offset : offset + limit],
@@ -883,10 +888,11 @@ def export_relatorio_pagamentos(
     pago_de: date | None = Query(None),
     pago_ate: date | None = Query(None),
     faixa: list[str] | None = Query(None),
+    dias_janela: int | None = Query(None, ge=0, le=365),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa)
+    linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela)
     headers = [
         "Código do cliente", "Nome", "CPF", "Loja", "Faixa", "Data da cobrança", "Valor cobrado",
         "Valor pago", "Títulos pagos", "Primeiro pagamento", "Último pagamento",

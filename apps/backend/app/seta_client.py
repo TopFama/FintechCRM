@@ -590,12 +590,16 @@ def pagamentos_pos_cobranca(
 
 
 def valores_pagos_pos_cobranca(
-    pares: list[tuple[str, date]], pago_de: date | None = None, pago_ate: date | None = None
+    pares: list[tuple[str, date]],
+    pago_de: date | None = None,
+    pago_ate: date | None = None,
+    dias_janela: int | None = None,
 ) -> dict[tuple[str, date], dict]:
     """Quanto cada cliente pagou depois de cobrado: por (codigo_cliente,
     data_cobranca), soma dos títulos a receber quitados (status 'B') com
     pagamento >= data_cobranca e dentro de [pago_de, pago_ate] quando
-    informados. Mesma regra de "pagou" de `pagamentos_pos_cobranca`, mas com
+    informados (e até data_cobranca + dias_janela, se informado). Mesma regra
+    de "pagou" de `pagamentos_pos_cobranca`, mas com
     valor, quantidade e primeira/última data. Consulta única por lote via CTE
     + VALUES, nunca em loop por cliente."""
 
@@ -610,7 +614,7 @@ def valores_pagos_pos_cobranca(
             for i in range(0, len(pares), CHUNK):
                 lote = pares[i : i + CHUNK]
                 linhas_values = ", ".join(f"(:p{j}, CAST(:d{j} AS date))" for j in range(len(lote)))
-                params: dict = {"pago_de": pago_de, "pago_ate": pago_ate}
+                params: dict = {"pago_de": pago_de, "pago_ate": pago_ate, "dias_janela": dias_janela}
                 for j, (codigo, data_cobranca) in enumerate(lote):
                     params[f"p{j}"] = codigo
                     params[f"d{j}"] = data_cobranca
@@ -634,6 +638,8 @@ def valores_pagos_pos_cobranca(
                        AND ft.pagamento >= c.data_cobranca
                        AND (CAST(:pago_de AS date) IS NULL OR ft.pagamento >= CAST(:pago_de AS date))
                        AND (CAST(:pago_ate AS date) IS NULL OR ft.pagamento <= CAST(:pago_ate AS date))
+                       AND (CAST(:dias_janela AS integer) IS NULL
+                            OR ft.pagamento <= c.data_cobranca + (CAST(:dias_janela AS integer) * INTERVAL '1 day'))
                      GROUP BY c.pessoa, c.data_cobranca
                 """
                 for r in conn.execute(text(sql), params).mappings():

@@ -92,6 +92,37 @@ test.describe("Dashboard", () => {
     });
   }
 
+  test("card 'Pagaram em até 7 dias' mostra % e valor e abre Quem pagou com janela 7 e o mesmo total", async ({ page }) => {
+    await page.locator(".periodo-card", { hasText: "Este mês" }).first().click();
+    const valor = stat(page, "Pagaram em até 7 dias");
+    await expect(valor).not.toHaveText("…", { timeout: 30_000 });
+    const n = Number(await valor.innerText());
+    const cardPagos = page.locator(".stat", { has: page.locator(".label", { hasText: "Pagaram em até 7 dias" }) });
+    await expect(cardPagos).toContainText(/% dos cobrados · R\$/);
+    await cardPagos.click();
+    await expect(page).toHaveURL(/aba=pagamentos&de=\d{4}-\d{2}-01&ate=.*&dias_janela=7/);
+    await expect(page.getByLabel("Pagou em até")).toHaveValue("7");
+    if (n > 0) {
+      await expect(page.locator(".stat", { hasText: "Clientes que pagaram" }).locator(".value")).toHaveText(String(n), {
+        timeout: 30_000,
+      });
+    } else {
+      await expect(page.getByText("Ninguém pagou no período")).toBeVisible({ timeout: 30_000 });
+    }
+  });
+
+  test("card 'Pagaram em até 7 dias' com SETA fora avisa só nele", async ({ page }) => {
+    permitirErrosConsole(page, "503");
+    await page.route("**/dashboard/pagos-7-dias*", (r) =>
+      r.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "SETA indisponível" }) })
+    );
+    await page.reload();
+    const cardPagos = page.locator(".stat", { has: page.locator(".label", { hasText: "Pagaram em até 7 dias" }) });
+    await expect(cardPagos).toContainText("SETA indisponível");
+    await expect(stat(page, "Cobrados (enviados)")).not.toHaveText("…");
+    await expect(page.locator(".error-box")).toHaveCount(0);
+  });
+
   test("card é navegável pelo teclado e a linha da faixa abre o relatório filtrado", async ({ page }) => {
     const pend = page.locator("a.stat-link").first();
     await pend.focus();

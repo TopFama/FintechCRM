@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, DashboardSummary } from "../api";
+import { api, ApiError, DashboardSummary, PagosJanela } from "../api";
 import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
 import OrcamentoProgressaoCard from "../components/dashboard/OrcamentoProgressaoCard";
 import FiltroPeriodo, { Periodo, periodoDe } from "../components/FiltroPeriodo";
 import SortableTh from "../components/SortableTh";
-import { formatDataHora } from "../format";
+import { formatBRL, formatDataHora } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
-import { IconAlert, IconBolt, IconCheckCircle, IconInbox, IconPhone } from "../icons";
+import { IconAlert, IconBolt, IconCheckCircle, IconClock, IconInbox, IconPhone } from "../icons";
 import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
 
 export default function Dashboard() {
@@ -103,6 +103,61 @@ function StatLink({
   );
 }
 
+// Carregado à parte do resumo: depende do SETA e não pode segurar os outros cards
+function CardPagos7Dias({ periodo }: { periodo: Periodo }) {
+  const [dados, setDados] = useState<PagosJanela | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDados(null);
+    setErro(null);
+    let atual = true;
+    api
+      .pagos7Dias(periodo)
+      .then((d) => atual && setDados(d))
+      .catch((e) => atual && setErro(e instanceof ApiError && e.status === 503 ? "SETA indisponível" : e.message));
+    return () => {
+      atual = false;
+    };
+  }, [periodo.de, periodo.ate]);
+
+  const rotulo = "Pagaram em até 7 dias";
+  if (!dados) {
+    return (
+      <div className="stat" aria-busy={!erro}>
+        <div className="stat-icon tone-success">
+          <IconClock />
+        </div>
+        <div className="stat-corpo">
+          <div className="value">{erro ? "—" : "…"}</div>
+          <div className="label">{rotulo}</div>
+          {erro && <div className="stat-extra texto-erro">{erro}</div>}
+        </div>
+      </div>
+    );
+  }
+  const pct = Number(dados.percentual).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return (
+    <StatLink
+      to={linkRelatorio("pagamentos", periodo, { dias_janela: "7" })}
+      valor={dados.qtd_pagaram}
+      rotulo={rotulo}
+      ariaLabel={`Ver ${dados.qtd_pagaram} clientes que pagaram em até 7 dias`}
+      tom="tone-success"
+      icone={<IconClock />}
+    >
+      <div className="stat-extra">
+        {pct}% dos cobrados · {formatBRL(dados.valor_pago)}
+      </div>
+      {dados.qtd_em_maturacao > 0 && (
+        <div className="stat-extra stat-aviso">
+          {dados.qtd_em_maturacao} ainda dentro da janela de 7 dias
+        </div>
+      )}
+    </StatLink>
+  );
+}
+
 function ResumoFila({
   summary,
   periodo,
@@ -171,6 +226,7 @@ function ResumoFila({
           tom="tone-warning"
           icone={<IconPhone />}
         />
+        <CardPagos7Dias periodo={periodo} />
       </div>
 
       <div className="card">

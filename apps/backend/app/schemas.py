@@ -460,6 +460,15 @@ class FilaReportPage(BaseModel):
     itens: list[FilaReportItemOut]
 
 
+class PagosJanelaOut(BaseModel):
+    qtd_cobrados: int
+    qtd_pagaram: int
+    percentual: Decimal
+    valor_pago: Decimal
+    qtd_em_maturacao: int
+    dias_janela: int
+
+
 class DashboardSummary(BaseModel):
     total_pendentes: int
     total_enviados: int
@@ -938,6 +947,8 @@ class PagamentoClienteOut(BaseModel):
 
 class PagamentosClientesPage(BaseModel):
     total: int
+    # a mesma pessoa cobrada em dois dias vira duas linhas; o card do Dashboard conta pessoas
+    total_clientes: int
     valor_cobrado: Decimal
     valor_pago: Decimal
     itens: list[PagamentoClienteOut]

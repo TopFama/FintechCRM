@@ -265,6 +265,8 @@ export const api = {
   listQueue: (faixaId: string, params: { limit: number; offset: number } & OrdenacaoParams) =>
     request<{ total: number; itens: QueueItem[] }>(`/faixas/${faixaId}/queue?${montarQuery(params)}`),
 
+  pagos7Dias: (periodo: { de?: string; ate?: string }) =>
+    request<PagosJanela>(`/dashboard/pagos-7-dias?${montarQuery(periodo)}`),
   dashboardSummary: (periodo: { de?: string; ate?: string } = {}) =>
     request<DashboardSummary>(`/dashboard/summary?${montarQuery(periodo)}`),
 
@@ -655,6 +657,15 @@ export interface FilaReportPage {
   itens: FilaReportItem[];
 }
 
+export interface PagosJanela {
+  qtd_cobrados: number;
+  qtd_pagaram: number;
+  percentual: string;
+  valor_pago: string;
+  qtd_em_maturacao: number;
+  dias_janela: number;
+}
+
 export interface DashboardSummary {
   total_pendentes: number;
   total_enviados: number;
@@ -965,6 +976,7 @@ export interface FiltrosPagamentos {
   cobrado_ate?: string;
   pago_de?: string;
   pago_ate?: string;
+  dias_janela?: number;
 }
 
 export interface PagamentoCliente {
@@ -983,6 +995,7 @@ export interface PagamentoCliente {
 
 export interface PagamentosPage {
   total: number;
+  total_clientes: number;
   valor_cobrado: string;
   valor_pago: string;
   itens: PagamentoCliente[];

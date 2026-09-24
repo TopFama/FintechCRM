@@ -27,8 +27,12 @@ def clientes_que_pagaram(
     pago_de: date | None = None,
     pago_ate: date | None = None,
     faixa: list[str] | None = None,
+    dias_janela: int | None = None,
 ) -> list[dict]:
-    """Uma linha por cliente e data de cobrança, só de quem pagou. Levanta
+    """Uma linha por cliente e data de cobrança, só de quem pagou. Com
+    `dias_janela`, "pagou" segue exatamente seta_client.pagamentos_pos_cobranca
+    (quitou qualquer título até data_cobranca + dias_janela), a mesma regra do
+    Relatório de Efetividade e do card do Dashboard. Levanta
     seta_client.SetaIndisponivel se o SETA estiver fora."""
 
     query = db.query(models.Lead).filter(models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None))
@@ -61,7 +65,9 @@ def clientes_que_pagaram(
             linha["lojas"] |= lojas
             linha["valor_cobrado"] += Decimal(lead.valor_cobrar or 0)
 
-    pagos = seta_client.valores_pagos_pos_cobranca(sorted(cobrancas), pago_de, pago_ate)
+    pares = sorted(cobrancas)
+    pagos = seta_client.valores_pagos_pos_cobranca(pares, pago_de, pago_ate, dias_janela)
+    na_janela = seta_client.pagamentos_pos_cobranca(pares, dias_janela) if dias_janela is not None else None
 
     try:
         nomes_loja = {l["filial"]: l.get("nome_com_cod") for l in lojas_base.listar_lojas(db)}
@@ -71,7 +77,13 @@ def clientes_que_pagaram(
     linhas = []
     for chave, c in cobrancas.items():
         p = pagos.get(chave)
-        if not p:
+        if na_janela is not None:
+            data_pagou = na_janela.get(chave)
+            if data_pagou is None or (pago_de and not p) or (pago_ate and not p):
+                continue
+            # quitou algo fora de contas a receber (sem valor): conta como pagou, valor zero
+            p = p or {"valor_pago": 0, "qtd_titulos": 0, "primeiro_pagamento": data_pagou, "ultimo_pagamento": data_pagou}
+        elif not p:
             continue
         linhas.append(
             {
