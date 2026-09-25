@@ -1,5 +1,15 @@
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
+const numeroBR = new Intl.NumberFormat("pt-BR");
+
+// Contagens com separador de milhar: 12345 → "12.345"
+export function formatNumero(v: string | number | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "—";
+  const n = typeof v === "string" ? parseFloat(v) : v;
+  if (isNaN(n)) return "—";
+  return numeroBR.format(n);
+}
+
 export function formatBRL(v: string | number | null | undefined): string {
   if (v === null || v === undefined || v === "") return "—";
   const n = typeof v === "string" ? parseFloat(v) : v;

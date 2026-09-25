@@ -4,6 +4,9 @@ import type { Page } from "@playwright/test";
 const stat = (page: Page, rotulo: string) =>
   page.locator(".stat", { has: page.locator(".label", { hasText: new RegExp(`^${rotulo.replace(/[()]/g, "\\$&")}$`) }) }).locator(".value").first();
 
+// "12.345" → 12345 (os cards mostram separador de milhar)
+const numero = (t: string) => Number(t.replace(/\./g, ""));
+
 test.describe("Dashboard", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
@@ -21,7 +24,7 @@ test.describe("Dashboard", () => {
   test("erros recentes lista os mesmos erros que o card 'Erros de envio' conta", async ({ page }) => {
     // Erro que não vem do disparo (variável em branco na planilha) também precisa aparecer
     await expect(stat(page, "Erros de envio")).not.toHaveText("0");
-    const n = Number(await stat(page, "Erros de envio").innerText());
+    const n = numero(await stat(page, "Erros de envio").innerText());
     const erros = card(page, "Erros recentes");
     await expect(erros.locator("tbody tr")).toHaveCount(Math.min(n, 20));
     await expect(erros.locator("tbody tr", { hasText: "Lúcia" })).toContainText("Faltando coluna");
@@ -77,8 +80,8 @@ test.describe("Dashboard", () => {
     test(`card '${rotulo}' abre o relatório '${aba}' do mesmo período com o mesmo total`, async ({ page }) => {
       const valor = stat(page, rotulo);
       await expect(valor).not.toHaveText("…");
-      const n = Number(await valor.innerText());
-      const link = page.getByRole("link", { name: new RegExp(`^Ver ${n} `) }).filter({ has: page.locator(".label", { hasText: rotulo }) });
+      const n = numero(await valor.innerText());
+      const link = page.getByRole("link", { name: new RegExp(`^Ver ${n.toLocaleString("pt-BR").replace(/\./g, "\\.")} `) }).filter({ has: page.locator(".label", { hasText: rotulo }) });
       await link.hover();
       await link.click();
       // A tela roda em GMT-3 (playwright.config); o processo do teste, no fuso da máquina
@@ -97,14 +100,14 @@ test.describe("Dashboard", () => {
     await page.locator(".periodo-card", { hasText: "Este mês" }).first().click();
     const valor = stat(page, "Pagaram em até 7 dias");
     await expect(valor).not.toHaveText("…", { timeout: 30_000 });
-    const n = Number(await valor.innerText());
+    const n = numero(await valor.innerText());
     const cardPagos = page.locator(".stat", { has: page.locator(".label", { hasText: "Pagaram em até 7 dias" }) });
     await expect(cardPagos).toContainText(/% dos cobrados · R\$/);
     await cardPagos.click();
     await expect(page).toHaveURL(/aba=pagamentos&de=\d{4}-\d{2}-01&ate=.*&dias_janela=7/);
     await expect(page.getByLabel("Pagou em até")).toHaveValue("7");
     if (n > 0) {
-      await expect(page.locator(".stat", { hasText: "Clientes que pagaram" }).locator(".value")).toHaveText(String(n), {
+      await expect(page.locator(".stat", { hasText: "Clientes que pagaram" }).locator(".value")).toHaveText(n.toLocaleString("pt-BR"), {
         timeout: 30_000,
       });
     } else {
@@ -122,6 +125,20 @@ test.describe("Dashboard", () => {
     await expect(cardPagos).toContainText("SETA indisponível");
     await expect(stat(page, "Cobrados (enviados)")).not.toHaveText("…");
     await expect(page.locator(".error-box")).toHaveCount(0);
+  });
+
+  test("números dos cards saem com separador de milhar e o card fica mais largo que alto", async ({ page }) => {
+    await page.route("**/dashboard/summary**", async (r) => {
+      const res = await r.fetch();
+      const json = { ...(await res.json()), total_pendentes: 12345, total_pausados: 1234, total_enviados: 98765 };
+      await r.fulfill({ response: res, json });
+    });
+    await page.reload();
+    await expect(stat(page, "Pendentes na fila")).toHaveText("12.345");
+    await expect(stat(page, "Cobrados (enviados)")).toHaveText("98.765");
+    await expect(page.locator("a.stat-link").first()).toContainText("12.345 pendentes · 1.234 pausados");
+    const caixa = (await page.locator("a.stat-link").first().boundingBox())!;
+    expect(caixa.width).toBeGreaterThan(caixa.height);
   });
 
   test("card é navegável pelo teclado e a linha da faixa abre o relatório filtrado", async ({ page }) => {

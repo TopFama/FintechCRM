@@ -54,7 +54,7 @@ test.describe("Relatórios", () => {
     await aba(page, "Quem pagou").click();
     await expect(page.getByText("Pago de")).toBeVisible();
     await expect(page.locator(".stat", { hasText: "Clientes que pagaram" })).toBeVisible({ timeout: 30_000 });
-    const n = Number(await page.locator(".stat", { hasText: "Clientes que pagaram" }).locator(".value").innerText());
+    const n = Number((await page.locator(".stat", { hasText: "Clientes que pagaram" }).locator(".value").innerText()).replace(/\./g, ""));
     expect(n).toBeGreaterThan(0);
     await expect(tabela(page).locator("tbody tr")).toHaveCount(n);
     const { linhas } = await baixar(page, () => page.getByRole("button", { name: /Baixar Excel/ }).click());

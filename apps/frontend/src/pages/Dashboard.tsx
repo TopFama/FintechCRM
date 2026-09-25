@@ -7,7 +7,7 @@ import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
 import OrcamentoProgressaoCard from "../components/dashboard/OrcamentoProgressaoCard";
 import FiltroPeriodo, { OpcaoPeriodo, Periodo, periodoDe } from "../components/FiltroPeriodo";
 import SortableTh from "../components/SortableTh";
-import { formatBRL, formatDataHora, formatHora } from "../format";
+import { formatBRL, formatDataHora, formatHora, formatNumero } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../components/useAtualizacaoAutomatica";
 import { IconAlert, IconBolt, IconCheckCircle, IconClock, IconInbox, IconPhone, IconRefresh } from "../icons";
@@ -131,14 +131,18 @@ function StatLink({
 }) {
   return (
     <Link to={to} className="stat stat-link" aria-label={ariaLabel}>
-      <div className={`stat-icon ${tom}`}>{icone}</div>
       <div className="stat-corpo">
-        <div className="value">{valor}</div>
-        <div className="label">{rotulo}</div>
-        {children}
-        <div className="stat-detalhes" aria-hidden="true">
-          Ver detalhes →
+        <div className="stat-topo">
+          <div className="label">{rotulo}</div>
+          <div className={`stat-icon ${tom}`}>{icone}</div>
         </div>
+        <div className="stat-linha-valor">
+          <div className="value">{valor}</div>
+          <div className="stat-detalhes" aria-hidden="true">
+            Ver detalhes →
+          </div>
+        </div>
+        {children}
       </div>
     </Link>
   );
@@ -174,12 +178,16 @@ function CardPagos7Dias({ periodo, recarregar }: { periodo: Periodo; recarregar:
   if (!dados) {
     return (
       <div className="stat" aria-busy={!erro}>
-        <div className="stat-icon tone-success">
-          <IconClock />
-        </div>
         <div className="stat-corpo">
-          <div className="value">{erro ? "—" : "…"}</div>
-          <div className="label">{rotulo}</div>
+          <div className="stat-topo">
+            <div className="label">{rotulo}</div>
+            <div className="stat-icon tone-success">
+              <IconClock />
+            </div>
+          </div>
+          <div className="stat-linha-valor">
+            <div className="value">{erro ? "—" : "…"}</div>
+          </div>
           {erro && <div className="stat-extra texto-erro">{erro}</div>}
         </div>
       </div>
@@ -189,9 +197,9 @@ function CardPagos7Dias({ periodo, recarregar }: { periodo: Periodo; recarregar:
   return (
     <StatLink
       to={linkRelatorio("pagamentos", periodo, { dias_janela: "7" })}
-      valor={dados.qtd_pagaram}
+      valor={formatNumero(dados.qtd_pagaram)}
       rotulo={rotulo}
-      ariaLabel={`Ver ${dados.qtd_pagaram} clientes que pagaram em até 7 dias`}
+      ariaLabel={`Ver ${formatNumero(dados.qtd_pagaram)} clientes que pagaram em até 7 dias`}
       tom="tone-success"
       icone={<IconClock />}
     >
@@ -200,7 +208,7 @@ function CardPagos7Dias({ periodo, recarregar }: { periodo: Periodo; recarregar:
       </div>
       {dados.qtd_em_maturacao > 0 && (
         <div className="stat-extra stat-aviso">
-          {dados.qtd_em_maturacao} ainda dentro da janela de 7 dias
+          {formatNumero(dados.qtd_em_maturacao)} ainda dentro da janela de 7 dias
         </div>
       )}
     </StatLink>
@@ -247,37 +255,37 @@ function ResumoFila({
       <div className="stat-grid">
         <StatLink
           to={linkRelatorio("pendentes", periodo)}
-          valor={summary.total_pendentes}
+          valor={formatNumero(summary.total_pendentes)}
           rotulo="Pendentes na fila"
-          ariaLabel={`Ver ${summary.total_pendentes} pendentes na fila, ${summary.total_pausados} pausados`}
+          ariaLabel={`Ver ${formatNumero(summary.total_pendentes)} pendentes na fila, ${formatNumero(summary.total_pausados)} pausados`}
           tom="tone-primary"
           icone={<IconInbox />}
         >
           <div className={`stat-extra${summary.total_pausados > 0 ? " stat-aviso" : ""}`}>
-            {summary.total_pendentes} pendentes · {summary.total_pausados} pausados
+            {formatNumero(summary.total_pendentes)} pendentes · {formatNumero(summary.total_pausados)} pausados
           </div>
         </StatLink>
         <StatLink
           to={linkRelatorio("envios", periodo)}
-          valor={summary.total_enviados}
+          valor={formatNumero(summary.total_enviados)}
           rotulo="Cobrados (enviados)"
-          ariaLabel={`Ver ${summary.total_enviados} cobranças enviadas`}
+          ariaLabel={`Ver ${formatNumero(summary.total_enviados)} cobranças enviadas`}
           tom="tone-success"
           icone={<IconCheckCircle />}
         />
         <StatLink
           to={linkRelatorio("erros", periodo)}
-          valor={summary.total_erros}
+          valor={formatNumero(summary.total_erros)}
           rotulo="Erros de envio"
-          ariaLabel={`Ver ${summary.total_erros} erros de envio`}
+          ariaLabel={`Ver ${formatNumero(summary.total_erros)} erros de envio`}
           tom="tone-danger"
           icone={<IconAlert />}
         />
         <StatLink
           to={linkRelatorio("invalidos", periodo)}
-          valor={summary.total_telefones_invalidos}
+          valor={formatNumero(summary.total_telefones_invalidos)}
           rotulo="Telefones inválidos"
-          ariaLabel={`Ver ${summary.total_telefones_invalidos} telefones inválidos`}
+          ariaLabel={`Ver ${formatNumero(summary.total_telefones_invalidos)} telefones inválidos`}
           tom="tone-warning"
           icone={<IconPhone />}
         />
@@ -338,10 +346,10 @@ function ResumoFila({
                       <Link
                         to={link(aba)}
                         className="link-celula"
-                        aria-label={`Ver ${String(valor ?? 0)} ${rotulo} da faixa ${String(row.faixa)}`}
+                        aria-label={`Ver ${formatNumero(Number(valor ?? 0))} ${rotulo} da faixa ${String(row.faixa)}`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {String(valor ?? 0)}
+                        {formatNumero(Number(valor ?? 0))}
                       </Link>
                     </td>
                   );

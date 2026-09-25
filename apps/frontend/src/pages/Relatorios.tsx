@@ -15,7 +15,7 @@ import {
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import { AcaoPendentes, PainelAcao, PainelPausaLote, PausasAtivas } from "../components/PausasPendentes";
 import SortableTh from "../components/SortableTh";
-import { formatBRL, formatData, formatDataHora } from "../format";
+import { formatBRL, formatData, formatDataHora, formatNumero } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
 import { SortDirection, useSort } from "../sort";
 
@@ -636,7 +636,7 @@ function TabelaPagamentos({
       <div className="stat-grid">
         <div className="stat">
           <div>
-            <div className="value">{dados.total_clientes}</div>
+            <div className="value">{formatNumero(dados.total_clientes)}</div>
             <div className="label">Clientes que pagaram</div>
           </div>
         </div>
