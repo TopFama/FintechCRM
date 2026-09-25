@@ -343,15 +343,37 @@ def _achar_coluna(linhas: list[list[str]], nomes: tuple[str, ...]) -> tuple[int,
 _COLUNAS_LOJA = ("FILIAL", "LOJA", "COD LOJA", "CODIGO LOJA", "COD FILIAL", "CODIGO FILIAL", "EMPRESA", "CODIGO", "COD")
 
 
-def ler_lojas(db: Session, filename: str, content: bytes) -> dict:
-    """Lojas de um relatório .xlsx pela coluna de código da loja (FILIAL,
-    LOJA, CÓDIGO…; sem cabeçalho conhecido, a primeira coluna). "6" vale
-    "06". Devolve as filiais que existem na base de lojas e os códigos que
-    não casaram com nenhuma."""
+def colunas_planilha(filename: str, content: bytes) -> list[dict]:
+    """Colunas da planilha (cabeçalho = primeira linha preenchida), com até
+    3 valores de exemplo, para o usuário escolher qual é a da loja."""
 
     linhas = _linhas_xlsx(filename, content)
-    achou = _achar_coluna(linhas, _COLUNAS_LOJA)
-    cab, col = achou if achou else (-1, 0)
+    if not linhas:
+        raise ValueError("A planilha está vazia")
+    cabecalho, dados = linhas[0], linhas[1:]
+    largura = max(len(l) for l in linhas)
+    colunas = []
+    for i in range(largura):
+        nome = cabecalho[i].strip() if i < len(cabecalho) else ""
+        exemplos = [l[i].strip() for l in dados if i < len(l) and l[i].strip()][:3]
+        if nome or exemplos:
+            colunas.append({"indice": i, "nome": nome or f"Coluna {i + 1}", "exemplos": exemplos})
+    return colunas
+
+
+def ler_lojas(db: Session, filename: str, content: bytes, coluna: int | None = None) -> dict:
+    """Lojas de um relatório .xlsx pela coluna de código da loja. Com
+    `coluna` (índice escolhido na tela), lê essa coluna abaixo do cabeçalho
+    (primeira linha); sem ela, procura FILIAL, LOJA, CÓDIGO… (sem cabeçalho
+    conhecido, a primeira coluna). "6" vale "06". Devolve as filiais que
+    existem na base de lojas e os códigos que não casaram com nenhuma."""
+
+    linhas = _linhas_xlsx(filename, content)
+    if coluna is not None:
+        cab, col = 0, coluna
+    else:
+        achou = _achar_coluna(linhas, _COLUNAS_LOJA)
+        cab, col = achou if achou else (-1, 0)
     existentes = {l["filial"] for l in lojas_base.listar_lojas(db)}
 
     encontradas: list[str] = []

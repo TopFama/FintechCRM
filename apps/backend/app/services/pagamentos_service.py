@@ -28,6 +28,7 @@ def clientes_que_pagaram(
     pago_ate: date | None = None,
     faixa: list[str] | None = None,
     dias_janela: int | None = None,
+    campanha: str | None = None,
 ) -> list[dict]:
     """Uma linha por cliente e data de cobrança, só de quem pagou. Com
     `dias_janela`, "pagou" segue exatamente seta_client.pagamentos_pos_cobranca
@@ -42,6 +43,9 @@ def clientes_que_pagaram(
         query = query.filter(models.Lead.cobrado_em < _inicio_utc(cobrado_ate + timedelta(days=1)))
     if faixa:
         query = query.filter(models.Lead.faixa.in_(faixa))
+    if campanha:
+        # "regua" = cobranças da régua; id = clientes daquela campanha (como na Efetividade)
+        query = query.filter(models.Lead.campanha_id == ("" if campanha == "regua" else campanha))
 
     # Mesmo cliente em mais de um lead no mesmo dia (faixas/vencimentos
     # diferentes) vira uma linha só, somando o valor cobrado.

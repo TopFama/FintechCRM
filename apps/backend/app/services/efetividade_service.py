@@ -10,6 +10,7 @@ convertido pelo próprio FastAPI na resposta HTTP igual seria se estivesse
 no router, então não muda comportamento nenhum, só a localização do código."""
 
 import logging
+import re
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from decimal import Decimal
@@ -112,6 +113,7 @@ def obter_dados_efetividade(
             models.Lead.nome,
             models.Lead.faixa,
             models.Lead.cobrado_em,
+            models.Lead.campanha_id,
         )
         .join(models.Lead, models.LeadParcela.lead_id == models.Lead.id)
         .filter(models.Lead.status == "cobrado")
@@ -190,6 +192,11 @@ def obter_dados_efetividade(
         ja_repartido[par] = ja_repartido.get(par, Decimal("0")) + parte
         return parte
 
+    nomes_campanha = {
+        c.id: re.sub(r" \(arquivada \w+\)$", "", c.nome)
+        for c in db.query(models.Campanha).filter(models.Campanha.id.in_({p.campanha_id for p in parcelas_db} - {""}))
+    }
+
     itens = []
     for p in parcelas_db:
         sit = situacoes.get(p.titulo_codigo)
@@ -210,6 +217,8 @@ def obter_dados_efetividade(
                 "codigo_cliente": p.codigo_cliente,
                 "nome": p.nome,
                 "faixa": p.faixa,
+                "campanha_id": p.campanha_id,
+                "campanha": nomes_campanha.get(p.campanha_id, "Campanha excluída") if p.campanha_id else None,
                 "empresa": p.empresa,
                 "titulo_codigo": p.titulo_codigo,
                 "data_cobranca": data_cobranca,
@@ -227,7 +236,7 @@ def obter_dados_efetividade(
 
 
 COLUNAS_ORDENAVEIS = (
-    "faixa", "loja", "loja_nome", "regional", "cluster_inad", "qtd_envios", "clientes_cobrados",
+    "faixa", "campanha", "loja", "loja_nome", "regional", "cluster_inad", "qtd_envios", "clientes_cobrados",
     "valor_cobrado", "clientes_pagaram", "valor_pago", "conversao_clientes", "recuperacao_valor",
 )
 
@@ -246,7 +255,7 @@ def ordenar_relatorio(relatorio: dict, sort_by: str, sort_dir: str, faixas_ordem
             return ordem_faixa.get(v, len(ordem_faixa))
         return v.upper() if isinstance(v, str) else v
 
-    for chave in ("por_faixa", "por_loja"):
+    for chave in ("por_faixa", "por_loja", "por_campanha"):
         linhas = relatorio[chave]
         if not linhas or sort_by not in linhas[0]:
             continue

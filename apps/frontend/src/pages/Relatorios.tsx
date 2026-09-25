@@ -16,13 +16,21 @@ import {
 } from "../api";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import { AcaoPendentes, PainelAcao, PainelPausaLote, PausasAtivas } from "../components/PausasPendentes";
+import SelectCampanha from "../components/SelectCampanha";
 import SortableTh from "../components/SortableTh";
 import { formatBRL, formatData, formatDataHora, formatNumero } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
 import { SortDirection, useSort } from "../sort";
 
 type Tab = "invalidos" | "envios" | "pagamentos" | "pendentes" | "erros";
-const ABAS: Tab[] = ["invalidos", "envios", "pagamentos", "pendentes", "erros"];
+// mesma ordem dos cards do Dashboard
+const ABAS: { aba: Tab; rotulo: string }[] = [
+  { aba: "pendentes", rotulo: "Pendentes" },
+  { aba: "envios", rotulo: "Envios realizados" },
+  { aba: "erros", rotulo: "Erros" },
+  { aba: "invalidos", rotulo: "Telefones inválidos" },
+  { aba: "pagamentos", rotulo: "Quem pagou" },
+];
 type ColunaFila =
   | "codigo_cliente"
   | "nome"
@@ -50,8 +58,9 @@ export default function Relatorios() {
   // relatório certo e F5/voltar mantêm o que estava na tela.
   const [params, setParams] = useSearchParams();
   const abaUrl = params.get("aba") as Tab | null;
-  const tab: Tab = abaUrl && ABAS.includes(abaUrl) ? abaUrl : "invalidos";
+  const tab: Tab = abaUrl && ABAS.some((a) => a.aba === abaUrl) ? abaUrl : ABAS[0].aba;
   const faixaId = params.get("faixa_id") ?? "";
+  const campanha = params.get("campanha") ?? "";
   const cobradoDe = params.get("de") ?? "";
   const cobradoAte = params.get("ate") ?? "";
   // Vem do card "Pagaram em até 7 dias": mesma janela da efetividade
@@ -170,6 +179,7 @@ export default function Relatorios() {
     const atual = () => seq === reqRef.current;
     const params = {
       faixa_id: faixaId || undefined,
+      campanha: campanha || undefined,
       de: cobradoDe || undefined,
       ate: cobradoAte || undefined,
       limit: novoLimit,
@@ -217,12 +227,13 @@ export default function Relatorios() {
     setOffset(0);
     load(0, limit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, faixaId, loja, cobradoDe, cobradoAte, pagoDe, pagoAte, diasJanela]);
+  }, [tab, faixaId, campanha, loja, cobradoDe, cobradoAte, pagoDe, pagoAte, diasJanela]);
 
   function filtrosPagamentos() {
     const nome = faixas.find((f) => f.id === faixaId)?.name;
     return {
       faixa: nome ? [nome] : undefined,
+      campanha: campanha || undefined,
       cobrado_de: cobradoDe || undefined,
       cobrado_ate: cobradoAte || undefined,
       pago_de: pagoDe || undefined,
@@ -246,7 +257,12 @@ export default function Relatorios() {
     setDownloading(true);
     setError(null);
     try {
-      const periodo = { faixa_id: faixaId || undefined, de: cobradoDe || undefined, ate: cobradoAte || undefined };
+      const periodo = {
+        faixa_id: faixaId || undefined,
+        campanha: campanha || undefined,
+        de: cobradoDe || undefined,
+        ate: cobradoAte || undefined,
+      };
       if (tab === "invalidos") {
         await api.downloadInvalidPhonesXlsx(periodo);
       } else if (tab === "envios") {
@@ -288,7 +304,7 @@ export default function Relatorios() {
       <div className="page-header">
         <div>
           <h2>Relatórios</h2>
-          <div className="subtitle">Telefones inválidos, cobranças enviadas, pendentes, erros e quem pagou</div>
+          <div className="subtitle">Pendentes, cobranças enviadas, erros, telefones inválidos e quem pagou</div>
         </div>
       </div>
 
@@ -301,21 +317,11 @@ export default function Relatorios() {
 
       <div className="card">
         <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-          <button className={tab === "invalidos" ? "" : "secondary"} onClick={() => setTab("invalidos")}>
-            Telefones inválidos
-          </button>
-          <button className={tab === "envios" ? "" : "secondary"} onClick={() => setTab("envios")}>
-            Envios realizados
-          </button>
-          <button className={tab === "pendentes" ? "" : "secondary"} onClick={() => setTab("pendentes")}>
-            Pendentes
-          </button>
-          <button className={tab === "erros" ? "" : "secondary"} onClick={() => setTab("erros")}>
-            Erros
-          </button>
-          <button className={tab === "pagamentos" ? "" : "secondary"} onClick={() => setTab("pagamentos")}>
-            Quem pagou
-          </button>
+          {ABAS.map(({ aba, rotulo }) => (
+            <button key={aba} className={tab === aba ? "" : "secondary"} onClick={() => setTab(aba)}>
+              {rotulo}
+            </button>
+          ))}
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <select aria-label="Faixa" value={faixaId} onChange={(e) => setFaixaId(e.target.value)} style={{ minWidth: 180 }}>
               <option value="">Todas as faixas</option>
@@ -332,6 +338,7 @@ export default function Relatorios() {
                 ) : null;
               })}
             </select>
+            <SelectCampanha id="relatorios-campanha" compacto value={campanha} onChange={(v) => mudarUrl({ campanha: v })} />
             {tab === "pendentes" && (
               <select
                 aria-label="Loja"

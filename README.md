@@ -249,8 +249,10 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    atualizam sozinhos, só ao abrir, trocar o filtro ou em "Atualizar agora". Os pedidos
    automáticos (`auto=true`) leem do cache compartilhado no Redis (15 s o resumo, 10 min o
    orçamento).
-9. **Relatórios** — telefones inválidos, envios realizados, pendentes, erros e quem pagou, com
-   filtro por período e faixa (na URL) e exportação em Excel (.xlsx) já formatado.
+9. **Relatórios** — abas na ordem dos cards do Dashboard (pendentes, envios realizados, erros,
+   telefones inválidos e quem pagou), com filtro por período, faixa e **Campanha** (na URL) e
+   exportação em Excel (.xlsx) já formatado. Na fila, "Campanha" filtra pela faixa da campanha
+   (`filtro_campanha`); em "Quem pagou", por `Lead.campanha_id`, como na Efetividade.
 10. **Pausas** — na aba Pendentes, qualquer usuário pode pausar (motivo obrigatório, data final
    opcional), retomar ou parar o envio por cliente, régua (faixa) ou loja. Pausa não muda o status
    do item: o worker só deixa de pegar o que está retido, inclusive o que entrar na fila depois.
@@ -282,6 +284,11 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    **`tipo`** (`regua`, `campanha` ou `remarketing`, migration d4f8b2c6e0a3): é ele que decide o
    que aparece em Faixas, o que recebe planilha, o que conta como faixa de atraso e como a faixa é
    agrupada no filtro dos Relatórios.
+   A Efetividade tem a visão **Por campanha** (a régua numa linha própria) e a lista de campanhas do
+   filtro acompanha o "Enviado de/até" antes de aplicar (`GET /campanhas/opcoes?enviado_de&enviado_ate`).
+   A lista de Campanhas mostra "Criado em" e filtra por período de criação ou de envio
+   (`GET /campanhas?periodo=criacao|envio&de&ate`). Onde se importa lista de lojas por .xlsx, o
+   usuário escolhe a coluna da loja (`POST /lojas/colunas-planilha`, depois `ler-planilha?coluna=N`).
 
 ## Testes / validação de mudanças
 

@@ -118,21 +118,37 @@ def sincronizar(db: Session = Depends(get_db), _user: models.User = Depends(get_
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
 
+@router.post("/colunas-planilha")
+async def colunas_planilha(file: UploadFile = File(...), _user: models.User = Depends(get_current_user)):
+    """Colunas do relatório .xlsx (com exemplos), para escolher a de loja."""
+
+    from ..campanhas import colunas_planilha as ler_colunas
+    from .uploads import _ler_planilha_limitada
+
+    content = await _ler_planilha_limitada(file)
+    try:
+        return ler_colunas(file.filename or "", content)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+
 @router.post("/ler-planilha")
 async def ler_planilha(
     file: UploadFile = File(...),
+    coluna: int | None = Query(None, ge=0, description="Índice da coluna de loja escolhida na tela"),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
     """Relatório .xlsx de lojas → códigos de filial, para marcar as lojas de
-    um filtro de uma vez (coluna de código da loja: FILIAL, LOJA, CÓDIGO…)."""
+    um filtro de uma vez, pela coluna escolhida (sem ela, a coluna FILIAL,
+    LOJA, CÓDIGO…)."""
 
     from ..campanhas import ler_lojas
     from .uploads import _ler_planilha_limitada
 
     content = await _ler_planilha_limitada(file)
     try:
-        return ler_lojas(db, file.filename or "", content)
+        return ler_lojas(db, file.filename or "", content, coluna)
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except google_client.GoogleIndisponivel as exc:

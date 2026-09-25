@@ -9,7 +9,16 @@ test.describe("Relatórios", () => {
     await page.goto("/relatorios");
   });
 
+  test("abas na ordem dos cards do Dashboard, começando por Pendentes", async ({ page }) => {
+    const rotulos = ["Pendentes", "Envios realizados", "Erros", "Telefones inválidos", "Quem pagou"];
+    const botoes = page.locator(".card").first().getByRole("button");
+    await expect(botoes.first()).toHaveText("Pendentes");
+    await expect(botoes.first()).not.toHaveClass(/secondary/);
+    for (let i = 0; i < rotulos.length; i++) await expect(botoes.nth(i)).toHaveText(rotulos[i]);
+  });
+
   test("telefones inválidos: lista o que foi recusado na importação e baixa Excel", async ({ page }) => {
+    await aba(page, "Telefones inválidos").click();
     await expect(tabela(page)).toBeVisible();
     await expect(tabela(page).locator("tbody tr", { hasText: "123" }).first()).toBeVisible();
     const { nome, linhas } = await baixar(page, () => page.getByRole("button", { name: /Baixar Excel/ }).click());
@@ -112,7 +121,7 @@ test.describe("Relatórios", () => {
 
   test("erro do servidor aparece no topo e some ao trocar de aba com sucesso", async ({ page }) => {
     permitirErrosConsole(page, "500");
-    await page.route("**/relatorios/telefones-invalidos?*", (r) =>
+    await page.route("**/relatorios/pendentes?*", (r) =>
       r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "Falha interna" }) })
     );
     await page.reload();

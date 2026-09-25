@@ -60,6 +60,9 @@ test.describe.serial("Campanhas", () => {
     await page.getByLabel("Nome da campanha").fill("Feirão lojas 01 e 06");
 
     await page.locator('input[aria-label="Planilha de lojas"]').setInputFiles(path.join(DADOS, "lojas_campanha.xlsx"));
+    // a coluna da loja é escolhida na tela, com exemplos de cada coluna
+    await page.getByLabel("Coluna com o código da loja").selectOption({ label: "FILIAL (ex.: 1, 6, 99)" });
+    await page.getByRole("button", { name: "Marcar lojas" }).click();
     await expect(page.getByRole("status")).toContainText("2 loja(s) marcada(s). Não encontrei na base de lojas: 99");
 
     await page.getByLabel("Valor em atraso de (R$)").fill("200");
@@ -266,6 +269,77 @@ test.describe.serial("Campanhas", () => {
     expect(faixasAtraso).toContain(lead.faixa);
     const linha = resumo.por_faixa.find((f: any) => f.faixa === lead.faixa);
     expect((linha.sent ?? 0) + (linha.cancelled ?? 0) + (linha.pending ?? 0)).toBeGreaterThan(0);
+  });
+
+  test("Efetividade por campanha e lista de campanhas pelo período enviado", async ({ page }) => {
+    await page.goto("/");
+    const e = card(page, "Efetividade da cobrança");
+    await e.getByRole("button", { name: "Aplicar filtros" }).click();
+    await e.getByRole("tab", { name: "Por campanha" }).click();
+    await expect(e.locator("thead th").first()).toHaveText(/Campanha/);
+    // a régua aparece numa linha própria quando também cobrou no período
+    const regua = await apiGet(page, "/reports/efetividade?campanha=regua");
+    await expect(e.locator("tbody tr", { hasText: "Régua de atraso" })).toHaveCount(
+      regua.total.qtd_envios > 0 ? 1 : 0
+    );
+    await expect(e.locator("tbody tr", { hasText: "Feirão lojas 01 e 06" })).toBeVisible();
+    await foto(page, "efetividade-por-campanha");
+
+    const opcoes = e.getByLabel("Campanha").locator("option");
+    await expect(opcoes.filter({ hasText: "Feirão lojas 01 e 06" })).toHaveCount(1);
+    // sem aplicar: só as datas já filtram a lista
+    await e.getByLabel("Enviado de").fill("2020-01-01");
+    await e.getByLabel("Enviado até").fill("2020-01-02");
+    await expect(opcoes.filter({ hasText: "Feirão lojas 01 e 06" })).toHaveCount(0);
+    await e.getByLabel("Enviado de").fill("");
+    await e.getByLabel("Enviado até").fill("");
+    await expect(opcoes.filter({ hasText: "Feirão lojas 01 e 06" })).toHaveCount(1);
+  });
+
+  test("Campanhas mostra Criado em e filtra por período de criação ou de envio", async ({ page }) => {
+    await page.goto("/campanhas");
+    const feirao = page.locator(".faixa-row", { hasText: "Feirão lojas 01 e 06" });
+    await expect(feirao).toContainText(/Criado em: \d{2}\/\d{2}\/\d{4}/);
+    const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+
+    await page.getByLabel("De", { exact: true }).fill("2020-01-01");
+    await page.getByLabel("Até", { exact: true }).fill("2020-01-02");
+    await expect(page.getByText("Nenhuma campanha criada no período escolhido.")).toBeVisible();
+    await page.getByLabel("De", { exact: true }).fill(hoje);
+    await page.getByLabel("Até", { exact: true }).fill(hoje);
+    await expect(feirao).toBeVisible();
+
+    // envio: pelo dia em que a campanha cobrou (o teste da régua jogou os envios da Feirão para ontem)
+    const ontem = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
+      new Date(Date.now() - 86_400_000)
+    );
+    await page.getByLabel("Filtrar por").selectOption({ label: "Período de envio" });
+    await page.getByLabel("De", { exact: true }).fill("2020-01-01");
+    await page.getByLabel("Até", { exact: true }).fill("2020-01-02");
+    await expect(page.getByText("Nenhuma campanha com envio no período escolhido.")).toBeVisible();
+    await page.getByLabel("De", { exact: true }).fill(ontem);
+    await page.getByLabel("Até", { exact: true }).fill(hoje);
+    await expect(feirao).toBeVisible();
+    const envio = await apiGet(page, `/campanhas?periodo=envio&de=${ontem}&ate=${hoje}`);
+    expect(envio.map((c: any) => c.nome)).toContain("Feirão lojas 01 e 06");
+    await expect(page.locator(".faixa-row")).toHaveCount(envio.length);
+    await foto(page, "campanhas-filtro-periodo");
+  });
+
+  test("Relatórios filtram por campanha", async ({ page }) => {
+    const campanha = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Feirão lojas 01 e 06");
+    const todos = (await apiGet(page, "/reports/envios?limit=1&offset=0")).total;
+    const daCampanha = (await apiGet(page, `/reports/envios?campanha=${campanha.id}&limit=1&offset=0`)).total;
+    const regua = (await apiGet(page, "/reports/envios?campanha=regua&limit=1&offset=0")).total;
+    expect(daCampanha).toBeGreaterThan(0);
+    expect(regua + daCampanha).toBeLessThanOrEqual(todos);
+
+    await page.goto("/relatorios?aba=envios");
+    await page.getByLabel("Campanha").selectOption({ label: "Feirão lojas 01 e 06" });
+    await expect(page).toHaveURL(new RegExp(`campanha=${campanha.id}`));
+    await expect(page.locator(".card table tbody tr")).toHaveCount(Math.min(daCampanha, 50));
+    await page.reload();
+    await expect(page.getByLabel("Campanha")).toHaveValue(campanha.id);
   });
 
   test("pausar, retomar e parar a campanha pela lista e dentro dela", async ({ page }) => {

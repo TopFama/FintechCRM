@@ -93,10 +93,12 @@ def montar_relatorio(
 
     faixas_map: dict[str, list[dict]] = {}
     lojas_map: dict[str, list[dict]] = {}
+    campanhas_map: dict[str, list[dict]] = {}
 
     for it in itens:
         faixas_map.setdefault(it["faixa"], []).append(it)
         lojas_map.setdefault(it["empresa"], []).append(it)
+        campanhas_map.setdefault(it.get("campanha_id", ""), []).append(it)
 
     por_faixa = []
     for f in sorted(faixas_map.keys(), key=_sort_faixa):
@@ -117,10 +119,19 @@ def montar_relatorio(
             }
         )
 
+    # Régua de atraso primeiro, depois as campanhas por nome
+    por_campanha = []
+    for cid in sorted(campanhas_map, key=lambda c: (c != "", (campanhas_map[c][0].get("campanha") or "").upper())):
+        grupo = campanhas_map[cid]
+        por_campanha.append(
+            {"campanha": grupo[0].get("campanha") or "Régua de atraso", "campanha_id": cid, **_calcular_metricas(grupo)}
+        )
+
     total = _calcular_metricas(itens)
 
     return {
         "por_faixa": por_faixa,
         "por_loja": por_loja,
+        "por_campanha": por_campanha,
         "total": total,
     }

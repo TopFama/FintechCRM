@@ -272,23 +272,23 @@ export const api = {
     request<DashboardSummary>(`/dashboard/summary?${montarQuery({ ...periodo, auto: auto || undefined })}`),
 
   listInvalidPhones: (
-    params: { faixa_id?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+    params: { faixa_id?: string; campanha?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
   ) => request<{ total: number; itens: InvalidPhoneRecord[] }>(`/relatorios/telefones-invalidos?${montarQuery(params)}`),
   listDispatchReport: (
-    params: { faixa_id?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+    params: { faixa_id?: string; campanha?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
   ) =>
     request<{ total: number; itens: DispatchReportItem[] }>(`/relatorios/envios?${montarQuery(params)}`),
 
   // Exportações em Excel exigem o mesmo Bearer token das outras rotas, então
   // baixamos como blob autenticado em vez de um <a href> simples.
-  downloadInvalidPhonesXlsx: (params: { faixa_id?: string; de?: string; ate?: string }) =>
+  downloadInvalidPhonesXlsx: (params: { faixa_id?: string; campanha?: string; de?: string; ate?: string }) =>
     downloadFile(`/relatorios/telefones-invalidos/export?${montarQuery(params)}`, "telefones_invalidos.xlsx"),
-  downloadDispatchReportXlsx: (params: { faixa_id?: string; de?: string; ate?: string }) =>
+  downloadDispatchReportXlsx: (params: { faixa_id?: string; campanha?: string; de?: string; ate?: string }) =>
     downloadFile(`/relatorios/envios/export?${montarQuery(params)}`, "relatorio_envios.xlsx"),
   listPendentes: (
-    params: { faixa_id?: string; loja?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+    params: { faixa_id?: string; campanha?: string; loja?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
   ) => request<FilaReportPage>(`/relatorios/pendentes?${montarQuery(params)}`),
-  downloadPendentesXlsx: (params: { faixa_id?: string; loja?: string; de?: string; ate?: string }) =>
+  downloadPendentesXlsx: (params: { faixa_id?: string; campanha?: string; loja?: string; de?: string; ate?: string }) =>
     downloadFile(`/relatorios/pendentes/export?${montarQuery(params)}`, "relatorio_pendentes.xlsx"),
   // --- Pausas de envio (aba Pendentes) ---
   listarPausas: () => request<PausaEnvio[]>("/pausas"),
@@ -308,9 +308,9 @@ export const api = {
   pararEnvio: (escopo: EscopoPausa, valor: string) =>
     request<{ qtd: number }>("/pausas/parar", { method: "POST", body: JSON.stringify({ escopo, valor }) }),
   listErros: (
-    params: { faixa_id?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+    params: { faixa_id?: string; campanha?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
   ) => request<FilaReportPage>(`/relatorios/erros?${montarQuery(params)}`),
-  downloadErrosXlsx: (params: { faixa_id?: string; de?: string; ate?: string }) =>
+  downloadErrosXlsx: (params: { faixa_id?: string; campanha?: string; de?: string; ate?: string }) =>
     downloadFile(`/relatorios/erros/export?${montarQuery(params)}`, "relatorio_erros.xlsx"),
   listPagamentos: (params: FiltrosPagamentos & { limit: number; offset: number } & OrdenacaoParams) =>
     request<PagamentosPage>(`/relatorios/pagamentos?${montarQuery(params)}`),
@@ -419,8 +419,10 @@ export const api = {
     });
   },
   // --- Campanhas ---
-  listarCampanhas: () => request<Campanha[]>("/campanhas"),
-  opcoesCampanhas: () => request<OpcaoCampanha[]>("/campanhas/opcoes"),
+  listarCampanhas: (filtro: { periodo?: "criacao" | "envio"; de?: string; ate?: string } = {}) =>
+    request<Campanha[]>(`/campanhas?${montarQuery(filtro)}`),
+  opcoesCampanhas: (enviado: { enviado_de?: string; enviado_ate?: string } = {}) =>
+    request<OpcaoCampanha[]>(`/campanhas/opcoes?${montarQuery(enviado)}`),
   getCampanha: (id: string) => request<Campanha>(`/campanhas/${id}`),
   criarCampanha: (payload: CampanhaIn) =>
     request<Campanha>("/campanhas", { method: "POST", body: JSON.stringify(payload) }),
@@ -445,10 +447,18 @@ export const api = {
     pollAsync<PreviaCampanha>(() => request(`/campanhas/${id}/previa?${montarQuery(params)}`)),
   executarCampanha: (id: string) =>
     pollAsync<{ encontrados: number; na_fila: number }>(() => request(`/campanhas/${id}/executar`, { method: "POST" })),
-  lerPlanilhaLojas: (file: File) => {
+  colunasPlanilhaLojas: (file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return request<{ lojas: string[]; nao_encontradas: string[] }>("/lojas/ler-planilha", { method: "POST", body: form });
+    return request<ColunaPlanilha[]>("/lojas/colunas-planilha", { method: "POST", body: form });
+  },
+  lerPlanilhaLojas: (file: File, coluna: number) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<{ lojas: string[]; nao_encontradas: string[] }>(`/lojas/ler-planilha?coluna=${coluna}`, {
+      method: "POST",
+      body: form,
+    });
   },
 
   executarRemarketing: () =>
@@ -636,6 +646,13 @@ export interface Faixa {
   // Faixa de uma campanha (tela Campanhas): não é faixa de atraso.
   campanha_id: string | null;
   descricao: string | null;
+}
+
+/** Coluna de uma planilha subida, com exemplos, para o usuário escolher qual usar. */
+export interface ColunaPlanilha {
+  indice: number;
+  nome: string;
+  exemplos: string[];
 }
 
 export type TipoFaixa = "regua" | "campanha" | "remarketing";
@@ -1105,9 +1122,15 @@ export interface LinhaEfetividadeLoja extends LinhaEfetividade {
   cluster_inad: string | null;
 }
 
+export interface LinhaEfetividadeCampanha extends LinhaEfetividade {
+  campanha: string;
+  campanha_id: string;
+}
+
 export interface RelatorioEfetividade {
   por_faixa: LinhaEfetividadeFaixa[];
   por_loja: LinhaEfetividadeLoja[];
+  por_campanha: LinhaEfetividadeCampanha[];
   total: LinhaEfetividade;
   leads_sem_parcelas: number;
   dias_janela: number | null;
@@ -1131,6 +1154,7 @@ export interface FiltrosEfetividade extends OrdenacaoParams {
 // --- Relatório de pagamentos por cliente ---
 export interface FiltrosPagamentos {
   faixa?: string[];
+  campanha?: string;
   cobrado_de?: string;
   cobrado_ate?: string;
   pago_de?: string;

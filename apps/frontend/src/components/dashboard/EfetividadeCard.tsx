@@ -9,7 +9,7 @@ import { OpcoesCobranca } from "../useOpcoesCobranca";
 import SortableTh from "../SortableTh";
 import { ordemFaixaFn, ordenarPor, SortDirection, useSort } from "../../sort";
 
-type Aba = "faixa" | "loja";
+type Aba = "faixa" | "loja" | "campanha";
 
 // "" = qualquer data após o envio (sem limite); "outro" = número digitado
 const JANELAS = [
@@ -60,7 +60,7 @@ export function BadgeClusterInad({ valor }: { valor: string | null }) {
 }
 
 type ColunaMetrica = "qtd_envios" | "clientes_cobrados" | "clientes_pagaram" | "conversao_clientes" | "valor_pago";
-type Coluna = ColunaMetrica | "faixa" | "loja" | "loja_nome" | "regional" | "cluster_inad";
+type Coluna = ColunaMetrica | "faixa" | "campanha" | "loja" | "loja_nome" | "regional" | "cluster_inad";
 
 function Metricas({ linha }: { linha: LinhaEfetividade }) {
   return (
@@ -255,6 +255,8 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
         <SelectCampanha
           id="efet-campanha"
           value={filtros.campanha ?? ""}
+          enviadoDe={filtros.cobrado_de || undefined}
+          enviadoAte={filtros.cobrado_ate || undefined}
           onChange={(v) => setFiltros({ ...filtros, campanha: v })}
         />
       </div>
@@ -302,6 +304,15 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
         >
           Por loja
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={aba === "campanha"}
+          className={aba === "campanha" ? "" : "secondary"}
+          onClick={() => setAba("campanha")}
+        >
+          Por campanha
+        </button>
       </div>
 
       {erro && (
@@ -334,7 +345,12 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
               <table>
                 <thead>
                   <tr>
-                    {(aba === "faixa" ? ([["faixa", "Faixa"]] as [Coluna, string][]) : COLUNAS_LOJA)
+                    {(aba === "faixa"
+                      ? ([["faixa", "Faixa"]] as [Coluna, string][])
+                      : aba === "campanha"
+                        ? ([["campanha", "Campanha"]] as [Coluna, string][])
+                        : COLUNAS_LOJA
+                    )
                       .concat(CABECALHO_METRICAS)
                       .map(([coluna, rotulo]) => (
                         <SortableTh
@@ -357,19 +373,26 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
                           <Metricas linha={l} />
                         </tr>
                       ))
-                    : ordenar(relatorio.por_loja).map((l) => (
-                        <tr key={l.loja}>
-                          <td className="cell-strong">{l.loja}</td>
-                          <td>{l.loja_nome ?? "—"}</td>
-                          <td>{l.regional ?? "—"}</td>
-                          <td>
-                            <BadgeClusterInad valor={l.cluster_inad} />
-                          </td>
-                          <Metricas linha={l} />
-                        </tr>
-                      ))}
+                    : aba === "campanha"
+                      ? ordenar(relatorio.por_campanha ?? []).map((l) => (
+                          <tr key={l.campanha_id || "regua"}>
+                            <td className="cell-strong">{l.campanha}</td>
+                            <Metricas linha={l} />
+                          </tr>
+                        ))
+                      : ordenar(relatorio.por_loja).map((l) => (
+                          <tr key={l.loja}>
+                            <td className="cell-strong">{l.loja}</td>
+                            <td>{l.loja_nome ?? "—"}</td>
+                            <td>{l.regional ?? "—"}</td>
+                            <td>
+                              <BadgeClusterInad valor={l.cluster_inad} />
+                            </td>
+                            <Metricas linha={l} />
+                          </tr>
+                        ))}
                   <tr className="linha-total">
-                    <td className="cell-strong" colSpan={aba === "faixa" ? 1 : 4}>
+                    <td className="cell-strong" colSpan={aba === "loja" ? 4 : 1}>
                       Total
                     </td>
                     <Metricas linha={relatorio.total} />

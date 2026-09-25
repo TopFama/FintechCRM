@@ -37,6 +37,15 @@ def filtro_faixa(db: Session, faixa_id: str):
         return models.QueueItem.faixa_id == faixa_id
     return or_(models.QueueItem.faixa_id == faixa_id, models.QueueItem.faixa_atraso == faixa.name)
 
+def filtro_campanha(db: Session, coluna_faixa_id, campanha: str | None):
+    """Filtro "Campanha" dos relatórios da fila: "regua" = só as faixas de
+    atraso; id = só os envios feitos por aquela campanha (a faixa dela)."""
+    if campanha == "regua":
+        return coluna_faixa_id.in_(select(models.Faixa.id).where(models.Faixa.tipo == models.TIPO_REGUA))
+    c = db.get(models.Campanha, campanha)
+    return coluna_faixa_id == (c.faixa_id if c else None)
+
+
 def _formula_safe(value: str) -> str:
     """Neutraliza injeção de fórmula (CWE-1236): nome/valor/telefone vêm da
     planilha importada por qualquer usuário e, sem isso, um valor como
@@ -260,6 +269,37 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
     ws_loja.conditional_formatting.add(cf_range, rule_med)
     ws_loja.conditional_formatting.add(cf_range, rule_baix)
 
+    # Aba 3: Por campanha (régua de atraso numa linha, cada campanha na sua)
+    ws_camp = wb.create_sheet(title="Por campanha")
+    headers_camp = ["Campanha", *headers_faixa[1:]]
+    ws_camp.append(headers_camp)
+    for linha in [*relatorio.get("por_campanha", []), {"campanha": "Total", **tot}]:
+        ws_camp.append(
+            [
+                linha["campanha"],
+                linha["qtd_envios"],
+                linha["clientes_cobrados"],
+                float(linha["valor_cobrado"]),
+                linha["clientes_pagaram"],
+                float(linha["valor_pago"]),
+                float(linha["conversao_clientes"]),
+                float(linha["recuperacao_valor"]),
+            ]
+        )
+    for cell in ws_camp[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="003090")
+    for row_idx in range(2, ws_camp.max_row + 1):
+        for col_idx, cell in enumerate(ws_camp[row_idx], start=1):
+            if row_idx == ws_camp.max_row:
+                cell.font = Font(bold=True)
+            if col_idx in (4, 6):
+                cell.number_format = '"R$" #,##0.00'
+            elif col_idx in (7, 8):
+                cell.number_format = "0.0%"
+    ws_camp.freeze_panes = "A2"
+    ws_camp.column_dimensions["A"].width = 40
+
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
@@ -296,10 +336,13 @@ def _invalid_phones_query(
     ate: date | None = None,
     sort_by: str | None = None,
     sort_dir: str = "asc",
+    campanha: str | None = None,
 ):
     query = db.query(models.InvalidPhoneRecord)
     if faixa_id:
         query = query.filter(models.InvalidPhoneRecord.faixa_id == faixa_id)
+    if campanha:
+        query = query.filter(filtro_campanha(db, models.InvalidPhoneRecord.faixa_id, campanha))
     query = _no_periodo(query, models.InvalidPhoneRecord.created_at, de, ate)
     coluna = _INVALID_PHONE_SORT_COLUNAS.get(sort_by) if sort_by else None
     if coluna is not None:
@@ -321,6 +364,7 @@ def _hora_br(dt: datetime | None) -> datetime | None:
 @api.get("/telefones-invalidos", response_model=schemas.InvalidPhonePage)
 def list_invalid_phones(
     faixa_id: str | None = None,
+    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
     ate: date | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
@@ -330,7 +374,7 @@ def list_invalid_phones(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    query = _invalid_phones_query(db, faixa_id, de, ate, sort_by, sort_dir)
+    query = _invalid_phones_query(db, faixa_id, de, ate, sort_by, sort_dir, campanha)
     total = query.count()
     itens = query.offset(offset).limit(limit).all()
     return schemas.InvalidPhonePage(total=total, itens=itens)
@@ -339,13 +383,14 @@ def list_invalid_phones(
 @api.get("/telefones-invalidos/export")
 def export_invalid_phones(
     faixa_id: str | None = None,
+    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
     ate: date | None = Query(None),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
     records = (
-        _invalid_phones_query(db, faixa_id, de, ate)
+        _invalid_phones_query(db, faixa_id, de, ate, campanha=campanha)
         .options(selectinload(models.InvalidPhoneRecord.faixa))
         .all()
     )
@@ -378,6 +423,7 @@ def _dispatch_report_query(
     ate: date | None = None,
     sort_by: str | None = None,
     sort_dir: str = "asc",
+    campanha: str | None = None,
 ):
     query = (
         db.query(models.QueueItem)
@@ -389,6 +435,8 @@ def _dispatch_report_query(
     )
     if faixa_id:
         query = query.filter(filtro_faixa(db, faixa_id))
+    if campanha:
+        query = query.filter(filtro_campanha(db, models.QueueItem.faixa_id, campanha))
     query = _no_periodo(query, models.QueueItem.sent_at, de, ate)
 
     def _ordenado(coluna):
@@ -431,6 +479,7 @@ def _to_report_item(item: models.QueueItem) -> schemas.DispatchReportItemOut:
 @api.get("/envios", response_model=schemas.DispatchReportPage)
 def list_dispatch_report(
     faixa_id: str | None = None,
+    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
     ate: date | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
@@ -440,7 +489,7 @@ def list_dispatch_report(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    query = _dispatch_report_query(db, faixa_id, de, ate, sort_by, sort_dir)
+    query = _dispatch_report_query(db, faixa_id, de, ate, sort_by, sort_dir, campanha)
     total = query.count()
     itens = [_to_report_item(item) for item in query.offset(offset).limit(limit).all()]
     return schemas.DispatchReportPage(total=total, itens=itens)
@@ -449,12 +498,13 @@ def list_dispatch_report(
 @api.get("/envios/export")
 def export_dispatch_report(
     faixa_id: str | None = None,
+    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
     ate: date | None = Query(None),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    rows_data = _dispatch_report_query(db, faixa_id, de, ate).all()
+    rows_data = _dispatch_report_query(db, faixa_id, de, ate, campanha=campanha).all()
     headers = ["Código do cliente", "Faixa de atraso", "Nome", "Valor cobrado", "Telefone que cobrou", "Data/hora"]
     rows = [
         [
@@ -512,6 +562,7 @@ def _fila_report_query(
     sort_by: str | None = None,
     sort_dir: str = "asc",
     loja: str | None = None,
+    campanha: str | None = None,
 ):
     ultimo = _ultimo_erro()
     # erro de upload/extração não passa por log_erros: vale a entrada na fila
@@ -525,6 +576,8 @@ def _fila_report_query(
     )
     if faixa_id:
         query = query.filter(filtro_faixa(db, faixa_id))
+    if campanha:
+        query = query.filter(filtro_campanha(db, models.QueueItem.faixa_id, campanha))
     if loja:
         query = query.filter(models.QueueItem.lojas.like(f"%,{pausas.normalizar_valor('loja', loja)},%"))
     query = _no_periodo(query, models.QueueItem.created_at, de, ate)
@@ -581,8 +634,8 @@ def _to_fila_item(
     )
 
 
-def _pagina_fila(db, status_fila, faixa_id, de, ate, limit, offset, sort_by, sort_dir, loja=None):
-    query = _fila_report_query(db, status_fila, faixa_id, de, ate, sort_by, sort_dir, loja)
+def _pagina_fila(db, status_fila, faixa_id, de, ate, limit, offset, sort_by, sort_dir, loja=None, campanha=None):
+    query = _fila_report_query(db, status_fila, faixa_id, de, ate, sort_by, sort_dir, loja, campanha)
     total = query.count()
     retencao = pausas.Retencao.carregar(db)
     itens = [_to_fila_item(*linha, retencao) for linha in query.offset(offset).limit(limit).all()]
@@ -596,6 +649,7 @@ def _pagina_fila(db, status_fila, faixa_id, de, ate, limit, offset, sort_by, sor
 @api.get("/pendentes", response_model=schemas.FilaReportPage)
 def list_pendentes(
     faixa_id: str | None = None,
+    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     loja: str | None = Query(None, description="Filial (ex.: 07)"),
     de: date | None = Query(None, description="Entrou na fila de (GMT-3)"),
     ate: date | None = Query(None),
@@ -606,19 +660,20 @@ def list_pendentes(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    return _pagina_fila(db, _STATUS_PENDENTE, faixa_id, de, ate, limit, offset, sort_by, sort_dir, loja)
+    return _pagina_fila(db, _STATUS_PENDENTE, faixa_id, de, ate, limit, offset, sort_by, sort_dir, loja, campanha)
 
 
 @api.get("/pendentes/export")
 def export_pendentes(
     faixa_id: str | None = None,
+    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     loja: str | None = Query(None),
     de: date | None = Query(None),
     ate: date | None = Query(None),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _fila_report_query(db, _STATUS_PENDENTE, faixa_id, de, ate, loja=loja).all()
+    linhas = _fila_report_query(db, _STATUS_PENDENTE, faixa_id, de, ate, loja=loja, campanha=campanha).all()
     retencao = pausas.Retencao.carregar(db)
     headers = [
         "Código do cliente", "Nome", "Faixa de atraso", "Campanha", "Valor", "Telefone", "Lojas", "Entrou na fila em",
@@ -641,6 +696,7 @@ def export_pendentes(
 @api.get("/erros", response_model=schemas.FilaReportPage)
 def list_erros(
     faixa_id: str | None = None,
+    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     de: date | None = Query(None, description="Entrou na fila de (GMT-3)"),
     ate: date | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
@@ -650,18 +706,21 @@ def list_erros(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    return _pagina_fila(db, (models.QueueStatus.error,), faixa_id, de, ate, limit, offset, sort_by, sort_dir)
+    return _pagina_fila(
+        db, (models.QueueStatus.error,), faixa_id, de, ate, limit, offset, sort_by, sort_dir, campanha=campanha
+    )
 
 
 @api.get("/erros/export")
 def export_erros(
     faixa_id: str | None = None,
+    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     de: date | None = Query(None),
     ate: date | None = Query(None),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _fila_report_query(db, (models.QueueStatus.error,), faixa_id, de, ate).all()
+    linhas = _fila_report_query(db, (models.QueueStatus.error,), faixa_id, de, ate, campanha=campanha).all()
     headers = ["Código do cliente", "Nome", "Faixa de atraso", "Campanha", "Valor", "Telefone", "Mensagem de erro", "Quando"]
     rows = [
         [item.codigo_cliente, _formula_safe(item.nome), _separar_faixa(item, faixa)[0] or "",
@@ -721,6 +780,7 @@ def relatorio_efetividade(
     return schemas.RelatorioEfetividadeOut(
         por_faixa=dados["por_faixa"],
         por_loja=dados["por_loja"],
+        por_campanha=dados["por_campanha"],
         total=dados["total"],
         leads_sem_parcelas=leads_sem_parcelas,
         dias_janela=dias_janela,
@@ -879,13 +939,13 @@ def export_relatorio_efetividade_clientes(
 _CAMPOS_DATA_PAGAMENTO = ("data_cobranca", "primeiro_pagamento", "ultimo_pagamento")
 
 
-def _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela=None):
+def _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela=None, campanha=None):
     """Resultado cacheado por conjunto de filtros (compartilhado entre usuários):
     ordenar, paginar e exportar com os mesmos filtros não reconsulta o SETA."""
 
     filtros = dict(
         cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate,
-        faixa=sorted(faixa or []), dias_janela=dias_janela,
+        faixa=sorted(faixa or []), dias_janela=dias_janela, campanha=campanha,
     )
 
     def calcular():
@@ -918,6 +978,7 @@ def relatorio_pagamentos(
     pago_de: date | None = Query(None, description="Período de pagamento: início"),
     pago_ate: date | None = Query(None),
     faixa: list[str] | None = Query(None),
+    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     dias_janela: int | None = Query(None, ge=0, le=365, description="Pagou em até N dias corridos da cobrança"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -926,7 +987,7 @@ def relatorio_pagamentos(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela)
+    linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, campanha)
     if sort_by:
         linhas = pagamentos_service.ordenar(linhas, sort_by, sort_dir, carregar_regras(db).nomes_faixa)
     return schemas.PagamentosClientesPage(
@@ -945,11 +1006,12 @@ def export_relatorio_pagamentos(
     pago_de: date | None = Query(None),
     pago_ate: date | None = Query(None),
     faixa: list[str] | None = Query(None),
+    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     dias_janela: int | None = Query(None, ge=0, le=365),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela)
+    linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, campanha)
     headers = [
         "Código do cliente", "Nome", "CPF", "Loja", "Faixa", "Data da cobrança", "Valor cobrado",
         "Valor pago", "Títulos pagos", "Primeiro pagamento", "Último pagamento",

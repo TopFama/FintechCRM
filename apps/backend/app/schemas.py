@@ -573,6 +573,11 @@ class LinhaEfetividadeLoja(LinhaEfetividadeBase):
     cluster_inad: str | None = None
 
 
+class LinhaEfetividadeCampanha(LinhaEfetividadeBase):
+    campanha: str  # nome da campanha, ou "Régua de atraso"
+    campanha_id: str = ""
+
+
 class LinhaEfetividadeTotal(LinhaEfetividadeBase):
     pass
 
@@ -634,6 +639,7 @@ class LinhaEfetividadeClienteOut(BaseModel):
 class RelatorioEfetividadeOut(BaseModel):
     por_faixa: list[LinhaEfetividadeFaixa]
     por_loja: list[LinhaEfetividadeLoja]
+    por_campanha: list[LinhaEfetividadeCampanha] = []
     total: LinhaEfetividadeTotal
     leads_sem_parcelas: int
     dias_janela: int | None = None

@@ -9,7 +9,7 @@ import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { formatBRL, formatCelular, formatData, formatDataHora } from "../format";
 import { IconAlert, IconBolt, IconCheckCircle, IconEye, IconTrash, IconUpload } from "../icons";
 import { SortDirection, useSort } from "../sort";
-import { AcoesCampanha, periodoCampanha, situacaoCampanha } from "./Campanhas";
+import { AcoesCampanha, criadoEm, periodoCampanha, situacaoCampanha } from "./Campanhas";
 
 // Numa campanha, o padrão é pegar todos os dias da faixa e não aplicar a matriz
 // do WhatsApp: quem entra é decidido pelos filtros da própria campanha.
@@ -286,7 +286,7 @@ export default function CampanhaDetail() {
           <h2>{nova ? "Nova campanha" : campanha!.nome}</h2>
           {campanha && (
             <div className="subtitle">
-              {periodoCampanha(campanha)} · {campanha.enviados} enviada(s) · {campanha.pendentes} pendente(s) ·{" "}
+              {criadoEm(campanha)} · {periodoCampanha(campanha)} · {campanha.enviados} enviada(s) · {campanha.pendentes} pendente(s) ·{" "}
               {campanha.erros} erro(s)
               {campanha.ultima_execucao &&
                 ` · última busca ${formatDataHora(campanha.ultima_execucao)}: ${campanha.ultimo_resultado.na_fila ?? 0} na fila`}

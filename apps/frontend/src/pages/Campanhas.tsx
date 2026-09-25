@@ -7,6 +7,11 @@ import { IconAlert, IconArrowRight, IconMegaphone, IconPause, IconPlay, IconPlus
 
 type Aba = "campanhas" | "remarketing";
 
+/** "Criado em: dd/mm/aaaa", no dia de Brasília (created_at vem em UTC). */
+export function criadoEm(c: Pick<Campanha, "created_at">): string {
+  return `Criado em: ${formatDataHora(c.created_at).slice(0, 10)}`;
+}
+
 export function periodoCampanha(c: Pick<Campanha, "ativa" | "data_inicio" | "data_fim">): string {
   if (!c.ativa) return "Envio manual";
   if (!c.data_inicio) return "Envio automático sem data";
@@ -117,13 +122,25 @@ export default function Campanhas() {
   const [campanhas, setCampanhas] = useState<Campanha[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
+  const [periodo, setPeriodo] = useState<"criacao" | "envio">("criacao");
+  const [de, setDe] = useState("");
+  const [ate, setAte] = useState("");
+  const filtrando = de !== "" || ate !== "";
 
   useEffect(() => {
+    let ativo = true;
     api
-      .listarCampanhas()
-      .then(setCampanhas)
-      .catch((e) => setErro(e instanceof Error ? e.message : "Erro ao carregar as campanhas"));
-  }, []);
+      .listarCampanhas({ periodo, de: de || undefined, ate: ate || undefined })
+      .then((lista) => {
+        if (ativo) setCampanhas(lista);
+      })
+      .catch((e) => {
+        if (ativo) setErro(e instanceof Error ? e.message : "Erro ao carregar as campanhas");
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [periodo, de, ate]);
 
   function irParaAba(nova: Aba) {
     const next = new URLSearchParams(searchParams);
@@ -179,8 +196,43 @@ export default function Campanhas() {
             </div>
           )}
           {sucesso && <div className="success-box">{sucesso}</div>}
+          <div className="form-row" style={{ flexWrap: "wrap", marginBottom: 12 }}>
+            <div className="field" style={{ flex: "1 1 200px" }}>
+              <label htmlFor="campanhas-periodo">Filtrar por</label>
+              <select id="campanhas-periodo" value={periodo} onChange={(e) => setPeriodo(e.target.value as "criacao" | "envio")}>
+                <option value="criacao">Período de criação</option>
+                <option value="envio">Período de envio</option>
+              </select>
+            </div>
+            <div className="field" style={{ flex: "1 1 160px" }}>
+              <label htmlFor="campanhas-de">De</label>
+              <input id="campanhas-de" type="date" value={de} onChange={(e) => setDe(e.target.value)} />
+            </div>
+            <div className="field" style={{ flex: "1 1 160px" }}>
+              <label htmlFor="campanhas-ate">Até</label>
+              <input id="campanhas-ate" type="date" value={ate} onChange={(e) => setAte(e.target.value)} />
+            </div>
+            {filtrando && (
+              <div className="field" style={{ flex: "0 0 auto", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    setDe("");
+                    setAte("");
+                  }}
+                >
+                  Limpar
+                </button>
+              </div>
+            )}
+          </div>
           {campanhas === null && !erro ? (
             <div className="loading-state">Carregando campanhas...</div>
+          ) : campanhas && campanhas.length === 0 && filtrando ? (
+            <div className="empty-state">
+              <p>Nenhuma campanha {periodo === "criacao" ? "criada" : "com envio"} no período escolhido.</p>
+            </div>
           ) : campanhas && campanhas.length === 0 ? (
             <div className="empty-state">
               <IconMegaphone width={28} height={28} />
@@ -212,7 +264,7 @@ export default function Campanhas() {
                         {c.templates.length ? c.templates.join(", ") : "sem template"}
                       </div>
                       <div className="faixa-row-sub">
-                        {c.enviados} enviada(s) · {c.pendentes} pendente(s) · {c.erros} erro(s)
+                        {criadoEm(c)} · {c.enviados} enviada(s) · {c.pendentes} pendente(s) · {c.erros} erro(s)
                         {c.ultima_execucao && ` · última busca ${formatDataHora(c.ultima_execucao)}`}
                       </div>
                     </div>

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
@@ -12,6 +12,7 @@ from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
+from ..services.pagamentos_service import _inicio_utc
 from ..timezone import hoje_br
 from .cobranca import ClienteSortColumn, _ordenar_clientes
 from .uploads import _ler_planilha_limitada
@@ -170,27 +171,63 @@ def _aplicar(c: models.Campanha, payload: CampanhaIn, nome: str) -> None:
     c.ultima_execucao_dia = None
 
 
-@router.get("")
-def listar(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
-    campanhas = (
-        db.query(models.Campanha)
-        .filter(models.Campanha.arquivada_em.is_(None))
-        .order_by(models.Campanha.created_at.desc())
-        .all()
+def _enviadas_no_periodo(db: Session, de: date | None, ate: date | None) -> set[str]:
+    """Campanhas com algum cliente cobrado entre `de` e `ate` (dias de Brasília),
+    mesmo critério do "Enviado de/até" da Efetividade."""
+
+    q = db.query(models.Lead.campanha_id).filter(
+        models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None), models.Lead.campanha_id != ""
     )
+    if de:
+        q = q.filter(models.Lead.cobrado_em >= _inicio_utc(de))
+    if ate:
+        q = q.filter(models.Lead.cobrado_em < _inicio_utc(ate + timedelta(days=1)))
+    return {cid for (cid,) in q.distinct()}
+
+
+@router.get("")
+def listar(
+    periodo: Literal["criacao", "envio"] = "criacao",
+    de: date | None = None,
+    ate: date | None = None,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Campanhas ativas; com `de`/`ate`, só as criadas (periodo=criacao) ou
+    com envio (periodo=envio) nesse intervalo."""
+
+    q = db.query(models.Campanha).filter(models.Campanha.arquivada_em.is_(None))
+    if de or ate:
+        if periodo == "envio":
+            q = q.filter(models.Campanha.id.in_(_enviadas_no_periodo(db, de, ate)))
+        else:
+            if de:
+                q = q.filter(models.Campanha.created_at >= _inicio_utc(de))
+            if ate:
+                q = q.filter(models.Campanha.created_at < _inicio_utc(ate + timedelta(days=1)))
+    campanhas = q.order_by(models.Campanha.created_at.desc()).all()
     contagens = _contagens(db, [c.faixa_id for c in campanhas])
     pausadas = _pausas_por_faixa(db)
     return [_out(c, contagens[c.faixa_id], pausadas.get(c.faixa_id)) for c in campanhas]
 
 
 @router.get("/opcoes")
-def opcoes(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+def opcoes(
+    enviado_de: date | None = None,
+    enviado_ate: date | None = None,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
     """Todas as campanhas, arquivadas inclusive (o histórico continua nos
-    relatórios), pro filtro "Campanha" da Efetividade e da exportação de leads."""
+    relatórios), pro filtro "Campanha" da Efetividade e da exportação de leads.
+    Com `enviado_de`/`enviado_ate`, só as que tiveram envio nesse período."""
 
+    q = db.query(models.Campanha)
+    if enviado_de or enviado_ate:
+        q = q.filter(models.Campanha.id.in_(_enviadas_no_periodo(db, enviado_de, enviado_ate)))
     return [
         {"id": c.id, "nome": c.nome, "arquivada": c.arquivada_em is not None}
-        for c in db.query(models.Campanha).order_by(models.Campanha.arquivada_em.isnot(None), models.Campanha.nome)
+        for c in q.order_by(models.Campanha.arquivada_em.isnot(None), models.Campanha.nome)
     ]
 
 
