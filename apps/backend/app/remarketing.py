@@ -20,7 +20,7 @@ from . import campanhas_fixas, crypto, models, seta_client
 from . import lojas as lojas_base
 from .cobranca_base import _montar_cliente, _restaurar_linha_seta
 from .cobranca_regras import faixa_de_compra
-from .fila_automatica import clientes_bloqueados_hoje, enfileirar_clientes
+from .fila_automatica import STATUS_OCUPA_CLIENTE, clientes_bloqueados_hoje, enfileirar_clientes
 from .leads_service import gerar_leads_de_clientes
 from .regras_db import carregar_regras
 from .timezone import BUSINESS_TZ
@@ -127,7 +127,8 @@ def dia_do_evento(valor: str) -> date:
 
 
 def _recontatados(db: Session, regra: models.RemarketingSegmento, agora: datetime) -> set[str]:
-    """Quem recebeu (ou está na fila) deste segmento dentro do intervalo de recontato."""
+    """Quem recebeu (ou está na fila) deste segmento dentro do intervalo de
+    recontato. Quem entrou e não foi cobrado pode entrar de novo."""
 
     desde = agora - timedelta(days=regra.recontato_dias)
     return {
@@ -135,7 +136,7 @@ def _recontatados(db: Session, regra: models.RemarketingSegmento, agora: datetim
         for (codigo,) in db.query(models.QueueItem.codigo_cliente).filter(
             models.QueueItem.faixa_id == regra.faixa_id,
             models.QueueItem.created_at >= desde,
-            models.QueueItem.status != models.QueueStatus.error,
+            models.QueueItem.status.in_(STATUS_OCUPA_CLIENTE),
         )
     }
 

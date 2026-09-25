@@ -26,11 +26,16 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from openpyxl import load_workbook
-from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
 from . import cobranca_base, lojas as lojas_base, models, pausas, seta_client
-from .fila_automatica import clientes_bloqueados_hoje, enfileirar_clientes, enfileirar_leads, inicio_hoje_utc
+from .fila_automatica import (
+    STATUS_OCUPA_CLIENTE,
+    clientes_bloqueados_hoje,
+    enfileirar_clientes,
+    enfileirar_leads,
+    inicio_hoje_utc,
+)
 from .leads_service import gerar_leads_de_clientes
 from .regras_db import carregar_regras
 from .timezone import hoje_br
@@ -105,12 +110,12 @@ def filtros_para_busca(db: Session, filtros: dict, clientes: list[str] | None) -
 
 def ja_receberam(db: Session, campanha: models.Campanha, agora: datetime | None = None) -> set[str]:
     """Quem já está na fila ou recebeu desta campanha (em qualquer data, ou
-    dentro do prazo de recontato, quando a recorrente tem um). Erro de envio
-    só conta no próprio dia: o cliente tenta de novo no próximo."""
+    dentro do prazo de recontato, quando a recorrente tem um). Quem entrou e
+    não foi cobrado (erro, parado, descartado) pode entrar de novo."""
 
     q = db.query(models.QueueItem.codigo_cliente).filter(
         models.QueueItem.faixa_id == campanha.faixa_id,
-        or_(models.QueueItem.status != models.QueueStatus.error, models.QueueItem.created_at >= inicio_hoje_utc()),
+        models.QueueItem.status.in_(STATUS_OCUPA_CLIENTE),
     )
     if campanha.recontato_dias:
         agora = agora or datetime.utcnow()
@@ -263,7 +268,9 @@ def enfileirar_na_regua(db: Session) -> dict:
     na_regua_hoje = {
         (codigo, faixa_por_id.get(faixa_id))
         for codigo, faixa_id in db.query(models.QueueItem.codigo_cliente, models.QueueItem.faixa_id).filter(
-            models.QueueItem.codigo_cliente.in_(codigos), models.QueueItem.created_at >= inicio_hoje_utc()
+            models.QueueItem.codigo_cliente.in_(codigos),
+            models.QueueItem.created_at >= inicio_hoje_utc(),
+            models.QueueItem.status.in_(STATUS_OCUPA_CLIENTE),
         )
     }
     com_envio = {

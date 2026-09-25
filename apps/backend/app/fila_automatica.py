@@ -30,10 +30,17 @@ def inicio_hoje_utc() -> datetime:
     return _utc_ingenuo(datetime.combine(datetime.now(BUSINESS_TZ).date(), time.min, BUSINESS_TZ))
 
 
+# Status que "ocupam" o cliente: vai sair (pendente/reservado) ou saiu
+# (enviado). Erro, telefone inválido, parado, descartado e expirado não
+# contam: quem não foi cobrado pode entrar de novo em outra base.
+STATUS_OCUPA_CLIENTE = (models.QueueStatus.pending, models.QueueStatus.reserved, models.QueueStatus.sent)
+
+
 def clientes_bloqueados_hoje(db: Session) -> set[str]:
     """Códigos que não podem entrar na fila agora, em QUALQUER faixa: quem já
     está pendente/reservado (vai sair) e quem já foi cobrado hoje (GMT-3).
-    Cliente cobrado em dia anterior pode voltar."""
+    Cliente cobrado em dia anterior pode voltar, e quem entrou na fila mas
+    não foi cobrado (erro, parado, descartado, expirado) também."""
 
     return {
         codigo
