@@ -109,10 +109,17 @@ def _deve_rodar_remarketing(global_config: models.GlobalDispatchConfig, now_utc:
     mesmo momento da extração de leads (N min antes do início) até o fim da
     janela — se o backend subir no meio do dia, ainda roda naquele dia."""
 
+    if global_config.remarketing_last_run == _local_now(now_utc).date():
+        return False
+    return _na_janela_diaria(global_config, now_utc)
+
+
+def _na_janela_diaria(global_config: models.GlobalDispatchConfig, now_utc: datetime) -> bool:
+    """Dia de disparo, de N min antes do início (extração de leads) até o fim
+    da janela: quando rodam remarketing e campanhas."""
+
     local_now = _local_now(now_utc)
     if _WEEKDAY_MAP[local_now.weekday()] not in global_config.schedule_days.split(","):
-        return False
-    if global_config.remarketing_last_run == local_now.date():
         return False
     inicio = (
         datetime.combine(local_now.date(), dt_time.fromisoformat(global_config.schedule_start))
@@ -166,6 +173,22 @@ async def run_dispatch_cycle() -> None:
                     logger.exception("Falha no remarketing do Renegocie")
                 else:
                     global_config.remarketing_last_run = _local_now(now).date()
+                    db.commit()
+
+        if _na_janela_diaria(global_config, now):
+            # Campanhas: mesmo horário do remarketing, cada uma uma vez por dia.
+            from . import campanhas  # import local: evita ciclo de import com worker
+
+            for campanha in campanhas.campanhas_para_hoje(db):
+                try:
+                    resultado = campanhas.executar(db, campanha)
+                except Exception:  # noqa: BLE001 - SETA fora não pode travar o disparo
+                    db.rollback()
+                    logger.exception("Falha na campanha '%s'", campanha.nome)
+                    continue
+                # Base ainda calculando no SETA: tenta de novo no próximo ciclo.
+                if resultado.get("status") == "ready":
+                    campanha.ultima_execucao_dia = _local_now(now).date()
                     db.commit()
 
         try:

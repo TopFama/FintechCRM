@@ -346,6 +346,7 @@ class FaixaOut(BaseModel):
     variable_mappings: list[FaixaVariableMappingOut] = []
     upload_field_mapping: dict = {}
     remarketing_segmento: str | None = None
+    campanha_id: str | None = None
     descricao: str | None = None
 
 
@@ -707,6 +708,8 @@ class ClienteCobrancaOut(BaseModel):
     valor_em_aberto: Decimal  # soma de ft.valor de todas as parcelas abertas, sem juros
     qtd_parcelas_cobranca: int  # parcelas vencidas (ou a de amanhã, no lembrete) que entram no valor a cobrar
     valor_cobrar: Decimal  # o que vai no template: parcelas da cobrança com multa e juros (atraso acima da carência)
+    valor_atraso_original: Decimal = Decimal(0)  # parcelas já vencidas, sem multa e juros
+    valor_atraso_juros: Decimal = Decimal(0)  # parcelas já vencidas, com multa e juros
     vencimento_mais_antigo: date
     lojas: list[str]
     portadores: list[str]

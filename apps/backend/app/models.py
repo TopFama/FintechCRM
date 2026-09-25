@@ -171,13 +171,26 @@ class Faixa(Base):
         primaryjoin="Faixa.id == RemarketingSegmento.faixa_id", uselist=False, viewonly=True, lazy="selectin"
     )
 
+    # Faixa de uma campanha (tela Campanhas): também não recebe planilha.
+    campanha: Mapped["Campanha | None"] = relationship(
+        primaryjoin="Faixa.id == Campanha.faixa_id", uselist=False, viewonly=True, lazy="selectin"
+    )
+
     @property
     def remarketing_segmento(self) -> str | None:
         return self.remarketing.segmento if self.remarketing else None
 
     @property
+    def campanha_id(self) -> str | None:
+        return self.campanha.id if self.campanha else None
+
+    @property
     def descricao(self) -> str | None:
-        return DESCRICOES_REMARKETING.get(self.remarketing.segmento) if self.remarketing else None
+        if self.remarketing:
+            return DESCRICOES_REMARKETING.get(self.remarketing.segmento)
+        if self.campanha:
+            return "Campanha: recebe os clientes pelos filtros da campanha, sem planilha."
+        return None
 
 
 DESCRICOES_REMARKETING = {
@@ -601,5 +614,48 @@ class RemarketingSegmento(Base):
     valor_max: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     ultima_execucao: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ultimo_resultado: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    faixa: Mapped[Faixa] = relationship()
+
+
+class Campanha(Base):
+    """Campanha de cobrança com filtros e templates próprios (tela Campanhas).
+    Como no remarketing, cada campanha tem uma faixa só dela ("Campanha: …"),
+    onde ficam os números, templates e variáveis; daí em diante é a fila
+    normal (pausas, relatórios, uma cobrança por cliente por dia).
+
+    `filtros` guarda os mesmos filtros da tela Cobrança, com os nomes dos
+    parâmetros de /cobranca/clientes (faixa, cluster, loja, cobradora,
+    vencimento_de, valor_atraso_min...). `clientes`, quando preenchido, limita
+    a base aos códigos SETA da planilha subida na campanha."""
+
+    __tablename__ = "campanhas"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    nome: Mapped[str] = mapped_column(String, unique=True)
+    faixa_id: Mapped[str] = mapped_column(ForeignKey("faixas.id", ondelete="CASCADE"), unique=True)
+    ativa: Mapped[bool] = mapped_column(Boolean, default=False)
+    # "unica": roda uma vez, no dia data_inicio. "recorrente": todo dia de
+    # disparo entre data_inicio e data_fim (GMT-3, inclusive nas duas pontas).
+    modo: Mapped[str] = mapped_column(String, default="unica", server_default="unica")
+    data_inicio: Mapped[date | None] = mapped_column(Date, nullable=True)
+    data_fim: Mapped[date | None] = mapped_column(Date, nullable=True)
+    filtros: Mapped[dict] = mapped_column(JSON, default=dict)
+    clientes: Mapped[list] = mapped_column(JSON, default=list)
+    clientes_arquivo: Mapped[str | None] = mapped_column(String, nullable=True)
+    # De onde vêm valor, celular e as colunas das variáveis: "seta" (dados do
+    # dia no SETA) ou "planilha" (linha da planilha de clientes, por código).
+    fonte_valores: Mapped[str] = mapped_column(String, default="seta", server_default="seta")
+    planilha_colunas: Mapped[list] = mapped_column(JSON, default=list)
+    planilha_linhas: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Só na recorrente. Nulo: cada cliente recebe uma vez por campanha. Com
+    # valor: pode receber de novo depois desse número de dias.
+    recontato_dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ultima_execucao: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ultima_execucao_dia: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ultimo_resultado: Mapped[dict] = mapped_column(JSON, default=dict)
+    arquivada_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     faixa: Mapped[Faixa] = relationship()

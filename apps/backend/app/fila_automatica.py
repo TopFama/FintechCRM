@@ -118,6 +118,69 @@ def _fontes(faixa: models.Faixa, template: models.Template) -> list[tuple[models
     return fontes
 
 
+def enfileirar_clientes(
+    db: Session,
+    faixa: models.Faixa,
+    clientes: list[dict],
+    *,
+    bloqueados: set[str],
+    juros,
+    parcelas: dict[str, list[dict]],
+    origem: str,
+    colunas_extras: dict[str, dict[str, str]] | None = None,
+) -> int:
+    """Coloca na fila de `faixa` clientes vindos direto do SETA (formato de
+    `cobranca_base._montar_cliente`), resolvendo as variáveis de cada template
+    ativo. Pula quem está em `bloqueados` (e o acrescenta ali) ou não tem
+    telefone válido; variável sem valor vira item com erro.
+    `colunas_extras` (por código) entram no contexto das variáveis como
+    colunas de planilha, valendo mais que os campos do cliente. Não comita.
+    Devolve quantos entraram como pendentes."""
+
+    templates = {e.template_id: e.template for e in faixa.envios if e.active and e.template_id}
+    if not templates:
+        logger.warning("%s: faixa '%s' sem número/template ativo; %s cliente(s) ignorado(s)", origem, faixa.name, len(clientes))
+        return 0
+    fontes_por_template = {tid: _fontes(faixa, tpl) for tid, tpl in templates.items()}
+    total = 0
+    for cliente in clientes:
+        if cliente["codigo"] in bloqueados or not cliente.get("celular") or not is_valid_phone(cliente["celular"]):
+            continue
+        contexto = contexto_cliente({**cliente, "parcelas": parcelas.get(cliente["codigo"], []), "juros": juros})
+        if colunas_extras and cliente["codigo"] in colunas_extras:
+            contexto.update(colunas_extras[cliente["codigo"]])
+        faltando: list[str] = []
+        por_template: dict[str, dict[str, str]] = {}
+        for tid, fontes in fontes_por_template.items():
+            valores: dict[str, str] = {}
+            for v, fonte in fontes:
+                val = resolver_variaveis([fonte], contexto)[v.internal_name] if fonte else ""
+                if not val:
+                    faltando.append(v.internal_name)
+                valores[v.internal_name] = val
+            por_template[tid] = valores
+        item = models.QueueItem(
+            faixa_id=faixa.id,
+            codigo_cliente=cliente["codigo"],
+            nome=primeiro_nome(cliente["nome"]),
+            cpf=formatar_cpf(cliente["cpfcnpj"]),
+            valor=str(cliente["valor_cobrar"]),
+            celular=normalize_phone(cliente["celular"]),
+            celular_original=cliente.get("celular_original") or cliente["celular"],
+            variables_json=next(iter(por_template.values())) if len(por_template) == 1 else por_template,
+            status=models.QueueStatus.pending,
+            lojas=lojas_formatadas(cliente.get("lojas")),
+        )
+        if faltando:
+            item.status = models.QueueStatus.error
+            item.error_message = f"Variável sem valor {origem}: {', '.join(sorted(set(faltando)))}"
+        else:
+            total += 1
+        db.add(item)
+        bloqueados.add(cliente["codigo"])
+    return total
+
+
 def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
     """Coloca na fila da faixa correspondente os clientes da base do dia
     (já filtrada por primeiro dia da faixa + matriz do WhatsApp). Usa o Lead

@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -47,6 +48,9 @@ def filtros_base(
     restricao_spc: list[str] | None = Query(None, description="sim, nao e/ou indeterminado"),
     vencimento_de: date | None = Query(None, description="Vencimento da parcela mais antiga, a partir de"),
     vencimento_ate: date | None = Query(None, description="Vencimento da parcela mais antiga, até"),
+    valor_atraso_min: Decimal | None = Query(None, ge=0, description="Total das parcelas vencidas, a partir de"),
+    valor_atraso_max: Decimal | None = Query(None, ge=0, description="Total das parcelas vencidas, até"),
+    valor_atraso_com_juros: bool = Query(False, description="O valor em atraso conta multa e juros"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Filtros comuns à listagem e aos relatórios: os dois enxergam os mesmos clientes."""
@@ -70,6 +74,9 @@ def filtros_base(
         restricoes_spc=restricao_spc,
         vencimento_de=vencimento_de,
         vencimento_ate=vencimento_ate,
+        valor_atraso_min=valor_atraso_min,
+        valor_atraso_max=valor_atraso_max,
+        valor_atraso_com_juros=valor_atraso_com_juros,
     )
 
 

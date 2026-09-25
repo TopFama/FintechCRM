@@ -148,7 +148,17 @@ abertos AS (
                               THEN valor + valor * :juros_dia * (current_date - vencimento) + valor * :multa
                               ELSE valor END, 2)
                END
-           )                              AS valor_cobrar
+           )                              AS valor_cobrar,
+           -- só as já vencidas (antes de hoje): filtro "valor em atraso" da
+           -- Cobrança e das Campanhas, sem e com multa/juros
+           COALESCE(sum(valor) FILTER (WHERE vencimento < current_date), 0)
+                                          AS valor_atraso_original,
+           COALESCE(sum(
+               round(CASE WHEN current_date - vencimento > :dias_min_juros
+                          THEN valor + valor * :juros_dia * (current_date - vencimento) + valor * :multa
+                          ELSE valor END, 2)
+           ) FILTER (WHERE vencimento < current_date), 0)
+                                          AS valor_atraso_juros
       FROM parcelas
      GROUP BY pessoa
 ),
@@ -370,6 +380,27 @@ def buscar_spc(codigos: list[str]) -> dict[str, str]:
     try:
         with engine.connect() as conn:
             return {r.codigo: r.scpcresultado for r in conn.execute(stmt, {"codigos": codigos})}
+    except SQLAlchemyError as exc:
+        logger.warning("Falha ao consultar o SETA: %s", exc.__class__.__name__)
+        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
+
+
+def codigos_por_cpf(cpfs: list[str]) -> dict[str, str]:
+    """CPF (só dígitos) -> código do cliente, para planilhas de campanha que
+    trazem só o CPF. Uma consulta só, com todos os CPFs num array."""
+
+    if not cpfs:
+        return {}
+    engine = engine_ou_erro()
+    stmt = text(
+        "WITH alvo AS (SELECT DISTINCT unnest(CAST(:cpfs AS text[])) AS cpf) "
+        "SELECT a.cpf, trim(p.codigo) AS codigo "
+        "  FROM pessoas p JOIN alvo a ON regexp_replace(p.cpfcnpj, '\\D', '', 'g') = a.cpf "
+        " WHERE p.cliente"
+    )
+    try:
+        with engine.connect() as conn:
+            return {r.cpf: r.codigo for r in conn.execute(stmt, {"cpfs": sorted(set(cpfs))})}
     except SQLAlchemyError as exc:
         logger.warning("Falha ao consultar o SETA: %s", exc.__class__.__name__)
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc

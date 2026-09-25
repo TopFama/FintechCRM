@@ -18,16 +18,13 @@ from sqlalchemy.orm import Session, selectinload
 
 from . import crypto, models, seta_client
 from . import lojas as lojas_base
-from .pausas import lojas_formatadas
 from .cobranca_base import _montar_cliente, _restaurar_linha_seta
 from .cobranca_regras import faixa_de_compra
-from .fila_automatica import _fontes, clientes_bloqueados_hoje
+from .fila_automatica import clientes_bloqueados_hoje, enfileirar_clientes
 from .regras_db import carregar_regras
 from .timezone import BUSINESS_TZ
 from .routers.blacklist import codigos_bloqueados
-from .utils.leads_xlsx import formatar_cpf, primeiro_nome
-from .utils.phone import is_valid_phone, normalize_phone
-from .variaveis_template import contexto_cliente, resolver_variaveis
+from .utils.phone import is_valid_phone
 
 logger = logging.getLogger("remarketing")
 
@@ -266,47 +263,13 @@ def enfileirar(db: Session, selecionados: dict[str, list[dict]]) -> dict[str, in
     totais: dict[str, int] = {}
 
     for segmento, lista in selecionados.items():
-        totais[segmento] = 0
         regra = regras_seg.get(segmento)
-        faixa = regra.faixa if regra else None
-        templates = {e.template_id: e.template for e in (faixa.envios if faixa else []) if e.active and e.template_id}
-        if not templates:
-            logger.warning("Remarketing '%s': faixa sem número/template ativo; %s cliente(s) ignorado(s)", segmento, len(lista))
+        if regra is None:
+            totais[segmento] = 0
             continue
-        fontes_por_template = {tid: _fontes(faixa, tpl) for tid, tpl in templates.items()}
-        for cliente in lista:
-            if cliente["codigo"] in bloqueados or not cliente.get("celular") or not is_valid_phone(cliente["celular"]):
-                continue
-            contexto = contexto_cliente({**cliente, "parcelas": parcelas.get(cliente["codigo"], []), "juros": juros})
-            faltando: list[str] = []
-            por_template: dict[str, dict[str, str]] = {}
-            for tid, fontes in fontes_por_template.items():
-                valores: dict[str, str] = {}
-                for v, fonte in fontes:
-                    val = resolver_variaveis([fonte], contexto)[v.internal_name] if fonte else ""
-                    if not val:
-                        faltando.append(v.internal_name)
-                    valores[v.internal_name] = val
-                por_template[tid] = valores
-            item = models.QueueItem(
-                faixa_id=faixa.id,
-                codigo_cliente=cliente["codigo"],
-                nome=primeiro_nome(cliente["nome"]),
-                cpf=formatar_cpf(cliente["cpfcnpj"]),
-                valor=str(cliente["valor_cobrar"]),
-                celular=normalize_phone(cliente["celular"]),
-                celular_original=cliente.get("celular_original") or cliente["celular"],
-                variables_json=next(iter(por_template.values())) if len(por_template) == 1 else por_template,
-                status=models.QueueStatus.pending,
-                lojas=lojas_formatadas(cliente.get("lojas")),
-            )
-            if faltando:
-                item.status = models.QueueStatus.error
-                item.error_message = f"Variável sem valor no remarketing: {', '.join(sorted(set(faltando)))}"
-            else:
-                totais[segmento] += 1
-            db.add(item)
-            bloqueados.add(cliente["codigo"])
+        totais[segmento] = enfileirar_clientes(
+            db, regra.faixa, lista, bloqueados=bloqueados, juros=juros, parcelas=parcelas, origem="no remarketing"
+        )
     db.commit()
     return totais
 

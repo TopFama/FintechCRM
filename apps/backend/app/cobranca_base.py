@@ -34,7 +34,10 @@ def _validar(valores: list[str] | None, validos: list[str], rotulo: str) -> None
 
 # Campos das linhas cruas do SETA que viram texto na ida ao Redis (Decimal e
 # date não são JSON nativamente) e precisam ser restaurados na volta.
-_CAMPOS_DECIMAL_SETA = ("salario", "limite_rotativo", "valor_pago", "valor_em_aberto", "valor_cobrar")
+_CAMPOS_DECIMAL_SETA = (
+    "salario", "limite_rotativo", "valor_pago", "valor_em_aberto", "valor_cobrar",
+    "valor_atraso_original", "valor_atraso_juros",
+)
 _CAMPOS_DATA_SETA = ("nascimento", "cadastro", "ultima_compra", "vencimento_mais_antigo")
 
 
@@ -64,6 +67,10 @@ def buscar_base(
     vencimento_de: date | None = None,
     vencimento_ate: date | None = None,
     restricoes_spc: list[str] | None = None,
+    valor_atraso_min: Decimal | None = None,
+    valor_atraso_max: Decimal | None = None,
+    valor_atraso_com_juros: bool = False,
+    codigos: list[str] | None = None,
 ) -> dict:
     """{"status": "ready", "data": [...]} com os clientes da base de
     cobrança (do mais atrasado para o menos), ou {"status": "processing",
@@ -78,9 +85,12 @@ def buscar_base(
     - `faixas_compra`: restringe pela quantidade de compras no crediário (1 a 9, 10+).
     - `vencimento_de` / `vencimento_ate`: período do vencimento da parcela mais antiga.
     - `restricoes_spc`: "sim", "nao" e/ou "indeterminado".
+    - `valor_atraso_min` / `valor_atraso_max`: total das parcelas já vencidas,
+      pelo valor original ou, com `valor_atraso_com_juros`, com multa e juros.
+    - `codigos`: só esses clientes (planilha de clientes de uma campanha).
     """
 
-    if lojas is not None and not lojas:
+    if (lojas is not None and not lojas) or (codigos is not None and not codigos):
         return {"status": "ready", "data": []}  # atributos de loja escolhidos não casaram com nenhuma loja
 
     regras = carregar_regras(db)
@@ -119,6 +129,9 @@ def buscar_base(
             "juros_mes_percentual": str(regras.juros.juros_mes_percentual),
             "multa_percentual": str(regras.juros.multa_percentual),
             "dias_min_juros": regras.juros.dias_min,
+            "codigos": sorted(codigos) if codigos else None,
+            # linhas com valor em atraso (sem e com juros); não reaproveita cache de antes
+            "versao": 2,
         },
     )
 
@@ -134,6 +147,7 @@ def buscar_base(
             bloqueados_codigos=bl_codigos,
             bloqueados_cpfs=bl_cpfs,
             juros=regras.juros,
+            codigos=sorted(codigos) if codigos else None,
         )
 
     job = cache.buscar_ou_iniciar(chave_cache, calcular_linhas)
@@ -155,6 +169,12 @@ def buscar_base(
             continue
         if somente_regra_whatsapp and not entra:
             continue
+        if valor_atraso_min is not None or valor_atraso_max is not None:
+            valor_atraso = r["valor_atraso_juros"] if valor_atraso_com_juros else r["valor_atraso_original"]
+            if valor_atraso_min is not None and valor_atraso < valor_atraso_min:
+                continue
+            if valor_atraso_max is not None and valor_atraso > valor_atraso_max:
+                continue
         resultado.append(_montar_cliente(r, faixa, cluster, entra, compra))
 
     resultado.sort(key=lambda c: (-c["dias_atraso"], -c["valor_em_aberto"], c["codigo"]))
@@ -195,6 +215,8 @@ def _montar_cliente(r: dict, faixa: str | None, cluster: str, entra: bool, faixa
         "valor_em_aberto": r["valor_em_aberto"],
         "qtd_parcelas_cobranca": r["qtd_parcelas_cobranca"],
         "valor_cobrar": r["valor_cobrar"],
+        "valor_atraso_original": r["valor_atraso_original"],
+        "valor_atraso_juros": r["valor_atraso_juros"],
         "vencimento_mais_antigo": r["vencimento_mais_antigo"],
         "lojas": r["lojas"].split(",") if r["lojas"] else [],
         "portadores": r["portadores"].split(",") if r["portadores"] else [],
