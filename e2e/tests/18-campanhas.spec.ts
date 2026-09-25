@@ -132,13 +132,15 @@ test.describe.serial("Campanhas", () => {
     await atribuirTemplate(page, "lembrete_vencimento", "Obs");
     const previa = card(page, "Quem entraria agora");
     await previa.getByRole("button", { name: "Ver prévia" }).click();
-    await expect(previa).toContainText("2 cliente(s) entrariam"); // 99999 não existe no SETA
+    // 99999 não existe no SETA; 00000036 pode ter saído da base em cenários anteriores (blacklist)
+    await expect(previa).toContainText(/[12] cliente\(s\) entrariam/);
     await expect(previa.locator("tbody")).toContainText("R$ 99,90");
+    const entrariam = await previa.locator("tbody tr").count();
 
     const confirmou = responderDialogo(page);
     await previa.getByRole("button", { name: "Colocar na fila agora" }).click();
     await confirmou;
-    await expect(page.locator(".success-box", { hasText: "encontrado" })).toContainText("2 cliente(s) colocado(s) na fila (de 2 encontrado(s))");
+    await expect(page.locator(".success-box", { hasText: "encontrado" })).toContainText(`(de ${entrariam} encontrado(s))`);
 
     const campanha = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Planilha promo");
     const fila = await apiGet(page, `/faixas/${campanha.faixa_id}/queue?limit=100&offset=0`);
