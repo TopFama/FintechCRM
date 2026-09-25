@@ -425,6 +425,8 @@ export const api = {
   // --- Campanhas ---
   listarCampanhas: (filtro: { periodo?: "criacao" | "envio"; de?: string; ate?: string } = {}) =>
     request<Campanha[]>(`/campanhas?${montarQuery(filtro)}`),
+  listarCampanhasFixas: (filtro: { periodo?: "criacao" | "envio"; de?: string; ate?: string } = {}) =>
+    request<CampanhaFixa[]>(`/campanhas/fixas?${montarQuery(filtro)}`),
   opcoesCampanhas: (enviado: { enviado_de?: string; enviado_ate?: string } = {}) =>
     request<OpcaoCampanha[]>(`/campanhas/opcoes?${montarQuery(enviado)}`),
   getCampanha: (id: string) => request<Campanha>(`/campanhas/${id}`),
@@ -1025,6 +1027,21 @@ export interface OpcaoCampanha {
   id: string;
   nome: string;
   arquivada: boolean;
+  /** Remarketing do Renegocie: campanha fixa, uma por segmento. */
+  fixa: boolean;
+}
+
+/** Remarketing do Renegocie na lista de Campanhas (campanha fixa por segmento). */
+export interface CampanhaFixa {
+  id: string;
+  nome: string;
+  faixa_id: string;
+  segmento: string;
+  ativo: boolean;
+  enviados: number;
+  pendentes: number;
+  erros: number;
+  pausada: boolean;
 }
 
 export interface FiltrosLeads {

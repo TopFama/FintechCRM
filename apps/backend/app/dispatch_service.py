@@ -8,7 +8,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from . import chatwoot_client, models
+from . import campanhas_fixas, chatwoot_client, models
 from .meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_do_numero
 
 logger = logging.getLogger("dispatch_worker")
@@ -67,6 +67,8 @@ def _marcar_lead_cobrado(db: Session, item: models.QueueItem) -> None:
         return
     if faixa.tipo == models.TIPO_CAMPANHA:
         filtro = [models.Lead.campanha_id == faixa.campanha_id]
+    elif faixa.tipo == models.TIPO_REMARKETING and faixa.remarketing_segmento:
+        filtro = [models.Lead.campanha_id == campanhas_fixas.id_campanha(faixa.remarketing_segmento)]
     else:
         filtro = [models.Lead.faixa == faixa.name, models.Lead.campanha_id == ""]
     db.query(models.Lead).filter(

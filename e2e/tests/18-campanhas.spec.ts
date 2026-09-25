@@ -342,6 +342,59 @@ test.describe.serial("Campanhas", () => {
     await expect(page.getByLabel("Campanha")).toHaveValue(campanha.id);
   });
 
+  test("remarketing do Renegocie entra como campanha fixa", async ({ page }) => {
+    await garantirNumero(page);
+    const conexao = { base_url: "http://renegocie-api:8000", chave: "chave-teste" };
+    expect((await apiSend(page, "PUT", "/remarketing/conexao", conexao)).status).toBe(200);
+    const segmento = { ativo: true, janela_dias: 30, recontato_dias: 7 };
+    expect((await apiSend(page, "PUT", "/remarketing/segmentos/SO_IDENTIFICOU", segmento)).status).toBe(200);
+    const id = "remarketing:SO_IDENTIFICOU";
+    const nome = "Remarketing: Clientes identificados no portal";
+
+    // aparece no topo da lista de Campanhas como campanha fixa
+    await page.goto("/campanhas");
+    const fixa = page.locator(".faixa-row", { hasText: nome });
+    await expect(fixa).toContainText("Campanha fixa");
+    await expect(fixa.locator(".status-pill")).toHaveText("Ligada");
+    await foto(page, "campanhas-com-fixas");
+
+    await page.goto("/campanhas?aba=remarketing");
+    const bloco = card(page, "Clientes identificados no portal");
+    await bloco.getByRole("button", { name: "Adicionar número e template" }).click();
+    await bloco.getByLabel("Número de envio").selectOption({ index: 1 });
+    await bloco.locator("#faixa-template").selectOption({ label: "lembrete_vencimento" });
+    await bloco.locator("select[id^='faixa-var-']").first().selectOption({ label: "Primeiro nome" });
+    await bloco.getByRole("button", { name: "Salvar envio" }).click();
+    await expect(bloco.locator(".success-box")).toContainText("Envio adicionado");
+
+    const resumo = await apiSend(page, "POST", "/remarketing/executar");
+    expect(resumo.status).toBe(200);
+    const naFila = resumo.corpo.SO_IDENTIFICOU.na_fila;
+    expect(naFila).toBe(1);
+    expect((await apiSend(page, "POST", "/__e2e/campanhas/enviar")).status).toBe(200);
+
+    // como numa campanha: lead da faixa de atraso marcado com a campanha fixa, cobrado no envio
+    const faixasAtraso = (await apiGet(page, "/cobranca/regras")).faixas as string[];
+    await expect
+      .poll(async () => (await apiGet(page, `/leads?campanha=${id}&status=cobrado&limit=10&offset=0`)).total)
+      .toBe(naFila);
+    const lead = (await apiGet(page, `/leads?campanha=${id}&limit=10&offset=0`)).itens[0];
+    expect(lead.codigo_cliente).toBe("00000003");
+    expect(faixasAtraso).toContain(lead.faixa);
+
+    const opcoes = await apiGet(page, "/campanhas/opcoes");
+    expect(opcoes.find((o: any) => o.id === id)).toMatchObject({ nome, fixa: true });
+    const efet = await apiGet(page, "/reports/efetividade");
+    expect(efet.por_campanha.map((l: any) => l.campanha)).toContain(nome);
+    expect((await apiGet(page, `/reports/efetividade?campanha=${id}`)).total.clientes_cobrados).toBe(naFila);
+    expect((await apiGet(page, `/reports/envios?campanha=${id}&limit=10&offset=0`)).total).toBe(naFila);
+
+    await page.goto("/");
+    const e = card(page, "Efetividade da cobrança");
+    const grupo = e.getByLabel("Campanha").locator('optgroup[label="Remarketing do Renegocie (campanhas fixas)"] option');
+    await expect(grupo.filter({ hasText: nome })).toHaveCount(1);
+  });
+
   test("pausar, retomar e parar a campanha pela lista e dentro dela", async ({ page }) => {
     await page.goto("/campanhas");
     const linha = page.locator(".faixa-row", { hasText: "Planilha promo" });

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import cache, campanhas as camp, cobranca_base, google_client, models, pausas, seta_client
+from .. import cache, campanhas as camp, campanhas_fixas, cobranca_base, google_client, models, pausas, seta_client
 from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
@@ -223,11 +223,46 @@ def opcoes(
     Com `enviado_de`/`enviado_ate`, só as que tiveram envio nesse período."""
 
     q = db.query(models.Campanha)
+    fixas = campanhas_fixas.listar(db)
     if enviado_de or enviado_ate:
-        q = q.filter(models.Campanha.id.in_(_enviadas_no_periodo(db, enviado_de, enviado_ate)))
-    return [
-        {"id": c.id, "nome": c.nome, "arquivada": c.arquivada_em is not None}
+        enviadas = _enviadas_no_periodo(db, enviado_de, enviado_ate)
+        q = q.filter(models.Campanha.id.in_(enviadas))
+        fixas = [f for f in fixas if f["id"] in enviadas]
+    return [{"id": f["id"], "nome": f["nome"], "arquivada": False, "fixa": True} for f in fixas] + [
+        {"id": c.id, "nome": c.nome, "arquivada": c.arquivada_em is not None, "fixa": False}
         for c in q.order_by(models.Campanha.arquivada_em.isnot(None), models.Campanha.nome)
+    ]
+
+
+@router.get("/fixas")
+def fixas(
+    periodo: Literal["criacao", "envio"] = "criacao",
+    de: date | None = None,
+    ate: date | None = None,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """O remarketing do Renegocie, uma campanha fixa por segmento, pro topo da
+    lista de Campanhas. Não tem data de criação: com filtro de período de
+    criação não aparece; com período de envio, só se enviou no período."""
+
+    lista = campanhas_fixas.listar(db)
+    if de or ate:
+        if periodo == "criacao":
+            return []
+        enviadas = _enviadas_no_periodo(db, de, ate)
+        lista = [f for f in lista if f["id"] in enviadas]
+    contagens = _contagens(db, [f["faixa_id"] for f in lista])
+    pausadas = _pausas_por_faixa(db)
+    return [
+        {
+            **f,
+            "enviados": contagens[f["faixa_id"]].get("sent", 0),
+            "pendentes": contagens[f["faixa_id"]].get("pending", 0) + contagens[f["faixa_id"]].get("reserved", 0),
+            "erros": contagens[f["faixa_id"]].get("error", 0),
+            "pausada": f["faixa_id"] in pausadas,
+        }
+        for f in lista
     ]
 
 

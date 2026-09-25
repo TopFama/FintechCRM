@@ -52,11 +52,28 @@ export default function SelectCampanha({
     >
       <option value="">Todas (régua e campanhas)</option>
       <option value="regua">Só a régua (faixas de atraso)</option>
-      {(campanhas ?? []).map((c) => (
-        <option key={c.id} value={c.id}>
-          {c.arquivada ? `${c.nome.replace(/ \(arquivada \w+\)$/, "")} (excluída)` : c.nome}
-        </option>
-      ))}
+      {(campanhas ?? []).some((c) => c.fixa) && (
+        <optgroup label="Remarketing do Renegocie (campanhas fixas)">
+          {(campanhas ?? [])
+            .filter((c) => c.fixa)
+            .map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nome}
+              </option>
+            ))}
+        </optgroup>
+      )}
+      {(campanhas ?? []).some((c) => !c.fixa) && (
+        <optgroup label="Campanhas">
+          {(campanhas ?? [])
+            .filter((c) => !c.fixa)
+            .map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.arquivada ? `${c.nome.replace(/ \(arquivada \w+\)$/, "")} (excluída)` : c.nome}
+              </option>
+            ))}
+        </optgroup>
+      )}
     </select>
   );
   if (compacto) return select;

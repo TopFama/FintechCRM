@@ -17,7 +17,7 @@ from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from .. import cache, pausas, seta_client
+from .. import cache, campanhas_fixas, pausas, seta_client
 from ..services import efetividade_service, pagamentos_service
 from ..timezone import BUSINESS_TZ
 
@@ -44,6 +44,8 @@ def filtro_campanha(db: Session, coluna_faixa_id, campanha: str | None):
     atraso; id = só os envios feitos por aquela campanha (a faixa dela)."""
     if campanha == "regua":
         return coluna_faixa_id.in_(select(models.Faixa.id).where(models.Faixa.tipo == models.TIPO_REGUA))
+    if campanhas_fixas.eh_fixa(campanha):
+        return coluna_faixa_id == campanhas_fixas.faixa_id(db, campanha)
     c = db.get(models.Campanha, campanha)
     return coluna_faixa_id == (c.faixa_id if c else None)
 

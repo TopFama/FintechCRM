@@ -16,11 +16,12 @@ from decimal import Decimal
 import httpx
 from sqlalchemy.orm import Session, selectinload
 
-from . import crypto, models, seta_client
+from . import campanhas_fixas, crypto, models, seta_client
 from . import lojas as lojas_base
 from .cobranca_base import _montar_cliente, _restaurar_linha_seta
 from .cobranca_regras import faixa_de_compra
 from .fila_automatica import clientes_bloqueados_hoje, enfileirar_clientes
+from .leads_service import gerar_leads_de_clientes
 from .regras_db import carregar_regras
 from .timezone import BUSINESS_TZ
 from .routers.blacklist import codigos_bloqueados
@@ -267,8 +268,23 @@ def enfileirar(db: Session, selecionados: dict[str, list[dict]]) -> dict[str, in
         if regra is None:
             totais[segmento] = 0
             continue
+        enfileirados: list[dict] = []
         totais[segmento] = enfileirar_clientes(
-            db, regra.faixa, lista, bloqueados=bloqueados, juros=juros, parcelas=parcelas, origem="no remarketing"
+            db,
+            regra.faixa,
+            lista,
+            bloqueados=bloqueados,
+            juros=juros,
+            parcelas=parcelas,
+            origem="no remarketing",
+            enfileirados=enfileirados,
+        )
+        db.flush()
+        # Como numa campanha (o remarketing é uma campanha fixa): lead da faixa
+        # de atraso marcado com o segmento, que o envio marca como cobrado e
+        # leva o cliente à régua no dia seguinte.
+        gerar_leads_de_clientes(
+            db, enfileirados, created_by=None, campanha_id=campanhas_fixas.id_campanha(segmento), parcelas=parcelas
         )
     db.commit()
     return totais

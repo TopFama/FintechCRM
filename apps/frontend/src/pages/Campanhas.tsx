@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, Campanha } from "../api";
+import { api, Campanha, CampanhaFixa } from "../api";
 import RemarketingCard from "../components/config/RemarketingCard";
 import { formatData, formatDataHora } from "../format";
 import { IconAlert, IconArrowRight, IconMegaphone, IconPause, IconPlay, IconPlus, IconStop } from "../icons";
@@ -120,6 +120,7 @@ export default function Campanhas() {
   const [searchParams, setSearchParams] = useSearchParams();
   const aba: Aba = searchParams.get("aba") === "remarketing" ? "remarketing" : "campanhas";
   const [campanhas, setCampanhas] = useState<Campanha[] | null>(null);
+  const [fixas, setFixas] = useState<CampanhaFixa[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState<"criacao" | "envio">("criacao");
@@ -129,10 +130,12 @@ export default function Campanhas() {
 
   useEffect(() => {
     let ativo = true;
-    api
-      .listarCampanhas({ periodo, de: de || undefined, ate: ate || undefined })
-      .then((lista) => {
-        if (ativo) setCampanhas(lista);
+    const filtro = { periodo, de: de || undefined, ate: ate || undefined };
+    Promise.all([api.listarCampanhas(filtro), api.listarCampanhasFixas(filtro)])
+      .then(([lista, listaFixas]) => {
+        if (!ativo) return;
+        setCampanhas(lista);
+        setFixas(listaFixas);
       })
       .catch((e) => {
         if (ativo) setErro(e instanceof Error ? e.message : "Erro ao carregar as campanhas");
@@ -229,11 +232,11 @@ export default function Campanhas() {
           </div>
           {campanhas === null && !erro ? (
             <div className="loading-state">Carregando campanhas...</div>
-          ) : campanhas && campanhas.length === 0 && filtrando ? (
+          ) : campanhas && campanhas.length === 0 && fixas.length === 0 && filtrando ? (
             <div className="empty-state">
               <p>Nenhuma campanha {periodo === "criacao" ? "criada" : "com envio"} no período escolhido.</p>
             </div>
-          ) : campanhas && campanhas.length === 0 ? (
+          ) : campanhas && campanhas.length === 0 && fixas.length === 0 ? (
             <div className="empty-state">
               <IconMegaphone width={28} height={28} />
               <div className="title">Nenhuma campanha ainda</div>
@@ -244,6 +247,36 @@ export default function Campanhas() {
             </div>
           ) : (
             <div className="faixa-list">
+              {fixas.map((f) => (
+                <Link
+                  key={f.id}
+                  to="/campanhas?aba=remarketing"
+                  className="faixa-row"
+                  style={{ textDecoration: "none", color: "inherit" }}
+                >
+                  <div className="faixa-row-main">
+                    <div className="faixa-icon">
+                      <IconMegaphone />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="faixa-row-title">{f.nome}</div>
+                      <div className="faixa-row-sub">
+                        Campanha fixa do Renegocie: roda sozinha todo dia de disparo quando ligada
+                      </div>
+                      <div className="faixa-row-sub">
+                        {f.enviados} enviada(s) · {f.pendentes} pendente(s) · {f.erros} erro(s)
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, flexShrink: 0, marginLeft: "auto" }}>
+                    <span className="badge">Campanha fixa</span>
+                    <span className={`status-pill ${f.pausada ? "paused" : f.ativo ? "on" : "off"}`}>
+                      {f.pausada ? "Pausada" : f.ativo ? "Ligada" : "Desligada"}
+                    </span>
+                    <IconArrowRight className="text-faint" />
+                  </div>
+                </Link>
+              ))}
               {(campanhas ?? []).map((c) => (
                 <Link
                   key={c.id}

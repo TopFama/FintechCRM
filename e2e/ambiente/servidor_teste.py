@@ -193,7 +193,10 @@ def enviar_campanhas():
 
     db = SessionLocal()
     try:
-        faixas = [c.faixa_id for c in db.query(models.Campanha)]
+        # campanhas e remarketing (campanha fixa)
+        faixas = [c.faixa_id for c in db.query(models.Campanha)] + [
+            f.id for f in db.query(models.Faixa).filter(models.Faixa.tipo == models.TIPO_REMARKETING)
+        ]
         itens = db.query(models.QueueItem).filter(
             models.QueueItem.faixa_id.in_(faixas), models.QueueItem.status == models.QueueStatus.pending
         ).all()
@@ -218,7 +221,10 @@ def regua_no_dia_seguinte():
 
     db = SessionLocal()
     try:
-        faixas = [c.faixa_id for c in db.query(models.Campanha)]
+        # campanhas e remarketing (campanha fixa)
+        faixas = [c.faixa_id for c in db.query(models.Campanha)] + [
+            f.id for f in db.query(models.Faixa).filter(models.Faixa.tipo == models.TIPO_REMARKETING)
+        ]
         um_dia = timedelta(days=1)
         for lead in db.query(models.Lead).filter(models.Lead.campanha_id != "", models.Lead.cobrado_em >= inicio_hoje_utc()):
             lead.cobrado_em -= um_dia

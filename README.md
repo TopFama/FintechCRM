@@ -292,6 +292,11 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    A lista de Campanhas mostra "Criado em" e filtra por período de criação ou de envio
    (`GET /campanhas?periodo=criacao|envio&de&ate`). Onde se importa lista de lojas por .xlsx, o
    usuário escolhe a coluna da loja (`POST /lojas/colunas-planilha`, depois `ler-planilha?coluna=N`).
+   O **Remarketing do Renegocie é uma campanha fixa** por segmento (`app/campanhas_fixas.py`): não
+   se cria nem se exclui, aparece no topo da lista de Campanhas (`GET /campanhas/fixas`) e usa o id
+   `remarketing:<SEGMENTO>` em `Lead.campanha_id` e nos filtros "Campanha". Como numa campanha, quem
+   entra na fila vira lead da faixa de atraso, o envio o marca como cobrado e no dia seguinte ele vai
+   para a régua; Efetividade, exportação de leads e Relatórios o tratam como as outras campanhas.
 
 ## Testes / validação de mudanças
 

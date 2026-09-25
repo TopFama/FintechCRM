@@ -18,7 +18,7 @@ from decimal import Decimal
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from .. import google_client, lojas as lojas_base, models, seta_client
+from .. import campanhas_fixas, google_client, lojas as lojas_base, models, seta_client
 from ..timezone import BUSINESS_TZ, hoje_br
 from . import custo_whatsapp
 from ..regras_db import carregar_regras
@@ -196,6 +196,7 @@ def obter_dados_efetividade(
         c.id: re.sub(r" \(arquivada \w+\)$", "", c.nome)
         for c in db.query(models.Campanha).filter(models.Campanha.id.in_({p.campanha_id for p in parcelas_db} - {""}))
     }
+    nomes_campanha.update({c["id"]: c["nome"] for c in campanhas_fixas.listar(db)})
 
     itens = []
     for p in parcelas_db:
