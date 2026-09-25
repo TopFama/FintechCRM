@@ -83,20 +83,33 @@ def _executar(chave_cache: str, calcular: Callable[[], Any]) -> None:
             logger.exception("Falha ao liberar trava de cache (chave=%s)", chave_cache)
 
 
-def obter_ou_calcular(chave_cache: str, calcular: Callable[[], Any], ttl_segundos: int = 300) -> Any:
+def obter_ou_calcular(
+    chave_cache: str,
+    calcular: Callable[[], Any],
+    ttl_segundos: int = 300,
+    reaproveitar: bool = True,
+    guardar_se: Callable[[Any], bool] | None = None,
+) -> Any:
     """Cache-aside simples (sem job em segundo plano): usado em consultas mais
     leves ao SETA, onde vale a pena guardar o resultado mas não compensa a
-    complexidade do padrão "processing" acima."""
+    complexidade do padrão "processing" acima.
+
+    `reaproveitar=False` recalcula e só grava (quem pediu quer o dado de agora,
+    mas o próximo pedido automático aproveita). `guardar_se` evita guardar um
+    resultado ruim (ex.: integração fora do ar) pelo TTL inteiro."""
 
     try:
         client = _redis()
-        bruto = client.get(f"resultado:{chave_cache}")
-        if bruto is not None:
-            return json.loads(bruto)
+        if reaproveitar:
+            bruto = client.get(f"resultado:{chave_cache}")
+            if bruto is not None:
+                return json.loads(bruto)
     except redis.RedisError as exc:
         raise CacheIndisponivel(f"Cache Redis indisponível ({exc.__class__.__name__})") from exc
 
     resultado = calcular()
+    if guardar_se is not None and not guardar_se(resultado):
+        return resultado
     try:
         client.set(f"resultado:{chave_cache}", json.dumps(resultado, default=str), ex=ttl_segundos)
     except redis.RedisError:

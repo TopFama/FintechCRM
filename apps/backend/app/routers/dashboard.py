@@ -39,13 +39,34 @@ def _no_periodo(coluna, ini: datetime | None, fim: datetime | None):
     return and_(true(), *conds)
 
 
+# A tela do Dashboard se atualiza sozinha (auto=true). Várias abas abertas no
+# mesmo período fazem uma consulta só a cada TTL; abrir a tela, trocar o
+# período ou clicar em "Atualizar agora" sempre recalcula.
+RESUMO_TTL_SEGUNDOS = 15
+ORCAMENTO_TTL_SEGUNDOS = 600
+
+
 @router.get("/summary", response_model=schemas.DashboardSummary)
 def summary(
     de: date | None = Query(None),
     ate: date | None = Query(None),
+    auto: bool = Query(False),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
+    def calcular():
+        return _resumo(db, de, ate).model_dump(mode="json")
+
+    try:
+        dados = cache.obter_ou_calcular(
+            cache.chave("dashboard-resumo", {"de": de, "ate": ate}), calcular, RESUMO_TTL_SEGUNDOS, reaproveitar=auto
+        )
+    except cache.CacheIndisponivel:
+        dados = calcular()
+    return schemas.DashboardSummary(**dados)
+
+
+def _resumo(db: Session, de: date | None, ate: date | None) -> schemas.DashboardSummary:
     """Cards e tabela por faixa respeitam o período: enviado conta pela data
     do envio, o resto pela data em que entrou na fila."""
 
@@ -135,6 +156,7 @@ def orcamento_progressao(
     mes: int | None = Query(None, ge=1, le=12),
     de: date | None = Query(None),
     ate: date | None = Query(None),
+    auto: bool = Query(False),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
@@ -152,6 +174,24 @@ def orcamento_progressao(
         inicio = date(ano, mes, 1)
         fim = date(ano, mes, calendar.monthrange(ano, mes)[1])
 
+    def calcular():
+        return _orcamento(db, inicio, fim).model_dump(mode="json")
+
+    try:
+        dados = cache.obter_ou_calcular(
+            cache.chave("dashboard-orcamento", {"de": inicio, "ate": fim}),
+            calcular,
+            ORCAMENTO_TTL_SEGUNDOS,
+            reaproveitar=auto,
+            # Meta fora do ar ou sem permissão numa WABA: não segura o aviso por 10 min
+            guardar_se=lambda d: d["valor_gasto_brl"] is not None and not d["avisos"],
+        )
+    except cache.CacheIndisponivel:
+        dados = calcular()
+    return schemas.OrcamentoProgressaoOut(**dados)
+
+
+def _orcamento(db: Session, inicio: date, fim: date) -> schemas.OrcamentoProgressaoOut:
     meses = set()
     d = inicio.replace(day=1)
     while d <= fim:
