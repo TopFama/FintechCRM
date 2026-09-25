@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { apiGet, expect, test } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 // Roda depois da importação/disparo: a fila de hoje ainda tem pendentes da faixa 11 A 20.
@@ -106,5 +106,25 @@ test.describe.serial("Pendentes: pausar, retomar e parar", () => {
     await expect(page.locator(".success-box")).toContainText("1 pendente(s) cancelado(s)");
     await expect(tabela(page).locator("tbody tr", { hasText: codigo })).toHaveCount(0);
     await expect.poll(total).toBe(antes - 1); // o total da paginação recarrega depois da linha
+  });
+
+  test("descartar fila tira da fila os pendentes do filtro, sem registro de parado", async ({ page }) => {
+    const primeiro = (await apiGet(page, "/reports/pendentes?limit=1&offset=0")).itens[0];
+    const daFaixa = await apiGet(page, `/reports/pendentes?faixa_id=${primeiro.faixa_id}&limit=500&offset=0`);
+    await page.goto(`/relatorios?aba=pendentes&faixa_id=${primeiro.faixa_id}`);
+    await page.getByRole("button", { name: "Descartar fila" }).click();
+    const confirmar = page.getByRole("alertdialog");
+    await expect(confirmar).toContainText("Descartar a fila (os pendentes com os filtros desta tela)?");
+    await expect(confirmar).toContainText("Diferente de Parar");
+    const botao = confirmar.getByRole("button", { name: /^Descartar \d+ pendente\(s\)$/ });
+    await expect(botao).toBeEnabled();
+    const qtd = Number((await botao.innerText()).match(/\d+/)![0]);
+    expect(qtd).toBeGreaterThan(0);
+    expect(qtd).toBeLessThanOrEqual(daFaixa.total);
+    await botao.click();
+    await expect(page.locator(".success-box")).toContainText(`Fila descartada: ${qtd} pendente(s) saíram da fila.`);
+    await expect
+      .poll(async () => (await apiGet(page, `/reports/pendentes?faixa_id=${primeiro.faixa_id}&limit=1&offset=0`)).total)
+      .toBeLessThanOrEqual(daFaixa.total - qtd);
   });
 });

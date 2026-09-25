@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, EscopoPausa, OpcaoFila, PausaEnvio } from "../api";
+import { api, EscopoPausa, FiltrosDescarte, OpcaoFila, PausaEnvio } from "../api";
 import { formatData, formatDataHora } from "../format";
 
 // Ação pedida na aba Pendentes, esperando confirmação na própria tela
@@ -12,6 +12,76 @@ export type AcaoPendentes = {
 };
 
 const NOME_ESCOPO: Record<EscopoPausa, string> = { cliente: "Cliente", faixa: "Régua", loja: "Loja" };
+
+/**
+ * "Descartar fila": tira da fila os pendentes que batem com os filtros da tela, como a
+ * expiração do fim do dia faz. Parar age num cliente/régua/loja e deixa o item como "parado"
+ * (cancelado); descartar apaga os pendentes de tudo o que o filtro da tela mostra.
+ */
+export function PainelDescartar({
+  filtros,
+  descricao,
+  onCancelar,
+  onConcluir,
+}: {
+  filtros: FiltrosDescarte;
+  descricao: string; // "todos os pendentes", "a régua 11 A 20 · loja 07"
+  onCancelar: () => void;
+  onConcluir: (mensagem: string) => void;
+}) {
+  const [qtd, setQtd] = useState<number | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const chave = JSON.stringify(filtros);
+
+  useEffect(() => {
+    let atual = true;
+    setQtd(null);
+    setErro(null);
+    api
+      .previaDescartarPendentes(filtros)
+      .then((r) => atual && setQtd(r.qtd))
+      .catch((e) => atual && setErro(e.message));
+    return () => {
+      atual = false;
+    };
+  }, [chave]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function confirmar() {
+    setSalvando(true);
+    setErro(null);
+    try {
+      const r = await api.descartarPendentes(filtros);
+      onConcluir(`Fila descartada: ${r.qtd} pendente(s) saíram da fila.`);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Erro ao descartar");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="painel-acao perigo" role="alertdialog" aria-labelledby="titulo-descartar">
+      <strong id="titulo-descartar">Descartar a fila ({descricao})?</strong>
+      <p style={{ margin: "6px 0 0" }}>
+        {qtd === null
+          ? "Contando os pendentes..."
+          : `${qtd} pendente(s) saem da fila sem ser enviados, como acontece com o que sobra no fim do horário de disparo. ` +
+            "Diferente de Parar, os itens são apagados: não fica registro de envio parado. " +
+            "O cliente pode voltar para a fila pela Cobrança ou na próxima busca automática, e as pausas continuam valendo."}
+      </p>
+      {erro && <div className="error-box" style={{ marginTop: 8 }}>{erro}</div>}
+      <div className="acoes">
+        <button className="danger" onClick={confirmar} disabled={salvando || !qtd}>
+          {salvando ? "Descartando..." : `Descartar ${qtd ?? ""} pendente(s)`}
+        </button>
+        <button className="secondary" onClick={onCancelar} disabled={salvando}>
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function PainelAcao({
   acao,

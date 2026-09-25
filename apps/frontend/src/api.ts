@@ -307,6 +307,10 @@ export const api = {
     request<{ qtd: number }>(`/pausas/parar/previa?${montarQuery({ escopo, valor })}`),
   pararEnvio: (escopo: EscopoPausa, valor: string) =>
     request<{ qtd: number }>("/pausas/parar", { method: "POST", body: JSON.stringify({ escopo, valor }) }),
+  previaDescartarPendentes: (filtros: FiltrosDescarte) =>
+    request<{ qtd: number }>(`/relatorios/pendentes/descartar/previa?${montarQuery(filtros)}`),
+  descartarPendentes: (filtros: FiltrosDescarte) =>
+    request<{ qtd: number }>(`/relatorios/pendentes/descartar?${montarQuery(filtros)}`, { method: "POST" }),
   listErros: (
     params: { faixa_id?: string; campanha?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
   ) => request<FilaReportPage>(`/relatorios/erros?${montarQuery(params)}`),
@@ -646,6 +650,15 @@ export interface Faixa {
   // Faixa de uma campanha (tela Campanhas): não é faixa de atraso.
   campanha_id: string | null;
   descricao: string | null;
+}
+
+/** Filtros da aba Pendentes que definem o que "Descartar fila" tira da fila. */
+export interface FiltrosDescarte {
+  faixa_id?: string;
+  campanha?: string;
+  loja?: string;
+  de?: string;
+  ate?: string;
 }
 
 /** Coluna de uma planilha subida, com exemplos, para o usuário escolher qual usar. */

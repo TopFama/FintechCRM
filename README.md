@@ -257,6 +257,9 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    opcional), retomar ou parar o envio por cliente, régua (faixa) ou loja. Pausa não muda o status
    do item: o worker só deixa de pegar o que está retido, inclusive o que entrar na fila depois.
    Parar marca os pendentes do escopo como `cancelled` (com quem parou e quando), sem apagar.
+   **Descartar fila** apaga os pendentes que batem com os filtros da tela (faixa, campanha, loja e
+   período), como a expiração do fim do dia faz: não fica registro de parado e o cliente pode voltar
+   à fila (`POST /relatorios/pendentes/descartar`). Item já reservado por um envio em andamento fica.
 11. **Campanhas** (menu logo abaixo de Cobrança) — cobranças fora das faixas de atraso, cada uma
    com os mesmos filtros da Cobrança (inclusive "valor em atraso" de X a Y, original ou com multa e
    juros, e "Importar lista de lojas" a partir de um .xlsx com a coluna de código da loja), template

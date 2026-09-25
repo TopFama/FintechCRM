@@ -15,7 +15,7 @@ import {
   TipoFaixa,
 } from "../api";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
-import { AcaoPendentes, PainelAcao, PainelPausaLote, PausasAtivas } from "../components/PausasPendentes";
+import { AcaoPendentes, PainelAcao, PainelDescartar, PainelPausaLote, PausasAtivas } from "../components/PausasPendentes";
 import SelectCampanha from "../components/SelectCampanha";
 import SortableTh from "../components/SortableTh";
 import { formatBRL, formatData, formatDataHora, formatNumero } from "../format";
@@ -98,6 +98,7 @@ export default function Relatorios() {
   const [pausas, setPausas] = useState<PausaEnvio[]>([]);
   const [acao, setAcao] = useState<AcaoPendentes | null>(null);
   const [pausaLote, setPausaLote] = useState<"faixa" | "loja" | null>(null);
+  const [descartar, setDescartar] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [invalidPhones, setInvalidPhones] = useState<InvalidPhoneRecord[]>([]);
   const [invalidTotal, setInvalidTotal] = useState(0);
@@ -144,6 +145,7 @@ export default function Relatorios() {
   useEffect(() => {
     setAcao(null);
     setPausaLote(null);
+    setDescartar(false);
     setAviso(null);
     if (tab !== "pendentes") return;
     carregarPausas();
@@ -435,6 +437,7 @@ export default function Relatorios() {
                 aria-expanded={pausaLote === "faixa"}
                 onClick={() => {
                   setAcao(null);
+                  setDescartar(false);
                   setPausaLote(pausaLote === "faixa" ? null : "faixa");
                 }}
               >
@@ -445,6 +448,7 @@ export default function Relatorios() {
                 aria-expanded={pausaLote === "loja"}
                 onClick={() => {
                   setAcao(null);
+                  setDescartar(false);
                   setPausaLote(pausaLote === "loja" ? null : "loja");
                 }}
               >
@@ -460,7 +464,41 @@ export default function Relatorios() {
                   Parar esta loja
                 </button>
               )}
+              <button
+                className="secondary small"
+                aria-expanded={descartar}
+                disabled={filaTotal === 0}
+                onClick={() => {
+                  setAcao(null);
+                  setPausaLote(null);
+                  setDescartar(!descartar);
+                }}
+              >
+                Descartar fila
+              </button>
             </div>
+            {descartar && (
+              <PainelDescartar
+                filtros={{
+                  faixa_id: faixaId || undefined,
+                  campanha: campanha || undefined,
+                  loja: loja || undefined,
+                  de: cobradoDe || undefined,
+                  ate: cobradoAte || undefined,
+                }}
+                descricao={
+                  faixaId || campanha || loja || cobradoDe || cobradoAte
+                    ? "os pendentes com os filtros desta tela"
+                    : "todos os pendentes"
+                }
+                onCancelar={() => setDescartar(false)}
+                onConcluir={(msg) => {
+                  setDescartar(false);
+                  setAviso(msg);
+                  load();
+                }}
+              />
+            )}
             {pausaLote && (
               <PainelPausaLote
                 escopo={pausaLote}

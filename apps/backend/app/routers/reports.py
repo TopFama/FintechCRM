@@ -1,4 +1,5 @@
 import io
+import logging
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Literal
@@ -21,6 +22,7 @@ from ..services import efetividade_service, pagamentos_service
 from ..timezone import BUSINESS_TZ
 
 api = APIRouter()
+logger = logging.getLogger(__name__)
 
 _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
@@ -691,6 +693,56 @@ def export_pendentes(
         media_type=_XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="relatorio_pendentes.xlsx"'},
     )
+
+
+# "Descartar fila": tira da fila os pendentes que batem com os filtros da tela,
+# como a expiração do fim do dia faz (sem registro "parado"); o cliente pode
+# voltar à fila depois. Item já reservado por um envio em andamento fica.
+
+
+def _descartaveis(db, faixa_id, loja, de, ate, campanha):
+    query = _fila_report_query(db, (models.QueueStatus.pending,), faixa_id, de, ate, loja=loja, campanha=campanha)
+    return [item.id for item, _f, _q in query.order_by(None).all()]
+
+
+@api.get("/pendentes/descartar/previa", response_model=schemas.PararEnvioOut)
+def previa_descartar_pendentes(
+    faixa_id: str | None = None,
+    campanha: str | None = Query(None),
+    loja: str | None = Query(None),
+    de: date | None = Query(None),
+    ate: date | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    return schemas.PararEnvioOut(qtd=len(_descartaveis(db, faixa_id, loja, de, ate, campanha)))
+
+
+@api.post("/pendentes/descartar", response_model=schemas.PararEnvioOut)
+def descartar_pendentes(
+    faixa_id: str | None = None,
+    campanha: str | None = Query(None),
+    loja: str | None = Query(None),
+    de: date | None = Query(None),
+    ate: date | None = Query(None),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    ids = _descartaveis(db, faixa_id, loja, de, ate, campanha)
+    total = 0
+    for i in range(0, len(ids), 1000):
+        lote = ids[i : i + 1000]
+        db.query(models.ErrorLog).filter(models.ErrorLog.queue_item_id.in_(lote)).update(
+            {models.ErrorLog.queue_item_id: None}, synchronize_session=False
+        )
+        total += (
+            db.query(models.QueueItem)
+            .filter(models.QueueItem.id.in_(lote), models.QueueItem.status == models.QueueStatus.pending)
+            .delete(synchronize_session=False)
+        )
+    db.commit()
+    logger.info("Fila descartada por %s: %s pendente(s)", user.email, total)
+    return schemas.PararEnvioOut(qtd=total)
 
 
 @api.get("/erros", response_model=schemas.FilaReportPage)
