@@ -207,7 +207,13 @@ def add_envio(
     envio = models.FaixaEnvio(faixa_id=faixa_id, whatsapp_number_id=payload.whatsapp_number_id, template_id=template.id)
     db.add(envio)
     db.flush()
-    db.add(models.DispatchConfig(faixa_envio_id=envio.id, active=False))
+    # Numa campanha ou segmento de remarketing, quem decide se roda é a
+    # própria campanha/segmento (ligado, dia, período): o disparo já nasce ligado.
+    tem_regra_propria = (
+        db.query(models.Campanha.id).filter(models.Campanha.faixa_id == faixa_id).first()
+        or db.query(models.RemarketingSegmento.segmento).filter(models.RemarketingSegmento.faixa_id == faixa_id).first()
+    )
+    db.add(models.DispatchConfig(faixa_envio_id=envio.id, active=tem_regra_propria is not None))
     db.commit()
 
     return (

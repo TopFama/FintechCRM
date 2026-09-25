@@ -1,4 +1,7 @@
+import { ChangeEvent, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { api } from "../api";
+import { IconUpload } from "../icons";
 import MultiSelect from "./MultiSelect";
 import { OpcoesCobranca } from "./useOpcoesCobranca";
 
@@ -22,6 +25,35 @@ interface Props {
 
 export default function CamposLoja({ valor, onChange, opcoes, semClusterPopulacao, idPrefixo }: Props) {
   const semGoogle = opcoes.googleIndisponivel;
+  const arquivoRef = useRef<HTMLInputElement>(null);
+  const [lendo, setLendo] = useState(false);
+  const [aviso, setAviso] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
+
+  // Relatório .xlsx com a coluna de código da loja: marca todas de uma vez.
+  async function importarLojas(e: ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0];
+    e.target.value = "";
+    if (!arquivo) return;
+    setLendo(true);
+    setAviso(null);
+    try {
+      const r = await api.lerPlanilhaLojas(arquivo);
+      const juntas = Array.from(new Set([...(valor.loja ?? []), ...r.lojas]));
+      onChange({ ...valor, loja: juntas });
+      setAviso({
+        tipo: r.lojas.length ? "ok" : "erro",
+        texto:
+          `${r.lojas.length} loja(s) marcada(s).` +
+          (r.nao_encontradas.length
+            ? ` Não encontrei na base de lojas: ${r.nao_encontradas.slice(0, 10).join(", ")}${r.nao_encontradas.length > 10 ? "…" : ""}.`
+            : ""),
+      });
+    } catch (err) {
+      setAviso({ tipo: "erro", texto: err instanceof Error ? err.message : "Erro ao ler a planilha de lojas" });
+    } finally {
+      setLendo(false);
+    }
+  }
   const desligado = { disabled: semGoogle, placeholder: semGoogle ? "—" : "Todos" };
 
   return (
@@ -90,6 +122,23 @@ export default function CamposLoja({ valor, onChange, opcoes, semClusterPopulaca
             {...desligado}
           />
         )}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+        <input ref={arquivoRef} type="file" accept=".xlsx" hidden onChange={importarLojas} aria-label="Planilha de lojas" />
+        <button type="button" className="secondary small" onClick={() => arquivoRef.current?.click()} disabled={lendo}>
+          <IconUpload width={14} height={14} /> {lendo ? "Lendo..." : "Importar lista de lojas (.xlsx)"}
+        </button>
+        {(valor.loja?.length ?? 0) > 0 && (
+          <button type="button" className="secondary small" onClick={() => onChange({ ...valor, loja: [] })}>
+            Desmarcar lojas
+          </button>
+        )}
+        {aviso && (
+          <span className={aviso.tipo === "ok" ? "field-hint" : "field-error"} role="status">
+            {aviso.texto}
+          </span>
+        )}
+        {!aviso && <span className="field-hint">A planilha precisa ter uma coluna com o código da loja (ex.: FILIAL).</span>}
       </div>
       {semGoogle && (
         <div className="field-hint" style={{ marginBottom: 8 }}>

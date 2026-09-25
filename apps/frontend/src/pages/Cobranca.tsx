@@ -52,7 +52,7 @@ export default function Cobranca() {
   const [faixasUpload, setFaixasUpload] = useState<Faixa[]>([]);
   const [faixaUploadId, setFaixaUploadId] = useState("");
   useEffect(() => {
-    api.listFaixas().then((fs) => setFaixasUpload(fs.filter((f) => !f.remarketing_segmento))).catch(() => undefined);
+    api.listFaixas().then((fs) => setFaixasUpload(fs.filter((f) => !f.remarketing_segmento && !f.campanha_id))).catch(() => undefined);
   }, []);
 
   // Descarta respostas de consultas já substituídas por outra mais nova

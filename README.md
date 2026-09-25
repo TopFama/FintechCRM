@@ -34,7 +34,7 @@ FintechCRM/
       src/
         api.ts                   # único lugar que fala com o backend (fetch + tipos)
         pages/                    # uma página por rota (Login, Dashboard, Cobranca, Leads, Blacklist, Templates,
-                                   # Faixas, FaixaWizard, FaixaDetail, Relatorios)
+                                   # Faixas, FaixaWizard, FaixaDetail, Campanhas, CampanhaDetail, Relatorios)
         styles.css                 # design tokens (CSS vars) e classes utilitárias
         icons.tsx                   # ícones inline SVG, sem lib externa
       public/topfama-logo.png       # logo oficial da marca
@@ -250,6 +250,18 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    opcional), retomar ou parar o envio por cliente, régua (faixa) ou loja. Pausa não muda o status
    do item: o worker só deixa de pegar o que está retido, inclusive o que entrar na fila depois.
    Parar marca os pendentes do escopo como `cancelled` (com quem parou e quando), sem apagar.
+11. **Campanhas** (menu logo abaixo de Cobrança) — cobranças fora das faixas de atraso, cada uma
+   com os mesmos filtros da Cobrança (inclusive "valor em atraso" de X a Y, original ou com multa e
+   juros, e "Importar lista de lojas" a partir de um .xlsx com a coluna de código da loja), template
+   e número atribuídos na própria campanha e frequência **única** (um dia) ou **recorrente** (todo
+   dia de disparo num período, com recontato opcional a cada N dias; sem ele, cada cliente recebe
+   uma vez por campanha). Só entra quem está em atraso no SETA. Uma planilha de clientes (coluna
+   Codigo ou CPF) restringe a base; com "valores da planilha", Valor, Celular e as demais colunas
+   (nas variáveis do template) vêm dela. O agendador roda as campanhas do dia junto com o
+   remarketing, antes do horário de início. Por baixo, cada campanha tem uma faixa própria
+   ("Campanha: …", `app/campanhas.py`), fora da lista de faixas de atraso. O **Remarketing do
+   Renegocie** virou uma aba desta tela (`/remarketing` redireciona para lá), com template e número
+   atribuídos no próprio segmento.
 
 ## Testes / validação de mudanças
 
@@ -285,7 +297,10 @@ Não existe suíte de testes automatizados formal ainda. Para validar uma mudan�
   segmentos antigos ("Só se identificou", "Viu a proposta e não fechou", "Cancelou a proposta",
   "Acordo cancelado sem pagar a entrada") de antes da mudança para 3 segmentos; o primeiro cenário
   falha e os 4 seguintes (serial) não rodam. Atualizar os nomes e o Renegocie simulado em
-  `e2e/ambiente/servidor_teste.py` para os segmentos atuais de `app/remarketing.py`.
+  `e2e/ambiente/servidor_teste.py` para os segmentos atuais de `app/remarketing.py`. Com a mudança
+  do remarketing para a tela Campanhas, os cenários seguintes também precisam trocar `/remarketing`
+  por `/campanhas?aba=remarketing` e atribuir o template no próprio segmento (a faixa não aparece
+  mais em Configurações → Faixas).
 - **Autenticação e segurança**: login usuário/senha + JWT. `POST /auth/login` grava o JWT num cookie
   `access_token` httpOnly (o frontend nunca guarda o token em `localStorage`/JS — mitiga roubo de sessão via
   XSS) e também devolve o token no corpo da resposta só para uso programático (scripts de validação,

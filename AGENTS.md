@@ -20,7 +20,7 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
 - `schemas.py` — modelos Pydantic de request/response, um bloco por área (comentários `# --- Área
   ---` separam).
 - `routers/` — um arquivo por área: `auth`, `numbers`, `templates`, `faixas`, `uploads`,
-  `dashboard`, `reports`, `pausas`. Rotas novas de uma área existente entram no arquivo dela.
+  `dashboard`, `reports`, `pausas`, `campanhas`. Rotas novas de uma área existente entram no arquivo dela.
 - `meta_client.py` — **único** ponto de integração com a Graph API da Meta. Qualquer chamada nova
   à Meta entra aqui, nunca direto num router.
 - `worker.py` — worker de disparo, roda com APScheduler **dentro do mesmo processo** do backend
@@ -40,7 +40,7 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
   espelhando os schemas do backend. Endpoint novo no backend → método novo aqui, não `fetch` direto
   numa página.
 - `pages/` — uma página por rota (`Login`, `Dashboard`, `Cobranca`, `Leads`, `Blacklist`, `Templates`, `Faixas`,
-  `FaixaWizard`, `FaixaDetail`, `Relatorios`, `Configuracoes`).
+  `FaixaWizard`, `FaixaDetail`, `Campanhas`, `CampanhaDetail`, `Relatorios`, `Configuracoes`).
 - `styles.css` — todo o design vive aqui: tokens em `:root` (cores, espaçamento, sombra) e classes
   utilitárias reaproveitadas entre páginas (`.card`, `.badge`, `.form-row`, `.stat`, etc.). Não é
   CSS Modules nem styled-components.

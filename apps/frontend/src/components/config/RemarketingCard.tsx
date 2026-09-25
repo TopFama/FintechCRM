@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, pareceAdmin, PreviaRemarketing, SegmentoRemarketing, SegmentoRemarketingIn } from "../../api";
+import EnviosFaixa from "../EnviosFaixa";
+import { api, Faixa, pareceAdmin, PreviaRemarketing, SegmentoRemarketing, SegmentoRemarketingIn } from "../../api";
 import { formatBRL, formatCelular, formatData, formatDataHora } from "../../format";
 import { IconAlert, IconEye, IconRefresh } from "../../icons";
 import FiltroPeriodo, { Periodo } from "../FiltroPeriodo";
@@ -10,8 +11,8 @@ import SortableTh from "../SortableTh";
 import { ordenarPor, useSort } from "../../sort";
 import { useOpcoesCobranca } from "../useOpcoesCobranca";
 
-// Remarketing de quem desistiu no portal Renegocie. Cada segmento tem uma faixa
-// própria (número + template em Faixas) e filtros que decidem quem entra.
+// Remarketing de quem desistiu no portal Renegocie (aba de Campanhas). Cada
+// segmento tem o próprio número + template e filtros que decidem quem entra.
 export default function RemarketingCard() {
   const [segmentos, setSegmentos] = useState<SegmentoRemarketing[]>([]);
   const [erro, setErro] = useState<string | null>(null);
@@ -79,6 +80,7 @@ export default function RemarketingCard() {
           segmento={s}
           podeEditar={admin}
           onSalvo={(novo) => setSegmentos((lista) => lista.map((x) => (x.segmento === novo.segmento ? novo : x)))}
+          onEnviosAlterados={carregar}
         />
       ))}
     </>
@@ -134,10 +136,12 @@ function SegmentoForm({
   segmento,
   podeEditar,
   onSalvo,
+  onEnviosAlterados,
 }: {
   segmento: SegmentoRemarketing;
   podeEditar: boolean;
   onSalvo: (s: SegmentoRemarketing) => void;
+  onEnviosAlterados: () => void;
 }) {
   const opcoes = useOpcoesCobranca();
   const [form, setForm] = useState<SegmentoRemarketingIn>(() => paraForm(segmento));
@@ -170,6 +174,13 @@ function SegmentoForm({
   const colunasPrevia = colunasDaPrevia(segmento.segmento);
 
   useEffect(() => setForm(paraForm(segmento)), [segmento]);
+
+  // Número e template do segmento ficam aqui mesmo, não na lista de faixas de atraso.
+  const [faixa, setFaixa] = useState<Faixa | null>(null);
+  const carregarFaixa = () => {
+    api.getFaixa(segmento.faixa_id).then(setFaixa).catch(() => undefined);
+  };
+  useEffect(carregarFaixa, [segmento.faixa_id]);
 
   async function salvar(e: FormEvent) {
     e.preventDefault();
@@ -216,7 +227,7 @@ function SegmentoForm({
       </div>
       <p className="card-subtitle">{segmento.descricao}</p>
       <p className="card-subtitle">
-        Envia pela faixa <Link to={`/faixas/${segmento.faixa_id}`}>{segmento.faixa_nome}</Link>.{" "}
+        <Link to={`/faixas/${segmento.faixa_id}`}>Ver a fila</Link>.{" "}
         {segmento.ultima_execucao
           ? `Última busca em ${formatDataHora(segmento.ultima_execucao)}: ${resultado.encontrados ?? 0} encontrado(s), ${resultado.na_fila ?? 0} na fila.`
           : "Ainda não rodou."}
@@ -224,10 +235,7 @@ function SegmentoForm({
       {segmento.envios_ativos === 0 && (
         <div className="error-box">
           <IconAlert width={16} height={16} />
-          <span>
-            A faixa ainda não tem número e template. Atribua em{" "}
-            <Link to={`/faixas/${segmento.faixa_id}`}>{segmento.faixa_nome}</Link>, senão ninguém recebe.
-          </span>
+          <span>Ainda sem número e template: atribua no fim deste bloco, senão ninguém recebe.</span>
         </div>
       )}
       {erro && (
@@ -351,6 +359,20 @@ function SegmentoForm({
           {alterado && <span className="field-hint">Salve para ver a prévia com os filtros novos.</span>}
         </div>
       </form>
+
+      {faixa && (
+        <EnviosFaixa
+          faixa={faixa}
+          onAlterado={() => {
+            carregarFaixa();
+            onEnviosAlterados();
+          }}
+          rotuloAlvo="deste segmento"
+          titulo="Template e número do segmento"
+          descricao="O template usado neste segmento e o número que envia."
+          embutido
+        />
+      )}
 
       {previa && (
         <div style={{ marginTop: 16 }}>

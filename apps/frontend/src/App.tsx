@@ -7,7 +7,8 @@ import FaixaDetail from "./pages/FaixaDetail";
 import Relatorios from "./pages/Relatorios";
 import Cobranca from "./pages/Cobranca";
 import Configuracoes from "./pages/Configuracoes";
-import Remarketing from "./pages/Remarketing";
+import Campanhas from "./pages/Campanhas";
+import CampanhaDetail from "./pages/CampanhaDetail";
 import {
   IconDashboard,
   IconLogout,
@@ -39,11 +40,11 @@ function Layout({ children }: { children: JSX.Element }) {
           <NavLink to="/cobranca" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconUsers /> Cobrança
           </NavLink>
+          <NavLink to="/campanhas" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+            <IconMegaphone /> Campanhas
+          </NavLink>
           <NavLink to="/relatorios" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconReport /> Relatórios
-          </NavLink>
-          <NavLink to="/remarketing" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-            <IconMegaphone /> Remarketing
           </NavLink>
           <NavLink to="/configuracoes" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
             <IconSettings /> Configurações
@@ -127,12 +128,33 @@ export default function App() {
           </RequireAuth>
         }
       />
+      <Route path="/remarketing" element={<Navigate to="/campanhas?aba=remarketing" replace />} />
       <Route
-        path="/remarketing"
+        path="/campanhas"
         element={
           <RequireAuth>
             <Layout>
-              <Remarketing />
+              <Campanhas />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/campanhas/nova"
+        element={
+          <RequireAuth>
+            <Layout>
+              <CampanhaDetail />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/campanhas/:id"
+        element={
+          <RequireAuth>
+            <Layout>
+              <CampanhaDetail />
             </Layout>
           </RequireAuth>
         }

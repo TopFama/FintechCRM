@@ -19,10 +19,11 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from openpyxl import load_workbook
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
 from . import cobranca_base, lojas as lojas_base, models, seta_client
-from .fila_automatica import clientes_bloqueados_hoje, enfileirar_clientes
+from .fila_automatica import clientes_bloqueados_hoje, enfileirar_clientes, inicio_hoje_utc
 from .regras_db import carregar_regras
 from .timezone import hoje_br
 from .utils.phone import is_valid_phone
@@ -97,11 +98,11 @@ def filtros_para_busca(db: Session, filtros: dict, clientes: list[str] | None) -
 def ja_receberam(db: Session, campanha: models.Campanha, agora: datetime | None = None) -> set[str]:
     """Quem já está na fila ou recebeu desta campanha (em qualquer data, ou
     dentro do prazo de recontato, quando a recorrente tem um). Erro de envio
-    não conta: o cliente tenta de novo no próximo dia."""
+    só conta no próprio dia: o cliente tenta de novo no próximo."""
 
     q = db.query(models.QueueItem.codigo_cliente).filter(
         models.QueueItem.faixa_id == campanha.faixa_id,
-        models.QueueItem.status != models.QueueStatus.error,
+        or_(models.QueueItem.status != models.QueueStatus.error, models.QueueItem.created_at >= inicio_hoje_utc()),
     )
     if campanha.modo == "recorrente" and campanha.recontato_dias:
         agora = agora or datetime.utcnow()
@@ -117,7 +118,8 @@ def selecionar(db: Session, campanha: models.Campanha) -> dict:
     job = cobranca_base.buscar_base(db, **filtros_para_busca(db, campanha.filtros or {}, campanha.clientes))
     if job["status"] != "ready":
         return {"status": "processing"}
-    base = job["data"]
+    # Só quem está em atraso: fica de fora o lembrete (parcela ainda a vencer).
+    base = [c for c in job["data"] if c["dias_atraso"] >= 1]
     fora = ja_receberam(db, campanha)
     return {"status": "ready", "total_base": len(base), "clientes": [c for c in base if c["codigo"] not in fora]}
 

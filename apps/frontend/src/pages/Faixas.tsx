@@ -14,7 +14,8 @@ export default function Faixas() {
   function carregar() {
     return api
       .listFaixas()
-      .then(setFaixas)
+      // Campanhas e remarketing têm tela própria (Campanhas): aqui só as faixas de atraso.
+      .then((fs) => setFaixas(fs.filter((f) => !f.campanha_id && !f.remarketing_segmento)))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }

@@ -299,7 +299,7 @@ def previa(
     except _ERROS_BASE as exc:
         raise _erro_base(exc) from exc
     if selecao["status"] != "ready":
-        return {"status": "processing"}
+        return {"status": "processing", "data": None}
     clientes = selecao["clientes"]
     if c.fonte_valores == "planilha":
         clientes = [camp.com_valores_da_planilha(x, c) for x in clientes]
@@ -309,9 +309,11 @@ def previa(
               "valor_atraso_original", "valor_atraso_juros", "vencimento_mais_antigo", "lojas")
     return {
         "status": "ready",
-        "total_base": selecao["total_base"],
-        "total": len(clientes),
-        "itens": [{k: x.get(k) for k in campos} for x in clientes[offset : offset + limit]],
+        "data": {
+            "total_base": selecao["total_base"],
+            "total": len(clientes),
+            "itens": [{k: x.get(k) for k in campos} for x in clientes[offset : offset + limit]],
+        },
     }
 
 
@@ -326,6 +328,9 @@ def executar_agora(campanha_id: str, db: Session = Depends(get_db), _user: model
     if c.fonte_valores == "planilha" and not c.clientes:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de clientes para usar os valores dela")
     try:
-        return camp.executar(db, c)
+        resultado = camp.executar(db, c)
     except _ERROS_BASE as exc:
         raise _erro_base(exc) from exc
+    if resultado["status"] != "ready":
+        return {"status": "processing", "data": None}
+    return {"status": "ready", "data": {"encontrados": resultado["encontrados"], "na_fila": resultado["na_fila"]}}

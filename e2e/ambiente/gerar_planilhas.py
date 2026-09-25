@@ -20,5 +20,23 @@ ws.append(["106", "Lúcia Ferraz", "55566677788", "(11) 94444-7777", "", ""])   
 ws.append(["", "Sem Código", "44455566600", "(11) 95555-6666", "10,00", "16/09/2026"])          # sem código
 wb.save(DESTINO / "planilha_faixa.xlsx")
 
+# Campanhas: relatório de lojas (coluna de código) e planilha de clientes
+wb = Workbook()
+ws = wb.active
+ws.append(["FILIAL", "Observação"])
+ws.append([1, "centro"])
+ws.append([6, "praia"])
+ws.append([99, "não existe"])
+wb.save(DESTINO / "lojas_campanha.xlsx")
+
+wb = Workbook()
+ws = wb.active
+ws.append(["Codigo", "Nome", "Valor", "Obs"])
+ws.append([27, "Cliente A", "99,90", "Promo A"])
+ws.append([36, "Cliente B", "150,00", "Promo B"])
+ws.append([99999, "Não existe no SETA", "10,00", "Promo C"])
+ws.append(["", "Sem código", "10,00", "x"])
+wb.save(DESTINO / "clientes_campanha.xlsx")
+
 (DESTINO / "nao_e_planilha.xlsx").write_text("isto não é um arquivo Excel\n")
 print("planilhas geradas em", DESTINO)

@@ -239,7 +239,7 @@ export default function Configuracoes() {
     }
   }
 
-  if (abaParam === "remarketing") return <Navigate to="/remarketing" replace />;
+  if (abaParam === "remarketing") return <Navigate to="/campanhas?aba=remarketing" replace />;
 
   return (
     <div>

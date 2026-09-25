@@ -417,6 +417,33 @@ export const api = {
       method: "POST",
     });
   },
+  // --- Campanhas ---
+  listarCampanhas: () => request<Campanha[]>("/campanhas"),
+  getCampanha: (id: string) => request<Campanha>(`/campanhas/${id}`),
+  criarCampanha: (payload: CampanhaIn) =>
+    request<Campanha>("/campanhas", { method: "POST", body: JSON.stringify(payload) }),
+  salvarCampanha: (id: string, payload: CampanhaIn) =>
+    request<Campanha>(`/campanhas/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  excluirCampanha: (id: string) => request<void>(`/campanhas/${id}`, { method: "DELETE" }),
+  subirClientesCampanha: (id: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<{ clientes: number; ignoradas: number; coluna: string; colunas: string[] }>(
+      `/campanhas/${id}/clientes`,
+      { method: "POST", body: form },
+    );
+  },
+  removerClientesCampanha: (id: string) => request<void>(`/campanhas/${id}/clientes`, { method: "DELETE" }),
+  previaCampanha: (id: string, params: { limit: number; offset: number } & OrdenacaoParams) =>
+    pollAsync<PreviaCampanha>(() => request(`/campanhas/${id}/previa?${montarQuery(params)}`)),
+  executarCampanha: (id: string) =>
+    pollAsync<{ encontrados: number; na_fila: number }>(() => request(`/campanhas/${id}/executar`, { method: "POST" })),
+  lerPlanilhaLojas: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<{ lojas: string[]; nao_encontradas: string[] }>("/lojas/ler-planilha", { method: "POST", body: form });
+  },
+
   executarRemarketing: () =>
     request<Record<string, { encontrados: number; na_fila: number }>>("/remarketing/executar", { method: "POST" }),
 
@@ -597,6 +624,8 @@ export interface Faixa {
   upload_field_mapping: Partial<UploadFieldMapping>;
   // Faixas de remarketing do Renegocie: recebem clientes pelo agendador, nunca por planilha.
   remarketing_segmento: string | null;
+  // Faixa de uma campanha (tela Campanhas): não é faixa de atraso.
+  campanha_id: string | null;
   descricao: string | null;
 }
 
@@ -858,6 +887,57 @@ export interface FiltrosCobranca {
   restricao_spc?: string[];
   vencimento_de?: string;
   vencimento_ate?: string;
+  // Total das parcelas já vencidas, pelo valor original ou com multa e juros
+  valor_atraso_min?: string;
+  valor_atraso_max?: string;
+  valor_atraso_com_juros?: boolean;
+}
+
+// --- Campanhas ---
+
+export interface CampanhaIn {
+  nome: string;
+  ativa: boolean;
+  modo: "unica" | "recorrente";
+  data_inicio: string | null;
+  data_fim: string | null;
+  fonte_valores: "seta" | "planilha";
+  recontato_dias: number | null;
+  filtros: FiltrosCobranca;
+}
+
+export interface Campanha extends CampanhaIn {
+  id: string;
+  faixa_id: string;
+  clientes_total: number;
+  clientes_arquivo: string | null;
+  planilha_colunas: string[];
+  envios_ativos: number;
+  templates: string[];
+  ultima_execucao: string | null;
+  ultimo_resultado: { encontrados?: number; na_fila?: number };
+  enviados: number;
+  pendentes: number;
+  erros: number;
+  created_at: string;
+}
+
+export interface PreviaCampanha {
+  total_base: number;
+  total: number;
+  itens: {
+    codigo: string;
+    nome: string;
+    celular: string | null;
+    cluster: string;
+    faixa: string | null;
+    dias_atraso: number;
+    valor_cobrar: string;
+    valor_atraso_original: string;
+    valor_atraso_juros: string;
+    vencimento_mais_antigo: string;
+    lojas: string[];
+  }[];
 }
 
 // --- Leads ---

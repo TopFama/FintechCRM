@@ -19,6 +19,9 @@ export const FILTROS_COBRANCA_PADRAO: FiltrosCobranca = {
   cluster_populacao: [],
   vencimento_de: "",
   vencimento_ate: "",
+  valor_atraso_min: "",
+  valor_atraso_max: "",
+  valor_atraso_com_juros: false,
 };
 
 const OPCOES_STATUS = [
@@ -35,7 +38,8 @@ const OPCOES_SPC = [
 interface Props {
   valor: FiltrosCobranca;
   onChange: (valor: FiltrosCobranca) => void;
-  onAplicar: () => void;
+  // Sem onAplicar, não mostra a linha de Aplicar/Limpar (formulário da campanha).
+  onAplicar?: () => void;
   acaoDireita?: React.ReactNode; // botão extra alinhado à direita, na linha de Aplicar
   opcoes: OpcoesCobranca;
   idPrefixo: string;
@@ -126,6 +130,46 @@ export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, opcoe
         </div>
       </div>
 
+      <div className="form-row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div className="field" style={{ flex: "1 1 160px" }}>
+          <label htmlFor={`${idPrefixo}-atraso-min`}>Valor em atraso de (R$)</label>
+          <input
+            id={`${idPrefixo}-atraso-min`}
+            type="number"
+            min={0}
+            step="0.01"
+            value={valor.valor_atraso_min ?? ""}
+            onChange={(e) => set({ valor_atraso_min: e.target.value })}
+          />
+        </div>
+        <div className="field" style={{ flex: "1 1 160px" }}>
+          <label htmlFor={`${idPrefixo}-atraso-max`}>Valor em atraso até (R$)</label>
+          <input
+            id={`${idPrefixo}-atraso-max`}
+            type="number"
+            min={0}
+            step="0.01"
+            value={valor.valor_atraso_max ?? ""}
+            onChange={(e) => set({ valor_atraso_max: e.target.value })}
+          />
+        </div>
+        <div className="field" style={{ flex: "1 1 220px" }}>
+          <label htmlFor={`${idPrefixo}-atraso-tipo`}>Valor considerado</label>
+          <select
+            id={`${idPrefixo}-atraso-tipo`}
+            value={valor.valor_atraso_com_juros ? "juros" : "original"}
+            onChange={(e) => set({ valor_atraso_com_juros: e.target.value === "juros" })}
+          >
+            <option value="original">Original das parcelas</option>
+            <option value="juros">Corrigido com multa e juros</option>
+          </select>
+        </div>
+      </div>
+      <div className="field-hint" style={{ marginBottom: 8 }}>
+        Valor em atraso é a soma das parcelas já vencidas do cliente.
+      </div>
+
+      {onAplicar && (
       <div className="actions-row">
         <button type="button" onClick={onAplicar}>
           Aplicar filtros
@@ -135,6 +179,7 @@ export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, opcoe
         </button>
         {acaoDireita && <div style={{ marginLeft: "auto" }}>{acaoDireita}</div>}
       </div>
+      )}
     </>
   );
 }
