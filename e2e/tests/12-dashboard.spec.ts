@@ -81,7 +81,8 @@ test.describe("Dashboard", () => {
       const link = page.getByRole("link", { name: new RegExp(`^Ver ${n} `) }).filter({ has: page.locator(".label", { hasText: rotulo }) });
       await link.hover();
       await link.click();
-      const hoje = new Date().toLocaleDateString("sv-SE");
+      // A tela roda em GMT-3 (playwright.config); o processo do teste, no fuso da máquina
+      const hoje = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
       await expect(page).toHaveURL(new RegExp(`/relatorios\\?aba=${aba}&de=${hoje}&ate=${hoje}$`));
       await expect(page.getByText("Carregando...")).toHaveCount(0, { timeout: 30_000 });
       if (n === 0) {
@@ -265,5 +266,57 @@ test.describe("Dashboard", () => {
     );
     await page.reload();
     await expect(card(page, "Orçamento").locator(".error-box")).toContainText("Falha ao consultar a Meta");
+  });
+  test("resumo e leads se atualizam sozinhos, sem F5, e param com a aba oculta", async ({ page }) => {
+    await page.clock.install();
+    const [primeiro] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes("/dashboard/summary?")),
+      page.reload(),
+    ]);
+    const resumoReal = await primeiro.json();
+    await expect(stat(page, "Pendentes na fila")).not.toHaveText("999");
+    await expect(page.locator(".atualizacao-auto")).toContainText(/atualizado às \d{2}:\d{2}/);
+    const pedidos: URL[] = [];
+    page.on("request", (r) => {
+      const u = new URL(r.url());
+      if (/\/(dashboard\/(summary|pagos-7-dias)|leads)$/.test(u.pathname)) pedidos.push(u);
+    });
+    // Simula um envio acontecendo enquanto a tela está aberta
+    await page.route("**/dashboard/summary?*", (r) => r.fulfill({ json: { ...resumoReal, total_pendentes: 999 } }));
+    const resumos = () => pedidos.filter((u) => u.pathname.endsWith("/dashboard/summary"));
+
+    await page.clock.runFor(31_000);
+    await expect(stat(page, "Pendentes na fila")).toHaveText("999");
+    expect(resumos().every((u) => u.searchParams.get("auto") === "true")).toBe(true);
+    // O card do SETA não se atualiza sozinho
+    expect(pedidos.some((u) => u.pathname.endsWith("/pagos-7-dias"))).toBe(false);
+    await page.clock.runFor(30_000);
+    await expect.poll(() => pedidos.filter((u) => u.pathname.endsWith("/leads")).length).toBeGreaterThan(0);
+
+    // Aba oculta: nenhum pedido; ao voltar, atualiza na hora
+    const ocultar = (oculta: boolean) =>
+      page.evaluate((o) => {
+        Object.defineProperty(document, "hidden", { configurable: true, get: () => o });
+        Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (o ? "hidden" : "visible") });
+        document.dispatchEvent(new Event("visibilitychange"));
+      }, oculta);
+    await ocultar(true);
+    const antes = resumos().length;
+    await page.clock.runFor(5 * 60_000);
+    expect(resumos().length).toBe(antes);
+    await ocultar(false);
+    await expect.poll(() => resumos().length).toBe(antes + 1);
+  });
+
+  test("'Atualizar agora' recarrega tudo, inclusive o card do SETA, sem apagar os números", async ({ page }) => {
+    await expect(stat(page, "Pagaram em até 7 dias")).not.toHaveText("…", { timeout: 30_000 });
+    const pedidos: URL[] = [];
+    page.on("request", (r) => pedidos.push(new URL(r.url())));
+    await page.getByRole("button", { name: "Atualizar agora" }).click();
+    await expect.poll(() => pedidos.some((u) => u.pathname.endsWith("/dashboard/pagos-7-dias"))).toBe(true);
+    const resumo = pedidos.find((u) => u.pathname.endsWith("/dashboard/summary"));
+    expect(resumo?.searchParams.get("auto")).toBeNull();
+    await expect(page.locator(".loading-state")).toHaveCount(0);
+    await expect(stat(page, "Pagaram em até 7 dias")).not.toHaveText("…");
   });
 });
