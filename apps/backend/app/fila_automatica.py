@@ -171,6 +171,7 @@ def enfileirar_clientes(
             variables_json=next(iter(por_template.values())) if len(por_template) == 1 else por_template,
             status=models.QueueStatus.pending,
             lojas=lojas_formatadas(cliente.get("lojas")),
+            faixa_atraso=cliente.get("faixa") or None,
         )
         if faltando:
             item.status = models.QueueStatus.error

@@ -427,6 +427,11 @@ export const api = {
   salvarCampanha: (id: string, payload: CampanhaIn) =>
     request<Campanha>(`/campanhas/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   excluirCampanha: (id: string) => request<void>(`/campanhas/${id}`, { method: "DELETE" }),
+  pausarCampanha: (id: string, dados: { motivo?: string; ate?: string | null } = {}) =>
+    request<Campanha>(`/campanhas/${id}/pausar`, { method: "POST", body: JSON.stringify(dados) }),
+  retomarCampanha: (id: string) => request<Campanha>(`/campanhas/${id}/retomar`, { method: "POST" }),
+  pararCampanha: (id: string) =>
+    request<Campanha & { cancelados: number }>(`/campanhas/${id}/parar`, { method: "POST" }),
   subirClientesCampanha: (id: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
@@ -899,8 +904,8 @@ export interface FiltrosCobranca {
 
 export interface CampanhaIn {
   nome: string;
+  /** "Envio automático": roda sozinha todo dia de disparo no período. */
   ativa: boolean;
-  modo: "unica" | "recorrente";
   data_inicio: string | null;
   data_fim: string | null;
   fonte_valores: "seta" | "planilha";
@@ -921,6 +926,8 @@ export interface Campanha extends CampanhaIn {
   enviados: number;
   pendentes: number;
   erros: number;
+  parada_em: string | null;
+  pausa: { id: string; motivo: string; ate: string | null; created_by: string | null; created_at: string } | null;
   created_at: string;
 }
 

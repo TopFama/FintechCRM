@@ -285,6 +285,10 @@ class QueueItem(Base):
     # Lojas do cliente no mesmo formato de Lead.lojas (",01,07,"), pra pausa
     # por loja; vazio (",") quando o item veio de planilha sem Lead do cliente.
     lojas: Mapped[str] = mapped_column(String, default=",", server_default=",")
+    # Faixa de atraso do cliente quando o item é de campanha/remarketing (a
+    # fila é da faixa própria delas): é por ela que o Dashboard agrupa "Por
+    # faixa". Nulo nos itens da régua (a própria faixa já é a de atraso).
+    faixa_atraso: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -646,10 +650,12 @@ class Campanha(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     nome: Mapped[str] = mapped_column(String, unique=True)
     faixa_id: Mapped[str] = mapped_column(ForeignKey("faixas.id", ondelete="CASCADE"), unique=True)
+    # "Envio automático": roda sozinha todo dia de disparo entre data_inicio
+    # e data_fim (GMT-3, inclusive nas duas pontas; sem data_fim, sem fim).
+    # Desligada, só entra na fila pelo "Colocar na fila agora".
     ativa: Mapped[bool] = mapped_column(Boolean, default=False)
-    # "unica": roda uma vez, no dia data_inicio. "recorrente": todo dia de
-    # disparo entre data_inicio e data_fim (GMT-3, inclusive nas duas pontas).
-    modo: Mapped[str] = mapped_column(String, default="unica", server_default="unica")
+    # Legado: "unica" virou período de um dia (data_fim = data_inicio).
+    modo: Mapped[str] = mapped_column(String, default="recorrente", server_default="recorrente")
     data_inicio: Mapped[date | None] = mapped_column(Date, nullable=True)
     data_fim: Mapped[date | None] = mapped_column(Date, nullable=True)
     filtros: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -660,13 +666,16 @@ class Campanha(Base):
     fonte_valores: Mapped[str] = mapped_column(String, default="seta", server_default="seta")
     planilha_colunas: Mapped[list] = mapped_column(JSON, default=list)
     planilha_linhas: Mapped[dict] = mapped_column(JSON, default=dict)
-    # Só na recorrente. Nulo: cada cliente recebe uma vez por campanha. Com
-    # valor: pode receber de novo depois desse número de dias.
+    # Nulo: cada cliente recebe uma vez por campanha. Com valor: pode receber
+    # de novo depois desse número de dias.
     recontato_dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ultima_execucao: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ultima_execucao_dia: Mapped[date | None] = mapped_column(Date, nullable=True)
     ultimo_resultado: Mapped[dict] = mapped_column(JSON, default=dict)
     arquivada_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # "Parar": pendentes cancelados e envio automático desligado. Some ao
+    # religar o envio automático ou colocar na fila de novo.
+    parada_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

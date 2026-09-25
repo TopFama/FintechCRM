@@ -859,6 +859,16 @@ label {
   color: var(--color-text-muted);
 }
 
+.status-pill.paused {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.status-pill.stopped {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
 /* ---------- Feedback ---------- */
 
 .error-box {

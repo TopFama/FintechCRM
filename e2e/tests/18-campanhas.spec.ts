@@ -67,7 +67,7 @@ test.describe.serial("Campanhas", () => {
     await page.getByLabel("Valor considerado").selectOption({ label: "Corrigido com multa e juros" });
     await page.getByRole("button", { name: "Criar campanha" }).click();
     await expect(page.getByRole("heading", { name: "Feirão lojas 01 e 06" })).toBeVisible();
-    await expect(page.locator(".status-pill").first()).toHaveText("Desligada");
+    await expect(page.locator(".status-pill").first()).toHaveText("Manual");
 
     const campanha = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Feirão lojas 01 e 06");
     expect(campanha.filtros.loja).toEqual(["01", "06"]);
@@ -198,16 +198,20 @@ test.describe.serial("Campanhas", () => {
   test("planilha de clientes com os valores da planilha nas variáveis", async ({ page }) => {
     await page.goto("/campanhas/nova");
     await page.getByLabel("Nome da campanha").fill("Planilha promo");
+    // planilha escolhida antes de salvar: sobe junto com a criação
+    await page.locator('input[aria-label="Planilha de clientes"]').setInputFiles(path.join(DADOS, "clientes_campanha.xlsx"));
+    await expect(page.getByText("clientes_campanha.xlsx · será lida ao criar a campanha")).toBeVisible();
+    await page.getByLabel("Valor, celular e variáveis vêm").selectOption("planilha");
+    // envio automático num período já passado: salva a configuração sem rodar sozinho durante o teste
+    await page.getByLabel("Envio automático").check();
+    await page.getByLabel("Período: de").fill("2026-01-01");
+    await page.getByLabel("Até (vazio = sem data final)").fill("2026-01-02");
     await page.getByRole("button", { name: "Criar campanha" }).click();
     await expect(page.getByRole("heading", { name: "Planilha promo" })).toBeVisible();
-
-    await page.locator('input[aria-label="Planilha de clientes"]').setInputFiles(path.join(DADOS, "clientes_campanha.xlsx"));
-    await expect(page.locator(".success-box")).toContainText("coluna Código: 3 cliente(s), 1 linha(s) sem cliente");
-    await page.getByLabel("Valor, celular e variáveis vêm").selectOption("planilha");
-    await page.getByLabel("Frequência").selectOption("recorrente");
-    await page.getByLabel("Início").fill("2026-01-01");
-    await page.getByRole("button", { name: "Salvar" }).click();
-    await expect(page.locator(".success-box")).toContainText("Campanha salva");
+    await expect(page.getByText("clientes_campanha.xlsx · 3 cliente(s)")).toBeVisible();
+    await expect(page.getByLabel("Valor, celular e variáveis vêm")).toHaveValue("planilha");
+    await expect(page.locator(".status-pill").first()).toHaveText("Automática");
+    await expect(page.locator(".page-header .subtitle")).toContainText("Envio automático de 01/01/2026 a 02/01/2026");
 
     await atribuirTemplate(page, "lembrete_vencimento", "Obs");
     const previa = card(page, "Quem entraria agora");
@@ -229,6 +233,42 @@ test.describe.serial("Campanhas", () => {
       expect(item.valor).toBe("99.90");
       expect(item.status).toBe("pending");
     }
+  });
+
+  test("Por faixa do Dashboard mostra a faixa de atraso de quem recebeu, não a campanha", async ({ page }) => {
+    const resumo = await apiGet(page, "/dashboard/summary");
+    const nomes = resumo.por_faixa.map((f: any) => f.faixa);
+    expect(nomes.some((n: string) => n.startsWith("Campanha:"))).toBe(false);
+    const faixasAtraso = (await apiGet(page, "/cobranca/regras")).faixas as string[];
+    const campanha = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Feirão lojas 01 e 06");
+    const lead = (await apiGet(page, `/leads?campanha=${campanha.id}&limit=1&offset=0`)).itens[0];
+    expect(faixasAtraso).toContain(lead.faixa);
+    const linha = resumo.por_faixa.find((f: any) => f.faixa === lead.faixa);
+    expect((linha.sent ?? 0) + (linha.cancelled ?? 0) + (linha.pending ?? 0)).toBeGreaterThan(0);
+  });
+
+  test("pausar, retomar e parar a campanha pela lista e dentro dela", async ({ page }) => {
+    await page.goto("/campanhas");
+    const linha = page.locator(".faixa-row", { hasText: "Planilha promo" });
+    let dialogo = responderDialogo(page, true, "conferir valores");
+    await linha.getByRole("button", { name: "Pausar" }).click();
+    await dialogo;
+    await expect(linha.locator(".status-pill")).toHaveText("Pausada");
+    await expect(page).toHaveURL(/\/campanhas$/); // o botão não abre a campanha
+
+    await linha.getByRole("button", { name: "Retomar" }).click();
+    await expect(linha.locator(".status-pill")).toHaveText("Automática");
+
+    await linha.locator(".faixa-row-title").click();
+    await expect(page.getByRole("heading", { name: "Planilha promo" })).toBeVisible();
+    dialogo = responderDialogo(page);
+    await page.locator(".page-header").getByRole("button", { name: "Parar" }).click();
+    await dialogo;
+    await expect(page.locator(".success-box")).toContainText(/Campanha parada: \d+ pendente\(s\) cancelado\(s\)/);
+    await expect(page.locator(".page-header .status-pill")).toHaveText("Parada");
+    await expect(page.getByLabel("Envio automático")).not.toBeChecked();
+    const campanha = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Planilha promo");
+    expect(campanha.pendentes).toBe(0);
   });
 
   test("excluir arquiva a campanha e mantém o histórico", async ({ page }) => {

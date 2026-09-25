@@ -9,7 +9,7 @@ from openpyxl import Workbook
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
@@ -26,6 +26,16 @@ _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 _DATETIME_FORMAT = "DD/MM/YYYY HH:MM:SS"
 
+
+
+def filtro_faixa(db: Session, faixa_id: str):
+    """Itens da faixa. Numa faixa de atraso (régua), também os envios de
+    campanha/remarketing a clientes que estavam nela, como no "Por faixa"
+    do Dashboard."""
+    faixa = db.get(models.Faixa, faixa_id)
+    if faixa is None or faixa.campanha_id or faixa.remarketing_segmento:
+        return models.QueueItem.faixa_id == faixa_id
+    return or_(models.QueueItem.faixa_id == faixa_id, models.QueueItem.faixa_atraso == faixa.name)
 
 def _formula_safe(value: str) -> str:
     """Neutraliza injeção de fórmula (CWE-1236): nome/valor/telefone vêm da
@@ -378,7 +388,7 @@ def _dispatch_report_query(
         .filter(models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.sent_at.isnot(None))
     )
     if faixa_id:
-        query = query.filter(models.QueueItem.faixa_id == faixa_id)
+        query = query.filter(filtro_faixa(db, faixa_id))
     query = _no_periodo(query, models.QueueItem.sent_at, de, ate)
 
     def _ordenado(coluna):
@@ -503,7 +513,7 @@ def _fila_report_query(
         .filter(models.QueueItem.status.in_(status_fila))
     )
     if faixa_id:
-        query = query.filter(models.QueueItem.faixa_id == faixa_id)
+        query = query.filter(filtro_faixa(db, faixa_id))
     if loja:
         query = query.filter(models.QueueItem.lojas.like(f"%,{pausas.normalizar_valor('loja', loja)},%"))
     query = _no_periodo(query, models.QueueItem.created_at, de, ate)

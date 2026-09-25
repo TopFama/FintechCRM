@@ -7,11 +7,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import cache, campanhas as camp, cobranca_base, google_client, models, seta_client
+from .. import cache, campanhas as camp, cobranca_base, google_client, models, pausas, seta_client
 from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
+from ..timezone import hoje_br
 from .cobranca import ClienteSortColumn, _ordenar_clientes
 from .uploads import _ler_planilha_limitada
 
@@ -43,8 +44,7 @@ class FiltrosCampanha(BaseModel):
 
 class CampanhaIn(BaseModel):
     nome: str = Field(min_length=1, max_length=80)
-    ativa: bool = False
-    modo: Literal["unica", "recorrente"] = "unica"
+    ativa: bool = False  # "Envio automático"
     data_inicio: date | None = None
     data_fim: date | None = None
     fonte_valores: Literal["seta", "planilha"] = "seta"
@@ -64,7 +64,19 @@ def _contagens(db: Session, faixa_ids: list[str]) -> dict[str, dict[str, int]]:
     return contagem
 
 
-def _out(c: models.Campanha, contagem: dict[str, int] | None = None) -> dict:
+def _pausa_out(p: models.PausaEnvio | None) -> dict | None:
+    if p is None:
+        return None
+    return {"id": p.id, "motivo": p.motivo, "ate": p.ate, "created_by": p.created_by, "created_at": p.created_at}
+
+
+def _pausas_por_faixa(db: Session) -> dict[str, models.PausaEnvio]:
+    return {p.valor: p for p in pausas.ativas(db) if p.escopo == "faixa"}
+
+
+def _out(
+    c: models.Campanha, contagem: dict[str, int] | None = None, pausa: models.PausaEnvio | None = None
+) -> dict:
     envios = [e for e in c.faixa.envios if e.active]
     contagem = contagem or {}
     return {
@@ -72,7 +84,6 @@ def _out(c: models.Campanha, contagem: dict[str, int] | None = None) -> dict:
         "nome": c.nome,
         "faixa_id": c.faixa_id,
         "ativa": c.ativa,
-        "modo": c.modo,
         "data_inicio": c.data_inicio,
         "data_fim": c.data_fim,
         "fonte_valores": c.fonte_valores,
@@ -88,6 +99,8 @@ def _out(c: models.Campanha, contagem: dict[str, int] | None = None) -> dict:
         "enviados": contagem.get("sent", 0),
         "pendentes": contagem.get("pending", 0) + contagem.get("reserved", 0),
         "erros": contagem.get("error", 0),
+        "parada_em": c.parada_em,
+        "pausa": _pausa_out(pausa),
         "created_at": c.created_at,
     }
 
@@ -105,8 +118,8 @@ def _erro(msg: str) -> HTTPException:
 
 def _validar(db: Session, payload: CampanhaIn, atual: models.Campanha | None) -> str:
     if payload.ativa and payload.data_inicio is None:
-        raise _erro("Informe a data" + (" de início" if payload.modo == "recorrente" else " da campanha"))
-    if payload.modo == "recorrente" and payload.data_inicio and payload.data_fim and payload.data_fim < payload.data_inicio:
+        raise _erro("Informe a data de início do envio automático")
+    if payload.data_inicio and payload.data_fim and payload.data_fim < payload.data_inicio:
         raise _erro("A data final é antes da inicial")
     f = payload.filtros
     if f.valor_atraso_min is not None and f.valor_atraso_max is not None and f.valor_atraso_min > f.valor_atraso_max:
@@ -144,12 +157,14 @@ def _validar(db: Session, payload: CampanhaIn, atual: models.Campanha | None) ->
 def _aplicar(c: models.Campanha, payload: CampanhaIn, nome: str) -> None:
     c.nome = nome
     c.faixa.name = camp.nome_faixa(nome)
+    if payload.ativa and not c.ativa:
+        c.parada_em = None  # religou o envio automático
     c.ativa = payload.ativa
-    c.modo = payload.modo
+    c.modo = "recorrente"
     c.data_inicio = payload.data_inicio
-    c.data_fim = payload.data_fim if payload.modo == "recorrente" else None
+    c.data_fim = payload.data_fim
     c.fonte_valores = payload.fonte_valores
-    c.recontato_dias = payload.recontato_dias if payload.modo == "recorrente" else None
+    c.recontato_dias = payload.recontato_dias
     c.filtros = payload.filtros.model_dump(mode="json")
     # Mudou a configuração: pode rodar de novo hoje com a nova regra.
     c.ultima_execucao_dia = None
@@ -164,7 +179,8 @@ def listar(db: Session = Depends(get_db), _user: models.User = Depends(get_curre
         .all()
     )
     contagens = _contagens(db, [c.faixa_id for c in campanhas])
-    return [_out(c, contagens[c.faixa_id]) for c in campanhas]
+    pausadas = _pausas_por_faixa(db)
+    return [_out(c, contagens[c.faixa_id], pausadas.get(c.faixa_id)) for c in campanhas]
 
 
 @router.get("/opcoes")
@@ -196,7 +212,7 @@ def criar(payload: CampanhaIn, db: Session = Depends(get_db), user: models.User 
 @router.get("/{campanha_id}")
 def ver(campanha_id: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
     c = _get(db, campanha_id)
-    return _out(c, _contagens(db, [c.faixa_id])[c.faixa_id])
+    return _out(c, _contagens(db, [c.faixa_id])[c.faixa_id], _pausas_por_faixa(db).get(c.faixa_id))
 
 
 @router.put("/{campanha_id}")
@@ -208,7 +224,67 @@ def salvar(
     _aplicar(c, payload, nome)
     db.commit()
     db.refresh(c)
-    return _out(c, _contagens(db, [c.faixa_id])[c.faixa_id])
+    return _out(c, _contagens(db, [c.faixa_id])[c.faixa_id], _pausas_por_faixa(db).get(c.faixa_id))
+
+
+class PausaCampanhaIn(BaseModel):
+    motivo: str = ""
+    ate: date | None = None
+
+
+@router.post("/{campanha_id}/pausar")
+def pausar(
+    campanha_id: str,
+    payload: PausaCampanhaIn,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Segura os pendentes da campanha (e o envio automático) até retomar
+    ou até `ate`. É a mesma pausa por faixa da tela de Pendentes."""
+
+    c = _get(db, campanha_id)
+    if payload.ate and payload.ate < hoje_br():
+        raise _erro("A data final da pausa já passou")
+    if c.faixa_id not in _pausas_por_faixa(db):
+        db.add(
+            models.PausaEnvio(
+                escopo="faixa",
+                valor=c.faixa_id,
+                motivo=payload.motivo.strip() or "Campanha pausada",
+                ate=payload.ate,
+                created_by=user.email,
+            )
+        )
+        db.commit()
+    return ver(campanha_id, db, user)
+
+
+@router.post("/{campanha_id}/retomar")
+def retomar(campanha_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    c = _get(db, campanha_id)
+    for p in pausas.ativas(db):
+        if p.escopo == "faixa" and p.valor == c.faixa_id:
+            p.encerrada_em = datetime.utcnow()
+            p.encerrada_por = user.email
+    db.commit()
+    return ver(campanha_id, db, user)
+
+
+@router.post("/{campanha_id}/parar")
+def parar(campanha_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """Cancela os pendentes (ficam no histórico como cancelados), desliga o
+    envio automático e encerra a pausa, se houver."""
+
+    c = _get(db, campanha_id)
+    c.ativa = False
+    c.parada_em = datetime.utcnow()
+    for p in pausas.ativas(db):
+        if p.escopo == "faixa" and p.valor == c.faixa_id:
+            p.encerrada_em = datetime.utcnow()
+            p.encerrada_por = user.email
+    db.commit()
+    cancelados = pausas.parar(db, "faixa", c.faixa_id, user.email)
+    return {**ver(campanha_id, db, user), "cancelados": cancelados}
 
 
 @router.delete("/{campanha_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -84,16 +84,30 @@ def _resumo(db: Session, de: date | None, ate: date | None) -> schemas.Dashboard
             or 0
         )
 
+    # Envio de campanha/remarketing conta na faixa de atraso do cliente
+    # (QueueItem.faixa_atraso), não na faixa própria da campanha.
     por_faixa_rows = (
-        db.query(models.Faixa.id, models.Faixa.name, models.QueueItem.status, func.count(models.QueueItem.id))
+        db.query(
+            models.Faixa.id, models.Faixa.name, models.QueueItem.faixa_atraso, models.QueueItem.status,
+            func.count(models.QueueItem.id),
+        )
         # Só faixas com movimento no período (sem listar faixa zerada ou excluída)
         .join(models.QueueItem, and_(models.QueueItem.faixa_id == models.Faixa.id, periodo))
-        .group_by(models.Faixa.id, models.Faixa.name, models.QueueItem.status)
+        .group_by(models.Faixa.id, models.Faixa.name, models.QueueItem.faixa_atraso, models.QueueItem.status)
         .all()
     )
+    id_por_nome = {
+        nome: fid
+        for fid, nome in db.query(models.Faixa.id, models.Faixa.name).filter(
+            models.Faixa.name.in_({r[2] for r in por_faixa_rows if r[2]})
+        )
+    }
     por_faixa: dict[str, dict] = {}
-    for faixa_id, faixa_name, status_value, total in por_faixa_rows:
-        entry = por_faixa.setdefault(faixa_id, {"faixa": faixa_name, "faixa_id": faixa_id})
+    for faixa_id, faixa_name, faixa_atraso, status_value, total in por_faixa_rows:
+        nome = faixa_atraso or faixa_name
+        entry = por_faixa.setdefault(
+            nome, {"faixa": nome, "faixa_id": id_por_nome.get(faixa_atraso, faixa_id) if faixa_atraso else faixa_id}
+        )
         # reservado = pendente que um envio já pegou; pro operador é pendente
         chave = "pending" if status_value == models.QueueStatus.reserved else status_value.value
         entry[chave] = entry.get(chave, 0) + total

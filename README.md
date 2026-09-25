@@ -258,9 +258,12 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
 11. **Campanhas** (menu logo abaixo de Cobrança) — cobranças fora das faixas de atraso, cada uma
    com os mesmos filtros da Cobrança (inclusive "valor em atraso" de X a Y, original ou com multa e
    juros, e "Importar lista de lojas" a partir de um .xlsx com a coluna de código da loja), template
-   e número atribuídos na própria campanha e frequência **única** (um dia) ou **recorrente** (todo
-   dia de disparo num período, com recontato opcional a cada N dias; sem ele, cada cliente recebe
-   uma vez por campanha). Só entra quem está em atraso no SETA. Uma planilha de clientes (coluna
+   e número atribuídos na própria campanha e **Envio automático** opcional: ligado, roda sozinha todo
+   dia de disparo no período de/até (um dia só = mesma data nas duas pontas), com recontato opcional
+   a cada N dias (sem ele, cada cliente recebe uma vez por campanha); desligado, só entra na fila pelo
+   "Colocar na fila agora". **Pausar** (retém os pendentes e o envio automático até retomar, via
+   pausa por faixa) e **Parar** (cancela os pendentes e desliga o automático) ficam na lista e na
+   campanha. A planilha de clientes pode ser escolhida já na criação. Só entra quem está em atraso no SETA. Uma planilha de clientes (coluna
    Codigo ou CPF) restringe a base; com "valores da planilha", Valor, Celular e as demais colunas
    (nas variáveis do template) vêm dela. O agendador roda as campanhas do dia junto com o
    remarketing, antes do horário de início. Por baixo, cada campanha tem uma faixa própria
@@ -272,7 +275,9 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    agendador coloca esse cliente na fila da régua da faixa de atraso em que ele estiver naquele dia
    (base do SETA recalculada; quem pagou fica de fora), porque só sai uma cobrança por cliente por
    dia (`campanhas.enfileirar_na_regua`). A Efetividade e "Exportar leads enviados" do Dashboard têm
-   o filtro **Campanha** (todas, só a régua ou uma campanha, inclusive excluídas).
+   o filtro **Campanha** (todas, só a régua ou uma campanha, inclusive excluídas). O item da fila de
+   campanha/remarketing guarda a faixa de atraso do cliente (`QueueItem.faixa_atraso`): o "Por faixa"
+   do Dashboard e os relatórios filtrados por uma faixa de atraso contam esses envios nela.
 
 ## Testes / validação de mudanças
 

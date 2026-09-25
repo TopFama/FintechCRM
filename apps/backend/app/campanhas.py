@@ -2,8 +2,9 @@
 filtros da Cobrança, templates próprios e um período em que roda sozinha.
 
 Cada campanha tem uma faixa só dela ("Campanha: …"), onde ficam número,
-template e variáveis, como no remarketing. A campanha é única (roda uma vez,
-no dia marcado) ou recorrente (todo dia de disparo dentro do período). No dia,
+template e variáveis, como no remarketing. Com "Envio automático", roda todo
+dia de disparo dentro do período (um dia só = início e fim iguais); sem ele,
+só pelo "Colocar na fila agora". No dia,
 antes do horário de início, o agendador busca a base da campanha no SETA
 (só clientes em atraso) e coloca na fila quem ainda não recebeu. Com uma
 planilha de clientes, a base fica restrita a eles e, se a campanha usa os
@@ -28,7 +29,7 @@ from openpyxl import load_workbook
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
-from . import cobranca_base, lojas as lojas_base, models, seta_client
+from . import cobranca_base, lojas as lojas_base, models, pausas, seta_client
 from .fila_automatica import clientes_bloqueados_hoje, enfileirar_clientes, enfileirar_leads, inicio_hoje_utc
 from .leads_service import gerar_leads_de_clientes
 from .regras_db import carregar_regras
@@ -49,7 +50,7 @@ def nome_faixa(nome: str) -> str:
 
 
 def em_periodo(campanha: models.Campanha, hoje: date) -> bool:
-    if campanha.modo == "unica":
+    if campanha.modo == "unica":  # legado: período de um dia
         return campanha.data_inicio == hoje
     if campanha.data_inicio and hoje < campanha.data_inicio:
         return False
@@ -111,7 +112,7 @@ def ja_receberam(db: Session, campanha: models.Campanha, agora: datetime | None 
         models.QueueItem.faixa_id == campanha.faixa_id,
         or_(models.QueueItem.status != models.QueueStatus.error, models.QueueItem.created_at >= inicio_hoje_utc()),
     )
-    if campanha.modo == "recorrente" and campanha.recontato_dias:
+    if campanha.recontato_dias:
         agora = agora or datetime.utcnow()
         q = q.filter(models.QueueItem.created_at >= agora - timedelta(days=campanha.recontato_dias))
     return {codigo for (codigo,) in q}
@@ -222,6 +223,7 @@ def executar(db: Session, campanha: models.Campanha, *, created_by: str | None =
         )
     resumo = {"status": "ready", "encontrados": len(clientes), "na_fila": na_fila}
     campanha.ultima_execucao = datetime.utcnow()
+    campanha.parada_em = None
     campanha.ultimo_resultado = {"encontrados": len(clientes), "na_fila": na_fila}
     db.commit()
     logger.info("Campanha '%s': %s", campanha.nome, resumo)
@@ -284,16 +286,21 @@ def enfileirar_na_regua(db: Session) -> dict:
 
 
 def campanhas_para_hoje(db: Session) -> list[models.Campanha]:
-    """Ligadas, não arquivadas, dentro do período, ainda não rodadas hoje e
-    com algum número + template ativo (ligar antes de atribuir não perde o dia)."""
+    """Com envio automático, não arquivadas nem pausadas, dentro do período,
+    ainda não rodadas hoje e com algum número + template ativo (ligar antes de
+    atribuir não perde o dia)."""
 
     hoje = hoje_br()
+    pausadas = {p.valor for p in pausas.ativas(db) if p.escopo == "faixa"}
     return [
         c
         for c in db.query(models.Campanha).filter(
             models.Campanha.ativa.is_(True), models.Campanha.arquivada_em.is_(None)
         )
-        if em_periodo(c, hoje) and c.ultima_execucao_dia != hoje and any(e.active for e in c.faixa.envios)
+        if em_periodo(c, hoje)
+        and c.ultima_execucao_dia != hoje
+        and c.faixa_id not in pausadas
+        and any(e.active for e in c.faixa.envios)
     ]
 
 

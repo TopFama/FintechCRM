@@ -9,7 +9,7 @@ import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { formatBRL, formatCelular, formatData, formatDataHora } from "../format";
 import { IconAlert, IconBolt, IconCheckCircle, IconEye, IconTrash, IconUpload } from "../icons";
 import { SortDirection, useSort } from "../sort";
-import { periodoCampanha } from "./Campanhas";
+import { AcoesCampanha, periodoCampanha, situacaoCampanha } from "./Campanhas";
 
 // Numa campanha, o padrão é pegar todos os dias da faixa e não aplicar a matriz
 // do WhatsApp: quem entra é decidido pelos filtros da própria campanha.
@@ -22,7 +22,6 @@ const FILTROS_CAMPANHA_PADRAO: FiltrosCobranca = {
 const NOVA: CampanhaIn = {
   nome: "",
   ativa: false,
-  modo: "unica",
   data_inicio: null,
   data_fim: null,
   fonte_valores: "seta",
@@ -40,7 +39,6 @@ function paraForm(c: Campanha): CampanhaIn {
   return {
     nome: c.nome,
     ativa: c.ativa,
-    modo: c.modo,
     data_inicio: c.data_inicio,
     data_fim: c.data_fim,
     fonte_valores: c.fonte_valores,
@@ -56,8 +54,8 @@ function paraPayload(f: CampanhaIn): CampanhaIn {
   return {
     ...f,
     data_inicio: f.data_inicio || null,
-    data_fim: f.modo === "recorrente" ? f.data_fim || null : null,
-    recontato_dias: f.modo === "recorrente" ? f.recontato_dias || null : null,
+    data_fim: f.data_fim || null,
+    recontato_dias: f.recontato_dias || null,
     filtros: filtros as FiltrosCobranca,
   };
 }
@@ -74,6 +72,8 @@ export default function CampanhaDetail() {
   const [sucesso, setSucesso] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [enviandoPlanilha, setEnviandoPlanilha] = useState(false);
+  // Na criação, a planilha fica guardada e sobe logo depois de criar a campanha.
+  const [planilhaNova, setPlanilhaNova] = useState<File | null>(null);
   const planilhaRef = useRef<HTMLInputElement>(null);
 
   const [previa, setPrevia] = useState<PreviaCampanha | null>(null);
@@ -102,8 +102,15 @@ export default function CampanhaDetail() {
 
   function recarregarCampanha() {
     if (!id) return;
-    api.getCampanha(id).then(setCampanha).catch(() => undefined);
-    if (campanha) api.getFaixa(campanha.faixa_id).then(setFaixa).catch(() => undefined);
+    api
+      .getCampanha(id)
+      .then(setCampanha)
+      .catch(() => undefined);
+    if (campanha)
+      api
+        .getFaixa(campanha.faixa_id)
+        .then(setFaixa)
+        .catch(() => undefined);
   }
 
   useEffect(carregar, [id]);
@@ -115,7 +122,28 @@ export default function CampanhaDetail() {
     setSalvando(true);
     try {
       if (nova) {
-        const criada = await api.criarCampanha(paraPayload(form));
+        const payload = paraPayload(form);
+        if (!planilhaNova) {
+          const criada = await api.criarCampanha(payload);
+          navigate(`/campanhas/${criada.id}`, { replace: true });
+          return;
+        }
+        // Cria sem ligar, sobe a planilha e só então aplica envio automático e fonte dos valores.
+        const criada = await api.criarCampanha({
+          ...payload,
+          ativa: false,
+          fonte_valores: "seta",
+        });
+        try {
+          await api.subirClientesCampanha(criada.id, planilhaNova);
+          if (payload.ativa || payload.fonte_valores !== "seta") await api.salvarCampanha(criada.id, payload);
+        } catch (err) {
+          navigate(`/campanhas/${criada.id}`, { replace: true });
+          setErro(
+            `Campanha criada, mas a planilha não foi aplicada: ${err instanceof Error ? err.message : "erro ao ler"}`,
+          );
+          return;
+        }
         navigate(`/campanhas/${criada.id}`, { replace: true });
         return;
       }
@@ -134,6 +162,10 @@ export default function CampanhaDetail() {
   async function subirPlanilha(e: ChangeEvent<HTMLInputElement>) {
     const arquivo = e.target.files?.[0];
     e.target.value = "";
+    if (arquivo && nova) {
+      setPlanilhaNova(arquivo);
+      return;
+    }
     if (!arquivo || !id) return;
     setErro(null);
     setSucesso(null);
@@ -175,7 +207,12 @@ export default function CampanhaDetail() {
     setErro(null);
     setCarregandoPrevia(true);
     api
-      .previaCampanha(id, { limit, offset, sort_by: sortBy ?? undefined, sort_dir: sortDir })
+      .previaCampanha(id, {
+        limit,
+        offset,
+        sort_by: sortBy ?? undefined,
+        sort_dir: sortDir,
+      })
       .then(setPrevia)
       .catch((e) => setErro(mensagemErroSeta(e)))
       .finally(() => setCarregandoPrevia(false));
@@ -183,7 +220,9 @@ export default function CampanhaDetail() {
 
   async function executar() {
     if (!id) return;
-    if (!window.confirm("Colocar agora na fila quem entraria na campanha? Os envios saem dentro do horário de disparo."))
+    if (
+      !window.confirm("Colocar agora na fila quem entraria na campanha? Os envios saem dentro do horário de disparo.")
+    )
       return;
     setErro(null);
     setSucesso(null);
@@ -202,7 +241,8 @@ export default function CampanhaDetail() {
 
   async function excluir() {
     if (!id || !campanha) return;
-    if (!window.confirm(`Excluir a campanha "${campanha.nome}"? O histórico de envios continua nos relatórios.`)) return;
+    if (!window.confirm(`Excluir a campanha "${campanha.nome}"? O histórico de envios continua nos relatórios.`))
+      return;
     try {
       await api.excluirCampanha(id);
       navigate("/campanhas");
@@ -228,6 +268,7 @@ export default function CampanhaDetail() {
   }
 
   const temPlanilha = (campanha?.clientes_total ?? 0) > 0;
+  const temPlanilhaOuNova = temPlanilha || Boolean(planilhaNova);
   const colunasPrevia: [ColunaPrevia, string][] = [
     ["nome", "Cliente"],
     ["cluster", "Cluster"],
@@ -253,7 +294,24 @@ export default function CampanhaDetail() {
           )}
         </div>
         {campanha && (
-          <span className={`status-pill ${campanha.ativa ? "on" : "off"}`}>{campanha.ativa ? "Ligada" : "Desligada"}</span>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <AcoesCampanha
+              campanha={campanha}
+              onAlterada={(c, mensagem) => {
+                setErro(null);
+                setSucesso(mensagem);
+                setCampanha(c);
+                setForm((f) => ({ ...f, ativa: c.ativa }));
+              }}
+              onErro={(m) => {
+                setSucesso(null);
+                setErro(m);
+              }}
+            />
+            <span className={`status-pill ${situacaoCampanha(campanha).classe}`}>
+              {situacaoCampanha(campanha).rotulo}
+            </span>
+          </div>
         )}
       </div>
 
@@ -287,21 +345,25 @@ export default function CampanhaDetail() {
                 placeholder="ex. Feirão de outubro"
               />
             </div>
-            <div className="field" style={{ flex: "1 1 200px" }}>
-              <label htmlFor="camp-modo">Frequência</label>
-              <select
-                id="camp-modo"
-                value={form.modo}
-                onChange={(e) => setForm({ ...form, modo: e.target.value as CampanhaIn["modo"] })}
-              >
-                <option value="unica">Só em um dia</option>
-                <option value="recorrente">Recorrente, todo dia de disparo num período</option>
-              </select>
-            </div>
           </div>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={form.ativa}
+              onChange={(e) => setForm({ ...form, ativa: e.target.checked })}
+            />
+            Envio automático
+          </label>
+          <p className="field-hint" style={{ marginTop: 0 }}>
+            {form.ativa
+              ? `Todo dia de disparo dentro do período, antes do horário de início, a campanha coloca na fila quem passa nos ${
+                  temPlanilhaOuNova ? "filtros e está na planilha" : "filtros"
+                }. Para um dia só, use a mesma data no início e no fim.`
+              : 'Desligado: a campanha só entra na fila quando você clicar em "Colocar na fila agora".'}
+          </p>
           <div className="form-row" style={{ flexWrap: "wrap" }}>
             <div className="field" style={{ flex: "1 1 160px" }}>
-              <label htmlFor="camp-inicio">{form.modo === "unica" ? "Dia da campanha" : "Início"}</label>
+              <label htmlFor="camp-inicio">Período: de</label>
               <input
                 id="camp-inicio"
                 type="date"
@@ -309,36 +371,33 @@ export default function CampanhaDetail() {
                 onChange={(e) => setForm({ ...form, data_inicio: e.target.value || null })}
               />
             </div>
-            {form.modo === "recorrente" && (
-              <>
-                <div className="field" style={{ flex: "1 1 160px" }}>
-                  <label htmlFor="camp-fim">Fim (vazio = sem data final)</label>
-                  <input
-                    id="camp-fim"
-                    type="date"
-                    value={form.data_fim ?? ""}
-                    onChange={(e) => setForm({ ...form, data_fim: e.target.value || null })}
-                  />
-                </div>
-                <div className="field" style={{ flex: "1 1 200px" }}>
-                  <label htmlFor="camp-recontato">Repetir para o mesmo cliente a cada (dias)</label>
-                  <input
-                    id="camp-recontato"
-                    type="number"
-                    min={1}
-                    max={365}
-                    value={form.recontato_dias ?? ""}
-                    onChange={(e) => setForm({ ...form, recontato_dias: e.target.value ? Number(e.target.value) : null })}
-                  />
-                  <span className="field-hint">Vazio: cada cliente recebe uma vez na campanha.</span>
-                </div>
-              </>
-            )}
+            <div className="field" style={{ flex: "1 1 160px" }}>
+              <label htmlFor="camp-fim">Até (vazio = sem data final)</label>
+              <input
+                id="camp-fim"
+                type="date"
+                value={form.data_fim ?? ""}
+                onChange={(e) => setForm({ ...form, data_fim: e.target.value || null })}
+              />
+            </div>
+            <div className="field" style={{ flex: "1 1 200px" }}>
+              <label htmlFor="camp-recontato">Repetir para o mesmo cliente a cada (dias)</label>
+              <input
+                id="camp-recontato"
+                type="number"
+                min={1}
+                max={365}
+                value={form.recontato_dias ?? ""}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    recontato_dias: e.target.value ? Number(e.target.value) : null,
+                  })
+                }
+              />
+              <span className="field-hint">Vazio: cada cliente recebe uma vez na campanha.</span>
+            </div>
           </div>
-          <label className="checkbox-row">
-            <input type="checkbox" checked={form.ativa} onChange={(e) => setForm({ ...form, ativa: e.target.checked })} />
-            Campanha ligada (roda sozinha antes do horário de disparo, no dia ou no período)
-          </label>
         </div>
 
         <div className="card">
@@ -346,8 +405,8 @@ export default function CampanhaDetail() {
             <h3>Quem recebe</h3>
           </div>
           <p className="card-subtitle">
-            Só clientes em atraso no SETA. Os filtros são os mesmos da Cobrança. Continuam valendo a blacklist, as pausas
-            e o limite de uma cobrança por cliente por dia.
+            Só clientes em atraso no SETA. Os filtros são os mesmos da Cobrança. Continuam valendo a blacklist, as
+            pausas e o limite de uma cobrança por cliente por dia.
           </p>
           <BarraFiltrosCobranca
             valor={form.filtros}
@@ -358,55 +417,79 @@ export default function CampanhaDetail() {
 
           <div className="sub-card" style={{ marginTop: 16 }}>
             <h4>Planilha de clientes (opcional)</h4>
-            {nova ? (
-              <p className="field-hint">Salve a campanha para subir uma planilha de clientes.</p>
-            ) : (
-              <>
-                <p className="field-hint">
-                  Com planilha, a campanha olha só para os clientes dela (coluna Codigo ou CPF), sempre cruzando com os
-                  filtros acima.
-                </p>
-                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-                  <input ref={planilhaRef} type="file" accept=".xlsx" hidden onChange={subirPlanilha} aria-label="Planilha de clientes" />
-                  <button
-                    type="button"
-                    className="secondary small"
-                    onClick={() => planilhaRef.current?.click()}
-                    disabled={enviandoPlanilha}
-                  >
-                    <IconUpload width={14} height={14} />{" "}
-                    {enviandoPlanilha ? "Lendo..." : temPlanilha ? "Trocar planilha" : "Subir planilha (.xlsx)"}
-                  </button>
-                  {temPlanilha && (
-                    <>
-                      <span className="text-muted">
-                        {campanha!.clientes_arquivo} · {campanha!.clientes_total} cliente(s)
-                      </span>
-                      <button type="button" className="danger small" onClick={removerPlanilha}>
-                        <IconTrash width={14} height={14} /> Tirar planilha
-                      </button>
-                    </>
-                  )}
-                </div>
-                <div className="field" style={{ maxWidth: 420 }}>
-                  <label htmlFor="camp-fonte">Valor, celular e variáveis vêm</label>
-                  <select
-                    id="camp-fonte"
-                    value={form.fonte_valores}
-                    disabled={!temPlanilha}
-                    onChange={(e) => setForm({ ...form, fonte_valores: e.target.value as CampanhaIn["fonte_valores"] })}
-                  >
-                    <option value="seta">Do SETA (atualizados no dia)</option>
-                    <option value="planilha">Da planilha (colunas Valor e Celular)</option>
-                  </select>
-                  {form.fonte_valores === "planilha" && (
-                    <span className="field-hint">
-                      As outras colunas da planilha podem alimentar as variáveis do template, abaixo.
+            <>
+              <p className="field-hint">
+                Com planilha, a campanha olha só para os clientes dela (coluna Codigo ou CPF), sempre cruzando com os
+                filtros acima. Pode subir já na criação, para cobrar só quem está no Excel.
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  marginBottom: 12,
+                }}
+              >
+                <input
+                  ref={planilhaRef}
+                  type="file"
+                  accept=".xlsx"
+                  hidden
+                  onChange={subirPlanilha}
+                  aria-label="Planilha de clientes"
+                />
+                <button
+                  type="button"
+                  className="secondary small"
+                  onClick={() => planilhaRef.current?.click()}
+                  disabled={enviandoPlanilha}
+                >
+                  <IconUpload width={14} height={14} />{" "}
+                  {enviandoPlanilha ? "Lendo..." : temPlanilhaOuNova ? "Trocar planilha" : "Subir planilha (.xlsx)"}
+                </button>
+                {planilhaNova && (
+                  <>
+                    <span className="text-muted">{planilhaNova.name} · será lida ao criar a campanha</span>
+                    <button type="button" className="danger small" onClick={() => setPlanilhaNova(null)}>
+                      <IconTrash width={14} height={14} /> Tirar planilha
+                    </button>
+                  </>
+                )}
+                {temPlanilha && (
+                  <>
+                    <span className="text-muted">
+                      {campanha!.clientes_arquivo} · {campanha!.clientes_total} cliente(s)
                     </span>
-                  )}
-                </div>
-              </>
-            )}
+                    <button type="button" className="danger small" onClick={removerPlanilha}>
+                      <IconTrash width={14} height={14} /> Tirar planilha
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="field" style={{ maxWidth: 420 }}>
+                <label htmlFor="camp-fonte">Valor, celular e variáveis vêm</label>
+                <select
+                  id="camp-fonte"
+                  value={form.fonte_valores}
+                  disabled={!temPlanilhaOuNova}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      fonte_valores: e.target.value as CampanhaIn["fonte_valores"],
+                    })
+                  }
+                >
+                  <option value="seta">Do SETA (atualizados no dia)</option>
+                  <option value="planilha">Da planilha (colunas Valor e Celular)</option>
+                </select>
+                {form.fonte_valores === "planilha" && (
+                  <span className="field-hint">
+                    As outras colunas da planilha podem alimentar as variáveis do template, abaixo.
+                  </span>
+                )}
+              </div>
+            </>
           </div>
         </div>
 
@@ -528,8 +611,8 @@ export default function CampanhaDetail() {
           )}
           {faixa && (
             <p className="field-hint" style={{ marginTop: 12 }}>
-              A fila e os envios desta campanha aparecem em <Link to={`/faixas/${faixa.id}`}>detalhes da fila</Link> e em{" "}
-              <Link to="/relatorios">Relatórios</Link>.
+              A fila e os envios desta campanha aparecem em <Link to={`/faixas/${faixa.id}`}>detalhes da fila</Link> e
+              em <Link to="/relatorios">Relatórios</Link>.
             </p>
           )}
         </div>

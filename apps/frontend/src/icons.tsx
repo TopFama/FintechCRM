@@ -266,3 +266,28 @@ export function IconUserShield(props: IconProps) {
     </svg>
   );
 }
+
+export function IconPause(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <rect x="6.5" y="5" width="3.5" height="14" rx="1" />
+      <rect x="14" y="5" width="3.5" height="14" rx="1" />
+    </svg>
+  );
+}
+
+export function IconPlay(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M7 5.5v13l11-6.5z" />
+    </svg>
+  );
+}
+
+export function IconStop(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <rect x="6" y="6" width="12" height="12" rx="1.5" />
+    </svg>
+  );
+}
