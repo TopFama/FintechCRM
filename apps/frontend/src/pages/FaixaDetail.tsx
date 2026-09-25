@@ -190,11 +190,11 @@ export default function FaixaDetail() {
 
   return (
     <div>
-      {faixa.campanha_id ? (
+      {faixa.tipo === "campanha" && faixa.campanha_id ? (
         <Link to={`/campanhas/${faixa.campanha_id}`} className="back-link">
           ← Campanha
         </Link>
-      ) : faixa.remarketing_segmento ? (
+      ) : faixa.tipo === "remarketing" ? (
         <Link to="/campanhas?aba=remarketing" className="back-link">
           ← Remarketing
         </Link>
@@ -284,12 +284,12 @@ export default function FaixaDetail() {
         )}
       </div>
 
-      {faixa.remarketing_segmento || faixa.campanha_id ? (
+      {faixa.tipo !== "regua" ? (
         <div className="card">
           <div className="card-header">
             <h3>De onde vêm os clientes</h3>
           </div>
-          {faixa.campanha_id ? (
+          {faixa.tipo === "campanha" ? (
             <p className="card-subtitle">
               Esta fila é de uma campanha e não recebe planilha. Os filtros, o dia e o período ficam na{" "}
               <Link to={`/campanhas/${faixa.campanha_id}`}>tela da campanha</Link>.

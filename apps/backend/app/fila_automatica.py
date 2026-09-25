@@ -204,7 +204,7 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
             ),
             selectinload(models.Faixa.variable_mappings),
         )
-        .filter(models.Faixa.active.is_(True))
+        .filter(models.Faixa.active.is_(True), models.Faixa.tipo == models.TIPO_REGUA)
     }
 
     bloqueados = clientes_bloqueados_hoje(db)

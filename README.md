@@ -278,7 +278,10 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    o filtro **Campanha** (todas, só a régua ou uma campanha, inclusive excluídas). O item da fila de
    campanha/remarketing guarda a faixa de atraso do cliente (`QueueItem.faixa_atraso`): o "Por faixa"
    do Dashboard e os relatórios filtrados por uma faixa de atraso contam esses envios nela. Nas abas
-   Pendentes e Erros (e nas exportações), "Faixa de atraso (régua)" e "Campanha" são colunas separadas.
+   Pendentes e Erros (e nas exportações), "Faixa de atraso (régua)" e "Campanha" são colunas separadas. A tabela `faixas` tem o campo
+   **`tipo`** (`regua`, `campanha` ou `remarketing`, migration d4f8b2c6e0a3): é ele que decide o
+   que aparece em Faixas, o que recebe planilha, o que conta como faixa de atraso e como a faixa é
+   agrupada no filtro dos Relatórios.
 
 ## Testes / validação de mudanças
 

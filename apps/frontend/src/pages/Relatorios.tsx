@@ -11,6 +11,8 @@ import {
   PagamentoCliente,
   PagamentosPage,
   PausaEnvio,
+  ROTULO_TIPO_FAIXA,
+  TipoFaixa,
 } from "../api";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import { AcaoPendentes, PainelAcao, PainelPausaLote, PausasAtivas } from "../components/PausasPendentes";
@@ -317,11 +319,18 @@ export default function Relatorios() {
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <select aria-label="Faixa" value={faixaId} onChange={(e) => setFaixaId(e.target.value)} style={{ minWidth: 180 }}>
               <option value="">Todas as faixas</option>
-              {faixas.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
+              {(["regua", "campanha", "remarketing"] as TipoFaixa[]).map((tipo) => {
+                const doTipo = faixas.filter((f) => f.tipo === tipo);
+                return doTipo.length ? (
+                  <optgroup key={tipo} label={ROTULO_TIPO_FAIXA[tipo]}>
+                    {doTipo.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {tipo === "campanha" ? f.name.replace(/^Campanha: /, "") : f.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null;
+              })}
             </select>
             {tab === "pendentes" && (
               <select

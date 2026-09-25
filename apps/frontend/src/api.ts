@@ -629,12 +629,22 @@ export interface Faixa {
   envios: FaixaEnvio[];
   variable_mappings: FaixaVariableMapping[];
   upload_field_mapping: Partial<UploadFieldMapping>;
+  /** "regua" = faixa de atraso; "campanha" e "remarketing" ficam na tela Campanhas. */
+  tipo: TipoFaixa;
   // Faixas de remarketing do Renegocie: recebem clientes pelo agendador, nunca por planilha.
   remarketing_segmento: string | null;
   // Faixa de uma campanha (tela Campanhas): não é faixa de atraso.
   campanha_id: string | null;
   descricao: string | null;
 }
+
+export type TipoFaixa = "regua" | "campanha" | "remarketing";
+
+export const ROTULO_TIPO_FAIXA: Record<TipoFaixa, string> = {
+  regua: "Régua de atraso",
+  campanha: "Campanhas",
+  remarketing: "Remarketing do Renegocie",
+};
 
 export interface QueueItem {
   id: string;

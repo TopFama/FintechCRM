@@ -80,6 +80,12 @@ test.describe.serial("Campanhas", () => {
     await atribuirTemplate(page, "lembrete_vencimento", "Primeiro nome");
     await expect(card(page, "Template e número da campanha").locator("tbody")).toContainText("lembrete_vencimento");
 
+    // o tipo separa campanha de régua de atraso
+    expect((await apiGet(page, `/faixas/${campanha.faixa_id}`)).tipo).toBe("campanha");
+    const faixas = await apiGet(page, "/faixas");
+    expect(faixas.filter((f: any) => f.name.startsWith("Remarketing: ")).every((f: any) => f.tipo === "remarketing")).toBe(true);
+    expect(faixas.filter((f: any) => !f.campanha_id && !f.remarketing_segmento).every((f: any) => f.tipo === "regua")).toBe(true);
+
     await page.goto("/configuracoes?aba=faixas");
     await expect(page.locator(".faixa-row", { hasText: "Feirão" })).toHaveCount(0);
     await page.goto("/campanhas");

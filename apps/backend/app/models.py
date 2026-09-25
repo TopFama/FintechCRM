@@ -142,12 +142,23 @@ class TemplateVariable(Base):
     template: Mapped[Template] = relationship(back_populates="variables")
 
 
+TIPO_REGUA = "regua"
+TIPO_CAMPANHA = "campanha"
+TIPO_REMARKETING = "remarketing"
+TIPOS_FAIXA = (TIPO_REGUA, TIPO_CAMPANHA, TIPO_REMARKETING)
+
+
 class Faixa(Base):
     __tablename__ = "faixas"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String, unique=True, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # O que a faixa é: "regua" (faixa de atraso, régua de cobrança),
+    # "campanha" (faixa própria de uma campanha) ou "remarketing" (segmento do
+    # Renegocie). Só a régua aparece em Faixas, recebe planilha e conta como
+    # faixa de atraso; campanha e remarketing ficam na tela Campanhas.
+    tipo: Mapped[str] = mapped_column(String, default="regua", server_default="regua", index=True)
     # Último mapeamento coluna-da-planilha -> campo usado num upload, guardado só
     # para pré-preencher os selects na próxima vez (a planilha real pode ter
     # cabeçalhos diferentes a cada upload, então o mapeamento é reconferido

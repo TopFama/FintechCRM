@@ -105,6 +105,6 @@ test.describe.serial("Pendentes: pausar, retomar e parar", () => {
     await expect(page.locator(".success-box")).toContainText(`Envio parado para o cliente ${codigo}`);
     await expect(page.locator(".success-box")).toContainText("1 pendente(s) cancelado(s)");
     await expect(tabela(page).locator("tbody tr", { hasText: codigo })).toHaveCount(0);
-    expect(await total()).toBe(antes - 1);
+    await expect.poll(total).toBe(antes - 1); // o total da paginação recarrega depois da linha
   });
 });

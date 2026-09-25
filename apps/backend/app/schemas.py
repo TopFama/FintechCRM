@@ -345,6 +345,7 @@ class FaixaOut(BaseModel):
     envios: list[FaixaEnvioOut] = []
     variable_mappings: list[FaixaVariableMappingOut] = []
     upload_field_mapping: dict = {}
+    tipo: str = "regua"  # "regua" | "campanha" | "remarketing"
     remarketing_segmento: str | None = None
     campanha_id: str | None = None
     descricao: str | None = None

@@ -268,7 +268,7 @@ def enfileirar_na_regua(db: Session) -> dict:
     }
     com_envio = {
         f.name
-        for f in db.query(models.Faixa).filter(models.Faixa.active.is_(True))
+        for f in db.query(models.Faixa).filter(models.Faixa.active.is_(True), models.Faixa.tipo == models.TIPO_REGUA)
         if any(e.active and e.template_id for e in f.envios)
     }
     faixa_hoje = {c["codigo"]: c["faixa"] for c in base}

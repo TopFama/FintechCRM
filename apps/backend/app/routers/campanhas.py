@@ -197,7 +197,7 @@ def opcoes(db: Session = Depends(get_db), _user: models.User = Depends(get_curre
 @router.post("", status_code=status.HTTP_201_CREATED)
 def criar(payload: CampanhaIn, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     nome = _validar(db, payload, None)
-    faixa = models.Faixa(name=camp.nome_faixa(nome), active=True)
+    faixa = models.Faixa(name=camp.nome_faixa(nome), active=True, tipo=models.TIPO_CAMPANHA)
     db.add(faixa)
     db.flush()
     c = models.Campanha(faixa_id=faixa.id, created_by=user.id, clientes=[], planilha_colunas=[], planilha_linhas={}, ultimo_resultado={})

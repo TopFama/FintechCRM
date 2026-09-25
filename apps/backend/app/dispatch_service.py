@@ -65,7 +65,7 @@ def _marcar_lead_cobrado(db: Session, item: models.QueueItem) -> None:
     faixa = db.get(models.Faixa, item.faixa_id)
     if faixa is None:
         return
-    if faixa.campanha_id:
+    if faixa.tipo == models.TIPO_CAMPANHA:
         filtro = [models.Lead.campanha_id == faixa.campanha_id]
     else:
         filtro = [models.Lead.faixa == faixa.name, models.Lead.campanha_id == ""]

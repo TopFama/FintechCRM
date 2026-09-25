@@ -10,7 +10,7 @@ from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy import case, func, or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, contains_eager, selectinload
 
 from .. import models, schemas
 from ..database import get_db
@@ -33,7 +33,7 @@ def filtro_faixa(db: Session, faixa_id: str):
     campanha/remarketing a clientes que estavam nela, como no "Por faixa"
     do Dashboard."""
     faixa = db.get(models.Faixa, faixa_id)
-    if faixa is None or faixa.campanha_id or faixa.remarketing_segmento:
+    if faixa is None or faixa.tipo != models.TIPO_REGUA:
         return models.QueueItem.faixa_id == faixa_id
     return or_(models.QueueItem.faixa_id == faixa_id, models.QueueItem.faixa_atraso == faixa.name)
 
@@ -484,21 +484,13 @@ FilaSortColumn = Literal[
     "codigo_cliente", "nome", "faixa", "campanha", "valor", "telefone", "entrou_em", "quando", "mensagem"
 ]
 
-# Faixas próprias de campanha e de remarketing (não são faixa de atraso).
-_PREFIXOS_CAMPANHA = ("Campanha: ", "Remarketing: ")
-
-
-def _eh_campanha(nome_faixa: str) -> bool:
-    return nome_faixa.startswith(_PREFIXOS_CAMPANHA)
-
-
 def _separar_faixa(item: models.QueueItem, nome_faixa: str) -> tuple[str | None, str | None]:
-    """(faixa de atraso, campanha) do item: régua tem só a faixa; campanha e
-    remarketing têm o nome da campanha e a faixa de atraso do cliente."""
-    if not _eh_campanha(nome_faixa):
+    """(faixa de atraso, campanha) do item, pelo tipo da faixa: régua tem só a
+    faixa; campanha e remarketing têm o nome da campanha e a faixa de atraso
+    do cliente."""
+    if item.faixa.tipo == models.TIPO_REGUA:
         return nome_faixa, None
-    campanha = nome_faixa.removeprefix("Campanha: ")
-    return item.faixa_atraso, campanha
+    return item.faixa_atraso, nome_faixa.removeprefix("Campanha: ")
 
 _STATUS_PENDENTE = (models.QueueStatus.pending, models.QueueStatus.reserved)
 
@@ -527,6 +519,7 @@ def _fila_report_query(
     query = (
         db.query(models.QueueItem, models.Faixa.name, quando)
         .join(models.Faixa, models.Faixa.id == models.QueueItem.faixa_id)
+        .options(contains_eager(models.QueueItem.faixa))  # tipo da faixa sem consulta por item
         .outerjoin(ultimo, ultimo.c.queue_item_id == models.QueueItem.id)
         .filter(models.QueueItem.status.in_(status_fila))
     )
@@ -539,7 +532,7 @@ def _fila_report_query(
     def _ordenado(coluna):
         return coluna.desc() if sort_dir == "desc" else coluna.asc()
 
-    eh_campanha = or_(*(models.Faixa.name.startswith(p) for p in _PREFIXOS_CAMPANHA))
+    eh_campanha = models.Faixa.tipo != models.TIPO_REGUA
     if sort_by == "faixa":
         nomes_faixa = carregar_regras(db).nomes_faixa
         faixa_atraso = case((eh_campanha, models.QueueItem.faixa_atraso), else_=models.Faixa.name)

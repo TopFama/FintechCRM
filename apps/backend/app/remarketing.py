@@ -64,7 +64,7 @@ def garantir_segmentos(db: Session) -> list[models.RemarketingSegmento]:
         nome = nome_faixa(segmento)
         faixa = db.query(models.Faixa).filter(models.Faixa.name == nome).first()
         if faixa is None:
-            faixa = models.Faixa(name=nome, active=True)
+            faixa = models.Faixa(name=nome, active=True, tipo=models.TIPO_REMARKETING)
             db.add(faixa)
             db.flush()
         regra = models.RemarketingSegmento(

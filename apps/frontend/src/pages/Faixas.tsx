@@ -15,7 +15,7 @@ export default function Faixas() {
     return api
       .listFaixas()
       // Campanhas e remarketing têm tela própria (Campanhas): aqui só as faixas de atraso.
-      .then((fs) => setFaixas(fs.filter((f) => !f.campanha_id && !f.remarketing_segmento)))
+      .then((fs) => setFaixas(fs.filter((f) => f.tipo === "regua")))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }
@@ -131,7 +131,7 @@ export default function Faixas() {
                     <IconArrowRight className="text-faint" />
                   </div>
                 </Link>
-                {!f.remarketing_segmento && (
+                {f.tipo === "regua" && (
                   <button
                     type="button"
                     className="danger small"
