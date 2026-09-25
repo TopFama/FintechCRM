@@ -243,7 +243,12 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    (enviado/erro), com log de erro consultável no dashboard.
 8. **Dashboard** — pendentes (e quantos estão pausados), enviados, erros, telefones inválidos,
    "Pagaram em até 7 dias" (via SETA), por faixa, e os erros mais recentes. Cada card abre o
-   relatório dele com o mesmo período (`/relatorios?aba=…&de=…&ate=…`).
+   relatório dele com o mesmo período (`/relatorios?aba=…&de=…&ate=…`). A tela se atualiza
+   sozinha sem F5: resumo da fila a cada 30 s, leads a cada 60 s e orçamento a cada 15 min,
+   parando enquanto a aba está oculta. O "Pagaram em até 7 dias" (SETA) e a efetividade não se
+   atualizam sozinhos, só ao abrir, trocar o filtro ou em "Atualizar agora". Os pedidos
+   automáticos (`auto=true`) leem do cache compartilhado no Redis (15 s o resumo, 10 min o
+   orçamento).
 9. **Relatórios** — telefones inválidos, envios realizados, pendentes, erros e quem pagou, com
    filtro por período e faixa (na URL) e exportação em Excel (.xlsx) já formatado.
 10. **Pausas** — na aba Pendentes, qualquer usuário pode pausar (motivo obrigatório, data final

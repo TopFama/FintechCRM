@@ -39,7 +39,8 @@ export default function FiltroPeriodo({
   opcoes: OpcaoPeriodo[];
   inicial: OpcaoPeriodo | null;
   permiteLimpar?: boolean;
-  onChange: (p: Periodo) => void;
+  // `opcao` deixa quem usa recalcular "Hoje"/"7 dias"/"Este mês" quando a data vira
+  onChange: (p: Periodo, opcao: OpcaoPeriodo | null) => void;
 }) {
   const [ativo, setAtivo] = useState<OpcaoPeriodo | null>(inicial);
   // Pode haver mais de um filtro de período na mesma tela (ex.: Dashboard)
@@ -50,13 +51,13 @@ export default function FiltroPeriodo({
   function escolher(o: OpcaoPeriodo) {
     const proximo = permiteLimpar && ativo === o ? null : o;
     setAtivo(proximo);
-    onChange(proximo ? periodoDe(proximo, de, ate) : {});
+    onChange(proximo ? periodoDe(proximo, de, ate) : {}, proximo);
   }
 
   function mudarData(novoDe: string, novoAte: string) {
     setDe(novoDe);
     setAte(novoAte);
-    onChange(periodoDe("personalizado", novoDe, novoAte));
+    onChange(periodoDe("personalizado", novoDe, novoAte), "personalizado");
   }
 
   return (

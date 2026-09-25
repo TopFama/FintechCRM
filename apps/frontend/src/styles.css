@@ -218,6 +218,16 @@ a {
   margin-top: 2px;
 }
 
+/* Dashboard: hora da última atualização automática + "Atualizar agora" */
+.atualizacao-auto {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  font-size: 13px;
+}
+
 .back-link {
   display: inline-flex;
   align-items: center;

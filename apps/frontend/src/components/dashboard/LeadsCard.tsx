@@ -4,9 +4,10 @@ import { api } from "../../api";
 import { IconAlert } from "../../icons";
 import FiltroPeriodo, { Periodo } from "../FiltroPeriodo";
 import MultiSelect from "../MultiSelect";
+import { useAtualizacaoAutomatica } from "../useAtualizacaoAutomatica";
 import { OpcoesCobranca } from "../useOpcoesCobranca";
 
-export default function LeadsCard({ opcoes }: { opcoes: OpcoesCobranca }) {
+export default function LeadsCard({ opcoes, recarregar }: { opcoes: OpcoesCobranca; recarregar: number }) {
   const [novos, setNovos] = useState<number | null>(null);
   const [enviados, setEnviados] = useState<number | null>(null);
   const [faixas, setFaixas] = useState<string[]>([]);
@@ -16,14 +17,25 @@ export default function LeadsCard({ opcoes }: { opcoes: OpcoesCobranca }) {
   // Novos contam pela data em que viraram lead; enviados, pela data do envio.
   const filtroNovos = { criado_de: periodo.de, criado_ate: periodo.ate };
   const filtroEnviados = { enviado_de: periodo.de, enviado_ate: periodo.ate };
+  const ciclo = useAtualizacaoAutomatica(60_000);
 
   useEffect(() => {
     if (Boolean(periodo.de) !== Boolean(periodo.ate)) return;
+    let atual = true;
     // Novos = tudo que foi pra fila no período (todo lead gerado entra na fila), enviado ou não.
-    api.contarLeads(undefined, filtroNovos).then(setNovos).catch((e) => setErro(e.message));
-    api.contarLeads("cobrado", filtroEnviados).then(setEnviados).catch((e) => setErro(e.message));
+    Promise.all([api.contarLeads(undefined, filtroNovos), api.contarLeads("cobrado", filtroEnviados)])
+      .then(([n, e]) => {
+        if (!atual) return;
+        setNovos(n);
+        setEnviados(e);
+        setErro(null);
+      })
+      .catch((e) => atual && setErro(e.message));
+    return () => {
+      atual = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periodo]);
+  }, [periodo, recarregar, ciclo]);
 
   async function exportar() {
     setExportando(true);

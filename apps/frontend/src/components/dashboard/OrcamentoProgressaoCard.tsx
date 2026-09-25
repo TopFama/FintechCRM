@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../useAtualizacaoAutomatica";
 import { api, OrcamentoProgressao } from "../../api";
 import { formatBRL, formatData } from "../../format";
 import { IconAlert } from "../../icons";
@@ -24,7 +25,7 @@ function mesesRecentes(): { valor: string; rotulo: string }[] {
 // Gasto real com WhatsApp (Meta, em BRL) acumulado dia a dia vs. orçamento
 // cadastrado em Configurações > Indicadores. Filtro próprio: um mês ou um
 // período personalizado.
-export default function OrcamentoProgressaoCard() {
+export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: number }) {
   const meses = mesesRecentes();
   const [selecao, setSelecao] = useState(meses[0].valor);
   const [de, setDe] = useState("");
@@ -33,11 +34,17 @@ export default function OrcamentoProgressaoCard() {
   const [erro, setErro] = useState<string | null>(null);
   // a lista por número vem inteira (sem paginação), então ordenar no navegador cobre o resultado todo
   const ordenacao = useSort<ColunaNumero>(null);
+  // Gasto vem da API da Meta: atualiza devagar, e o backend guarda em cache
+  const ciclo = useAtualizacaoAutomatica(15 * 60_000);
+  const tipoDeBusca = useEhAtualizacaoAutomatica({ selecao, de, ate }, recarregar);
 
   useEffect(() => {
+    const { auto, trocouFiltro } = tipoDeBusca();
     // Limpa antes de tudo: Personalizado sem datas não pode mostrar o mês anterior
-    setErro(null);
-    setDados(null);
+    if (trocouFiltro) {
+      setErro(null);
+      setDados(null);
+    }
     let filtro: { ano?: number; mes?: number; de?: string; ate?: string };
     if (selecao === "personalizado") {
       if (!de || !ate) return;
@@ -48,13 +55,18 @@ export default function OrcamentoProgressaoCard() {
     }
     let atual = true;
     api
-      .getOrcamentoProgressao(filtro)
-      .then((d) => atual && setDados(d))
+      .getOrcamentoProgressao(filtro, auto)
+      .then((d) => {
+        if (!atual) return;
+        setDados(d);
+        setErro(null);
+      })
       .catch((e) => atual && setErro(e.message));
     return () => {
       atual = false;
     };
-  }, [selecao, de, ate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selecao, de, ate, recarregar, ciclo]);
 
   const filtros = (
     <div className="form-row">

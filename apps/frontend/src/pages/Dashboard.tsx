@@ -5,37 +5,61 @@ import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
 import OrcamentoProgressaoCard from "../components/dashboard/OrcamentoProgressaoCard";
-import FiltroPeriodo, { Periodo, periodoDe } from "../components/FiltroPeriodo";
+import FiltroPeriodo, { OpcaoPeriodo, Periodo, periodoDe } from "../components/FiltroPeriodo";
 import SortableTh from "../components/SortableTh";
-import { formatBRL, formatDataHora } from "../format";
+import { formatBRL, formatDataHora, formatHora } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
-import { IconAlert, IconBolt, IconCheckCircle, IconClock, IconInbox, IconPhone } from "../icons";
+import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../components/useAtualizacaoAutomatica";
+import { IconAlert, IconBolt, IconCheckCircle, IconClock, IconInbox, IconPhone, IconRefresh } from "../icons";
 import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const opcoes = useOpcoesCobranca();
+  const [opcaoPeriodo, setOpcaoPeriodo] = useState<OpcaoPeriodo | null>("hoje");
   const [periodo, setPeriodo] = useState<Periodo>(() => periodoDe("hoje"));
+  // "Atualizar agora": recarrega todos os cards, inclusive os que não se atualizam sozinhos
+  const [recarregar, setRecarregar] = useState(0);
+  const [atualizadoEm, setAtualizadoEm] = useState<Date | null>(null);
+  const ciclo = useAtualizacaoAutomatica(30_000);
+  const tipoDeBusca = useEhAtualizacaoAutomatica(periodo, recarregar);
 
   // Aqui não há "sem filtro": período sem as duas datas é Personalizado incompleto
   const periodoIncompleto = !periodo.de || !periodo.ate;
 
+  // Tela aberta de um dia para o outro: "Hoje", "7 dias" e "Este mês" andam junto com a data
   useEffect(() => {
-    setError(null);
-    // Não deixa na tela os números de outro período enquanto as datas não vêm
-    setSummary(null);
+    if (!opcaoPeriodo || opcaoPeriodo === "personalizado") return;
+    const novo = periodoDe(opcaoPeriodo);
+    if (novo.de !== periodo.de || novo.ate !== periodo.ate) setPeriodo(novo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ciclo]);
+
+  useEffect(() => {
+    const { auto, trocouFiltro } = tipoDeBusca();
+    if (trocouFiltro) {
+      setError(null);
+      // Não deixa na tela os números de outro período enquanto as datas não vêm
+      setSummary(null);
+      setAtualizadoEm(null);
+    }
     if (periodoIncompleto) return;
     let atual = true;
     api
-      .dashboardSummary(periodo)
-      .then((s) => atual && setSummary(s))
+      .dashboardSummary(periodo, auto)
+      .then((s) => {
+        if (!atual) return;
+        setSummary(s);
+        setError(null);
+        setAtualizadoEm(new Date());
+      })
       .catch((e) => atual && setError(e.message));
     return () => {
       atual = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periodo]);
+  }, [periodo, recarregar, ciclo]);
 
   return (
     <div>
@@ -43,6 +67,14 @@ export default function Dashboard() {
         <div>
           <h2>Dashboard</h2>
           <div className="subtitle">Fila de envio, base de cobrança, efetividade e leads</div>
+        </div>
+        <div className="atualizacao-auto">
+          <span className="text-muted">
+            {atualizadoEm ? `Atualiza sozinho · atualizado às ${formatHora(atualizadoEm)}` : "Atualiza sozinho"}
+          </span>
+          <button type="button" className="secondary small" onClick={() => setRecarregar((n) => n + 1)}>
+            <IconRefresh width={14} height={14} /> Atualizar agora
+          </button>
         </div>
       </div>
 
@@ -52,15 +84,24 @@ export default function Dashboard() {
           <span>{error}</span>
         </div>
       )}
-      <FiltroPeriodo opcoes={["hoje", "7dias", "mes", "personalizado"]} inicial="hoje" onChange={setPeriodo} />
+      <FiltroPeriodo
+        opcoes={["hoje", "7dias", "mes", "personalizado"]}
+        inicial="hoje"
+        onChange={(p, opcao) => {
+          setPeriodo(p);
+          setOpcaoPeriodo(opcao);
+        }}
+      />
       {periodoIncompleto && <div className="empty-state"><p>Escolha a data mínima e a máxima.</p></div>}
       {!periodoIncompleto && !summary && !error && <div className="loading-state">Carregando resumo da fila...</div>}
-      {summary && <ResumoFila summary={summary} periodo={periodo} nomesFaixa={opcoes.regras?.faixas} />}
+      {summary && (
+        <ResumoFila summary={summary} periodo={periodo} nomesFaixa={opcoes.regras?.faixas} recarregar={recarregar} />
+      )}
 
       <MatrizCobrancaCard opcoes={opcoes} />
       <EfetividadeCard opcoes={opcoes} />
-      <LeadsCard opcoes={opcoes} />
-      <OrcamentoProgressaoCard />
+      <LeadsCard opcoes={opcoes} recarregar={recarregar} />
+      <OrcamentoProgressaoCard recarregar={recarregar} />
     </div>
   );
 }
@@ -103,23 +144,31 @@ function StatLink({
   );
 }
 
-// Carregado à parte do resumo: depende do SETA e não pode segurar os outros cards
-function CardPagos7Dias({ periodo }: { periodo: Periodo }) {
+// Carregado à parte do resumo: depende do SETA e não pode segurar os outros cards.
+// Não se atualiza sozinho (poupa o SETA): só ao abrir, trocar o período ou em "Atualizar agora".
+function CardPagos7Dias({ periodo, recarregar }: { periodo: Periodo; recarregar: number }) {
   const [dados, setDados] = useState<PagosJanela | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const tipoDeBusca = useEhAtualizacaoAutomatica(periodo, 0);
 
   useEffect(() => {
-    setDados(null);
+    // "Atualizar agora" mantém o número atual até o novo chegar
+    if (tipoDeBusca().trocouFiltro) setDados(null);
     setErro(null);
     let atual = true;
     api
       .pagos7Dias(periodo)
       .then((d) => atual && setDados(d))
-      .catch((e) => atual && setErro(e instanceof ApiError && e.status === 503 ? "SETA indisponível" : e.message));
+      .catch((e) => {
+        if (!atual) return;
+        setDados(null);
+        setErro(e instanceof ApiError && e.status === 503 ? "SETA indisponível" : e.message);
+      });
     return () => {
       atual = false;
     };
-  }, [periodo.de, periodo.ate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodo.de, periodo.ate, recarregar]);
 
   const rotulo = "Pagaram em até 7 dias";
   if (!dados) {
@@ -162,10 +211,12 @@ function ResumoFila({
   summary,
   periodo,
   nomesFaixa,
+  recarregar,
 }: {
   summary: DashboardSummary;
   periodo: Periodo;
   nomesFaixa: string[] | undefined;
+  recarregar: number;
 }) {
   const navigate = useNavigate();
   const ordemFaixa = ordemFaixaFn(nomesFaixa);
@@ -230,7 +281,7 @@ function ResumoFila({
           tom="tone-warning"
           icone={<IconPhone />}
         />
-        <CardPagos7Dias periodo={periodo} />
+        <CardPagos7Dias periodo={periodo} recarregar={recarregar} />
       </div>
 
       <div className="card">

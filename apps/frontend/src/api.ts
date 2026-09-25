@@ -267,8 +267,9 @@ export const api = {
 
   pagos7Dias: (periodo: { de?: string; ate?: string }) =>
     request<PagosJanela>(`/dashboard/pagos-7-dias?${montarQuery(periodo)}`),
-  dashboardSummary: (periodo: { de?: string; ate?: string } = {}) =>
-    request<DashboardSummary>(`/dashboard/summary?${montarQuery(periodo)}`),
+  // auto=true: atualização automática da tela, o backend pode responder do cache compartilhado
+  dashboardSummary: (periodo: { de?: string; ate?: string } = {}, auto = false) =>
+    request<DashboardSummary>(`/dashboard/summary?${montarQuery({ ...periodo, auto: auto || undefined })}`),
 
   listInvalidPhones: (
     params: { faixa_id?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
@@ -462,8 +463,8 @@ export const api = {
   getOrcamento: (ano: number) => request<OrcamentoMes[]>(`/config/cobranca/orcamento?ano=${ano}`),
   salvarOrcamento: (ano: number, meses: { mes: number; valor_orcado: string }[]) =>
     request<OrcamentoMes[]>(`/config/cobranca/orcamento?ano=${ano}`, { method: "PUT", body: JSON.stringify(meses) }),
-  getOrcamentoProgressao: (filtro: { ano?: number; mes?: number; de?: string; ate?: string }) =>
-    request<OrcamentoProgressao>(`/dashboard/orcamento-progressao?${montarQuery(filtro)}`),
+  getOrcamentoProgressao: (filtro: { ano?: number; mes?: number; de?: string; ate?: string }, auto = false) =>
+    request<OrcamentoProgressao>(`/dashboard/orcamento-progressao?${montarQuery({ ...filtro, auto: auto || undefined })}`),
 };
 
 async function downloadFile(path: string, nomePadrao: string): Promise<void> {

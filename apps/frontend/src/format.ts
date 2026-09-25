@@ -25,6 +25,12 @@ const dataHoraBR = new Intl.DateTimeFormat("pt-BR", {
   minute: "2-digit",
 });
 
+const horaBR = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+
+export function formatHora(d: Date): string {
+  return horaBR.format(d);
+}
+
 // O backend grava e serializa timestamps em UTC sem sufixo de fuso (ex:
 // "2024-01-15T14:30:00") — sem isso, o navegador interpretaria a string como
 // hora local dele, não UTC, e o horário exibido saía errado.
