@@ -224,7 +224,11 @@ export default function EnviosFaixa({
         )}
 
         {faixa.envios.length === 0 && !mostrarFormEnvio && (
-          <p className="text-muted">Nenhum número/template atribuído ainda — adicione um acima para poder subir a planilha e ligar o disparo.</p>
+          <p className="text-muted">
+            {embutido
+              ? 'Nenhum template vinculado ainda. Clique em "Adicionar número e template".'
+              : "Nenhum número/template atribuído ainda — adicione um acima para poder subir a planilha e ligar o disparo."}
+          </p>
         )}
 
         {faixa.envios.length > 0 && (

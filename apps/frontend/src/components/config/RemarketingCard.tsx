@@ -235,7 +235,7 @@ function SegmentoForm({
       {segmento.envios_ativos === 0 && (
         <div className="error-box">
           <IconAlert width={16} height={16} />
-          <span>Ainda sem número e template: atribua no fim deste bloco, senão ninguém recebe.</span>
+          <span>Ainda sem número e template: vincule logo abaixo, senão ninguém recebe.</span>
         </div>
       )}
       {erro && (
@@ -244,8 +244,23 @@ function SegmentoForm({
           <span>{erro}</span>
         </div>
       )}
+      {faixa && (
+        <EnviosFaixa
+          faixa={faixa}
+          onAlterado={() => {
+            carregarFaixa();
+            onEnviosAlterados();
+          }}
+          rotuloAlvo="deste segmento"
+          titulo="Templates deste segmento"
+          descricao="Vincule aqui o template (e o número que envia) usado só neste segmento do remarketing. Pode ter mais de um."
+          embutido
+        />
+      )}
+
       {salvo && !alterado && <div className="success-box">Configuração salva.</div>}
 
+      <h4 style={{ marginTop: 16 }}>Quem entra neste segmento</h4>
       <form onSubmit={salvar}>
         <fieldset disabled={!podeEditar} style={{ border: 0, padding: 0, margin: 0 }}>
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -359,20 +374,6 @@ function SegmentoForm({
           {alterado && <span className="field-hint">Salve para ver a prévia com os filtros novos.</span>}
         </div>
       </form>
-
-      {faixa && (
-        <EnviosFaixa
-          faixa={faixa}
-          onAlterado={() => {
-            carregarFaixa();
-            onEnviosAlterados();
-          }}
-          rotuloAlvo="deste segmento"
-          titulo="Template e número do segmento"
-          descricao="O template usado neste segmento e o número que envia."
-          embutido
-        />
-      )}
 
       {previa && (
         <div style={{ marginTop: 16 }}>
