@@ -697,7 +697,10 @@ export interface FilaReportItem {
   codigo_cliente: string;
   nome: string;
   faixa_id: string;
-  faixa: string;
+  /** Faixa de atraso (régua); num item de campanha, a do cliente. */
+  faixa: string | null;
+  /** Campanha ou segmento de remarketing; null na régua. */
+  campanha: string | null;
   valor: string | null;
   telefone: string;
   entrou_em: string;

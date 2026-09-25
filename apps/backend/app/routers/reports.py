@@ -480,7 +480,25 @@ def export_dispatch_report(
 # data em que entraram na fila (created_at), pra contagem bater com o card.
 
 
-FilaSortColumn = Literal["codigo_cliente", "nome", "faixa", "valor", "telefone", "entrou_em", "quando", "mensagem"]
+FilaSortColumn = Literal[
+    "codigo_cliente", "nome", "faixa", "campanha", "valor", "telefone", "entrou_em", "quando", "mensagem"
+]
+
+# Faixas próprias de campanha e de remarketing (não são faixa de atraso).
+_PREFIXOS_CAMPANHA = ("Campanha: ", "Remarketing: ")
+
+
+def _eh_campanha(nome_faixa: str) -> bool:
+    return nome_faixa.startswith(_PREFIXOS_CAMPANHA)
+
+
+def _separar_faixa(item: models.QueueItem, nome_faixa: str) -> tuple[str | None, str | None]:
+    """(faixa de atraso, campanha) do item: régua tem só a faixa; campanha e
+    remarketing têm o nome da campanha e a faixa de atraso do cliente."""
+    if not _eh_campanha(nome_faixa):
+        return nome_faixa, None
+    campanha = nome_faixa.removeprefix("Campanha: ")
+    return item.faixa_atraso, campanha
 
 _STATUS_PENDENTE = (models.QueueStatus.pending, models.QueueStatus.reserved)
 
@@ -521,13 +539,19 @@ def _fila_report_query(
     def _ordenado(coluna):
         return coluna.desc() if sort_dir == "desc" else coluna.asc()
 
+    eh_campanha = or_(*(models.Faixa.name.startswith(p) for p in _PREFIXOS_CAMPANHA))
     if sort_by == "faixa":
         nomes_faixa = carregar_regras(db).nomes_faixa
+        faixa_atraso = case((eh_campanha, models.QueueItem.faixa_atraso), else_=models.Faixa.name)
         expr = (
-            case({nome: i for i, nome in enumerate(nomes_faixa)}, value=models.Faixa.name, else_=len(nomes_faixa))
+            case({nome: i for i, nome in enumerate(nomes_faixa)}, value=faixa_atraso, else_=len(nomes_faixa))
             if nomes_faixa
-            else models.Faixa.name
+            else faixa_atraso
         )
+        return query.order_by(_ordenado(expr), models.QueueItem.id)
+    if sort_by == "campanha":
+        # régua (sem campanha) fica junto, antes das campanhas no crescente
+        expr = case((eh_campanha, models.Faixa.name), else_="")
         return query.order_by(_ordenado(expr), models.QueueItem.id)
     colunas = {
         "codigo_cliente": models.QueueItem.codigo_cliente,
@@ -554,7 +578,8 @@ def _to_fila_item(
         codigo_cliente=item.codigo_cliente,
         nome=item.nome,
         faixa_id=item.faixa_id,
-        faixa=nome_faixa,
+        faixa=_separar_faixa(item, nome_faixa)[0],
+        campanha=_separar_faixa(item, nome_faixa)[1],
         valor=item.valor,
         telefone=item.celular,
         entrou_em=item.created_at,
@@ -602,9 +627,13 @@ def export_pendentes(
 ):
     linhas = _fila_report_query(db, _STATUS_PENDENTE, faixa_id, de, ate, loja=loja).all()
     retencao = pausas.Retencao.carregar(db)
-    headers = ["Código do cliente", "Nome", "Faixa de atraso", "Valor", "Telefone", "Lojas", "Entrou na fila em", "Pausado"]
+    headers = [
+        "Código do cliente", "Nome", "Faixa de atraso", "Campanha", "Valor", "Telefone", "Lojas", "Entrou na fila em",
+        "Pausado",
+    ]
     rows = [
-        [item.codigo_cliente, _formula_safe(item.nome), faixa, _formula_safe(item.valor or ""),
+        [item.codigo_cliente, _formula_safe(item.nome), _separar_faixa(item, faixa)[0] or "",
+         _formula_safe(_separar_faixa(item, faixa)[1] or ""), _formula_safe(item.valor or ""),
          _formula_safe(item.celular), (item.lojas or "").strip(","), _hora_br(item.created_at),
          "Sim" if retencao.retido(item) else "Não"]
         for item, faixa, _q in linhas
@@ -640,9 +669,10 @@ def export_erros(
     _user: models.User = Depends(get_current_user),
 ):
     linhas = _fila_report_query(db, (models.QueueStatus.error,), faixa_id, de, ate).all()
-    headers = ["Código do cliente", "Nome", "Faixa de atraso", "Valor", "Telefone", "Mensagem de erro", "Quando"]
+    headers = ["Código do cliente", "Nome", "Faixa de atraso", "Campanha", "Valor", "Telefone", "Mensagem de erro", "Quando"]
     rows = [
-        [item.codigo_cliente, _formula_safe(item.nome), faixa, _formula_safe(item.valor or ""),
+        [item.codigo_cliente, _formula_safe(item.nome), _separar_faixa(item, faixa)[0] or "",
+         _formula_safe(_separar_faixa(item, faixa)[1] or ""), _formula_safe(item.valor or ""),
          _formula_safe(item.celular), _formula_safe(item.error_message or "Erro sem detalhe"), _hora_br(quando)]
         for item, faixa, quando in linhas
     ]

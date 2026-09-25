@@ -452,7 +452,10 @@ class FilaReportItemOut(BaseModel):
     codigo_cliente: str
     nome: str
     faixa_id: str
-    faixa: str
+    # Faixa de atraso (régua). Em item de campanha/remarketing, a do cliente
+    # (nula em item antigo); o nome da campanha vai em `campanha`.
+    faixa: str | None
+    campanha: str | None = None
     valor: str | None
     telefone: str
     entrou_em: datetime

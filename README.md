@@ -277,7 +277,8 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    dia (`campanhas.enfileirar_na_regua`). A Efetividade e "Exportar leads enviados" do Dashboard têm
    o filtro **Campanha** (todas, só a régua ou uma campanha, inclusive excluídas). O item da fila de
    campanha/remarketing guarda a faixa de atraso do cliente (`QueueItem.faixa_atraso`): o "Por faixa"
-   do Dashboard e os relatórios filtrados por uma faixa de atraso contam esses envios nela.
+   do Dashboard e os relatórios filtrados por uma faixa de atraso contam esses envios nela. Nas abas
+   Pendentes e Erros (e nas exportações), "Faixa de atraso (régua)" e "Campanha" são colunas separadas.
 
 ## Testes / validação de mudanças
 

@@ -233,6 +233,21 @@ test.describe.serial("Campanhas", () => {
       expect(item.valor).toBe("99.90");
       expect(item.status).toBe("pending");
     }
+
+    // Pendentes: faixa de atraso (régua) e campanha em colunas separadas
+    const pendente = fila.itens.find((i: any) => i.status === "pending");
+    if (pendente) {
+      const api = await apiGet(page, `/reports/pendentes?faixa_id=${campanha.faixa_id}&limit=50&offset=0`);
+      const linhaApi = api.itens.find((i: any) => i.codigo_cliente === pendente.codigo_cliente);
+      expect(linhaApi.campanha).toBe("Planilha promo");
+      expect((await apiGet(page, "/cobranca/regras")).faixas).toContain(linhaApi.faixa);
+      await page.goto(`/relatorios?aba=pendentes&faixa_id=${campanha.faixa_id}`);
+      await expect(page.getByRole("columnheader", { name: /Faixa de atraso \(régua\)/ })).toBeVisible();
+      const linha = page.locator("tbody tr", { hasText: pendente.codigo_cliente });
+      await expect(linha).toContainText("Planilha promo");
+      await expect(linha).toContainText(linhaApi.faixa);
+      await expect(linha).not.toContainText("Campanha:");
+    }
   });
 
   test("Por faixa do Dashboard mostra a faixa de atraso de quem recebeu, não a campanha", async ({ page }) => {

@@ -21,7 +21,16 @@ import { SortDirection, useSort } from "../sort";
 
 type Tab = "invalidos" | "envios" | "pagamentos" | "pendentes" | "erros";
 const ABAS: Tab[] = ["invalidos", "envios", "pagamentos", "pendentes", "erros"];
-type ColunaFila = "codigo_cliente" | "nome" | "faixa" | "valor" | "telefone" | "entrou_em" | "quando" | "mensagem";
+type ColunaFila =
+  | "codigo_cliente"
+  | "nome"
+  | "faixa"
+  | "campanha"
+  | "valor"
+  | "telefone"
+  | "entrou_em"
+  | "quando"
+  | "mensagem";
 type ColunaInvalido = "codigo_cliente" | "celular_original" | "celular_normalizado" | "motivo" | "created_at";
 type ColunaPagamento =
   | "codigo_cliente"
@@ -696,7 +705,8 @@ const COLUNAS_FILA: Record<"pendentes" | "erros", [ColunaFila, string][]> = {
   pendentes: [
     ["codigo_cliente", "Código"],
     ["nome", "Nome"],
-    ["faixa", "Faixa"],
+    ["faixa", "Faixa de atraso (régua)"],
+    ["campanha", "Campanha"],
     ["valor", "Valor"],
     ["telefone", "Telefone"],
     ["entrou_em", "Entrou na fila em"],
@@ -704,7 +714,8 @@ const COLUNAS_FILA: Record<"pendentes" | "erros", [ColunaFila, string][]> = {
   erros: [
     ["codigo_cliente", "Código"],
     ["nome", "Nome"],
-    ["faixa", "Faixa"],
+    ["faixa", "Faixa de atraso (régua)"],
+    ["campanha", "Campanha"],
     ["valor", "Valor"],
     ["telefone", "Telefone"],
     ["mensagem", "Mensagem"],
@@ -764,7 +775,8 @@ function TabelaFila({
               <td>
                 {r.nome || "—"} {r.pausado && <span className="badge pausado">Pausado</span>}
               </td>
-              <td>{r.faixa}</td>
+              <td>{r.faixa || "—"}</td>
+              <td>{r.campanha || <span className="text-faint">Régua</span>}</td>
               <td>{r.valor || "—"}</td>
               <td className="text-muted">{r.telefone}</td>
               {tipo === "pendentes" ? (
