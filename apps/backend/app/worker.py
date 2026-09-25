@@ -179,6 +179,14 @@ async def run_dispatch_cycle() -> None:
             # Campanhas: mesmo horário do remarketing, cada uma uma vez por dia.
             from . import campanhas  # import local: evita ciclo de import com worker
 
+            # Antes das campanhas do dia: quem recebeu campanha em dia anterior
+            # entra na régua da faixa de atraso (base calculando = próximo ciclo).
+            try:
+                campanhas.enfileirar_na_regua(db)
+            except Exception:  # noqa: BLE001 - SETA fora não pode travar o disparo
+                db.rollback()
+                logger.exception("Falha ao levar à régua quem recebeu campanha")
+
             for campanha in campanhas.campanhas_para_hoje(db):
                 try:
                     resultado = campanhas.executar(db, campanha)

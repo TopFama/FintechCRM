@@ -184,7 +184,7 @@ async def upload_planilha(
     for lead in (
         db.query(models.Lead)
         .options(selectinload(models.Lead.parcelas))
-        .filter(models.Lead.faixa == faixa.name)
+        .filter(models.Lead.faixa == faixa.name, models.Lead.campanha_id == "")
     ):
         atual = leads_por_codigo.get(lead.codigo_cliente)
         if atual is None or lead.created_at > atual.created_at:

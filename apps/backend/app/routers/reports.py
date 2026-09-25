@@ -662,6 +662,7 @@ def relatorio_efetividade(
     estado: list[str] | None = Query(None),
     cluster_inad: list[str] | None = Query(None),
     cobradora: list[str] | None = Query(None),
+    campanha: str | None = Query(None, description='"regua" ou id da campanha'),
     sort_by: EfetividadeSortColumn | None = Query(None),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
@@ -679,6 +680,7 @@ def relatorio_efetividade(
         estado=estado,
         cluster_inad=cluster_inad,
         cobradora=cobradora,
+        campanha=campanha,
         sort_by=sort_by,
         sort_dir=sort_dir,
     )
@@ -705,6 +707,7 @@ def export_relatorio_efetividade(
     estado: list[str] | None = Query(None),
     cluster_inad: list[str] | None = Query(None),
     cobradora: list[str] | None = Query(None),
+    campanha: str | None = Query(None, description='"regua" ou id da campanha'),
     sort_by: EfetividadeSortColumn | None = Query(None),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
     db: Session = Depends(get_db),
@@ -722,6 +725,7 @@ def export_relatorio_efetividade(
         estado=estado,
         cluster_inad=cluster_inad,
         cobradora=cobradora,
+        campanha=campanha,
         sort_by=sort_by,
         sort_dir=sort_dir,
     )
@@ -745,6 +749,7 @@ def relatorio_efetividade_clientes(
     estado: list[str] | None = Query(None),
     cluster_inad: list[str] | None = Query(None),
     cobradora: list[str] | None = Query(None),
+    campanha: str | None = Query(None, description='"regua" ou id da campanha'),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
@@ -763,6 +768,7 @@ def relatorio_efetividade_clientes(
         estado=estado,
         cluster_inad=cluster_inad,
         cobradora=cobradora,
+        campanha=campanha,
     )
     return [
         schemas.LinhaEfetividadeClienteOut(
@@ -793,6 +799,7 @@ def export_relatorio_efetividade_clientes(
     estado: list[str] | None = Query(None),
     cluster_inad: list[str] | None = Query(None),
     cobradora: list[str] | None = Query(None),
+    campanha: str | None = Query(None, description='"regua" ou id da campanha'),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
@@ -808,6 +815,7 @@ def export_relatorio_efetividade_clientes(
         estado=estado,
         cluster_inad=cluster_inad,
         cobradora=cobradora,
+        campanha=campanha,
     )
     headers = ["Código", "Nome", "Faixa", "Loja", "Título", "Data cobrança", "Valor cobrado", "Pagou", "Valor pago"]
     rows = [

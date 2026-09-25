@@ -13,6 +13,7 @@ from ..fila_automatica import enfileirar_leads
 from ..deps import get_current_user
 from ..leads_service import _em_lotes, gerar_leads_de_clientes
 from ..regras_db import carregar_regras
+from ..services.efetividade_service import filtrar_campanha
 from ..timezone import BUSINESS_TZ, hoje_br
 from ..utils.leads_xlsx import gerar_xlsx_leads
 from .blacklist import codigos_bloqueados
@@ -71,6 +72,7 @@ def filtrar_leads(
     criado_ate: date | None = None,
     enviado_de: date | None = None,
     enviado_ate: date | None = None,
+    campanha: str | None = None,
 ):
     """Query de leads com os filtros da aba; também serve à exportação. Leads
     de clientes que entraram na blacklist depois de criados ficam de fora."""
@@ -107,6 +109,8 @@ def filtrar_leads(
     if enviado_ate:
         query = query.filter(models.Lead.cobrado_em < _inicio_utc(enviado_ate + timedelta(days=1)))
 
+    query = filtrar_campanha(query, campanha)
+
     bl_codigos, bl_cpfs = codigos_bloqueados(db)
     if bl_codigos:
         query = query.filter(models.Lead.codigo_cliente.notin_(bl_codigos))
@@ -130,6 +134,7 @@ def filtros_consulta_leads(
     criado_ate: date | None = Query(None),
     enviado_de: date | None = Query(None, description="Data do envio (cobrado_em), GMT-3"),
     enviado_ate: date | None = Query(None),
+    campanha: str | None = Query(None, description='"regua" (só faixas de atraso) ou id da campanha'),
 ) -> dict:
     return {
         "loja": loja,
@@ -146,6 +151,7 @@ def filtros_consulta_leads(
         "criado_ate": criado_ate,
         "enviado_de": enviado_de,
         "enviado_ate": enviado_ate,
+        "campanha": campanha,
     }
 
 
@@ -174,6 +180,7 @@ def query_leads_filtrada(db: Session, filtros: dict, lead_status: str | None):
         criado_ate=filtros["criado_ate"],
         enviado_de=filtros["enviado_de"],
         enviado_ate=filtros["enviado_ate"],
+        campanha=filtros["campanha"],
     )
 
 

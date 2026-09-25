@@ -10,6 +10,12 @@ planilha de clientes, a base fica restrita a eles e, se a campanha usa os
 valores da planilha, valor, celular e colunas das variáveis vêm dela. Daí em diante é o fluxo
 normal: blacklist, uma cobrança por cliente por dia, pausas, expiração no
 fim da janela.
+
+Quem entra na fila da campanha vira também um Lead da sua faixa de atraso
+marcado com a campanha (é o que a Efetividade e a exportação de leads filtram
+por campanha). Num dia de disparo seguinte ao envio da campanha, o cliente
+entra também na fila da régua da faixa de atraso em que estiver naquele dia
+(`enfileirar_na_regua`): no mesmo dia não dá, só vai uma cobrança por dia.
 """
 
 import io
@@ -23,7 +29,8 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
 from . import cobranca_base, lojas as lojas_base, models, seta_client
-from .fila_automatica import clientes_bloqueados_hoje, enfileirar_clientes, inicio_hoje_utc
+from .fila_automatica import clientes_bloqueados_hoje, enfileirar_clientes, enfileirar_leads, inicio_hoje_utc
+from .leads_service import gerar_leads_de_clientes
 from .regras_db import carregar_regras
 from .timezone import hoje_br
 from .utils.phone import is_valid_phone
@@ -178,7 +185,7 @@ def _carregar_faixa(db: Session, campanha: models.Campanha) -> models.Faixa:
     )
 
 
-def executar(db: Session, campanha: models.Campanha) -> dict:
+def executar(db: Session, campanha: models.Campanha, *, created_by: str | None = None) -> dict:
     """Busca a base e coloca na fila. Devolve {"status": "processing"} se a
     base ainda está sendo calculada (quem chamou tenta de novo depois) ou o
     resumo {"encontrados", "na_fila"}, que fica gravado na campanha."""
@@ -195,6 +202,7 @@ def executar(db: Session, campanha: models.Campanha) -> dict:
     if clientes:
         juros = carregar_regras(db).juros
         parcelas = seta_client.buscar_parcelas_cobranca([c["codigo"] for c in clientes], juros=juros)
+        enfileirados: list[dict] = []
         na_fila = enfileirar_clientes(
             db,
             _carregar_faixa(db, campanha),
@@ -204,12 +212,74 @@ def executar(db: Session, campanha: models.Campanha) -> dict:
             parcelas=parcelas,
             origem="na campanha",
             colunas_extras=extras,
+            enfileirados=enfileirados,
+        )
+        db.flush()
+        # Lead na faixa de atraso do cliente, marcado com a campanha: o envio
+        # o marca como cobrado (Efetividade/exportação) e leva o cliente à régua.
+        gerar_leads_de_clientes(
+            db, enfileirados, created_by=created_by, campanha_id=campanha.id, parcelas=parcelas
         )
     resumo = {"status": "ready", "encontrados": len(clientes), "na_fila": na_fila}
     campanha.ultima_execucao = datetime.utcnow()
     campanha.ultimo_resultado = {"encontrados": len(clientes), "na_fila": na_fila}
     db.commit()
     logger.info("Campanha '%s': %s", campanha.nome, resumo)
+    return resumo
+
+
+def enfileirar_na_regua(db: Session) -> dict:
+    """Quem recebeu mensagem de campanha em dia anterior entra na fila da
+    régua da faixa de atraso em que está hoje (base do SETA recalculada: quem
+    pagou ou saiu do atraso não entra). Cliente bloqueado hoje (já na fila ou
+    cobrado em outra faixa) tenta de novo no próximo dia de disparo.
+    Devolve {"status": "processing"} enquanto a base calcula, ou o resumo."""
+
+    leads = (
+        db.query(models.Lead)
+        .filter(
+            models.Lead.campanha_id != "",
+            models.Lead.status == "cobrado",
+            models.Lead.regua_em.is_(None),
+            models.Lead.cobrado_em < inicio_hoje_utc(),
+        )
+        .all()
+    )
+    if not leads:
+        return {"status": "ready", "clientes": 0, "na_fila": 0}
+    codigos = sorted({l.codigo_cliente for l in leads})
+    job = cobranca_base.buscar_base(db, apenas_primeiro_dia=False, somente_regra_whatsapp=False, codigos=codigos)
+    if job["status"] != "ready":
+        return {"status": "processing"}
+    base = [c for c in job["data"] if c["dias_atraso"] >= 1]
+    na_fila = 0
+    if base:
+        gerar_leads_de_clientes(db, base, created_by=None)
+        na_fila = enfileirar_leads(db, base)
+
+    faixa_por_id = {f.id: f.name for f in db.query(models.Faixa.id, models.Faixa.name)}
+    na_regua_hoje = {
+        (codigo, faixa_por_id.get(faixa_id))
+        for codigo, faixa_id in db.query(models.QueueItem.codigo_cliente, models.QueueItem.faixa_id).filter(
+            models.QueueItem.codigo_cliente.in_(codigos), models.QueueItem.created_at >= inicio_hoje_utc()
+        )
+    }
+    com_envio = {
+        f.name
+        for f in db.query(models.Faixa).filter(models.Faixa.active.is_(True))
+        if any(e.active and e.template_id for e in f.envios)
+    }
+    faixa_hoje = {c["codigo"]: c["faixa"] for c in base}
+    agora = datetime.utcnow()
+    for lead in leads:
+        faixa = faixa_hoje.get(lead.codigo_cliente)
+        # Resolvido: saiu da base (pagou, blacklist…), a faixa não tem régua
+        # ligada ou o cliente já está na fila da régua hoje.
+        if faixa is None or faixa not in com_envio or (lead.codigo_cliente, faixa) in na_regua_hoje:
+            lead.regua_em = agora
+    db.commit()
+    resumo = {"status": "ready", "clientes": len(codigos), "na_fila": na_fila}
+    logger.info("Régua de quem recebeu campanha: %s", resumo)
     return resumo
 
 

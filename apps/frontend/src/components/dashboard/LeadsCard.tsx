@@ -4,6 +4,7 @@ import { api } from "../../api";
 import { IconAlert } from "../../icons";
 import FiltroPeriodo, { Periodo } from "../FiltroPeriodo";
 import MultiSelect from "../MultiSelect";
+import SelectCampanha from "../SelectCampanha";
 import { useAtualizacaoAutomatica } from "../useAtualizacaoAutomatica";
 import { OpcoesCobranca } from "../useOpcoesCobranca";
 
@@ -11,6 +12,7 @@ export default function LeadsCard({ opcoes, recarregar }: { opcoes: OpcoesCobran
   const [novos, setNovos] = useState<number | null>(null);
   const [enviados, setEnviados] = useState<number | null>(null);
   const [faixas, setFaixas] = useState<string[]>([]);
+  const [campanha, setCampanha] = useState("");
   const [exportando, setExportando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState<Periodo>({});
@@ -42,7 +44,7 @@ export default function LeadsCard({ opcoes, recarregar }: { opcoes: OpcoesCobran
     setErro(null);
     try {
       // sem status: o backend exporta só os leads já enviados
-      await api.exportarLeads({ faixa: faixas, ...filtroEnviados });
+      await api.exportarLeads({ faixa: faixas, campanha, ...filtroEnviados });
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao exportar");
     } finally {
@@ -81,6 +83,7 @@ export default function LeadsCard({ opcoes, recarregar }: { opcoes: OpcoesCobran
           onChange={setFaixas}
           placeholder="Todas"
         />
+        <SelectCampanha id="leads-campanha" value={campanha} onChange={setCampanha} />
         <div className="field">
           <label aria-hidden="true" style={{ visibility: "hidden" }}>
             Exportar

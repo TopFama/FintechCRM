@@ -420,6 +420,7 @@ export const api = {
   },
   // --- Campanhas ---
   listarCampanhas: () => request<Campanha[]>("/campanhas"),
+  opcoesCampanhas: () => request<OpcaoCampanha[]>("/campanhas/opcoes"),
   getCampanha: (id: string) => request<Campanha>(`/campanhas/${id}`),
   criarCampanha: (payload: CampanhaIn) =>
     request<Campanha>("/campanhas", { method: "POST", body: JSON.stringify(payload) }),
@@ -969,6 +970,13 @@ export interface Lead {
   created_at: string;
 }
 
+/** Filtro "Campanha": "" = todas; "regua" = só faixas de atraso; ou o id da campanha. */
+export interface OpcaoCampanha {
+  id: string;
+  nome: string;
+  arquivada: boolean;
+}
+
 export interface FiltrosLeads {
   loja?: string[];
   regional?: string[];
@@ -985,6 +993,7 @@ export interface FiltrosLeads {
   criado_ate?: string;
   enviado_de?: string;
   enviado_ate?: string;
+  campanha?: string;
 }
 
 // --- Blacklist ---
@@ -1096,6 +1105,7 @@ export interface FiltrosEfetividade extends OrdenacaoParams {
   estado?: string[];
   cluster_inad?: string[];
   cobradora?: string[];
+  campanha?: string;
 }
 
 // --- Relatório de pagamentos por cliente ---

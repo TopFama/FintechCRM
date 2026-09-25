@@ -4,6 +4,7 @@ import { formatBRL, formatPercentual } from "../../format";
 import { IconAlert } from "../../icons";
 import CamposLoja from "../CamposLoja";
 import MultiSelect from "../MultiSelect";
+import SelectCampanha from "../SelectCampanha";
 import { OpcoesCobranca } from "../useOpcoesCobranca";
 import SortableTh from "../SortableTh";
 import { ordemFaixaFn, ordenarPor, SortDirection, useSort } from "../../sort";
@@ -29,6 +30,7 @@ const FILTROS_PADRAO: FiltrosEfetividade = {
   estado: [],
   cluster_inad: [],
   cobradora: [],
+  campanha: "",
 };
 
 function semAcento(texto: string): string {
@@ -249,6 +251,11 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
           options={paraOpcoes(opcoes.regras?.clusters)}
           value={filtros.cluster ?? []}
           onChange={(v) => setFiltros({ ...filtros, cluster: v })}
+        />
+        <SelectCampanha
+          id="efet-campanha"
+          value={filtros.campanha ?? ""}
+          onChange={(v) => setFiltros({ ...filtros, campanha: v })}
         />
       </div>
 

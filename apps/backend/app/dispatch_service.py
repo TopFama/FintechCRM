@@ -59,13 +59,19 @@ async def enviar_item(envio: models.FaixaEnvio, item: models.QueueItem, db: Sess
 
 
 def _marcar_lead_cobrado(db: Session, item: models.QueueItem) -> None:
-    """Envio real marca o lead como cobrado — é o que alimenta "Leads enviados"."""
+    """Envio real marca o lead como cobrado — é o que alimenta "Leads enviados".
+    Envio de campanha marca o lead da campanha (que fica na faixa de atraso do
+    cliente); envio da régua, o lead da régua daquela faixa."""
     faixa = db.get(models.Faixa, item.faixa_id)
     if faixa is None:
         return
+    if faixa.campanha_id:
+        filtro = [models.Lead.campanha_id == faixa.campanha_id]
+    else:
+        filtro = [models.Lead.faixa == faixa.name, models.Lead.campanha_id == ""]
     db.query(models.Lead).filter(
         models.Lead.codigo_cliente == item.codigo_cliente,
-        models.Lead.faixa == faixa.name,
+        *filtro,
         models.Lead.status == "novo",
     ).update({"status": "cobrado", "cobrado_em": item.sent_at}, synchronize_session=False)
 

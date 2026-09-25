@@ -21,9 +21,16 @@ def _em_lotes(itens: list, tamanho: int = LOTE):
 
 
 def gerar_leads_de_clientes(
-    db: Session, clientes: list[dict[str, Any]], *, created_by: str | None
+    db: Session,
+    clientes: list[dict[str, Any]],
+    *,
+    created_by: str | None,
+    campanha_id: str = "",
+    parcelas: dict[str, list[dict]] | None = None,
 ) -> tuple[int, int, int]:
-    """Cria um Lead por cliente que ainda não é lead da mesma faixa+parcela.
+    """Cria um Lead por cliente que ainda não é lead da mesma faixa+parcela
+    (da régua, ou da campanha `campanha_id`). `parcelas`, quando quem chama
+    já buscou, evita consultar o SETA de novo.
     Retorna (criados, ja_existiam, sem_celular). Levanta seta_client.SetaIndisponivel
     se a consulta de SPC/parcelas ao ERP falhar."""
 
@@ -31,7 +38,7 @@ def gerar_leads_de_clientes(
     for lote in _em_lotes([c["codigo"] for c in clientes]):
         rows = db.query(
             models.Lead.codigo_cliente, models.Lead.faixa, models.Lead.vencimento_mais_antigo
-        ).filter(models.Lead.codigo_cliente.in_(lote))
+        ).filter(models.Lead.codigo_cliente.in_(lote), models.Lead.campanha_id == campanha_id)
         ja_existem.update((r[0], r[1], r[2]) for r in rows)
 
     novos = [c for c in clientes if (c["codigo"], c["faixa"], c["vencimento_mais_antigo"]) not in ja_existem]
@@ -44,7 +51,10 @@ def gerar_leads_de_clientes(
         for lote in _em_lotes(codigos_novos, 5000):
             for codigo, texto in seta_client.buscar_spc(lote).items():
                 datas_spc[codigo] = parse_spc(texto)[1]
-        parcelas_map = seta_client.buscar_parcelas_cobranca(codigos_novos, juros=carregar_regras(db).juros)
+        if parcelas is not None:
+            parcelas_map = parcelas
+        else:
+            parcelas_map = seta_client.buscar_parcelas_cobranca(codigos_novos, juros=carregar_regras(db).juros)
 
     leads_para_salvar = []
     for c in novos:
@@ -69,6 +79,7 @@ def gerar_leads_de_clientes(
             status_cliente=c["status"],
             spc_restricao=c["spc_restricao"],
             spc_data_consulta=datas_spc.get(c["codigo"]),
+            campanha_id=campanha_id,
             created_by=created_by,
         )
         vistos_titulos = set()

@@ -36,6 +36,16 @@ def _dia_br(dt: datetime) -> date:
     return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).date()
 
 
+def filtrar_campanha(query, campanha: str | None):
+    """Filtro "Campanha": vazio = tudo; "regua" = só envios da régua (faixas de
+    atraso); id = só os envios daquela campanha."""
+    if not campanha:
+        return query
+    if campanha == "regua":
+        return query.filter(models.Lead.campanha_id == "")
+    return query.filter(models.Lead.campanha_id == campanha)
+
+
 def obter_dados_efetividade(
     db: Session,
     *,
@@ -49,6 +59,7 @@ def obter_dados_efetividade(
     estado: list[str] | None = None,
     cluster_inad: list[str] | None = None,
     cobradora: list[str] | None = None,
+    campanha: str | None = None,
     sort_by: str | None = None,
     sort_dir: str = "asc",
 ) -> tuple[dict, int, list[dict]]:
@@ -86,6 +97,7 @@ def obter_dados_efetividade(
         leads_query = leads_query.filter(models.Lead.faixa.in_(faixa))
     if cluster:
         leads_query = leads_query.filter(models.Lead.cluster.in_(cluster))
+    leads_query = filtrar_campanha(leads_query, campanha)
 
     leads_sem_parcelas = leads_query.filter(~models.Lead.parcelas.any()).count()
 
@@ -116,6 +128,7 @@ def obter_dados_efetividade(
         parc_query = parc_query.filter(models.Lead.faixa.in_(faixa))
     if cluster:
         parc_query = parc_query.filter(models.Lead.cluster.in_(cluster))
+    parc_query = filtrar_campanha(parc_query, campanha)
     if codigos_loja is not None:
         parc_query = parc_query.filter(models.LeadParcela.empresa.in_(codigos_loja))
 

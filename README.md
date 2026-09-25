@@ -267,6 +267,12 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    ("Campanha: …", `app/campanhas.py`), fora da lista de faixas de atraso. O **Remarketing do
    Renegocie** virou uma aba desta tela (`/remarketing` redireciona para lá), com template e número
    atribuídos no próprio segmento.
+   Quem entra na fila da campanha vira também um **lead da sua faixa de atraso marcado com a
+   campanha** (`Lead.campanha_id`; `""` = régua). No próximo dia de disparo depois do envio, o
+   agendador coloca esse cliente na fila da régua da faixa de atraso em que ele estiver naquele dia
+   (base do SETA recalculada; quem pagou fica de fora), porque só sai uma cobrança por cliente por
+   dia (`campanhas.enfileirar_na_regua`). A Efetividade e "Exportar leads enviados" do Dashboard têm
+   o filtro **Campanha** (todas, só a régua ou uma campanha, inclusive excluídas).
 
 ## Testes / validação de mudanças
 

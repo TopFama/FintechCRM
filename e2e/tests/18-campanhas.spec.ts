@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { API_URL } from "./ambiente";
-import { apiGet, apiSend, card, expect, responderDialogo, test } from "./fixtures";
+import { apiGet, apiSend, baixar, card, expect, responderDialogo, test } from "./fixtures";
 
 const DADOS = path.join(path.dirname(fileURLToPath(import.meta.url)), "dados");
 const SCREENSHOTS = process.env.E2E_SCREENSHOTS;
@@ -95,10 +95,15 @@ test.describe.serial("Campanhas", () => {
     await expect(previa).toContainText("10 cliente(s) entrariam");
     await previa.locator("th", { hasText: "Valor a cobrar" }).click();
     await expect(previa.locator("th", { hasText: "Valor a cobrar" })).toHaveAttribute("aria-sort", "ascending");
-    const valores = (await previa.locator("tbody tr td:nth-child(4)").allInnerTexts()).map((t) =>
-      Number(t.replace(/[^\d,]/g, "").replace(",", ".")),
-    );
-    expect(valores).toEqual([...valores].sort((x, y) => x - y));
+    // a ordenação volta do servidor depois do clique: espera a tabela recarregar
+    await expect
+      .poll(async () => {
+        const valores = (await previa.locator("tbody tr td:nth-child(4)").allInnerTexts()).map((t) =>
+          Number(t.replace(/[^\d,]/g, "").replace(",", ".")),
+        );
+        return valores.every((v, i) => i === 0 || valores[i - 1] <= v);
+      })
+      .toBe(true);
     await foto(page, "campanha-detalhe");
 
     const confirmou = responderDialogo(page);
@@ -113,6 +118,81 @@ test.describe.serial("Campanhas", () => {
 
     await previa.getByRole("button", { name: "Ver prévia" }).click();
     await expect(previa).toContainText(`${10 - codigos.length} cliente(s) entrariam`);
+  });
+
+  test("quem recebeu a campanha vira lead da faixa de atraso e aparece filtrando pela campanha", async ({ page }) => {
+    const campanha = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Feirão lojas 01 e 06");
+    const faixasAtraso = (await apiGet(page, "/cobranca/regras")).faixas as string[];
+    const leads = await apiGet(page, `/leads?campanha=${campanha.id}&limit=100&offset=0`);
+    expect(leads.total).toBeGreaterThan(0);
+    for (const l of leads.itens) expect(faixasAtraso).toContain(l.faixa);
+
+    // envia já a fila da campanha (o worker só envia dentro do horário de disparo)
+    expect((await apiSend(page, "POST", "/__e2e/campanhas/enviar")).status).toBe(200);
+    await expect
+      .poll(async () => (await apiGet(page, `/leads?campanha=${campanha.id}&status=cobrado&limit=100&offset=0`)).total, {
+        timeout: 15_000,
+      })
+      .toBe(leads.total);
+    const codigos = leads.itens.map((l: any) => l.codigo_cliente).sort();
+
+    const efet = await apiGet(page, `/reports/efetividade?campanha=${campanha.id}`);
+    expect(efet.total.clientes_cobrados).toBe(leads.total);
+    const soRegua = await apiGet(page, "/reports/efetividade?campanha=regua");
+    const todas = await apiGet(page, "/reports/efetividade");
+    expect(todas.total.qtd_envios).toBe(soRegua.total.qtd_envios + efet.total.qtd_envios);
+
+    await page.goto("/");
+    const e = card(page, "Efetividade da cobrança");
+    await e.getByLabel("Campanha").selectOption({ label: "Feirão lojas 01 e 06" });
+    await e.getByRole("button", { name: "Aplicar filtros" }).click();
+    await expect(e.locator("tr.linha-total td").nth(2)).toHaveText(String(leads.total));
+    await foto(page, "campanha-efetividade");
+
+    const l = card(page, "Leads");
+    await l.getByLabel("Campanha").selectOption({ label: "Feirão lojas 01 e 06" });
+    const { linhas } = await baixar(page, () => l.getByRole("button", { name: "Exportar leads enviados (.xlsx)" }).click());
+    expect(linhas.slice(1).map((r) => r[0].replace(/\D/g, "").padStart(8, "0")).sort()).toEqual(codigos);
+  });
+
+  test("no dia seguinte ao envio da campanha o cliente entra na régua da faixa de atraso", async ({ page }) => {
+    const campanha = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Feirão lojas 01 e 06");
+    const leads = (await apiGet(page, `/leads?campanha=${campanha.id}&limit=100&offset=0`)).itens;
+    const codigos = leads.map((l: any) => l.codigo_cliente);
+    // a régua precisa da faixa com número + template (rodando só este arquivo, ninguém configurou)
+    const faixaDoCliente = (await apiGet(page, "/faixas")).find((f: any) => f.name === leads[0].faixa);
+    if (!faixaDoCliente?.envios.some((e: any) => e.active)) {
+      const numero = (await apiGet(page, "/numbers"))[0];
+      const template = (await apiGet(page, "/templates")).find((t: any) => t.name === "lembrete_vencimento");
+      const envio = {
+        template_id: template.id,
+        variable_mappings: template.variables.map((v: any) => ({
+          template_variable_id: v.id,
+          fonte_tipo: "campo_cliente",
+          column_name: "primeiro_nome",
+        })),
+      };
+      const criado = faixaDoCliente
+        ? await apiSend(page, "POST", `/faixas/${faixaDoCliente.id}/envios`, { ...envio, whatsapp_number_id: numero.id })
+        : await apiSend(page, "POST", "/faixas", { ...envio, name: leads[0].faixa, whatsapp_number_ids: [numero.id] });
+      expect(criado.status).toBe(201);
+    }
+    const r = await apiSend(page, "POST", "/__e2e/campanhas/regua-no-dia-seguinte");
+    expect(r.corpo.status).toBe("ready");
+    expect(r.corpo.na_fila).toBeGreaterThan(0);
+
+    // entraram na fila de alguma faixa de atraso (régua), não na da campanha
+    const regua = (await apiGet(page, "/faixas")).filter((f: any) => !f.campanha_id && !f.remarketing_segmento);
+    const naRegua = new Set<string>();
+    for (const f of regua) {
+      const fila = await apiGet(page, `/faixas/${f.id}/queue?limit=500&offset=0`);
+      for (const i of fila.itens) if (codigos.includes(i.codigo_cliente) && i.status === "pending") naRegua.add(i.codigo_cliente);
+    }
+    expect(naRegua.size).toBe(r.corpo.na_fila);
+
+    // segunda passada no mesmo dia não repete ninguém
+    const deNovo = await apiSend(page, "POST", "/__e2e/campanhas/regua-no-dia-seguinte");
+    expect(deNovo.corpo.na_fila).toBe(0);
   });
 
   test("planilha de clientes com os valores da planilha nas variáveis", async ({ page }) => {

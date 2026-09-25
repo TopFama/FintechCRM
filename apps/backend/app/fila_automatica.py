@@ -128,6 +128,7 @@ def enfileirar_clientes(
     parcelas: dict[str, list[dict]],
     origem: str,
     colunas_extras: dict[str, dict[str, str]] | None = None,
+    enfileirados: list[dict] | None = None,
 ) -> int:
     """Coloca na fila de `faixa` clientes vindos direto do SETA (formato de
     `cobranca_base._montar_cliente`), resolvendo as variáveis de cada template
@@ -135,7 +136,7 @@ def enfileirar_clientes(
     telefone válido; variável sem valor vira item com erro.
     `colunas_extras` (por código) entram no contexto das variáveis como
     colunas de planilha, valendo mais que os campos do cliente. Não comita.
-    Devolve quantos entraram como pendentes."""
+    Devolve quantos entraram como pendentes (e os acrescenta a `enfileirados`)."""
 
     templates = {e.template_id: e.template for e in faixa.envios if e.active and e.template_id}
     if not templates:
@@ -176,6 +177,8 @@ def enfileirar_clientes(
             item.error_message = f"Variável sem valor {origem}: {', '.join(sorted(set(faltando)))}"
         else:
             total += 1
+            if enfileirados is not None:
+                enfileirados.append(cliente)
         db.add(item)
         bloqueados.add(cliente["codigo"])
     return total
@@ -227,7 +230,11 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
             (l.codigo_cliente, l.vencimento_mais_antigo): l
             for l in db.query(models.Lead)
             .options(selectinload(models.Lead.parcelas))
-            .filter(models.Lead.faixa == nome_faixa, models.Lead.codigo_cliente.in_([k[0] for k in chaves]))
+            .filter(
+                models.Lead.faixa == nome_faixa,
+                models.Lead.campanha_id == "",
+                models.Lead.codigo_cliente.in_([k[0] for k in chaves]),
+            )
         }
 
         for chave in chaves:

@@ -167,6 +167,17 @@ def listar(db: Session = Depends(get_db), _user: models.User = Depends(get_curre
     return [_out(c, contagens[c.faixa_id]) for c in campanhas]
 
 
+@router.get("/opcoes")
+def opcoes(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+    """Todas as campanhas, arquivadas inclusive (o histórico continua nos
+    relatórios), pro filtro "Campanha" da Efetividade e da exportação de leads."""
+
+    return [
+        {"id": c.id, "nome": c.nome, "arquivada": c.arquivada_em is not None}
+        for c in db.query(models.Campanha).order_by(models.Campanha.arquivada_em.isnot(None), models.Campanha.nome)
+    ]
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def criar(payload: CampanhaIn, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     nome = _validar(db, payload, None)
@@ -318,7 +329,7 @@ def previa(
 
 
 @router.post("/{campanha_id}/executar")
-def executar_agora(campanha_id: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+def executar_agora(campanha_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     """Coloca na fila agora quem entraria (o agendador faz isso sozinho no
     dia/período). Os envios saem dentro do horário de disparo."""
 
@@ -328,7 +339,7 @@ def executar_agora(campanha_id: str, db: Session = Depends(get_db), _user: model
     if c.fonte_valores == "planilha" and not c.clientes:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de clientes para usar os valores dela")
     try:
-        resultado = camp.executar(db, c)
+        resultado = camp.executar(db, c, created_by=user.id)
     except _ERROS_BASE as exc:
         raise _erro_base(exc) from exc
     if resultado["status"] != "ready":

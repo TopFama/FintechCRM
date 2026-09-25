@@ -410,10 +410,16 @@ class Lead(Base):
     """Retrato de um cliente da base de cobrança no momento em que virou lead
     (faixa, cluster, valor a cobrar, telefone escolhido…). Os dados do cliente
     vêm do SETA e não são atualizados depois; gerar de novo para o mesmo
-    cliente/faixa/parcela não duplica."""
+    cliente/faixa/parcela não duplica. Lead de campanha (`campanha_id`
+    preenchido) é separado do da régua: fica na faixa de atraso do cliente,
+    mas marca o envio da campanha."""
 
     __tablename__ = "leads"
-    __table_args__ = (UniqueConstraint("codigo_cliente", "faixa", "vencimento_mais_antigo"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "codigo_cliente", "faixa", "vencimento_mais_antigo", "campanha_id", name="uq_leads_cliente_faixa_parcela"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     codigo_cliente: Mapped[str] = mapped_column(String, index=True)  # código SETA de 8 dígitos
@@ -439,6 +445,12 @@ class Lead(Base):
     spc_restricao: Mapped[str] = mapped_column(String, default="indeterminado")
     spc_data_consulta: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String, default="novo", index=True)  # "novo" ou "cobrado"
+    # "" = régua (faixa de atraso); id da campanha quando o envio foi da campanha.
+    # Sem FK: campanha nunca é apagada (excluir = arquivar) e "" não é nulo, pra
+    # unicidade valer também nos leads da régua.
+    campanha_id: Mapped[str] = mapped_column(String, default="", server_default="", index=True)
+    # Lead de campanha já passou pela régua da faixa (dia seguinte ao envio).
+    regua_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cobrado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

@@ -182,6 +182,61 @@ def envios_simulados():
     return ENVIOS
 
 
+@app.post("/__e2e/campanhas/enviar", include_in_schema=False)
+def enviar_campanhas():
+    """Envia na hora os pendentes das campanhas (sem depender do horário de
+    disparo do relógio), pelo mesmo caminho que marca o lead como cobrado."""
+
+    from app import models
+    from app.database import SessionLocal
+    from app.dispatch_service import _marcar_lead_cobrado
+
+    db = SessionLocal()
+    try:
+        faixas = [c.faixa_id for c in db.query(models.Campanha)]
+        itens = db.query(models.QueueItem).filter(
+            models.QueueItem.faixa_id.in_(faixas), models.QueueItem.status == models.QueueStatus.pending
+        ).all()
+        for item in itens:
+            item.status = models.QueueStatus.sent
+            item.sent_at = datetime.utcnow()
+            _marcar_lead_cobrado(db, item)
+        db.commit()
+        return {"enviados": len(itens)}
+    finally:
+        db.close()
+
+
+@app.post("/__e2e/campanhas/regua-no-dia-seguinte", include_in_schema=False)
+def regua_no_dia_seguinte():
+    """Simula a virada do dia: o que a campanha mandou hoje passa a ser de
+    ontem, e roda a entrada na régua de quem recebeu a campanha."""
+
+    from app import campanhas, models
+    from app.database import SessionLocal
+    from app.fila_automatica import inicio_hoje_utc
+
+    db = SessionLocal()
+    try:
+        faixas = [c.faixa_id for c in db.query(models.Campanha)]
+        um_dia = timedelta(days=1)
+        for lead in db.query(models.Lead).filter(models.Lead.campanha_id != "", models.Lead.cobrado_em >= inicio_hoje_utc()):
+            lead.cobrado_em -= um_dia
+        for item in db.query(models.QueueItem).filter(
+            models.QueueItem.faixa_id.in_(faixas), models.QueueItem.sent_at >= inicio_hoje_utc()
+        ):
+            item.sent_at -= um_dia
+        db.commit()
+        for _ in range(60):
+            resultado = campanhas.enfileirar_na_regua(db)
+            if resultado["status"] == "ready":
+                return resultado
+            time.sleep(1)
+        return resultado
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     import uvicorn
 
