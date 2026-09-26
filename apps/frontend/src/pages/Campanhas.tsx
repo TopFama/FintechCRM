@@ -169,10 +169,6 @@ export default function Campanhas() {
       <div className="page-header">
         <div>
           <h2>Campanhas</h2>
-          <div className="subtitle">
-            Cobranças com filtros e templates próprios, fora das faixas de atraso, e o remarketing de quem desistiu no
-            Renegocie.
-          </div>
         </div>
         {aba === "campanhas" && (
           <Link to="/campanhas/nova">
@@ -268,10 +264,6 @@ export default function Campanhas() {
             <div className="empty-state">
               <IconMegaphone width={28} height={28} />
               <div className="title">Nenhuma campanha ainda</div>
-              <p>
-                Crie uma campanha, escolha os filtros (ou suba a planilha de clientes), atribua um template e defina o
-                dia ou o período em que ela roda.
-              </p>
             </div>
           ) : (
             <div className="faixa-list">

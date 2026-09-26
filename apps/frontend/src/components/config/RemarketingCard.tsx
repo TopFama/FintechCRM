@@ -61,11 +61,6 @@ export default function RemarketingCard() {
             </button>
           )}
         </div>
-        <p className="card-subtitle">
-          Todo dia de disparo, antes do horário de início, o sistema busca no Renegocie quem desistiu e coloca na fila
-          da faixa de cada segmento ligado. Continuam valendo a blacklist e o bloqueio de cobrança repetida no mesmo
-          dia. Quem já pagou ou tem proposta em andamento fica de fora.
-        </p>
         {erro && (
           <div className="error-box">
             <IconAlert width={16} height={16} />
@@ -295,7 +290,6 @@ function SegmentoForm({
                 value={form.recontato_dias}
                 onChange={(e) => setForm({ ...form, recontato_dias: Number(e.target.value) })}
               />
-              <span className="field-hint">Depois de receber, o cliente só volta à fila deste segmento após esse prazo.</span>
             </div>
           </div>
           <div className="form-row">
@@ -350,10 +344,6 @@ function SegmentoForm({
           </div>
         </fieldset>
         <div className="field" style={{ marginBottom: 12 }}>
-          <span className="field-hint">
-            Período da prévia: sem período, mostra quem entraria hoje pela janela do segmento; com período, lista os
-            clientes cujo evento ({(ROTULO_EVENTO[segmento.segmento] ?? "data").toLowerCase()}) caiu nesse intervalo.
-          </span>
           <FiltroPeriodo
             opcoes={["hoje", "7dias", "mes", "personalizado"]}
             inicial={null}
@@ -379,8 +369,7 @@ function SegmentoForm({
         <div style={{ marginTop: 16 }}>
           <p className="card-subtitle">
             {previa.total} de {previa.total_renegocie} cliente(s) do Renegocie passam nos filtros
-            {acordo ? " (acordos com a entrada vencida e em aberto no SETA)" : ""}. Não conta quem já foi cobrado hoje em
-            outra faixa.
+            {acordo ? " (acordos com a entrada vencida e em aberto no SETA)" : ""}.
           </p>
           {clientesPrevia.length > 0 && (
             <div className="table-wrap">

@@ -356,10 +356,8 @@ export default function CampanhaDetail() {
           </label>
           <p className="field-hint" style={{ marginTop: 0 }}>
             {form.ativa
-              ? `Todo dia de disparo dentro do período, antes do horário de início, a campanha coloca na fila quem passa nos ${
-                  temPlanilhaOuNova ? "filtros e está na planilha" : "filtros"
-                }. Para um dia só, use a mesma data no início e no fim.`
-              : 'Desligado: a campanha só entra na fila quando você clicar em "Colocar na fila agora".'}
+              ? "Para um dia só, use a mesma data no início e no fim."
+              : 'Só entra na fila ao clicar em "Colocar na fila agora".'}
           </p>
           <div className="form-row" style={{ flexWrap: "wrap" }}>
             <div className="field" style={{ flex: "1 1 160px" }}>
@@ -404,10 +402,7 @@ export default function CampanhaDetail() {
           <div className="card-header">
             <h3>Quem recebe</h3>
           </div>
-          <p className="card-subtitle">
-            Só clientes em atraso no SETA. Os filtros são os mesmos da Cobrança. Continuam valendo a blacklist, as
-            pausas e o limite de uma cobrança por cliente por dia.
-          </p>
+          <p className="card-subtitle">Só clientes em atraso no SETA.</p>
           <BarraFiltrosCobranca
             valor={form.filtros}
             onChange={(filtros) => setForm({ ...form, filtros })}
@@ -419,8 +414,7 @@ export default function CampanhaDetail() {
             <h4>Planilha de clientes (opcional)</h4>
             <>
               <p className="field-hint">
-                Com planilha, a campanha olha só para os clientes dela (coluna Codigo ou CPF), sempre cruzando com os
-                filtros acima. Pode subir já na criação, para cobrar só quem está no Excel.
+                Coluna Codigo ou CPF. Os filtros acima continuam valendo.
               </p>
               <div
                 style={{
@@ -485,7 +479,7 @@ export default function CampanhaDetail() {
                 </select>
                 {form.fonte_valores === "planilha" && (
                   <span className="field-hint">
-                    As outras colunas da planilha podem alimentar as variáveis do template, abaixo.
+                    As outras colunas podem ir nas variáveis do template.
                   </span>
                 )}
               </div>
@@ -544,8 +538,8 @@ export default function CampanhaDetail() {
             </div>
           </div>
           <p className="card-subtitle">
-            A prévia não coloca ninguém na fila. Quem já recebeu desta campanha não aparece.
-            {alterado && " Salve as alterações para ver a prévia com a configuração nova."}
+            A prévia não coloca ninguém na fila.
+            {alterado && " Salve para ver a prévia atualizada."}
           </p>
           {previa && (
             <>
@@ -611,8 +605,7 @@ export default function CampanhaDetail() {
           )}
           {faixa && (
             <p className="field-hint" style={{ marginTop: 12 }}>
-              A fila e os envios desta campanha aparecem em <Link to={`/faixas/${faixa.id}`}>detalhes da fila</Link> e
-              em <Link to="/relatorios">Relatórios</Link>.
+              <Link to={`/faixas/${faixa.id}`}>Ver a fila</Link> · <Link to="/relatorios">Relatórios</Link>
             </p>
           )}
         </div>
