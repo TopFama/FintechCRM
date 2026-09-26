@@ -81,6 +81,14 @@ def cobrados_hoje(db: Session) -> set[str]:
     }
 
 
+def sem_cobrados_hoje(db: Session, clientes: list[dict]) -> list[dict]:
+    """Tira da lista quem já recebeu cobrança hoje (GMT-3, qualquer faixa).
+    Cobrado em dia anterior aparece normalmente."""
+
+    bloqueados = cobrados_hoje(db)
+    return [c for c in clientes if c["codigo"] not in bloqueados]
+
+
 def ja_cobrado_hoje(db: Session, item: models.QueueItem) -> bool:
     """Checagem final antes do envio: outro item do mesmo cliente já saiu hoje (qualquer faixa)."""
 

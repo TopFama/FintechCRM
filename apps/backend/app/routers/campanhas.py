@@ -14,8 +14,7 @@ from ..deps import get_current_user
 from ..regras_db import carregar_regras
 from ..services.pagamentos_service import _inicio_utc
 from ..timezone import hoje_br
-from .cobranca import ClienteSortColumn, _ordenar_clientes
-from .uploads import _ler_planilha_limitada
+from .comum import ClienteSortColumn, ler_planilha_limitada, ordenar_clientes
 
 router = APIRouter(prefix="/campanhas", tags=["campanhas"])
 
@@ -399,7 +398,7 @@ async def subir_clientes(
     para quando a campanha usa os valores da planilha."""
 
     c = _get(db, campanha_id)
-    content = await _ler_planilha_limitada(file)
+    content = await ler_planilha_limitada(file)
     try:
         lido = camp.ler_clientes(file.filename or "", content)
     except ValueError as exc:
@@ -473,7 +472,7 @@ def previa(
     if c.fonte_valores == "planilha":
         clientes = [camp.com_valores_da_planilha(x, c) for x in clientes]
     if sort_by:
-        clientes = _ordenar_clientes(clientes, sort_by, sort_dir, db)
+        clientes = ordenar_clientes(clientes, sort_by, sort_dir, db)
     campos = ("codigo", "nome", "celular", "cpfcnpj", "cluster", "faixa", "dias_atraso", "valor_cobrar",
               "valor_atraso_original", "valor_atraso_juros", "vencimento_mais_antigo", "lojas")
     return {

@@ -13,7 +13,7 @@ from ..services import custo_whatsapp, pagamentos_service, pagos_janela_service
 from ..timezone import BUSINESS_TZ, hoje_br
 from ..database import get_db
 from ..deps import get_current_user
-from .reports import _XLSX_MEDIA_TYPE, _build_xlsx
+from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx
 
 logger = logging.getLogger(__name__)
 
@@ -227,12 +227,12 @@ def exportar_orcamento_por_dia(
         for (dia, waba, telefone), (gasto, mensagens) in sorted(custo.por_dia_numero.items())
         if gasto or mensagens
     ]
-    conteudo = _build_xlsx(
+    conteudo = build_xlsx(
         ["Data", "WABA", "Telefone", "Mensagens cobradas", "Valor cobrado (R$)"], linhas, {4: "#,##0.00"}
     )
     return Response(
         content=conteudo,
-        media_type=_XLSX_MEDIA_TYPE,
+        media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="orcamento_por_dia_{inicio}_{fim}.xlsx"'},
     )
 
