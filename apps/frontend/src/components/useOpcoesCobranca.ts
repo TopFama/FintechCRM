@@ -21,6 +21,10 @@ export interface OpcoesCobranca {
 
 const paraOpcoes = (valores: string[] = []): Opcao[] => valores.map((v) => ({ value: v, label: v }));
 
+// Filtro de cluster com a faixa de valor pago no rótulo: "ESPECIAL (R$ 0 a <400)"
+export const opcoesCluster = (regras: RegrasCobranca | null): Opcao[] =>
+  (regras?.clusters ?? []).map((c) => ({ value: c, label: regras?.rotulos_cluster?.[c] ?? c }));
+
 export function useOpcoesCobranca(): OpcoesCobranca {
   const [regras, setRegras] = useState<RegrasCobranca | null>(null);
   const [lojas, setLojas] = useState<Loja[]>([]);

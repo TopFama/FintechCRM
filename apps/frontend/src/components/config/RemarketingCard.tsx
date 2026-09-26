@@ -9,7 +9,7 @@ import MultiSelect from "../MultiSelect";
 import Paginacao from "../Paginacao";
 import SortableTh from "../SortableTh";
 import { ordenarPor, useSort } from "../../sort";
-import { useOpcoesCobranca } from "../useOpcoesCobranca";
+import { opcoesCluster, useOpcoesCobranca } from "../useOpcoesCobranca";
 
 // Remarketing de quem desistiu no portal Renegocie (aba de Campanhas). Cada
 // segmento tem o próprio número + template e filtros que decidem quem entra.
@@ -304,7 +304,7 @@ function SegmentoForm({
             <MultiSelect
               id={`${id}-clusters`}
               label="Clusters"
-              options={(opcoes.regras?.clusters ?? []).map((c) => ({ value: c, label: c }))}
+              options={opcoesCluster(opcoes.regras)}
               value={form.clusters}
               onChange={(v) => setForm({ ...form, clusters: v })}
               placeholder="Todos"

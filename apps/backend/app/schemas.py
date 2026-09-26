@@ -743,6 +743,7 @@ class ClientesCobrancaAsyncOut(BaseModel):
 
 class CobrancaRegrasOut(BaseModel):
     clusters: list[str]
+    rotulos_cluster: dict[str, str]  # cluster -> "ESPECIAL (R$ 0 a <400)"
     faixas: list[str]
     faixas_whatsapp: dict[str, list[str]]  # cluster -> faixas que recebem WhatsApp
     primeiro_dia: dict[str, int]  # faixa -> primeiro dia

@@ -5,7 +5,7 @@ import { IconAlert } from "../../icons";
 import CamposLoja from "../CamposLoja";
 import MultiSelect from "../MultiSelect";
 import SelectCampanha from "../SelectCampanha";
-import { OpcoesCobranca } from "../useOpcoesCobranca";
+import { OpcoesCobranca, opcoesCluster } from "../useOpcoesCobranca";
 import SortableTh from "../SortableTh";
 import { ordemFaixaFn, ordenarPor, SortDirection, useSort } from "../../sort";
 
@@ -248,7 +248,7 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
         />
         <MultiSelect
           label="Cluster"
-          options={paraOpcoes(opcoes.regras?.clusters)}
+          options={opcoesCluster(opcoes.regras)}
           value={filtros.cluster ?? []}
           onChange={(v) => setFiltros({ ...filtros, cluster: v })}
         />

@@ -25,11 +25,30 @@ def regras(db: Session = Depends(get_db), _user: models.User = Depends(get_curre
     r = carregar_regras(db)
     return schemas.CobrancaRegrasOut(
         clusters=r.nomes_cluster,
+        rotulos_cluster=_rotulos_cluster(r.clusters),
         faixas=r.nomes_faixa,
         faixas_whatsapp={c: r.faixas_whatsapp(c) for c in r.nomes_cluster},
         primeiro_dia={f.nome: f.dia_min for f in r.faixas},
         faixas_compra=NOMES_FAIXA_COMPRA,
     )
+
+
+def _reais(v) -> str:
+    inteiro = v == v.to_integral_value()
+    texto = f"{v:,.0f}" if inteiro else f"{v:,.2f}"
+    return "R$ " + texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _rotulos_cluster(clusters) -> dict[str, str]:
+    """Nome com a faixa de valor pago, pros filtros: "ESPECIAL (R$ 0 a <400)"."""
+    rotulos = {}
+    for i, c in enumerate(clusters):
+        if i + 1 < len(clusters):
+            faixa = f"{_reais(c.valor_min)} a <{_reais(clusters[i + 1].valor_min)[3:]}"
+        else:
+            faixa = f"{_reais(c.valor_min)} ou mais"
+        rotulos[c.nome] = f"{c.nome} ({faixa})"
+    return rotulos
 
 
 def filtros_base(

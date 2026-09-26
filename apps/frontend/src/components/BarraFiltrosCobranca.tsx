@@ -1,7 +1,7 @@
 import { FiltrosCobranca } from "../api";
 import CamposLoja from "./CamposLoja";
 import MultiSelect from "./MultiSelect";
-import { OpcoesCobranca } from "./useOpcoesCobranca";
+import { OpcoesCobranca, opcoesCluster } from "./useOpcoesCobranca";
 
 export const FILTROS_COBRANCA_PADRAO: FiltrosCobranca = {
   apenas_primeiro_dia: true,
@@ -80,7 +80,7 @@ export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, opcoe
         />
         <MultiSelect
           label="Cluster"
-          options={paraOpcoes(opcoes.regras?.clusters)}
+          options={opcoesCluster(opcoes.regras)}
           value={valor.cluster ?? []}
           onChange={(v) => set({ cluster: v })}
         />

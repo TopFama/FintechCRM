@@ -27,6 +27,13 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
     await expect(filtros(page).getByLabel("Somente clientes da regra WhatsApp")).toBeChecked();
   });
 
+  test("filtro de cluster mostra a faixa de valor pago ao lado do nome", async ({ page }) => {
+    const campoCluster = filtros(page).locator(".field").filter({ has: page.locator("label", { hasText: /^Cluster$/ }) }).first();
+    await campoCluster.locator(".ms-btn").click();
+    await expect(campoCluster.getByRole("option", { name: /^ESPECIAL \(R\$ 0 a <[\d.,]+\)$/ })).toBeVisible();
+    await expect(campoCluster.getByRole("option", { name: /\(R\$ [\d.,]+ ou mais\)$/ })).toHaveCount(1);
+  });
+
   test("aplicar mostra carregamento, total e tabela com os filtros padrão", async ({ page }) => {
     await filtros(page).getByRole("button", { name: "Aplicar filtros" }).click();
     await expect(page.getByText("Consultando o SETA — isso pode levar até 45 segundos...")).toBeVisible();

@@ -807,6 +807,7 @@ export interface DashboardSummary {
 
 export interface RegrasCobranca {
   clusters: string[];
+  rotulos_cluster: Record<string, string>; // cluster -> "ESPECIAL (R$ 0 a <400)"
   faixas: string[];
   faixas_whatsapp: Record<string, string[]>; // cluster -> faixas que recebem WhatsApp
   primeiro_dia: Record<string, number>;
