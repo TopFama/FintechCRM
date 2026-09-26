@@ -10,6 +10,16 @@ export function formatNumero(v: string | number | null | undefined): string {
   return numeroBR.format(n);
 }
 
+// Valor da fila é texto: número do SETA ("435.58") ou da planilha ("1.234,56")
+// sai em reais; qualquer outro formato aparece como veio.
+export function formatValorFila(v: string | null | undefined): string {
+  if (!v) return "—";
+  const t = v.trim().replace(/^R\$\s*/, "");
+  if (/^-?\d+(\.\d+)?$/.test(t)) return formatBRL(t);
+  if (/^-?\d{1,3}(\.\d{3})*(,\d+)?$|^-?\d+,\d+$/.test(t)) return formatBRL(t.replace(/\./g, "").replace(",", "."));
+  return v;
+}
+
 export function formatBRL(v: string | number | null | undefined): string {
   if (v === null || v === undefined || v === "") return "—";
   const n = typeof v === "string" ? parseFloat(v) : v;

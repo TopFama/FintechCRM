@@ -272,6 +272,11 @@ a {
   margin: -8px 0 16px;
 }
 
+/* Dentro de .card-header o h3 não tem margem: o -8px acima sobrepunha o subtítulo ao título */
+.card-header .card-subtitle {
+  margin: 2px 0 0;
+}
+
 /* ---------- Stats ---------- */
 
 .stat-grid {
@@ -532,6 +537,9 @@ tr.linha-clicavel:hover td {
 
 .table-wrap {
   overflow-x: auto;
+  /* Segura o .sr-only (absolute) dos cabeçalhos dentro da rolagem da tabela;
+     sem isso ele escapava e a página inteira rolava para o lado no celular */
+  position: relative;
 }
 
 table {
@@ -1239,6 +1247,11 @@ label {
   .form-row {
     flex-direction: column;
     gap: 0;
+  }
+
+  /* No celular só o passo atual mostra o nome, senão o stepper passa da tela */
+  .stepper-step:not(.active) .stepper-label {
+    display: none;
   }
 }
 

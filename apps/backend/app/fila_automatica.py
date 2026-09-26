@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 from . import models
 from .pausas import lojas_formatadas
 from .regras_db import carregar_regras
+from .routers.blacklist import codigos_bloqueados
 from .timezone import BUSINESS_TZ
 from .utils.leads_xlsx import formatar_codigo, formatar_cpf, primeiro_nome
 from .utils.phone import is_valid_phone, normalize_phone
@@ -51,6 +52,21 @@ def clientes_bloqueados_hoje(db: Session) -> set[str]:
             )
         )
     }
+
+
+class Blacklist:
+    """Códigos SETA e CPFs da blacklist, para conferir itens que não vieram da
+    base do SETA (planilha subida na faixa) e, no envio, quem entrou na
+    blacklist depois de estar na fila."""
+
+    def __init__(self, db: Session):
+        codigos, cpfs = codigos_bloqueados(db)
+        self.codigos = set(codigos)
+        self.cpfs = set(cpfs)
+
+    def contem(self, codigo: str | None, cpf: str | None) -> bool:
+        digitos_cpf = "".join(ch for ch in (cpf or "") if ch.isdigit())
+        return (codigo or "") in self.codigos or (bool(digitos_cpf) and digitos_cpf.zfill(11) in self.cpfs)
 
 
 def cobrados_hoje(db: Session) -> set[str]:
@@ -368,6 +384,20 @@ def expirar_nao_enviados(db: Session, global_config: models.GlobalDispatchConfig
         .filter(models.QueueItem.status == models.QueueStatus.pending, models.QueueItem.created_at < corte)
         .delete(synchronize_session=False)
     )
+    # Reservado de antes do corte = envio interrompido (backend reiniciou no meio
+    # do lote). Sem isso ficava reservado para sempre e bloqueava o cliente em
+    # toda fila. Vira erro, que não segura o cliente e aparece em Erros.
+    interrompidos = (
+        db.query(models.QueueItem)
+        .filter(models.QueueItem.status == models.QueueStatus.reserved, models.QueueItem.created_at < corte)
+        .update(
+            {
+                models.QueueItem.status: models.QueueStatus.error,
+                models.QueueItem.error_message: "Envio interrompido (o sistema reiniciou durante o disparo); confira se a mensagem chegou antes de reenviar",
+            },
+            synchronize_session=False,
+        )
+    )
     leads = 0
     for lead in db.query(models.Lead).filter(
         models.Lead.created_by.is_(None),  # só os da extração automática
@@ -376,7 +406,7 @@ def expirar_nao_enviados(db: Session, global_config: models.GlobalDispatchConfig
     ):
         db.delete(lead)  # ORM, pra levar as parcelas junto
         leads += 1
-    if itens or leads:
+    if itens or leads or interrompidos:
         db.commit()
         logger.info("Expirados após o horário final: %s item(ns) da fila, %s lead(s)", itens, leads)
     return itens, leads

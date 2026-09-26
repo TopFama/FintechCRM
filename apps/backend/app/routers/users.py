@@ -43,5 +43,17 @@ def delete_user(
     user = db.get(models.User, user_id)
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuário não encontrado")
+    # Planilhas, leads, blacklist, campanhas e a conexão do Google guardam quem
+    # criou (FK sem ON DELETE): passam para o admin que está excluindo, senão o
+    # Postgres recusa a exclusão. Não zera: Lead.created_by vazio significa
+    # "extração automática" e seria expirado no fim da janela.
+    for coluna in (
+        models.UploadLog.uploaded_by,
+        models.Lead.created_by,
+        models.ClienteBloqueado.created_by,
+        models.Campanha.created_by,
+        models.IntegracaoGoogle.connected_by,
+    ):
+        db.query(coluna.class_).filter(coluna == user.id).update({coluna: admin.id}, synchronize_session=False)
     db.delete(user)
     db.commit()

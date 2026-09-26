@@ -8,7 +8,7 @@ from .. import models, schemas
 from ..pausas import lojas_formatadas
 from ..database import get_db
 from ..regras_db import carregar_regras
-from ..fila_automatica import clientes_bloqueados_hoje
+from ..fila_automatica import Blacklist, clientes_bloqueados_hoje
 from ..deps import get_current_user
 from ..utils.document import extract_first_name, format_cpf, normalize_seta_code
 from ..utils.phone import eh_fixo, is_valid_phone, normalize_phone
@@ -173,6 +173,7 @@ async def upload_planilha(
     # Não cobrar o mesmo cliente mais de uma vez por dia, em nenhuma faixa: bloqueia
     # quem já está pendente/reservado e quem já foi enviado hoje (GMT-3).
     clientes_bloqueados = clientes_bloqueados_hoje(db)
+    blacklist = Blacklist(db)
 
     # Base de leads (Cobrança → Leads) desta faixa, pra resolver variáveis com
     # fonte_tipo="campo_cliente" direto do cadastro, sem depender da planilha
@@ -209,6 +210,11 @@ async def upload_planilha(
         if codigo_cliente in clientes_bloqueados:
             rejected += 1
             reasons.append(f"Linha {i}: cliente já está na fila ou já foi cobrado hoje")
+            continue
+
+        if blacklist.contem(codigo_cliente, cpf_raw):
+            rejected += 1
+            reasons.append(f"Linha {i}: cliente na blacklist")
             continue
 
         if not nome_raw:
@@ -360,6 +366,8 @@ async def upload_planilha(
                 status=models.QueueStatus.pending,
             )
         )
+        # A mesma planilha pode repetir o cliente: só a primeira linha entra
+        clientes_bloqueados.add(codigo_cliente)
         if lead is None:
             lead = models.Lead(
                 codigo_cliente=codigo_cliente,

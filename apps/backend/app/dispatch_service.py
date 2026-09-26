@@ -78,6 +78,18 @@ def _marcar_lead_cobrado(db: Session, item: models.QueueItem) -> None:
     ).update({"status": "cobrado", "cobrado_em": item.sent_at}, synchronize_session=False)
 
 
+def _depois_do_envio(db: Session, item: models.QueueItem) -> None:
+    """Fora do try do envio: uma falha aqui não pode transformar em erro uma
+    mensagem que já saiu (erro libera o cliente para outra base no mesmo dia)."""
+    if item.status != models.QueueStatus.sent:
+        return
+    try:
+        with db.begin_nested():
+            _marcar_lead_cobrado(db, item)
+    except Exception:  # noqa: BLE001 - o envio vale mesmo sem atualizar o lead
+        logger.exception("Mensagem %s enviada, mas o lead não foi marcado como cobrado", item.id)
+
+
 async def _enviar_via_meta(
     envio: models.FaixaEnvio,
     item: models.QueueItem,
@@ -108,7 +120,6 @@ async def _enviar_via_meta(
         )
         item.status = models.QueueStatus.sent
         item.sent_at = datetime.utcnow()
-        _marcar_lead_cobrado(db, item)
         messages = result.get("messages") or []
         if messages:
             item.whatsapp_message_id = messages[0].get("id")
@@ -122,6 +133,7 @@ async def _enviar_via_meta(
         item.error_message = f"Falha inesperada ao enviar: {exc}"
         db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
         logger.exception("Falha inesperada ao enviar cobrança %s", item.id)
+    _depois_do_envio(db, item)
 
 
 async def _enviar_via_chatwoot(
@@ -158,7 +170,6 @@ async def _enviar_via_chatwoot(
         )
         item.status = models.QueueStatus.sent
         item.sent_at = datetime.utcnow()
-        _marcar_lead_cobrado(db, item)
     except chatwoot_client.ChatwootAPIError as exc:
         item.status = models.QueueStatus.error
         item.error_message = str(exc)
@@ -169,3 +180,4 @@ async def _enviar_via_chatwoot(
         item.error_message = f"Falha inesperada ao enviar via Chatwoot: {exc}"
         db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
         logger.exception("Falha inesperada ao enviar cobrança %s via Chatwoot", item.id)
+    _depois_do_envio(db, item)

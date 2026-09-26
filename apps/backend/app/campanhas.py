@@ -270,7 +270,9 @@ def enfileirar_na_regua(db: Session) -> dict:
         for codigo, faixa_id in db.query(models.QueueItem.codigo_cliente, models.QueueItem.faixa_id).filter(
             models.QueueItem.codigo_cliente.in_(codigos),
             models.QueueItem.created_at >= inicio_hoje_utc(),
-            models.QueueItem.status.in_(STATUS_OCUPA_CLIENTE),
+            # Erro também resolve o dia: sem isso, o item com variável sem valor
+            # era recriado a cada ciclo do worker (5 s) até o fim da janela.
+            models.QueueItem.status.in_((*STATUS_OCUPA_CLIENTE, models.QueueStatus.error)),
         )
     }
     com_envio = {

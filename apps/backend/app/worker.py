@@ -20,7 +20,7 @@ from .pausas import Retencao
 from .config import settings
 from .database import SessionLocal
 from .dispatch_service import enviar_item
-from .fila_automatica import enfileirar_leads, expirar_nao_enviados, ja_cobrado_hoje
+from .fila_automatica import Blacklist, enfileirar_leads, expirar_nao_enviados, ja_cobrado_hoje
 from .leads_service import gerar_leads_de_clientes
 from .timezone import BUSINESS_TZ
 
@@ -208,6 +208,7 @@ async def run_dispatch_cycle() -> None:
         dentro_da_janela = _within_schedule_window(global_config, now)
         # Pausas ativas lidas uma vez por ciclo; conferidas de novo antes de cada envio
         retencao = Retencao.carregar(db)
+        blacklist = Blacklist(db)
 
         configs = (
             db.query(models.DispatchConfig)
@@ -256,6 +257,12 @@ async def run_dispatch_cycle() -> None:
                         continue
                     if Retencao.carregar(db).retido(item):
                         item.status = models.QueueStatus.pending
+                        db.commit()
+                        continue
+                    # Entrou na blacklist depois de estar na fila (ou veio de planilha antiga)
+                    if blacklist.contem(item.codigo_cliente, item.cpf):
+                        item.status = models.QueueStatus.error
+                        item.error_message = "Cliente na blacklist; não enviado"
                         db.commit()
                         continue
                     # Última barreira: o mesmo cliente pode ter entrado em duas filas antes de sair em uma.

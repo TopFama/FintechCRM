@@ -54,6 +54,10 @@ def salvar_conexao(payload: ConexaoIn, db: Session = Depends(get_db), _user: mod
         config = models.IntegracaoRenegocie(base_url=base_url, chave_cifrada=crypto.cifrar(payload.chave.strip()))
         db.add(config)
     else:
+        # A chave guardada só vai para o endereço em que foi cadastrada: trocar o
+        # endereço sem informar a chave de novo a mandaria para outro servidor.
+        if base_url != config.base_url and not payload.chave:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ao trocar o endereço, informe a chave de novo")
         config.base_url = base_url
         if payload.chave:
             config.chave_cifrada = crypto.cifrar(payload.chave.strip())

@@ -253,7 +253,7 @@ export default function Configuracoes() {
         </div>
       </div>
 
-      <div className="tabs" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      <div className="tabs" style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         {abas.map((a) => (
           <button
             key={a.valor}

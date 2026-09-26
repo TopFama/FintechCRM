@@ -277,8 +277,10 @@ def put_config_disparo(
 
     config = _ler_config_disparo(db)
     config.schedule_days = ",".join(dias)
-    config.schedule_start = body.schedule_start
-    config.schedule_end = body.schedule_end
+    # Grava sempre HH:MM com zero à esquerda: o worker lê com time.fromisoformat,
+    # que recusa "8:00" e derrubaria todo ciclo de disparo.
+    config.schedule_start = inicio.strftime("%H:%M")
+    config.schedule_end = fim.strftime("%H:%M")
     config.leads_auto_extract = body.leads_auto_extract
     config.leads_auto_extract_minutos_antes = body.leads_auto_extract_minutos_antes
     config.interval_seconds = body.interval_seconds

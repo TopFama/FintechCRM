@@ -18,7 +18,7 @@ import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import { AcaoPendentes, PainelAcao, PainelDescartar, PainelPausaLote, PausasAtivas } from "../components/PausasPendentes";
 import SelectCampanha from "../components/SelectCampanha";
 import SortableTh from "../components/SortableTh";
-import { formatBRL, formatData, formatDataHora, formatNumero } from "../format";
+import { formatBRL, formatData, formatDataHora, formatNumero, formatValorFila } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
 import { SortDirection, useSort } from "../sort";
 
@@ -324,7 +324,7 @@ export default function Relatorios() {
               {rotulo}
             </button>
           ))}
-          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
             <select aria-label="Faixa" value={faixaId} onChange={(e) => setFaixaId(e.target.value)} style={{ minWidth: 180 }}>
               <option value="">Todas as faixas</option>
               {(["regua", "campanha", "remarketing"] as TipoFaixa[]).map((tipo) => {
@@ -644,7 +644,7 @@ export default function Relatorios() {
                     <td className="cell-strong">{r.codigo_cliente}</td>
                     <td>{r.faixa}</td>
                     <td>{r.nome || "—"}</td>
-                    <td>{r.valor || "—"}</td>
+                    <td>{formatValorFila(r.valor)}</td>
                     <td className="text-muted">{r.telefone}</td>
                     <td className="text-faint">{formatDataHora(r.enviado_em)}</td>
                   </tr>
@@ -831,7 +831,7 @@ function TabelaFila({
               </td>
               <td>{r.faixa || "—"}</td>
               <td>{r.campanha || <span className="text-faint">Régua</span>}</td>
-              <td>{r.valor || "—"}</td>
+              <td>{formatValorFila(r.valor)}</td>
               <td className="text-muted">{r.telefone}</td>
               {tipo === "pendentes" ? (
                 <>

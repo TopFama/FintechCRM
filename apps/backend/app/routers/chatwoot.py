@@ -33,6 +33,10 @@ def salvar_config(
         )
         db.add(config)
     else:
+        # O token guardado só vai para o endereço em que foi cadastrado: trocar o
+        # endereço sem informar o token de novo o mandaria para outro servidor.
+        if payload.base_url != config.base_url and not payload.api_access_token:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ao trocar o endereço, informe o token de acesso de novo")
         config.base_url = payload.base_url
         config.account_id = payload.account_id
         if payload.api_access_token:
