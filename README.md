@@ -321,10 +321,11 @@ Não existe suíte de testes automatizados formal ainda. Para validar uma mudan�
 
 ## Limitações conhecidas / próximos passos
 
-- **Imagem de header em produção**: a Cloud API da Meta busca a imagem do header por uma URL
-  pública (`link`). Em ambiente local (`localhost`), essa URL não é alcançável pela Meta — para
-  enviar templates com imagem em produção, exponha `/media` publicamente (ex. atrás de um domínio
-  com HTTPS) ou evolua o envio para usar upload de mídia (`media_id`) em vez de link.
+- **Imagem de header**: pela Meta, a imagem subida em Templates vai como mídia (`media_id`, subida
+  uma vez por número e renovada a cada 20 dias; ver `dispatch_service.media_id_da_imagem`), sem
+  precisar de link público. Pelo Chatwoot ainda é link: vale `PUBLIC_BASE_URL` (opcional) ou o
+  endereço público por onde a imagem foi subida; sem nenhum dos dois o envio dá erro claro.
+  Template com cabeçalho de imagem e sem imagem subida vira erro sem chamar a Meta.
 - **Submissão de template para aprovação**: o endpoint de criação já está implementado
   (`POST /templates`, com `submit_to_meta=true`), mas os requisitos exatos de formatação de
   componentes variam por categoria — revise o payload em `app/routers/templates.py` contra a

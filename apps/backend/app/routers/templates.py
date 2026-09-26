@@ -4,7 +4,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session, selectinload
 
 from .. import chatwoot_client, models, schemas
@@ -335,10 +335,24 @@ async def refresh_template_status(
     return template
 
 
+def _base_publica(request: Request) -> str | None:
+    """Endereço por onde o navegador chegou ao backend, para a imagem ter um
+    link que o Chatwoot consiga baixar. Endereço local não serve de link."""
+    if settings.public_base_url:
+        return None  # dispatch_service.link_publico_imagem monta o link com ele
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme).split(",")[0].strip()
+    nome = host.rsplit(":", 1)[0] if not host.startswith("[") else host
+    if not host or nome in ("localhost", "127.0.0.1", "0.0.0.0", "[::1]", "backend") or "." not in nome:
+        return None
+    return f"{proto}://{host}"
+
+
 @router.post("/{template_id}/image", response_model=schemas.TemplateOut)
 async def upload_template_image(
     template_id: str,
     file: UploadFile,
+    request: Request,
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
@@ -371,7 +385,8 @@ async def upload_template_image(
     with open(dest_path, "wb") as f:
         f.write(content)
 
-    template.image_url = f"/media/{stored_name}"
+    base = _base_publica(request)
+    template.image_url = f"{base or ''}/media/{stored_name}"
     db.commit()
     db.refresh(template)
     return template

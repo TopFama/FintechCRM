@@ -1,5 +1,10 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+/** Imagem de cabeçalho de template: /media é servido pelo backend, não pelo frontend. */
+export function urlImagemTemplate(imageUrl: string): string {
+  return /^https?:\/\//.test(imageUrl) ? imageUrl : `${API_URL}${imageUrl}`;
+}
+
 // Sinalizadores locais só para a UI decidir o que mostrar sem esperar uma
 // chamada à API — não é o que autentica/autoriza (isso é o cookie httpOnly +
 // checagem no backend), então não tem problema em ficarem acessíveis via JS.

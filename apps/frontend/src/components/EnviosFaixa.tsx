@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, CampoCliente, Faixa, FaixaEnvio, FaixaVariableMappingIn, Template, WhatsappNumber } from "../api";
+import { api, urlImagemTemplate, CampoCliente, Faixa, FaixaEnvio, FaixaVariableMappingIn, Template, WhatsappNumber } from "../api";
 import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTrash } from "../icons";
 
 type MapeamentoEdicao = { fonte_tipo: "coluna" | "campo_cliente"; valor: string };
@@ -319,6 +319,11 @@ export default function EnviosFaixa({
                     </button>
                   )}
                 </div>
+                {templateDoForm?.header_type === "image" && !templateDoForm.image_url && (
+                  <span className="field-hint" role="alert" style={{ color: "var(--color-danger)" }}>
+                    Este template tem cabeçalho de imagem e ainda não tem imagem. Suba em Configurações → Templates, senão o envio dá erro.
+                  </span>
+                )}
               </div>
             </div>
 
@@ -336,7 +341,7 @@ export default function EnviosFaixa({
                 <div className="template-preview-bubble">
                   {templateDoForm.header_type === "image" && templateDoForm.image_url && (
                     <img
-                      src={templateDoForm.image_url}
+                      src={urlImagemTemplate(templateDoForm.image_url)}
                       alt="Cabeçalho do template"
                       style={{ width: "100%", maxWidth: 280, borderRadius: 8, marginBottom: 10, display: "block" }}
                     />

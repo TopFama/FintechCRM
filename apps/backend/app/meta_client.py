@@ -105,6 +105,19 @@ class MetaClient:
             pontos.extend(bloco.get("data_points", []))
         return pontos
 
+    async def upload_media(self, phone_number_id: str, nome: str, conteudo: bytes, mime: str) -> str:
+        """Sobe um arquivo para a Cloud API e devolve o media id. Com o id, a
+        imagem do cabeçalho vai na mensagem sem a Meta precisar buscar um link
+        público. A Meta guarda a mídia por 30 dias."""
+
+        data = await self._request(
+            "POST",
+            f"{phone_number_id}/media",
+            data={"messaging_product": "whatsapp", "type": mime},
+            files={"file": (nome, conteudo, mime)},
+        )
+        return str(data["id"])
+
     async def send_template_message(
         self,
         phone_number_id: str,
@@ -113,9 +126,14 @@ class MetaClient:
         language_code: str,
         body_params: list[str],
         header_image_link: str | None = None,
+        header_image_id: str | None = None,
     ) -> dict:
         components = []
-        if header_image_link:
+        if header_image_id:
+            components.append(
+                {"type": "header", "parameters": [{"type": "image", "image": {"id": header_image_id}}]}
+            )
+        elif header_image_link:
             components.append(
                 {"type": "header", "parameters": [{"type": "image", "image": {"link": header_image_link}}]}
             )

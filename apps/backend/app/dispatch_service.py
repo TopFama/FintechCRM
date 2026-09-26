@@ -4,14 +4,83 @@ módulo só sabe *como* enviar um item; *quando* rodar o ciclo de disparo é
 responsabilidade de worker.py (agendamento)."""
 
 import logging
-from datetime import datetime
+import mimetypes
+import os
+from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
 from . import campanhas_fixas, chatwoot_client, models
+from .config import settings
 from .meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_do_numero
 
 logger = logging.getLogger("dispatch_worker")
+
+# A Meta guarda a mídia enviada por 30 dias; renova antes disso.
+_VALIDADE_MIDIA_META = timedelta(days=20)
+# (phone_number_id, arquivo, mtime, tamanho) -> (media id, quando subiu)
+_midias_meta: dict[tuple, tuple[str, datetime]] = {}
+
+
+def arquivo_imagem(template: models.Template) -> str | None:
+    """Arquivo local da imagem de cabeçalho (subida em Configurações → Templates)."""
+    if not template.image_url:
+        return None
+    caminho = os.path.join(settings.media_dir, os.path.basename(urlparse(template.image_url).path))
+    return caminho if os.path.isfile(caminho) else None
+
+
+def link_publico_imagem(template: models.Template) -> str | None:
+    """Link da imagem que um serviço de fora (Chatwoot) consegue baixar."""
+    url = template.image_url
+    if not url:
+        return None
+    if url.startswith(("http://", "https://")):
+        return url
+    if settings.public_base_url:
+        return settings.public_base_url.rstrip("/") + url
+    return None
+
+
+def _chave_midia(phone_number_id: str, caminho: str) -> tuple:
+    info = os.stat(caminho)
+    return (phone_number_id, caminho, info.st_mtime_ns, info.st_size)
+
+
+async def media_id_da_imagem(client: MetaClient, phone_number_id: str, caminho: str) -> str:
+    """Sobe a imagem do template na Meta uma vez por número (e de novo quando
+    o arquivo muda ou a mídia fica velha) e reaproveita o id nos envios."""
+    chave = _chave_midia(phone_number_id, caminho)
+    guardado = _midias_meta.get(chave)
+    if guardado and datetime.utcnow() - guardado[1] < _VALIDADE_MIDIA_META:
+        return guardado[0]
+    with open(caminho, "rb") as arquivo:
+        conteudo = arquivo.read()
+    mime = mimetypes.guess_type(caminho)[0] or "image/jpeg"
+    media_id = await client.upload_media(phone_number_id, os.path.basename(caminho), conteudo, mime)
+    _midias_meta[chave] = (media_id, datetime.utcnow())
+    return media_id
+
+
+def _esquecer_midia(phone_number_id: str, caminho: str | None) -> None:
+    if caminho and os.path.isfile(caminho):
+        _midias_meta.pop(_chave_midia(phone_number_id, caminho), None)
+
+
+def _erro_antes_do_envio(envio: models.FaixaEnvio, item: models.QueueItem, db: Session, mensagem: str) -> None:
+    """Nada saiu para o cliente: o item vira erro e o cliente fica livre no dia."""
+    item.status = models.QueueStatus.error
+    item.error_message = mensagem
+    db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=mensagem))
+    logger.warning("Envio %s não saiu: %s", item.id, mensagem)
+
+
+def _sem_imagem(template: models.Template) -> str:
+    return (
+        f'O template "{template.name}" tem cabeçalho de imagem e nenhuma imagem foi subida '
+        "(Configurações → Templates)"
+    )
 
 
 def montar_parametros_envio(template: models.Template, variables_json: dict) -> tuple[list[str], str | None]:
@@ -35,9 +104,8 @@ def montar_parametros_envio(template: models.Template, variables_json: dict) -> 
     body_params = [str(dados.get(v.internal_name, "")) for v in ordered_variables]
 
     header_image_link = None
-    if template.header_type == models.TemplateHeaderType.image and template.image_url:
-        if template.image_url.startswith("http"):
-            header_image_link = template.image_url
+    if template.header_type == models.TemplateHeaderType.image:
+        header_image_link = link_publico_imagem(template)
 
     return body_params, header_image_link
 
@@ -109,6 +177,22 @@ async def _enviar_via_meta(
         return
 
     client = MetaClient(access_token=token)
+    # Cabeçalho de imagem: a imagem subida no sistema vai para a Meta como
+    # mídia (media id), sem depender de um link público do backend.
+    header_image_id = None
+    caminho_imagem = None
+    if template.header_type == models.TemplateHeaderType.image:
+        caminho_imagem = arquivo_imagem(template)
+        if caminho_imagem:
+            try:
+                header_image_id = await media_id_da_imagem(client, number.phone_number_id, caminho_imagem)
+            except Exception as exc:  # noqa: BLE001 - sem a imagem a Meta recusaria o template
+                _erro_antes_do_envio(envio, item, db, f"Falha ao subir a imagem do template para a Meta: {exc}")
+                return
+        elif not header_image_link:
+            _erro_antes_do_envio(envio, item, db, _sem_imagem(template))
+            return
+
     try:
         result = await client.send_template_message(
             phone_number_id=number.phone_number_id,
@@ -117,6 +201,7 @@ async def _enviar_via_meta(
             language_code=template.language,
             body_params=body_params,
             header_image_link=header_image_link,
+            header_image_id=header_image_id,
         )
         item.status = models.QueueStatus.sent
         item.sent_at = datetime.utcnow()
@@ -128,6 +213,9 @@ async def _enviar_via_meta(
         item.error_message = str(exc)
         db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=str(exc)))
         logger.warning("Falha ao enviar cobrança %s: %s", item.id, exc)
+        if header_image_id:
+            # mídia expirada ou recusada: o próximo envio sobe a imagem de novo
+            _esquecer_midia(number.phone_number_id, caminho_imagem)
     except Exception as exc:  # noqa: BLE001 - qualquer falha de rede/config não pode travar o item em "reserved"
         item.status = models.QueueStatus.error
         item.error_message = f"Falha inesperada ao enviar: {exc}"
@@ -155,6 +243,17 @@ async def _enviar_via_chatwoot(
         item.error_message = str(exc)
         db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
         logger.warning("Falha ao obter configuração do Chatwoot para envio %s: %s", item.id, exc)
+        return
+
+    if template.header_type == models.TemplateHeaderType.image and not header_image_link:
+        if not template.image_url:
+            _erro_antes_do_envio(envio, item, db, _sem_imagem(template))
+        else:
+            _erro_antes_do_envio(
+                envio, item, db,
+                "O Chatwoot precisa de um link público para a imagem do template: "
+                "suba a imagem de novo em Configurações → Templates",
+            )
         return
 
     try:

@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     google_sheet_lojas_gid: int = 113434922
 
     media_dir: str = "/app/media"
+    # Endereço público deste backend (PUBLIC_BASE_URL, opcional). Só o envio
+    # pelo Chatwoot precisa de link público para a imagem do template; sem ele,
+    # vale o endereço por onde a imagem foi subida (ver templates.py).
+    public_base_url: str = ""
 
     # Origens liberadas no CORS, separadas por vírgula. "*" (padrão) mantém o
     # comportamento atual para não quebrar quem já está rodando; em produção,

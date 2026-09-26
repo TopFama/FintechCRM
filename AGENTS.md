@@ -100,8 +100,9 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
 - **Não reintroduza `Base.metadata.create_all()`** — foi substituído por Alembic de propósito; toda
   mudança de schema passa por migration.
 - O worker de disparo roda no mesmo processo do backend; não assuma um serviço/fila separada.
-- Envio de imagem de header de template depende de URL pública (`/media`) — não funciona contra
-  `localhost` (ver `README.md` → "Limitações conhecidas").
+- Imagem de header de template: pela Meta vai como `media_id` (não precisa de URL pública); pelo
+  Chatwoot precisa de link público (ver `README.md` → "Limitações conhecidas"). Teste:
+  `tests/test_imagem_template.py`.
 - Upload de planilha (`POST /faixas/{id}/uploads`) é em duas etapas: primeiro lê só o cabeçalho
   (`/uploads/columns`), o frontend monta o mapeamento variável→coluna real e só então confirma o
   import — não assuma nomes de coluna fixos como "nome"/"celular".
