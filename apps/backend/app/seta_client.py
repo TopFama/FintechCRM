@@ -563,7 +563,9 @@ LOTE_CLIENTES = 1000
 # `pagamento`: lê só as baixas do período e cruza com os clientes em memória
 # (hash), então o custo no SETA não cresce com o número de clientes. Mais
 # antiga que isso, pelo índice de `pessoa` (lê o histórico do cliente).
-JANELA_RECENTE_DIAS = 31
+# 150 dias cobre a primeira cópia da base importada do n8n (cobranças desde
+# junho) sem abrir o histórico de dezenas de milhares de clientes no SETA.
+JANELA_RECENTE_DIAS = 150
 LOTE_RECENTE = 50000
 
 
