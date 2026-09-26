@@ -1,7 +1,8 @@
 name: Testes
 
 # Roda em todo PR e em todo push na main: scripts de teste do backend
-# (inclui a caracterização do fluxo de envio), build do frontend e a suíte e2e.
+# (inclui a caracterização do fluxo de envio), regras de import entre camadas
+# (import-linter), build do frontend e a suíte e2e.
 on:
   pull_request:
   push:
@@ -40,6 +41,20 @@ jobs:
       - name: Rodar os scripts
         working-directory: apps/backend
         run: ./tests/rodar_todos.sh
+
+  arquitetura:
+    name: Arquitetura (import-linter)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Conferir as regras de import (apps/backend/.importlinter)
+        working-directory: apps/backend
+        run: |
+          pip install -q import-linter==2.15
+          lint-imports
 
   frontend:
     name: Frontend (build)

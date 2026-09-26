@@ -75,7 +75,10 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
    junto com o build do frontend e o e2e). `tests/test_caracterizacao_envios.py` fotografa o
    fluxo de envio (fila, pausa, blacklist, uma mensagem por cliente por dia): se ele falhar
    depois de uma mudança que não devia mexer em comportamento, investigue antes de ajustar o
-   teste. Fora isso, não há suíte formal: a validação é exercitar os endpoints tocados via
+   teste. As regras de import entre camadas (nenhum módulo importa router, router não importa
+   router, regras puras sem infraestrutura, `deps.py` só autentica, HTTP externo só nos clientes)
+   estão em `apps/backend/.importlinter` e rodam no CI: `pip install import-linter && lint-imports`
+   dentro de `apps/backend`. Fora isso, não há suíte formal: a validação é exercitar os endpoints tocados via
    `fastapi.testclient.TestClient` (ele passa pelo `lifespan` de verdade: roda as migrations e cria
    o admin, igual a produção). SQLite (`DATABASE_URL=sqlite:///...`) serve para uma checagem rápida
    de que nada quebrou; para qualquer coisa envolvendo `Enum` ou tipos específicos do Postgres,
