@@ -16,7 +16,8 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session, selectinload
 
-from . import models
+from . import models, seta_client
+from .services import pagamentos_seta
 from .pausas import Retencao
 from .config import settings
 from .database import SessionLocal
@@ -341,8 +342,35 @@ async def run_dispatch_cycle() -> None:
         db.close()
 
 
+def sincronizar_pagamentos() -> None:
+    """Rodada incremental da cópia local das baixas do SETA (ver
+    services/pagamentos_seta.py). Roda no pool de threads do APScheduler."""
+    if not seta_client.is_configured():
+        return
+    db = SessionLocal()
+    try:
+        pagamentos_seta.sincronizar(db)
+    except seta_client.SetaIndisponivel as exc:
+        logger.warning("Sincronização de pagamentos adiada: %s", exc)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        logger.exception("Falha ao sincronizar pagamentos do SETA")
+    finally:
+        db.close()
+
+
 def start_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        sincronizar_pagamentos,
+        "interval",
+        seconds=settings.pagamentos_sync_interval_seconds,
+        # primeira rodada logo depois da subida, pra as telas não esperarem o SETA
+        next_run_time=datetime.now() + timedelta(seconds=30),
+        id="pagamentos_seta",
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.add_job(
         run_dispatch_cycle,
         "interval",

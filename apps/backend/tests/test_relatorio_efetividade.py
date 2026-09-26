@@ -462,16 +462,16 @@ with TestClient(app) as client:
     seta_client.situacao_titulos = mock_situacao_titulos
 
     # "Pagou" é por cliente e data da cobrança (qualquer título quitado depois
-    # dela, ver seta_client.pagamentos_pos_cobranca): o cliente 00100001 pagou
-    # 165,00 hoje; o valor é repartido entre as parcelas cobradas dele.
-    def mock_pagamentos_pos_cobranca(pares, dias_janela=None):
-        return {par: par[1] for par in pares if par[0] == "00100001"}
+    # dela, ver services/pagamentos_seta): o cliente 00100001 pagou 165,00 no
+    # dia da cobrança; o valor é repartido entre as parcelas cobradas dele.
+    def mock_baixas_de_clientes(clientes):
+        return [
+            {"titulo_codigo": "TIT101", "codigo_cliente": c, "pagamento": desde, "valor": Decimal("165.00"), "rp": "R"}
+            for c, desde in clientes
+            if c == "00100001"
+        ]
 
-    def mock_valores_pagos_pos_cobranca(pares, pago_de=None, pago_ate=None, dias_janela=None):
-        return {par: {"valor_pago": Decimal("165.00")} for par in pares if par[0] == "00100001"}
-
-    seta_client.pagamentos_pos_cobranca = mock_pagamentos_pos_cobranca
-    seta_client.valores_pagos_pos_cobranca = mock_valores_pagos_pos_cobranca
+    seta_client.baixas_de_clientes = mock_baixas_de_clientes
 
     # 4. Consulta /reports/efetividade
     rep_res = client.get("/reports/efetividade", headers=headers)

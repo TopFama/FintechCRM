@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from .. import campanhas_fixas, google_client, lojas as lojas_base, models, seta_client
 from ..timezone import BUSINESS_TZ, hoje_br
-from . import custo_whatsapp
+from . import custo_whatsapp, pagamentos_seta
 from ..regras_db import carregar_regras
 from ..relatorio_efetividade import montar_relatorio
 
@@ -138,7 +138,7 @@ def obter_dados_efetividade(
 
     # Regra da Tarefa 5: conta como "pagou" quem quitou QUALQUER título em
     # aberto (não só o cobrado) dentro da janela — nunca em loop por
-    # cliente/título, uma única consulta via CTE (ver seta_client).
+    # cliente/título: baixas copiadas localmente (ver services/pagamentos_seta).
     codigos_titulos = list({p.titulo_codigo for p in parcelas_db})
     situacoes: dict[str, dict] = {}
     if codigos_titulos:
@@ -154,11 +154,11 @@ def obter_dados_efetividade(
     valores_pagos: dict[tuple[str, date], dict] = {}
     if pares_cobranca:
         try:
-            pagamentos = seta_client.pagamentos_pos_cobranca(sorted(pares_cobranca), dias_janela)
+            pagamentos = pagamentos_seta.pagamentos_pos_cobranca(db, sorted(pares_cobranca), dias_janela)
             # Recebimento = o que entrou de fato no SETA na janela (mesma soma do
             # relatório Quem pagou e do card do Dashboard), não o valor cobrado.
-            valores_pagos = seta_client.valores_pagos_pos_cobranca(
-                sorted(pares_cobranca), dias_janela=dias_janela
+            valores_pagos = pagamentos_seta.valores_pagos_pos_cobranca(
+                db, sorted(pares_cobranca), dias_janela=dias_janela
             )
         except seta_client.SetaIndisponivel as exc:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc

@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     cookie_secure: bool = True
 
     dispatch_worker_interval_seconds: int = 5
+    # Rodada incremental da cópia local das baixas do SETA (services/pagamentos_seta.py)
+    pagamentos_sync_interval_seconds: int = 1800
     # Fuso horário usado para interpretar a janela de agendamento (dias/hora
     # início/fim) configurada em cada disparo — o servidor roda em UTC, mas
     # quem configura a janela pensa em horário de Brasília.

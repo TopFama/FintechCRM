@@ -558,124 +558,48 @@ def situacao_titulos(codigos: list[str]) -> dict[str, dict]:
     return resultado
 
 
-def pagamentos_pos_cobranca(
-    pares: list[tuple[str, date]], dias_janela: int | None = None
-) -> dict[tuple[str, date], date]:
-    """Pra cada (codigo_cliente, data_cobranca), diz se o cliente "pagou" no
-    sentido amplo da Tarefa 5: quitou (status='B') QUALQUER título em aberto
-    dele — não necessariamente o título cobrado — em data_pagamento >=
-    data_cobranca (e, se `dias_janela` for informado, até data_cobranca +
-    dias_janela). Retorna {(codigo_cliente, data_cobranca): data_pagamento
-    mais antiga que conta como "pagou"} só para quem pagou — a chave inclui
-    data_cobranca porque o mesmo cliente pode ter sido cobrado mais de uma
-    vez em datas diferentes.
+def baixas_de_clientes(clientes: list[tuple[str, date]]) -> list[dict]:
+    """Títulos quitados (status 'B') de cada cliente com pagamento a partir da
+    data informada: [(codigo_cliente, desde)] → uma linha por título, com
+    valor e rp brutos. Base da cópia local em services/pagamentos_seta.py.
+    Consulta por lote (CTE + VALUES), nunca em loop por cliente."""
 
-    Consulta única via CTE com VALUES injetando os pares — nunca em loop por
-    cliente/título, pra não sobrecarregar o banco de produção do ERP (regra
-    obrigatória da Tarefa 5)."""
-
-    resultado: dict[tuple[str, date], date] = {}
-    if not pares:
+    resultado: list[dict] = []
+    if not clientes:
         return resultado
 
     engine = engine_ou_erro()
     CHUNK = 1000
     try:
         with engine.connect() as conn:
-            for i in range(0, len(pares), CHUNK):
-                lote = pares[i : i + CHUNK]
-                linhas_values = ", ".join(f"(:p{j}, :d{j})" for j in range(len(lote)))
-                params: dict = {}
-                for j, (codigo, data_cobranca) in enumerate(lote):
-                    params[f"p{j}"] = codigo
-                    params[f"d{j}"] = data_cobranca
-                params["dias_janela"] = dias_janela
-
-                sql = f"""
-                    WITH cobrancas(pessoa, data_cobranca) AS (
-                        VALUES {linhas_values}
-                    )
-                    SELECT c.pessoa AS pessoa, c.data_cobranca AS data_cobranca, min(ft.pagamento) AS data_pagamento
-                      FROM cobrancas c
-                      -- coluna char(8) bruta, pra usar idx_financeiro_titulos_pessoa
-                      JOIN financeiro_titulos ft ON ft.pessoa = CAST(c.pessoa AS char(8))
-                     WHERE ft.status = 'B'
-                       AND ft.pagamento >= c.data_cobranca
-                       -- CAST explícito: sem ele, com janela "qualquer data" (NULL) o Postgres não
-                       -- consegue inferir o tipo do parâmetro e a consulta falha (AmbiguousParameter)
-                       AND (CAST(:dias_janela AS integer) IS NULL
-                            OR ft.pagamento <= c.data_cobranca + (CAST(:dias_janela AS integer) * INTERVAL '1 day'))
-                     GROUP BY c.pessoa, c.data_cobranca
-                """
-                for r in conn.execute(text(sql), params).mappings():
-                    resultado[(r["pessoa"], r["data_cobranca"])] = r["data_pagamento"]
-    except SQLAlchemyError as exc:
-        logger.warning(
-            "Falha ao consultar pagamentos pós-cobrança no SETA: %s (%s)",
-            exc.__class__.__name__,
-            getattr(exc, "orig", exc).__class__.__name__,
-        )
-        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
-    return resultado
-
-
-
-def valores_pagos_pos_cobranca(
-    pares: list[tuple[str, date]],
-    pago_de: date | None = None,
-    pago_ate: date | None = None,
-    dias_janela: int | None = None,
-) -> dict[tuple[str, date], dict]:
-    """Quanto cada cliente pagou depois de cobrado: por (codigo_cliente,
-    data_cobranca), soma dos títulos a receber quitados (status 'B') com
-    pagamento >= data_cobranca e dentro de [pago_de, pago_ate] quando
-    informados (e até data_cobranca + dias_janela, se informado). Mesma regra
-    de "pagou" de `pagamentos_pos_cobranca`, mas com
-    valor, quantidade e primeira/última data. Consulta única por lote via CTE
-    + VALUES, nunca em loop por cliente."""
-
-    resultado: dict[tuple[str, date], dict] = {}
-    if not pares:
-        return resultado
-
-    engine = engine_ou_erro()
-    CHUNK = 1000
-    try:
-        with engine.connect() as conn:
-            for i in range(0, len(pares), CHUNK):
-                lote = pares[i : i + CHUNK]
+            for i in range(0, len(clientes), CHUNK):
+                lote = clientes[i : i + CHUNK]
                 linhas_values = ", ".join(f"(:p{j}, CAST(:d{j} AS date))" for j in range(len(lote)))
-                params: dict = {"pago_de": pago_de, "pago_ate": pago_ate, "dias_janela": dias_janela}
-                for j, (codigo, data_cobranca) in enumerate(lote):
+                params: dict = {}
+                for j, (codigo, desde) in enumerate(lote):
                     params[f"p{j}"] = codigo
-                    params[f"d{j}"] = data_cobranca
-
+                    params[f"d{j}"] = desde
                 sql = f"""
-                    WITH cobrancas(pessoa, data_cobranca) AS (
+                    WITH clientes(pessoa, desde) AS (
                         VALUES {linhas_values}
                     )
-                    SELECT c.pessoa AS pessoa,
-                           c.data_cobranca AS data_cobranca,
-                           sum(ft.valor) AS valor_pago,
-                           count(*) AS qtd_titulos,
-                           min(ft.pagamento) AS primeiro_pagamento,
-                           max(ft.pagamento) AS ultimo_pagamento
-                      FROM cobrancas c
+                    SELECT trim(ft.codigo) AS titulo_codigo,
+                           c.pessoa AS codigo_cliente,
+                           ft.pagamento AS pagamento,
+                           COALESCE(ft.valor, 0) AS valor,
+                           COALESCE(trim(ft.rp), '') AS rp
+                      FROM clientes c
                       -- coluna char(8) bruta, pra usar idx_financeiro_titulos_pessoa
                       JOIN financeiro_titulos ft ON ft.pessoa = CAST(c.pessoa AS char(8))
                      WHERE ft.status = 'B'
-                       AND ft.rp = 'R'
-                       AND ft.valor > 0
-                       AND ft.pagamento >= c.data_cobranca
-                       AND (CAST(:pago_de AS date) IS NULL OR ft.pagamento >= CAST(:pago_de AS date))
-                       AND (CAST(:pago_ate AS date) IS NULL OR ft.pagamento <= CAST(:pago_ate AS date))
-                       AND (CAST(:dias_janela AS integer) IS NULL
-                            OR ft.pagamento <= c.data_cobranca + (CAST(:dias_janela AS integer) * INTERVAL '1 day'))
-                     GROUP BY c.pessoa, c.data_cobranca
+                       AND ft.pagamento >= c.desde
                 """
                 for r in conn.execute(text(sql), params).mappings():
-                    resultado[(r["pessoa"], r["data_cobranca"])] = dict(r)
+                    linha = dict(r)
+                    if hasattr(linha["pagamento"], "date") and callable(linha["pagamento"].date):
+                        linha["pagamento"] = linha["pagamento"].date()
+                    resultado.append(linha)
     except SQLAlchemyError as exc:
-        logger.warning("Falha ao consultar valores pagos pós-cobrança no SETA: %s", exc.__class__.__name__)
+        logger.warning("Falha ao consultar baixas no SETA: %s", exc.__class__.__name__)
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
     return resultado

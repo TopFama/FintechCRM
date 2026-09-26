@@ -1,0 +1,203 @@
+"""Cópia local das baixas do SETA de quem já foi cobrado.
+
+Dashboard, Efetividade e Quem pagou precisam saber, por (cliente, data da
+cobrança), se o cliente quitou algum título depois e quanto entrou. Antes isso
+ia ao SETA (produção) a cada tela aberta; agora vem da tabela pagamentos_seta,
+e o SETA só é lido aqui, de forma incremental:
+
+- cliente cobrado pela primeira vez: busca as baixas dele desde a primeira
+  cobrança (na hora em que uma tela precisa dele, ou na rodada do worker);
+- rodada do worker: relê as baixas de cada cliente a partir da marca d'água
+  dele (última leitura) menos SOBREPOSICAO_DIAS, pra pegar baixa lançada com
+  data retroativa e estorno recente. Cliente sem cobrança nos últimos
+  JANELA_ATIVA_DIAS é relido só uma vez por dia.
+"""
+
+import logging
+import threading
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from .. import models, seta_client
+from ..timezone import BUSINESS_TZ, hoje_br
+
+logger = logging.getLogger(__name__)
+
+SOBREPOSICAO_DIAS = 7
+# Cliente com cobrança nos últimos N dias é relido em toda rodada; os demais, uma vez por dia
+JANELA_ATIVA_DIAS = 60
+LOTE = 1000
+
+# Um processo só (worker e rotas no mesmo backend): evita duas cópias ao mesmo tempo
+_trava = threading.Lock()
+
+
+def _dia_br(dt: datetime) -> date:
+    return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).date()
+
+
+def _cobrancas(db: Session, codigos: set[str] | None = None) -> dict[str, tuple[date, date]]:
+    """codigo_cliente → (primeira, última) data de cobrança, no fuso de negócio."""
+    query = db.query(
+        models.Lead.codigo_cliente, func.min(models.Lead.cobrado_em), func.max(models.Lead.cobrado_em)
+    ).filter(
+        models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None)
+    )
+    resultado: dict[str, tuple[date, date]] = {}
+    if codigos is None:
+        lotes = [None]
+    else:
+        lista = sorted(codigos)
+        lotes = [lista[i : i + LOTE] for i in range(0, len(lista), LOTE)]
+    for lote in lotes:
+        q = query if lote is None else query.filter(models.Lead.codigo_cliente.in_(lote))
+        for codigo, primeira, ultima in q.group_by(models.Lead.codigo_cliente):
+            resultado[codigo] = (_dia_br(primeira), _dia_br(ultima))
+    return resultado
+
+
+def _em_lotes(itens: list, tamanho: int = LOTE):
+    for i in range(0, len(itens), tamanho):
+        yield itens[i : i + tamanho]
+
+
+def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
+    """Sem `codigos`: rodada completa (novos inteiros + incremental dos já
+    copiados). Com `codigos`: só busca, desses, os que ainda não foram
+    copiados; se todos já foram, não toca o SETA. Devolve quantos títulos
+    vieram do SETA. Levanta seta_client.SetaIndisponivel."""
+
+    with _trava:
+        hoje = hoje_br()
+        cobrancas = _cobrancas(db, codigos)
+        cobrados = {c: primeira for c, (primeira, _) in cobrancas.items()}
+        copiados = {
+            c.codigo_cliente: c
+            for lote in _em_lotes(sorted(cobrados))
+            for c in db.query(models.PagamentoSetaCliente).filter(models.PagamentoSetaCliente.codigo_cliente.in_(lote))
+        }
+        # Cliente novo (ou com cobrança anterior ao que já foi copiado): lê tudo desde a primeira cobrança
+        leituras = {c: d for c, d in cobrados.items() if c not in copiados or d < copiados[c].desde}
+        if codigos is None:
+            ativos_desde = hoje - timedelta(days=JANELA_ATIVA_DIAS)
+            for c, copia in copiados.items():
+                # Cobrado há muito tempo: basta reler uma vez por dia
+                if c not in leituras and (cobrancas[c][1] >= ativos_desde or copia.marca_dagua < hoje):
+                    leituras[c] = max(copia.desde, copia.marca_dagua - timedelta(days=SOBREPOSICAO_DIAS))
+        if not leituras:
+            return 0
+
+        baixas = seta_client.baixas_de_clientes(sorted(leituras.items()))
+
+        # Troca o trecho relido pelo que o SETA respondeu agora (some o que foi estornado)
+        por_inicio: dict[date, list[str]] = defaultdict(list)
+        for c, inicio in leituras.items():
+            por_inicio[inicio].append(c)
+        for inicio, clientes in por_inicio.items():
+            for lote in _em_lotes(sorted(clientes)):
+                db.query(models.PagamentoSeta).filter(
+                    models.PagamentoSeta.codigo_cliente.in_(lote), models.PagamentoSeta.pagamento >= inicio
+                ).delete(synchronize_session=False)
+        por_titulo = {b["titulo_codigo"]: b for b in baixas}
+        for lote in _em_lotes(sorted(por_titulo)):
+            db.query(models.PagamentoSeta).filter(models.PagamentoSeta.titulo_codigo.in_(lote)).delete(
+                synchronize_session=False
+            )
+        db.bulk_insert_mappings(
+            models.PagamentoSeta,
+            [
+                {
+                    "titulo_codigo": b["titulo_codigo"],
+                    "codigo_cliente": b["codigo_cliente"],
+                    "pagamento": b["pagamento"],
+                    "valor": Decimal(str(b["valor"] or 0)),
+                    "rp": b["rp"] or "",
+                }
+                for b in por_titulo.values()
+            ],
+        )
+        for codigo in leituras:
+            copia = copiados.get(codigo)
+            if copia is None:
+                db.add(models.PagamentoSetaCliente(codigo_cliente=codigo, desde=cobrados[codigo], marca_dagua=hoje))
+            else:
+                copia.desde = min(copia.desde, cobrados[codigo])
+                copia.marca_dagua = hoje
+        db.commit()
+        logger.info("Pagamentos do SETA sincronizados: %d clientes, %d títulos", len(leituras), len(por_titulo))
+        return len(por_titulo)
+
+
+def _baixas_por_cliente(db: Session, pares: list[tuple[str, date]]) -> dict[str, list[models.PagamentoSeta]]:
+    codigos = {c for c, _ in pares}
+    # Quem foi cobrado depois da última rodada ainda não está copiado: busca só esses
+    sincronizar(db, codigos)
+    baixas: dict[str, list[models.PagamentoSeta]] = defaultdict(list)
+    for lote in _em_lotes(sorted(codigos)):
+        for b in db.query(models.PagamentoSeta).filter(models.PagamentoSeta.codigo_cliente.in_(lote)):
+            baixas[b.codigo_cliente].append(b)
+    return baixas
+
+
+def _na_janela(b: models.PagamentoSeta, data_cobranca: date, dias_janela: int | None) -> bool:
+    if b.pagamento < data_cobranca:
+        return False
+    return dias_janela is None or b.pagamento <= data_cobranca + timedelta(days=dias_janela)
+
+
+def pagamentos_pos_cobranca(
+    db: Session, pares: list[tuple[str, date]], dias_janela: int | None = None
+) -> dict[tuple[str, date], date]:
+    """Pra cada (codigo_cliente, data_cobranca), a primeira data em que o
+    cliente quitou QUALQUER título (status 'B') a partir da cobrança (e até
+    data_cobranca + dias_janela, se informado). Só entra quem pagou."""
+
+    if not pares:
+        return {}
+    baixas = _baixas_por_cliente(db, pares)
+    resultado: dict[tuple[str, date], date] = {}
+    for codigo, data_cobranca in pares:
+        datas = [b.pagamento for b in baixas.get(codigo, []) if _na_janela(b, data_cobranca, dias_janela)]
+        if datas:
+            resultado[(codigo, data_cobranca)] = min(datas)
+    return resultado
+
+
+def valores_pagos_pos_cobranca(
+    db: Session,
+    pares: list[tuple[str, date]],
+    pago_de: date | None = None,
+    pago_ate: date | None = None,
+    dias_janela: int | None = None,
+) -> dict[tuple[str, date], dict]:
+    """Quanto cada cliente pagou depois de cobrado: soma dos títulos a receber
+    (rp 'R', valor > 0) quitados a partir da cobrança, dentro de
+    [pago_de, pago_ate] e da janela quando informados."""
+
+    if not pares:
+        return {}
+    baixas = _baixas_por_cliente(db, pares)
+    resultado: dict[tuple[str, date], dict] = {}
+    for codigo, data_cobranca in pares:
+        titulos = [
+            b
+            for b in baixas.get(codigo, [])
+            if b.rp == "R"
+            and b.valor > 0
+            and _na_janela(b, data_cobranca, dias_janela)
+            and (pago_de is None or b.pagamento >= pago_de)
+            and (pago_ate is None or b.pagamento <= pago_ate)
+        ]
+        if titulos:
+            resultado[(codigo, data_cobranca)] = {
+                "valor_pago": sum((Decimal(str(b.valor)) for b in titulos), Decimal("0")),
+                "qtd_titulos": len(titulos),
+                "primeiro_pagamento": min(b.pagamento for b in titulos),
+                "ultimo_pagamento": max(b.pagamento for b in titulos),
+            }
+    return resultado

@@ -701,3 +701,29 @@ class TokenRevogado(Base):
 
     jti: Mapped[str] = mapped_column(String, primary_key=True)
     expira_em: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class PagamentoSeta(Base):
+    """Cópia local dos títulos quitados no SETA (status 'B') de quem já foi
+    cobrado. Dashboard, Efetividade e Quem pagou leem daqui; o SETA só é
+    consultado na sincronização incremental (services/pagamentos_seta.py)."""
+
+    __tablename__ = "pagamentos_seta"
+
+    titulo_codigo: Mapped[str] = mapped_column(String, primary_key=True)
+    codigo_cliente: Mapped[str] = mapped_column(String, index=True)
+    pagamento: Mapped[date] = mapped_column(Date, index=True)
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    rp: Mapped[str] = mapped_column(String, default="")  # R = a receber
+
+
+class PagamentoSetaCliente(Base):
+    """Clientes cujas baixas já estão em pagamentos_seta: a partir de `desde`
+    (primeira cobrança) e lidas no SETA até `marca_dagua` (data da última
+    leitura). Cliente cobrado que não está aqui é buscado inteiro."""
+
+    __tablename__ = "pagamentos_seta_clientes"
+
+    codigo_cliente: Mapped[str] = mapped_column(String, primary_key=True)
+    desde: Mapped[date] = mapped_column(Date)
+    marca_dagua: Mapped[date] = mapped_column(Date, index=True)

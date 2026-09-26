@@ -242,13 +242,19 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    Graph API alternando entre os números configurados, e atualiza o status de cada envio
    (enviado/erro), com log de erro consultável no dashboard.
 8. **Dashboard** — pendentes (e quantos estão pausados), enviados, erros, telefones inválidos,
-   "Pagaram em até 7 dias" (via SETA), por faixa, e os erros mais recentes. Cada card abre o
+   "Pagaram em até 7 dias" (via SETA) e por faixa. Cada card abre o
    relatório dele com o mesmo período (`/relatorios?aba=…&de=…&ate=…`). A tela se atualiza
    sozinha sem F5: resumo da fila a cada 30 s, leads a cada 60 s e orçamento a cada 15 min,
    parando enquanto a aba está oculta. O "Pagaram em até 7 dias" (SETA) e a efetividade não se
    atualizam sozinhos, só ao abrir, trocar o filtro ou em "Atualizar agora". Os pedidos
    automáticos (`auto=true`) leem do cache compartilhado no Redis (15 s o resumo, 10 min o
    orçamento).
+   **Pagamentos**: "Pagaram em até 7 dias", Efetividade e "Quem pagou" leem a tabela local
+   `pagamentos_seta` (baixas do SETA de quem já foi cobrado), não o SETA direto. O worker relê as
+   baixas a cada 30 min (`PAGAMENTOS_SYNC_INTERVAL_SECONDS`), por cliente, a partir da última
+   leitura menos 7 dias (pega baixa retroativa e estorno); cliente sem cobrança nos últimos 60
+   dias é relido uma vez por dia. Cliente cobrado depois da última rodada é buscado na hora, só
+   ele. Ver `app/services/pagamentos_seta.py`.
 9. **Relatórios** — abas na ordem dos cards do Dashboard (pendentes, envios realizados, erros,
    telefones inválidos e quem pagou), com filtro por período, faixa e **Campanha** (na URL) e
    exportação em Excel (.xlsx) já formatado. Na fila, "Campanha" filtra pela faixa da campanha

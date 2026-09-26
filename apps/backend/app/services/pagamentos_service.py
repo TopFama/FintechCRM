@@ -1,5 +1,5 @@
 """Relatório de quem pagou o que foi cobrado, por cliente: leads cobrados no
-período de cobrança cruzados com os pagamentos no SETA (uma consulta em lote)."""
+período de cobrança cruzados com as baixas do SETA copiadas em pagamentos_seta."""
 
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -7,7 +7,8 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from .. import google_client, lojas as lojas_base, models, seta_client
+from .. import google_client, lojas as lojas_base, models
+from . import pagamentos_seta
 from ..timezone import BUSINESS_TZ
 
 
@@ -31,7 +32,7 @@ def clientes_que_pagaram(
     campanha: str | None = None,
 ) -> list[dict]:
     """Uma linha por cliente e data de cobrança, só de quem pagou. Com
-    `dias_janela`, "pagou" segue exatamente seta_client.pagamentos_pos_cobranca
+    `dias_janela`, "pagou" segue exatamente pagamentos_seta.pagamentos_pos_cobranca
     (quitou qualquer título até data_cobranca + dias_janela), a mesma regra do
     Relatório de Efetividade e do card do Dashboard. Levanta
     seta_client.SetaIndisponivel se o SETA estiver fora."""
@@ -70,8 +71,8 @@ def clientes_que_pagaram(
             linha["valor_cobrado"] += Decimal(lead.valor_cobrar or 0)
 
     pares = sorted(cobrancas)
-    pagos = seta_client.valores_pagos_pos_cobranca(pares, pago_de, pago_ate, dias_janela)
-    na_janela = seta_client.pagamentos_pos_cobranca(pares, dias_janela) if dias_janela is not None else None
+    pagos = pagamentos_seta.valores_pagos_pos_cobranca(db, pares, pago_de, pago_ate, dias_janela)
+    na_janela = pagamentos_seta.pagamentos_pos_cobranca(db, pares, dias_janela) if dias_janela is not None else None
 
     try:
         nomes_loja = {l["filial"]: l.get("nome_com_cod") for l in lojas_base.listar_lojas(db)}
