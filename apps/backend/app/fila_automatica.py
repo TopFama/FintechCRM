@@ -8,65 +8,16 @@ from datetime import datetime, time, timedelta
 
 from sqlalchemy.orm import Session, selectinload
 
-from . import models
+from . import itens_fila, models
 from .elegibilidade import clientes_bloqueados_hoje
 from .pausas import lojas_formatadas
 from .regras_db import carregar_regras
 from .timezone import BUSINESS_TZ, para_br, utc_ingenuo
-from .utils.leads_xlsx import formatar_codigo, formatar_cpf, primeiro_nome
+from .utils.leads_xlsx import formatar_cpf, primeiro_nome
 from .utils.phone import is_valid_phone, normalize_phone
-from .variaveis_template import FonteVariavel, contexto_cliente, resolver_variaveis
+from .variaveis_template import contexto_cliente, resolver_variaveis
 
 logger = logging.getLogger("fila_automatica")
-
-
-
-
-
-
-def _contexto_lead(lead: models.Lead, juros=None) -> dict[str, str]:
-    # Colunas da planilha de leads exportada vêm primeiro: um mapeamento
-    # "coluna Nome" resolve pro primeiro nome, igual ao upload manual dessa planilha.
-    contexto = {
-        "Codigo": formatar_codigo(lead.codigo_cliente),
-        "Nome": primeiro_nome(lead.nome),
-        "CPF": formatar_cpf(lead.cpf),
-        "Celular": lead.celular or "",
-    }
-    contexto.update(
-        contexto_cliente(
-            {
-                "codigo": lead.codigo_cliente,
-                "nome": lead.nome,
-                "cpf": lead.cpf,
-                "celular": lead.celular,
-                "cluster": lead.cluster,
-                "faixa": lead.faixa,
-                "dias_atraso": lead.dias_atraso,
-                "qtd_parcelas": lead.qtd_parcelas,
-                "valor_cobrar": lead.valor_cobrar,
-                "valor_em_aberto": lead.valor_em_aberto,
-                "vencimento_mais_antigo": lead.vencimento_mais_antigo,
-                "parcelas": lead.parcelas,
-                "juros": juros,
-            }
-        )
-    )
-    return contexto
-
-
-def _fontes(faixa: models.Faixa, template: models.Template) -> list[tuple[models.TemplateVariable, FonteVariavel | None]]:
-    mapas = {m.template_variable_id: m for m in faixa.variable_mappings if m.template_id == template.id}
-    fontes = []
-    for v in template.variables:
-        m = mapas.get(v.id)
-        if m is None:
-            fontes.append((v, None))
-        elif m.fonte_tipo == "expressao":
-            fontes.append((v, FonteVariavel(v.internal_name, "expressao", m.expressao or "")))
-        else:
-            fontes.append((v, FonteVariavel(v.internal_name, m.fonte_tipo, m.column_name or "")))
-    return fontes
 
 
 def enfileirar_clientes(
@@ -89,11 +40,11 @@ def enfileirar_clientes(
     colunas de planilha, valendo mais que os campos do cliente. Não comita.
     Devolve quantos entraram como pendentes (e os acrescenta a `enfileirados`)."""
 
-    templates = {e.template_id: e.template for e in faixa.envios if e.active and e.template_id}
+    templates = itens_fila.templates_ativos(faixa)
     if not templates:
         logger.warning("%s: faixa '%s' sem número/template ativo; %s cliente(s) ignorado(s)", origem, faixa.name, len(clientes))
         return 0
-    fontes_por_template = {tid: _fontes(faixa, tpl) for tid, tpl in templates.items()}
+    fontes_por_template = itens_fila.fontes_por_template(faixa, templates)
     total = 0
     for cliente in clientes:
         if cliente["codigo"] in bloqueados or not cliente.get("celular") or not is_valid_phone(cliente["celular"]):
@@ -101,17 +52,10 @@ def enfileirar_clientes(
         contexto = contexto_cliente({**cliente, "parcelas": parcelas.get(cliente["codigo"], []), "juros": juros})
         if colunas_extras and cliente["codigo"] in colunas_extras:
             contexto.update(colunas_extras[cliente["codigo"]])
-        faltando: list[str] = []
-        por_template: dict[str, dict[str, str]] = {}
-        for tid, fontes in fontes_por_template.items():
-            valores: dict[str, str] = {}
-            for v, fonte in fontes:
-                val = resolver_variaveis([fonte], contexto)[v.internal_name] if fonte else ""
-                if not val:
-                    faltando.append(v.internal_name)
-                valores[v.internal_name] = val
-            por_template[tid] = valores
-        item = models.QueueItem(
+        variables_json, faltando = itens_fila.resolver_por_template(fontes_por_template, contexto)
+        itens_fila.novo_item(
+            db,
+            erro=f"Variável sem valor {origem}: {', '.join(sorted(set(faltando)))}" if faltando else None,
             faixa_id=faixa.id,
             codigo_cliente=cliente["codigo"],
             nome=primeiro_nome(cliente["nome"]),
@@ -119,19 +63,14 @@ def enfileirar_clientes(
             valor=str(cliente["valor_cobrar"]),
             celular=normalize_phone(cliente["celular"]),
             celular_original=cliente.get("celular_original") or cliente["celular"],
-            variables_json=next(iter(por_template.values())) if len(por_template) == 1 else por_template,
-            status=models.QueueStatus.pending,
+            variables_json=variables_json,
             lojas=lojas_formatadas(cliente.get("lojas")),
             faixa_atraso=cliente.get("faixa") or None,
         )
-        if faltando:
-            item.status = models.QueueStatus.error
-            item.error_message = f"Variável sem valor {origem}: {', '.join(sorted(set(faltando)))}"
-        else:
+        if not faltando:
             total += 1
             if enfileirados is not None:
                 enfileirados.append(cliente)
-        db.add(item)
         bloqueados.add(cliente["codigo"])
     return total
 
@@ -171,11 +110,11 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
         if faixa is None:
             logger.warning("Fila automática: faixa '%s' não existe ou está inativa; %s cliente(s) ignorado(s)", nome_faixa, len(lista))
             continue
-        templates = {e.template_id: e.template for e in faixa.envios if e.active and e.template_id}
+        templates = itens_fila.templates_ativos(faixa)
         if not templates:
             logger.warning("Fila automática: faixa '%s' sem número/template ativo; %s cliente(s) ignorado(s)", nome_faixa, len(lista))
             continue
-        fontes_por_template = {tid: _fontes(faixa, tpl) for tid, tpl in templates.items()}
+        fontes_por_template = itens_fila.fontes_por_template(faixa, templates)
 
         chaves = {(c["codigo"], c["vencimento_mais_antigo"]) for c in lista}
         leads = {
@@ -195,22 +134,15 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
                 continue
             if not lead.celular or not is_valid_phone(lead.celular):
                 continue  # sem telefone válido: fica só em Leads
-            contexto = _contexto_lead(lead, juros)
-
-            faltando: list[str] = []
-            por_template: dict[str, dict[str, str]] = {}
-            for tid, fontes in fontes_por_template.items():
-                valores: dict[str, str] = {}
-                for v, fonte in fontes:
-                    val = resolver_variaveis([fonte], contexto)[v.internal_name] if fonte else ""
-                    if not val:
-                        faltando.append(v.internal_name)
-                    valores[v.internal_name] = val
-                por_template[tid] = valores
-            # Mesmo formato do upload: achatado com um template, um dict por template com mais de um.
-            variables_json = next(iter(por_template.values())) if len(por_template) == 1 else por_template
-
-            item = models.QueueItem(
+            contexto = itens_fila.contexto_lead_exportado(lead, juros)
+            variables_json, faltando = itens_fila.resolver_por_template(fontes_por_template, contexto)
+            itens_fila.novo_item(
+                db,
+                erro=(
+                    f"Variável sem valor na extração automática: {', '.join(sorted(set(faltando)))}"
+                    if faltando
+                    else None
+                ),
                 faixa_id=faixa.id,
                 codigo_cliente=lead.codigo_cliente,
                 nome=primeiro_nome(lead.nome),
@@ -219,13 +151,8 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
                 celular=normalize_phone(lead.celular),
                 celular_original=lead.celular_original or lead.celular,
                 variables_json=variables_json,
-                status=models.QueueStatus.pending,
                 lojas=lojas_formatadas(lead.lojas),
             )
-            if faltando:
-                item.status = models.QueueStatus.error
-                item.error_message = f"Variável sem valor na extração automática: {', '.join(sorted(set(faltando)))}"
-            db.add(item)
             bloqueados.add(lead.codigo_cliente)
             if not faltando:
                 total += 1
@@ -241,7 +168,7 @@ def reaplicar_variaveis(db: Session, faixa: models.Faixa) -> tuple[int, int]:
     existia na planilha) mantém o valor que já estava. Devolve
     (itens_atualizados, itens_sem_cadastro)."""
 
-    templates = {e.template_id: e.template for e in faixa.envios if e.active and e.template_id}
+    templates = itens_fila.templates_ativos(faixa)
     itens = (
         db.query(models.QueueItem)
         .filter(
@@ -264,7 +191,7 @@ def reaplicar_variaveis(db: Session, faixa: models.Faixa) -> tuple[int, int]:
         if atual is None or lead.faixa == faixa.name or atual.faixa != faixa.name:
             leads[lead.codigo_cliente] = lead
     juros = carregar_regras(db).juros
-    fontes_por_template = {tid: _fontes(faixa, tpl) for tid, tpl in templates.items()}
+    fontes_por_template = itens_fila.fontes_por_template(faixa, templates)
 
     atualizados = sem_cadastro = 0
     for item in itens:
@@ -272,7 +199,7 @@ def reaplicar_variaveis(db: Session, faixa: models.Faixa) -> tuple[int, int]:
         if lead is None:
             sem_cadastro += 1
             continue
-        contexto = _contexto_lead(lead, juros)
+        contexto = itens_fila.contexto_lead_exportado(lead, juros)
         antigo = item.variables_json or {}
         por_template: dict[str, dict[str, str]] = {}
         for tid, fontes in fontes_por_template.items():
@@ -282,7 +209,7 @@ def reaplicar_variaveis(db: Session, faixa: models.Faixa) -> tuple[int, int]:
                 val = resolver_variaveis([fonte], contexto)[v.internal_name] if fonte else ""
                 valores[v.internal_name] = val or str(anterior.get(v.internal_name, "") or "")
             por_template[tid] = valores
-        novo = next(iter(por_template.values())) if len(por_template) == 1 else por_template
+        novo = itens_fila.formato_variaveis(por_template)
         if novo != antigo:
             item.variables_json = novo
             atualizados += 1
