@@ -123,6 +123,10 @@ assert envio["template"]["components"][1]["parameters"] == [{"type": "text", "te
 # 2. O mesmo arquivo não sobe de novo a cada mensagem (link absoluto também acha o arquivo)
 enviar("https://api.exemplo.com.br/media/tpl-1.png")
 assert sum(c["tipo"] == "upload" for c in chamadas) == 1, chamadas
+# link com ?v= (versão da subida) também acha o arquivo
+item, _ = enviar("/media/tpl-1.png?v=abc123")
+assert item.status == models.QueueStatus.sent, item.error_message
+assert sum(c["tipo"] == "upload" for c in chamadas) == 1, chamadas
 
 # 3. Meta recusou o envio: a mídia é esquecida e o próximo envio sobe de novo
 falhar_envio["ativo"] = True

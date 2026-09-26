@@ -386,7 +386,8 @@ async def upload_template_image(
         f.write(content)
 
     base = _base_publica(request)
-    template.image_url = f"{base or ''}/media/{stored_name}"
+    # ?v= muda a cada subida: o arquivo tem sempre o mesmo nome e navegador/Chatwoot guardariam a imagem antiga
+    template.image_url = f"{base or ''}/media/{stored_name}?v={uuid.uuid4().hex[:8]}"
     db.commit()
     db.refresh(template)
     return template

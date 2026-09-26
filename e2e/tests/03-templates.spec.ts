@@ -95,6 +95,31 @@ test.describe("Configurações → Templates", () => {
     await expect(page.locator(".error-box").first()).toContainText("não foi submetido");
   });
 
+  test("imagem do cabeçalho: subir e trocar", async ({ page }) => {
+    // PNG 1x1
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+    const novo = card(page, "Novo template");
+    await novo.getByRole("button", { name: "Criar template" }).click();
+    await campo(novo, "Nome interno").fill("Com imagem");
+    await campo(novo, /Nome do template na Meta/).fill("com_imagem");
+    await campo(novo, "Cabeçalho com imagem?").selectOption("image");
+    await campo(novo, /Corpo do template/).fill("Oi {{1}}");
+    await novo.getByRole("button", { name: "Salvar template" }).click();
+    const linha = card(page, "Templates cadastrados").locator("tbody tr", { hasText: "Com imagem" });
+    const imagem = async () =>
+      (await apiGet(page, "/templates")).find((t: any) => t.name === "Com imagem").image_url as string | null;
+
+    await linha.locator("label", { hasText: "subir" }).locator("input[type=file]").setInputFiles({ name: "a.png", mimeType: "image/png", buffer: png });
+    await expect(linha.locator(".badge", { hasText: "enviada" })).toBeVisible();
+    const primeira = await imagem();
+    expect(primeira).toMatch(/\/media\/.+\.png\?v=/);
+
+    // mesmo arquivo de novo: o link muda para ninguém mostrar a imagem antiga guardada
+    await linha.locator("label", { hasText: "trocar" }).locator("input[type=file]").setInputFiles({ name: "b.png", mimeType: "image/png", buffer: png });
+    await expect.poll(imagem).not.toBe(primeira);
+    await expect(linha.locator(".badge", { hasText: "enviada" })).toBeVisible();
+  });
+
   test("falha na sincronização aparece como erro e o botão volta ao normal", async ({ page }) => {
     permitirErrosConsole(page, "400");
     await page.route("**/templates/meta/sync", (r) =>

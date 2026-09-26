@@ -305,19 +305,23 @@ export default function TemplatesCard() {
                       <td className="text-muted">{t.variables.map((v) => v.internal_name).join(", ") || "—"}</td>
                       <td>
                         {t.header_type === "image" ? (
-                          t.image_url ? (
-                            <span className="badge sent">enviada</span>
-                          ) : (
+                          <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+                            {t.image_url && <span className="badge sent">enviada</span>}
+                            {/* trocar: imagem antiga (sem link público) ou arte nova */}
                             <label style={{ cursor: "pointer", color: "var(--color-primary)", fontWeight: 600 }}>
-                              subir
+                              {t.image_url ? "trocar" : "subir"}
                               <input
                                 type="file"
                                 accept="image/*"
                                 style={{ display: "none" }}
-                                onChange={(e) => e.target.files && handleImageUpload(t.id, e.target.files[0])}
+                                onChange={(e) => {
+                                  const arquivo = e.target.files?.[0];
+                                  e.target.value = "";
+                                  if (arquivo) handleImageUpload(t.id, arquivo);
+                                }}
                               />
                             </label>
-                          )
+                          </span>
                         ) : (
                           <span className="text-faint">—</span>
                         )}
