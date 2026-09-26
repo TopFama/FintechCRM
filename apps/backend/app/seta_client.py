@@ -395,7 +395,9 @@ def codigos_por_cpf(cpfs: list[str]) -> dict[str, str]:
     stmt = text(
         "WITH alvo AS (SELECT DISTINCT unnest(CAST(:cpfs AS text[])) AS cpf) "
         "SELECT a.cpf, trim(p.codigo) AS codigo "
-        "  FROM pessoas p JOIN alvo a ON regexp_replace(p.cpfcnpj, '\\D', '', 'g') = a.cpf "
+        # Mesma expressão do índice de CPF só com dígitos que já existe em pessoas;
+        # com regexp_replace o SETA varria as ~930 mil pessoas a cada consulta
+        "  FROM pessoas p JOIN alvo a ON translate(p.cpfcnpj::text, ' +-.,/\\*', '')::char(16) = CAST(a.cpf AS char(16)) "
         " WHERE p.cliente"
     )
     try:
