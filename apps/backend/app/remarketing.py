@@ -232,6 +232,7 @@ def selecionar(
                 **cliente,
                 "segmento": segmento,
                 "evento_em": c["evento_em"],
+                "proposta": c.get("proposta"),
                 "referencia_seta": c.get("referencia_seta"),
                 "entrada_vencimento": entradas_vencidas.get(c.get("referencia_seta")),
             }

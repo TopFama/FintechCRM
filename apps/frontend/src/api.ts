@@ -1263,6 +1263,7 @@ export interface PreviaRemarketing {
     valor_cobrar: string;
     cluster: string;
     evento_em: string;
+    proposta: string | null;
     referencia_seta: string | null;
     entrada_vencimento: string | null;
   }[];
