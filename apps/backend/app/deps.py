@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from . import models
 from .database import get_db
 from .security import decode_access_token
+from .services import pagamentos_seta
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -32,6 +33,9 @@ def get_current_user(
     user = db.query(models.User).filter(func.lower(models.User.email) == payload["sub"].lower()).first()
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário não encontrado")
+    # Atualização automática de tela aberta (?auto=true) não conta como alguém usando
+    if request.query_params.get("auto") != "true":
+        pagamentos_seta.registrar_atividade()
     return user
 
 

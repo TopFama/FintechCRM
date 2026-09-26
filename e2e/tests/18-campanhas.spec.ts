@@ -245,7 +245,8 @@ test.describe.serial("Campanhas", () => {
     const item = fila.itens.find((i: any) => i.codigo_cliente === "00000027");
     if (item) {
       expect(item.valor).toBe("99.90");
-      expect(item.status).toBe("pending");
+      // dentro do horário de disparo o worker (a cada 2 s no teste) pode já ter enviado
+      expect(["pending", "reserved", "sent"]).toContain(item.status);
     }
 
     // Pendentes: faixa de atraso (régua) e campanha em colunas separadas

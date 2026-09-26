@@ -344,8 +344,10 @@ async def run_dispatch_cycle() -> None:
 
 def sincronizar_pagamentos() -> None:
     """Rodada incremental da cópia local das baixas do SETA (ver
-    services/pagamentos_seta.py). Roda no pool de threads do APScheduler."""
-    if not seta_client.is_configured():
+    services/pagamentos_seta.py). Roda no pool de threads do APScheduler.
+    Confere a cada minuto, mas só lê o SETA com alguém usando o CRM e no
+    máximo uma vez a cada pagamentos_sync_interval_seconds."""
+    if not seta_client.is_configured() or not pagamentos_seta.rodada_devida(settings.pagamentos_sync_interval_seconds):
         return
     db = SessionLocal()
     try:
@@ -364,9 +366,7 @@ def start_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         sincronizar_pagamentos,
         "interval",
-        seconds=settings.pagamentos_sync_interval_seconds,
-        # primeira rodada logo depois da subida, pra as telas não esperarem o SETA
-        next_run_time=datetime.now() + timedelta(seconds=30),
+        seconds=60,
         id="pagamentos_seta",
         max_instances=1,
         coalesce=True,

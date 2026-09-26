@@ -7,14 +7,16 @@ e o SETA só é lido aqui, de forma incremental:
 
 - cliente cobrado pela primeira vez: busca as baixas dele desde a primeira
   cobrança (na hora em que uma tela precisa dele, ou na rodada do worker);
-- rodada do worker: relê as baixas de cada cliente a partir da marca d'água
-  dele (última leitura) menos SOBREPOSICAO_DIAS, pra pegar baixa lançada com
+- rodada do worker (só com alguém usando o CRM, no máximo 1 a cada 30 min):
+  relê as baixas de cada cliente a partir da marca d'água dele (última
+  leitura) menos SOBREPOSICAO_DIAS, pra pegar baixa lançada com
   data retroativa e estorno recente. Cliente sem cobrança nos últimos
   JANELA_ATIVA_DIAS é relido só uma vez por dia.
 """
 
 import logging
 import threading
+import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -35,6 +37,27 @@ LOTE = 1000
 
 # Um processo só (worker e rotas no mesmo backend): evita duas cópias ao mesmo tempo
 _trava = threading.Lock()
+
+# A rodada do worker só acontece com alguém usando o CRM: sem ninguém, o SETA
+# não é lido. Relógio monotônico do processo; zera quando o backend reinicia.
+ATIVIDADE_JANELA_SEGUNDOS = 15 * 60
+_ultima_atividade: float | None = None
+_ultima_rodada: float | None = None
+
+
+def registrar_atividade() -> None:
+    """Chamado a cada requisição autenticada de um usuário (ver deps.py)."""
+    global _ultima_atividade
+    _ultima_atividade = time.monotonic()
+
+
+def rodada_devida(intervalo_segundos: int) -> bool:
+    """Alguém usou o CRM nos últimos ATIVIDADE_JANELA_SEGUNDOS e a última
+    rodada completa foi há mais de `intervalo_segundos` (ou nunca houve)."""
+    agora = time.monotonic()
+    if _ultima_atividade is None or agora - _ultima_atividade > ATIVIDADE_JANELA_SEGUNDOS:
+        return False
+    return _ultima_rodada is None or agora - _ultima_rodada >= intervalo_segundos
 
 
 def _dia_br(dt: datetime) -> date:
@@ -89,10 +112,17 @@ def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
                 # Cobrado há muito tempo: basta reler uma vez por dia
                 if c not in leituras and (cobrancas[c][1] >= ativos_desde or copia.marca_dagua < hoje):
                     leituras[c] = max(copia.desde, copia.marca_dagua - timedelta(days=SOBREPOSICAO_DIAS))
+        if codigos is None:
+            global _ultima_rodada
+            _ultima_rodada = time.monotonic()
         if not leituras:
+            if codigos is None:
+                logger.info("Pagamentos do SETA (rodada): nenhum cliente a reler")
             return 0
 
+        t0 = time.monotonic()
         baixas = seta_client.baixas_de_clientes(sorted(leituras.items()))
+        segundos_seta = time.monotonic() - t0
 
         # Troca o trecho relido pelo que o SETA respondeu agora (some o que foi estornado)
         por_inicio: dict[date, list[str]] = defaultdict(list)
@@ -129,7 +159,12 @@ def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
                 copia.desde = min(copia.desde, cobrados[codigo])
                 copia.marca_dagua = hoje
         db.commit()
-        logger.info("Pagamentos do SETA sincronizados: %d clientes, %d títulos", len(leituras), len(por_titulo))
+        logger.info(
+            "Pagamentos do SETA sincronizados (%s): %d clientes em %d consulta(s), %d títulos, SETA %.1f s, total %.1f s",
+            "rodada" if codigos is None else "clientes novos",
+            len(leituras), -(-len(leituras) // seta_client.LOTE_CLIENTES), len(por_titulo),
+            segundos_seta, time.monotonic() - t0,
+        )
         return len(por_titulo)
 
 

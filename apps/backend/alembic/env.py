@@ -1,4 +1,5 @@
 import sys
+import logging
 from logging.config import fileConfig
 from pathlib import Path
 
@@ -26,7 +27,9 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-if config.config_file_name is not None:
+# Chamado pelo backend na subida, o logging já está configurado (main.py): sem
+# isto o fileConfig baixava o root para WARN e desligava os loggers da app.
+if config.config_file_name is not None and not logging.getLogger().handlers:
     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here

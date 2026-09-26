@@ -251,7 +251,8 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    orçamento).
    **Pagamentos**: "Pagaram em até 7 dias", Efetividade e "Quem pagou" leem a tabela local
    `pagamentos_seta` (baixas do SETA de quem já foi cobrado), não o SETA direto. O worker relê as
-   baixas a cada 30 min (`PAGAMENTOS_SYNC_INTERVAL_SECONDS`), por cliente, a partir da última
+   baixas só enquanto alguém usa o CRM (requisição de usuário nos últimos 15 min, sem contar a
+   atualização automática da tela), no máximo a cada 30 min (`PAGAMENTOS_SYNC_INTERVAL_SECONDS`), por cliente, a partir da última
    leitura menos 7 dias (pega baixa retroativa e estorno); cliente sem cobrança nos últimos 60
    dias é relido uma vez por dia. Cliente cobrado depois da última rodada é buscado na hora, só
    ele. Ver `app/services/pagamentos_seta.py`.

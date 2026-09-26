@@ -18,6 +18,8 @@ from .segredos import recifrar_segredos
 from .worker import start_scheduler
 
 logging.basicConfig(level=logging.INFO)
+# O APScheduler registra cada execução dos jobs (a cada poucos segundos): só avisos
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 

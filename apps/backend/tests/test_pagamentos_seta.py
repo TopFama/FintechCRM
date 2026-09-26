@@ -98,4 +98,17 @@ v = pagamentos_seta.valores_pagos_pos_cobranca(db, [("00000003", hoje)])
 assert leituras[-1] == [("00000003", hoje)], leituras[-1]
 assert v[("00000003", hoje)]["valor_pago"] == Decimal("80")
 
+# 4. Rodada do worker só com alguém usando o CRM
+pagamentos_seta._ultima_atividade = None
+pagamentos_seta._ultima_rodada = None
+assert not pagamentos_seta.rodada_devida(1800), "ninguém usando: não lê o SETA"
+pagamentos_seta.registrar_atividade()
+assert pagamentos_seta.rodada_devida(1800), "usuário chegou e nunca rodou: roda"
+pagamentos_seta.sincronizar(db)
+assert not pagamentos_seta.rodada_devida(1800), "acabou de rodar: espera o intervalo"
+pagamentos_seta._ultima_rodada -= 1801
+assert pagamentos_seta.rodada_devida(1800)
+pagamentos_seta._ultima_atividade -= pagamentos_seta.ATIVIDADE_JANELA_SEGUNDOS + 1
+assert not pagamentos_seta.rodada_devida(1800), "usuário saiu há mais de 15 min: para"
+
 print("OK")

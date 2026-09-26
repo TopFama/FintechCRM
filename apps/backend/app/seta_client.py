@@ -558,6 +558,9 @@ def situacao_titulos(codigos: list[str]) -> dict[str, dict]:
     return resultado
 
 
+LOTE_CLIENTES = 1000
+
+
 def baixas_de_clientes(clientes: list[tuple[str, date]]) -> list[dict]:
     """Títulos quitados (status 'B') de cada cliente com pagamento a partir da
     data informada: [(codigo_cliente, desde)] → uma linha por título, com
@@ -569,11 +572,10 @@ def baixas_de_clientes(clientes: list[tuple[str, date]]) -> list[dict]:
         return resultado
 
     engine = engine_ou_erro()
-    CHUNK = 1000
     try:
         with engine.connect() as conn:
-            for i in range(0, len(clientes), CHUNK):
-                lote = clientes[i : i + CHUNK]
+            for i in range(0, len(clientes), LOTE_CLIENTES):
+                lote = clientes[i : i + LOTE_CLIENTES]
                 linhas_values = ", ".join(f"(:p{j}, CAST(:d{j} AS date))" for j in range(len(lote)))
                 params: dict = {}
                 for j, (codigo, desde) in enumerate(lote):
