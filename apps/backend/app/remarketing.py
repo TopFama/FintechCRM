@@ -20,7 +20,8 @@ from . import campanhas_fixas, crypto, models, seta_client
 from . import lojas as lojas_base
 from .cobranca_base import _montar_cliente, _restaurar_linha_seta
 from .cobranca_regras import faixa_de_compra
-from .fila_automatica import clientes_bloqueados_hoje, enfileirar_clientes, ocupa_cliente
+from .elegibilidade import clientes_bloqueados_hoje, ocupa_cliente
+from .fila_automatica import enfileirar_clientes
 from .leads_service import gerar_leads_de_clientes
 from .regras_db import carregar_regras
 from .timezone import BUSINESS_TZ

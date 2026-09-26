@@ -22,7 +22,8 @@ from .config import settings
 from .database import SessionLocal
 from .dispatch_service import enviar_item
 from .blacklist import Blacklist
-from .fila_automatica import enfileirar_leads, expirar_nao_enviados, ja_cobrado_hoje
+from . import elegibilidade
+from .fila_automatica import enfileirar_leads, expirar_nao_enviados
 from .leads_service import gerar_leads_de_clientes
 from .timezone import para_br
 
@@ -303,20 +304,14 @@ async def run_dispatch_cycle() -> None:
                     db.refresh(item)
                     if item.status != models.QueueStatus.reserved:
                         continue
-                    if Retencao.carregar(db).retido(item):
+                    motivo = elegibilidade.conferir_saida(db, item, blacklist)
+                    if motivo == elegibilidade.RETIDO:
                         item.status = models.QueueStatus.pending
                         db.commit()
                         continue
-                    # Entrou na blacklist depois de estar na fila (ou veio de planilha antiga)
-                    if blacklist.contem(item.codigo_cliente, item.cpf):
+                    if motivo:
                         item.status = models.QueueStatus.error
-                        item.error_message = "Cliente na blacklist; não enviado"
-                        db.commit()
-                        continue
-                    # Última barreira: o mesmo cliente pode ter entrado em duas filas antes de sair em uma.
-                    if ja_cobrado_hoje(db, item):
-                        item.status = models.QueueStatus.error
-                        item.error_message = "Cliente já cobrado hoje em outra faixa ou envio; não reenviado"
+                        item.error_message = motivo
                         db.commit()
                         continue
                     await enviar_item(envio, item, db)

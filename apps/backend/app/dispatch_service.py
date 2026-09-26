@@ -220,7 +220,7 @@ async def _enviar_via_meta(
         item.status = models.QueueStatus.error
         item.error_message = f"Falha inesperada ao enviar: {exc}"
         # Timeout ou queda de rede: a mensagem pode ter chegado. sent_at marca a
-        # tentativa e segura o cliente pelo resto do dia (fila_automatica._cobrado_hoje).
+        # tentativa e segura o cliente pelo resto do dia (elegibilidade._cobrado_hoje).
         item.sent_at = datetime.utcnow()
         db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
         logger.exception("Falha inesperada ao enviar cobrança %s", item.id)
@@ -281,7 +281,7 @@ async def _enviar_via_chatwoot(
         item.status = models.QueueStatus.error
         item.error_message = f"Falha inesperada ao enviar via Chatwoot: {exc}"
         # Timeout ou queda de rede: a mensagem pode ter chegado. sent_at marca a
-        # tentativa e segura o cliente pelo resto do dia (fila_automatica._cobrado_hoje).
+        # tentativa e segura o cliente pelo resto do dia (elegibilidade._cobrado_hoje).
         item.sent_at = datetime.utcnow()
         db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
         logger.exception("Falha inesperada ao enviar cobrança %s via Chatwoot", item.id)

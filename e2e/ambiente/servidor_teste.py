@@ -217,7 +217,7 @@ def regua_no_dia_seguinte():
 
     from app import campanhas, models
     from app.database import SessionLocal
-    from app.fila_automatica import inicio_hoje_utc
+    from app.timezone import inicio_hoje_utc
 
     db = SessionLocal()
     try:
