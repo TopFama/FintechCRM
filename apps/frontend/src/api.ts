@@ -487,6 +487,8 @@ export const api = {
     request<OrcamentoMes[]>(`/config/cobranca/orcamento?ano=${ano}`, { method: "PUT", body: JSON.stringify(meses) }),
   getOrcamentoProgressao: (filtro: { ano?: number; mes?: number; de?: string; ate?: string }, auto = false) =>
     request<OrcamentoProgressao>(`/dashboard/orcamento-progressao?${montarQuery({ ...filtro, auto: auto || undefined })}`),
+  exportarOrcamentoPorDia: (filtro: { ano?: number; mes?: number; de?: string; ate?: string }) =>
+    downloadFile(`/dashboard/orcamento-progressao/exportar.xlsx?${montarQuery(filtro)}`, "orcamento_por_dia.xlsx"),
 };
 
 async function downloadFile(path: string, nomePadrao: string): Promise<void> {

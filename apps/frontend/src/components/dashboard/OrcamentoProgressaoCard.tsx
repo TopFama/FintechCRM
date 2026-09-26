@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../useAtualizacaoAutomatica";
 import { api, OrcamentoProgressao } from "../../api";
 import { formatBRL, formatData, hojeBR } from "../../format";
-import { IconAlert } from "../../icons";
+import { IconAlert, IconDownload } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 import SortableTh from "../SortableTh";
 
@@ -32,6 +32,8 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
   const [ate, setAte] = useState("");
   const [dados, setDados] = useState<OrcamentoProgressao | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [exportando, setExportando] = useState(false);
+  const [erroExportar, setErroExportar] = useState<string | null>(null);
   // a lista por número vem inteira (sem paginação), então ordenar no navegador cobre o resultado todo
   const ordenacao = useSort<ColunaNumero>(null);
   // Gasto vem da API da Meta: atualiza devagar, e o backend guarda em cache
@@ -45,14 +47,8 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
       setErro(null);
       setDados(null);
     }
-    let filtro: { ano?: number; mes?: number; de?: string; ate?: string };
-    if (selecao === "personalizado") {
-      if (!de || !ate) return;
-      filtro = { de, ate };
-    } else {
-      const [ano, mes] = selecao.split("-").map(Number);
-      filtro = { ano, mes };
-    }
+    const filtro = filtroAtual();
+    if (!filtro) return;
     let atual = true;
     api
       .getOrcamentoProgressao(filtro, auto)
@@ -67,6 +63,26 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selecao, de, ate, recarregar, ciclo]);
+
+  function filtroAtual(): { ano?: number; mes?: number; de?: string; ate?: string } | null {
+    if (selecao === "personalizado") return de && ate ? { de, ate } : null;
+    const [ano, mes] = selecao.split("-").map(Number);
+    return { ano, mes };
+  }
+
+  async function exportarPorDia() {
+    const filtro = filtroAtual();
+    if (!filtro) return;
+    setExportando(true);
+    setErroExportar(null);
+    try {
+      await api.exportarOrcamentoPorDia(filtro);
+    } catch (e) {
+      setErroExportar(e instanceof Error ? e.message : "Erro ao exportar");
+    } finally {
+      setExportando(false);
+    }
+  }
 
   const filtros = (
     <div className="form-row">
@@ -107,6 +123,16 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
           </div>
         )}
       </div>
+      <button type="button" className="excel small" onClick={exportarPorDia} disabled={exportando || !filtroAtual()}>
+        <IconDownload width={14} height={14} /> {exportando ? "Exportando..." : "Exportar por dia"}
+      </button>
+    </div>
+  );
+
+  const avisoExportar = erroExportar && (
+    <div className="error-box">
+      <IconAlert width={16} height={16} />
+      <span>{erroExportar}</span>
     </div>
   );
 
@@ -114,6 +140,7 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
     return (
       <div className="card">
         {cabecalho}
+        {avisoExportar}
         {filtros}
         {erro ? (
           <div className="error-box">
@@ -136,6 +163,7 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
   return (
     <div className="card">
       {cabecalho}
+      {avisoExportar}
       {filtros}
 
       {gastoInfo && dados.avisos.length > 0 && (

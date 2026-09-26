@@ -3,7 +3,7 @@ import logging
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, func, or_, true
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from ..services import custo_whatsapp, pagamentos_service, pagos_janela_service
 from ..timezone import BUSINESS_TZ, hoje_br
 from ..database import get_db
 from ..deps import get_current_user
+from .reports import _XLSX_MEDIA_TYPE, _build_xlsx
 
 logger = logging.getLogger(__name__)
 
@@ -177,15 +178,7 @@ def orcamento_progressao(
     = um mês (ano/mes, padrão o mês atual) ou personalizado (de/ate); no
     personalizado o orçado soma o orçamento de cada mês tocado."""
 
-    if de or ate:
-        if not (de and ate) or de > ate:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe data inicial e final válidas")
-        inicio, fim = de, ate
-    else:
-        hoje = hoje_br()
-        ano, mes = ano or hoje.year, mes or hoje.month
-        inicio = date(ano, mes, 1)
-        fim = date(ano, mes, calendar.monthrange(ano, mes)[1])
+    inicio, fim = _periodo_orcamento(ano, mes, de, ate)
 
     def calcular():
         return _orcamento(db, inicio, fim).model_dump(mode="json")
@@ -202,6 +195,46 @@ def orcamento_progressao(
     except cache.CacheIndisponivel:
         dados = calcular()
     return schemas.OrcamentoProgressaoOut(**dados)
+
+
+def _periodo_orcamento(ano, mes, de, ate) -> tuple[date, date]:
+    if de or ate:
+        if not (de and ate) or de > ate:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe data inicial e final válidas")
+        return de, ate
+    hoje = hoje_br()
+    ano, mes = ano or hoje.year, mes or hoje.month
+    return date(ano, mes, 1), date(ano, mes, calendar.monthrange(ano, mes)[1])
+
+
+@router.get("/orcamento-progressao/exportar.xlsx")
+def exportar_orcamento_por_dia(
+    ano: int | None = Query(None, ge=2000, le=2100),
+    mes: int | None = Query(None, ge=1, le=12),
+    de: date | None = Query(None),
+    ate: date | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Gasto com WhatsApp por dia, WABA e número (mesmo período do card)."""
+
+    inicio, fim = _periodo_orcamento(ano, mes, de, ate)
+    custo = custo_whatsapp.custo_detalhado(db, inicio, fim)
+    if custo.por_dia is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, custo.motivo or "Custo da Meta indisponível")
+    linhas = [
+        [dia, waba, telefone or "—", mensagens, float(gasto.quantize(Decimal("0.01")))]
+        for (dia, waba, telefone), (gasto, mensagens) in sorted(custo.por_dia_numero.items())
+        if gasto or mensagens
+    ]
+    conteudo = _build_xlsx(
+        ["Data", "WABA", "Telefone", "Mensagens cobradas", "Valor cobrado (R$)"], linhas, {4: "#,##0.00"}
+    )
+    return Response(
+        content=conteudo,
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="orcamento_por_dia_{inicio}_{fim}.xlsx"'},
+    )
 
 
 def _orcamento(db: Session, inicio: date, fim: date) -> schemas.OrcamentoProgressaoOut:

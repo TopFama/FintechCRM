@@ -281,6 +281,20 @@ test.describe("Dashboard", () => {
     await expect(o.locator("svg[role=img]")).toContainText("Acumulado:");
   });
 
+  test("orçamento: exportar por dia traz data, WABA, telefone e valor, somando o realizado", async ({ page }) => {
+    const o = card(page, "Orçamento");
+    await expect(o.locator("table")).toBeVisible({ timeout: 30_000 });
+    const brl = (t: string) => Number(t.replace(/[^\d,]/g, "").replace(",", "."));
+    const realizado = brl(await o.locator(".stat", { hasText: "Realizado" }).locator(".value").innerText());
+    const { nome, linhas } = await baixar(page, () => o.getByRole("button", { name: "Exportar por dia" }).click());
+    expect(nome).toMatch(/^orcamento_por_dia_.*\.xlsx$/);
+    expect(linhas[0]).toEqual(["Data", "WABA", "Telefone", "Mensagens cobradas", "Valor cobrado (R$)"]);
+    const dados = linhas.slice(1);
+    expect(dados.length).toBeGreaterThan(1);
+    expect(dados.every((l) => l[1] !== "" && /\d/.test(l[2]))).toBe(true);
+    expect(dados.reduce((a, l) => a + Number(l[4]), 0)).toBeCloseTo(realizado, 1);
+  });
+
   test("orçamento: escolher 'Personalizado' sem datas não deixa os números do mês anterior na tela", async ({ page }) => {
     const o = card(page, "Orçamento");
     await expect(o.locator("table")).toBeVisible({ timeout: 30_000 });

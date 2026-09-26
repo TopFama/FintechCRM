@@ -62,9 +62,10 @@ def _formula_safe(value: str) -> str:
     return value
 
 
-def _build_xlsx(headers: list[str], rows: list[list]) -> bytes:
+def _build_xlsx(headers: list[str], rows: list[list], formatos: dict[int, str] | None = None) -> bytes:
     """Gera um .xlsx com cabeçalho destacado, painel congelado, autofiltro e
-    largura de coluna ajustada — usado por todos os relatórios exportáveis."""
+    largura de coluna ajustada — usado por todos os relatórios exportáveis.
+    `formatos`: índice da coluna (0 = primeira) → formato de número."""
 
     wb = Workbook()
     ws = wb.active
@@ -79,6 +80,8 @@ def _build_xlsx(headers: list[str], rows: list[list]) -> bytes:
                 cell.number_format = _DATETIME_FORMAT
             elif isinstance(cell.value, date):
                 cell.number_format = "DD/MM/YYYY"
+            if formatos and cell.column - 1 in formatos:
+                cell.number_format = formatos[cell.column - 1]
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
     for i, header in enumerate(headers, start=1):

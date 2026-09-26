@@ -35,6 +35,8 @@ class CustoWhatsapp:
     por_numero: dict[str, Decimal] = field(default_factory=dict)
     # número → mensagens que geraram custo no período
     mensagens_por_numero: dict[str, int] = field(default_factory=dict)
+    # (dia, WABA, número) → [gasto em BRL, mensagens cobradas]: exportação por dia
+    por_dia_numero: dict[tuple[date, str, str], list] = field(default_factory=dict)
 
 
 def _digitos(numero: str | None) -> str:
@@ -119,7 +121,8 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
                 try:
                     client = meta_client.MetaClient(token)
                     pontos.extend(
-                        await client.pricing_analytics(waba_id, start_unix=start_unix, end_unix=end_unix)
+                        {**p, "waba_id": waba_id}
+                        for p in await client.pricing_analytics(waba_id, start_unix=start_unix, end_unix=end_unix)
                     )
                     break
                 except Exception as exc:  # noqa: BLE001 - tenta o próximo token da WABA
@@ -151,6 +154,7 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
     por_dia: dict[date, Decimal] = {}
     mensagens: dict[str, int] = {}
     por_numero: dict[str, Decimal] = {n: Decimal("0") for numeros in numeros_por_waba.values() for n in numeros}
+    por_dia_numero: dict[tuple[date, str, str], list] = {}
     for p in pontos:
         if p.get("start") is None:
             continue
@@ -158,15 +162,19 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
         custo = Decimal(str(p.get("cost", 0) or 0)) * cotacao
         por_dia[dia] = por_dia.get(dia, Decimal("0")) + custo
         telefone = p.get("phone_number")
+        chave = exibicao.get(_digitos(telefone), telefone) if telefone else ""
+        # Só conta mensagem cobrada: REGULAR na dimensão PRICING_TYPE (as
+        # gratuitas vêm como FREE_*), ou custo > 0 se o tipo não vier.
+        tipo = p.get("pricing_type")
+        cobradas = int(p.get("volume", 0) or 0) if tipo == "REGULAR" or (tipo is None and custo > 0) else 0
+        linha = por_dia_numero.setdefault((dia, p.get("waba_id", ""), chave), [Decimal("0"), 0])
+        linha[0] += custo
+        linha[1] += cobradas
         if telefone:
-            chave = exibicao.get(_digitos(telefone), telefone)
             por_numero[chave] = por_numero.get(chave, Decimal("0")) + custo
-            # Só conta mensagem cobrada: REGULAR na dimensão PRICING_TYPE (as
-            # gratuitas vêm como FREE_*), ou custo > 0 se o tipo não vier.
-            tipo = p.get("pricing_type")
-            if tipo == "REGULAR" or (tipo is None and custo > 0):
-                mensagens[chave] = mensagens.get(chave, 0) + int(p.get("volume", 0) or 0)
-    return CustoWhatsapp(por_dia, None, avisos, por_numero, mensagens)
+            if cobradas:
+                mensagens[chave] = mensagens.get(chave, 0) + cobradas
+    return CustoWhatsapp(por_dia, None, avisos, por_numero, mensagens, por_dia_numero)
 
 
 def gasto_diario_brl(db: Session, inicio: date, fim: date) -> tuple[dict[date, Decimal] | None, str | None]:
