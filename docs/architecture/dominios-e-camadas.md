@@ -71,9 +71,10 @@ tirar do caminho os acoplamentos que já causaram ou podem causar bug.
 ### Regras fixas do negócio que qualquer refatoração tem que preservar
 
 - **No máximo uma comunicação por cliente por dia**, em qualquer caminho de envio (régua,
-  campanha, remarketing, upload de planilha). Hoje a checagem de entrada é
-  `fila_automatica.clientes_bloqueados_hoje` e a de saída é `fila_automatica.ja_cobrado_hoje`
-  no `worker.py`. Só ocupa o cliente quem foi enviado, está pendente/reservado ou teve falha
+  campanha, remarketing, upload de planilha). A checagem de entrada é
+  `clientes_bloqueados_hoje` e a de saída é `ja_cobrado_hoje`, chamada pelo `worker.py`. No
+  momento desta análise as duas ficavam em `fila_automatica.py`; depois do backlog #4 (PR #6)
+  moram em `elegibilidade.py`, junto com `conferir_saida`. Só ocupa o cliente quem foi enviado, está pendente/reservado ou teve falha
   incerta (timeout) na Meta.
 - **SETA só leitura**: nenhum `INSERT/UPDATE/DELETE/DDL`; consultas em lote (CTE + `VALUES`),
   nunca em loop por cliente. Toda consulta nova ao SETA entra em `seta_client.py`.

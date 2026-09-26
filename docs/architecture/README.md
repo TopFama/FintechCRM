@@ -105,7 +105,9 @@ e `coverage combine`). Os pontos mais descobertos são justamente os de maior ri
 **E2E**: `e2e/` com Playwright, 172 cenários que cobrem essas telas pelo navegador (ver
 `e2e/README.md`). Não entram na medição de cobertura acima.
 
-**CI**: só existe `security-scan.yml` (npm audit e pip-audit). Nenhum teste roda em PR hoje.
+**CI**: no momento da análise só existia `security-scan.yml` (npm audit e pip-audit). A Fase 5
+(PR #2) acrescentou `testes.yml` (scripts do backend, build do frontend e e2e em todo PR) e a
+Fase 7 (PR #9) o job de regras de import (`apps/backend/.importlinter`).
 
 ## Como regerar os números
 
@@ -133,3 +135,20 @@ Observação: o histórico do repositório começa em 18/09/2026, então "1 ano"
 inteiro (181 commits). O comando de co-change do plano original usava `--format="---"`, que o
 git recusa; aqui vai `tformat:---`. Pastas `src/` do plano viraram `apps/`, que é onde o código
 mora.
+
+## Manutenção (Fase 8)
+
+**Em todo PR**: o modelo `.github/pull_request_template.md` traz o checklist (arquivo com uma
+responsabilidade só, domínio e camada certos, regra fixa preservada, refatoração sem mudança de
+comportamento). O CI confere o que dá para conferir sozinho: testes, caracterização do envio e
+regras de import.
+
+**Uma vez por mês**:
+
+1. Regerar `churn.txt`, `tamanho.txt`, `co-change.txt` e `deps.svg` com os comandos acima.
+2. Comparar os 10 primeiros do churn com o backlog: arquivo novo no topo ganha ficha e item; item
+   que saiu do topo desce na prioridade.
+3. Recalcular os pontos da tabela do backlog com o churn novo e atualizar a tabela "Estado".
+4. Rever as exceções em `apps/backend/.importlinter` (`ignore_imports`): exceção cujo item do
+   backlog já foi feito sai do arquivo.
+5. Tudo isso num PR só, `docs: revisão mensal de hotspots (mês/ano)`.

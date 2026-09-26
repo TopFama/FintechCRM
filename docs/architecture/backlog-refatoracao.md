@@ -68,4 +68,21 @@ decidir:
 
 | # | PR | Estado |
 |---|---|---|
-| — | Fases 0 a 4 (esta documentação) | aberto |
+| — | Fases 0 a 4 (esta documentação) e Fase 8 | PR #1, aberto |
+| — | Fase 5: testes de caracterização e CI em todo PR | PR #2, aberto |
+| 8 | Blacklist como serviço | PR #3, aberto (sobre o #2) |
+| 2 | Utilitários fora dos routers | PR #4, aberto (sobre o #3) |
+| 10 | Fuso num lugar só | PR #5, aberto (sobre o #4) |
+| 4 | Elegibilidade (`elegibilidade.py`, pausar/retomar único) | PR #6, aberto (sobre o #5) |
+| 1 | Montagem única do item da fila; upload vira serviço | PR #7, aberto (sobre o #6) |
+| 3 | Camada de leitura da fila (`consultas_fila.py`) | PR #8, aberto (sobre o #7) |
+| — | Fase 7: import-linter no CI | PR #9, aberto (sobre o #8) |
+
+Os PRs estão empilhados: cada um tem como base o anterior, para o CI e o teste de caracterização
+valerem em todos. Nada entra em main sem aprovação do usuário; depois que um é mergeado, o
+seguinte passa a ter main como base.
+
+Exceções que ficaram no import-linter (`apps/backend/.importlinter`): `deps` → `pagamentos_seta`
+(sai no #16), `remarketing` e `routers/remarketing` → `httpx` (sai no #12) e
+`routers/meta_tokens` → `httpx`, que só captura o `httpx.HTTPError` que o `meta_client` deixa
+passar (sai quando o `meta_client` tiver erro próprio, junto do #7).
