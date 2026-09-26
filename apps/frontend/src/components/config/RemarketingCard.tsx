@@ -248,7 +248,7 @@ function SegmentoForm({
           }}
           rotuloAlvo="deste segmento"
           titulo="Templates deste segmento"
-          descricao="Vincule aqui o template (e o número que envia) usado só neste segmento do remarketing. Pode ter mais de um."
+          descricao={null}
           embutido
         />
       )}

@@ -10,6 +10,7 @@ interface Props {
   onAlterado: () => void;
   titulo?: string;
   // Texto abaixo do título; o padrão é o da faixa de atraso.
+  /** null: sem texto embaixo do título. */
   descricao?: ReactNode;
   // Colunas da planilha de clientes da campanha, que podem alimentar variáveis.
   colunasPlanilha?: string[];
@@ -199,15 +200,17 @@ export default function EnviosFaixa({
             <IconPlus width={16} height={16} /> Adicionar número e template
           </button>
         </div>
-        <p className="card-subtitle" style={{ marginTop: 0 }}>
-          {descricao ?? (
-            <>
-              Cada número pode cobrar com um template próprio, em paralelo (WABAs diferentes) — a fila é compartilhada
-              entre eles, então nenhum cliente é cobrado duas vezes. O agendamento de cada um (dias, horário, intervalo)
-              fica em <Link to="/configuracoes?aba=horario">Configurações → Horário</Link>.
-            </>
-          )}
-        </p>
+        {descricao !== null && (
+          <p className="card-subtitle" style={{ marginTop: 0 }}>
+            {descricao ?? (
+              <>
+                Cada número pode cobrar com um template próprio, em paralelo (WABAs diferentes) — a fila é compartilhada
+                entre eles, então nenhum cliente é cobrado duas vezes. O agendamento de cada um (dias, horário, intervalo)
+                fica em <Link to="/configuracoes?aba=horario">Configurações → Horário</Link>.
+              </>
+            )}
+          </p>
+        )}
 
         {erro && (
           <div className="error-box" style={{ marginBottom: 16 }}>

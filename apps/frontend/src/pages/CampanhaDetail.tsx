@@ -506,7 +506,7 @@ export default function CampanhaDetail() {
           onAlterado={recarregarCampanha}
           rotuloAlvo="desta campanha"
           titulo="Template e número da campanha"
-          descricao="O template usado por esta campanha e o número que envia. Com mais de um número, a fila é dividida entre eles e ninguém recebe duas vezes."
+          descricao={null}
           colunasPlanilha={campanha.fonte_valores === "planilha" ? campanha.planilha_colunas : []}
         />
       )}
