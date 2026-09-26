@@ -1,16 +1,16 @@
 import calendar
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, func, or_, true
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from .. import cache, pausas, seta_client
+from .. import cache, consultas_fila, seta_client
 from ..services import custo_whatsapp, pagamentos_service, pagos_janela_service
-from ..timezone import hoje_br, inicio_do_dia_utc
+from ..timezone import hoje_br
 from ..database import get_db
 from ..deps import get_current_user
 from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx
@@ -18,22 +18,6 @@ from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
-
-
-def _limites_utc(de: date | None, ate: date | None) -> tuple[datetime | None, datetime | None]:
-    """Datas locais (GMT-3) → limites em UTC naive, como está gravado no banco."""
-    ini = inicio_do_dia_utc(de) if de else None
-    fim = inicio_do_dia_utc(ate + timedelta(days=1)) if ate else None
-    return ini, fim
-
-
-def _no_periodo(coluna, ini: datetime | None, fim: datetime | None):
-    conds = []
-    if ini:
-        conds.append(coluna >= ini)
-    if fim:
-        conds.append(coluna < fim)
-    return and_(true(), *conds)
 
 
 # A tela do Dashboard se atualiza sozinha (auto=true). Várias abas abertas no
@@ -68,19 +52,11 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
     do envio, o resto pela data em que entrou na fila. Pagos por faixa vêm da
     cópia local do SETA; a atualização automática não vai ao SETA."""
 
-    ini, fim = _limites_utc(de, ate)
-    periodo = or_(
-        and_(models.QueueItem.status == models.QueueStatus.sent, _no_periodo(models.QueueItem.sent_at, ini, fim)),
-        and_(models.QueueItem.status != models.QueueStatus.sent, _no_periodo(models.QueueItem.created_at, ini, fim)),
-    )
+    ini, fim = consultas_fila.limites_utc(de, ate)
+    periodo = consultas_fila.periodo_dos_cards(de, ate)
 
     def count(*status_values: models.QueueStatus) -> int:
-        return (
-            db.query(func.count(models.QueueItem.id))
-            .filter(models.QueueItem.status.in_(status_values), periodo)
-            .scalar()
-            or 0
-        )
+        return consultas_fila.contar(db, periodo, *status_values)
 
     # Envio de campanha/remarketing conta na faixa de atraso do cliente
     # (QueueItem.faixa_atraso), não na faixa própria da campanha.
@@ -114,19 +90,14 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
 
     total_invalidos = (
         db.query(func.count(models.InvalidPhoneRecord.id))
-        .filter(_no_periodo(models.InvalidPhoneRecord.created_at, ini, fim))
+        .filter(consultas_fila.condicao_periodo(models.InvalidPhoneRecord.created_at, ini, fim))
         .scalar()
         or 0
     )
 
     return schemas.DashboardSummary(
         total_pendentes=count(models.QueueStatus.pending, models.QueueStatus.reserved),
-        total_pausados=(
-            db.query(func.count(models.QueueItem.id))
-            .filter(models.QueueItem.status.in_(pausas.STATUS_PENDENTE), periodo, pausas.Retencao.carregar(db).condicao())
-            .scalar()
-            or 0
-        ),
+        total_pausados=consultas_fila.contar_pausados(db, periodo),
         total_enviados=count(models.QueueStatus.sent),
         total_erros=count(models.QueueStatus.error),
         total_telefones_invalidos=total_invalidos,
