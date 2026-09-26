@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session, selectinload
 from . import models
 from .pausas import lojas_formatadas
 from .regras_db import carregar_regras
-from .routers.blacklist import codigos_bloqueados
 from .timezone import BUSINESS_TZ
 from .utils.leads_xlsx import formatar_codigo, formatar_cpf, primeiro_nome
 from .utils.phone import is_valid_phone, normalize_phone
@@ -71,21 +70,6 @@ def clientes_bloqueados_hoje(db: Session) -> set[str]:
             )
         )
     }
-
-
-class Blacklist:
-    """Códigos SETA e CPFs da blacklist, para conferir itens que não vieram da
-    base do SETA (planilha subida na faixa) e, no envio, quem entrou na
-    blacklist depois de estar na fila."""
-
-    def __init__(self, db: Session):
-        codigos, cpfs = codigos_bloqueados(db)
-        self.codigos = set(codigos)
-        self.cpfs = set(cpfs)
-
-    def contem(self, codigo: str | None, cpf: str | None) -> bool:
-        digitos_cpf = "".join(ch for ch in (cpf or "") if ch.isdigit())
-        return (codigo or "") in self.codigos or (bool(digitos_cpf) and digitos_cpf.zfill(11) in self.cpfs)
 
 
 def cobrados_hoje(db: Session) -> set[str]:

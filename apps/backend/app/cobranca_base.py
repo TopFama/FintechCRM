@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from . import cache, seta_client
 from .cobranca_regras import NOMES_FAIXA_COMPRA, faixa_de_compra
 from .regras_db import carregar_regras
-from .routers.blacklist import codigos_bloqueados
+from .blacklist import codigos_bloqueados
 from .utils.phone import escolher_telefone
 
 

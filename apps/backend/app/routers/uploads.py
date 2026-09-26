@@ -8,7 +8,8 @@ from .. import models, schemas
 from ..pausas import lojas_formatadas
 from ..database import get_db
 from ..regras_db import carregar_regras
-from ..fila_automatica import Blacklist, clientes_bloqueados_hoje
+from ..blacklist import Blacklist
+from ..fila_automatica import clientes_bloqueados_hoje
 from ..deps import get_current_user
 from ..utils.document import extract_first_name, format_cpf, normalize_seta_code
 from ..utils.phone import eh_fixo, is_valid_phone, normalize_phone
