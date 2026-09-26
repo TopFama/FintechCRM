@@ -21,7 +21,8 @@ CREATE TABLE pessoas (
 CREATE TABLE financeiro_titulos (
     codigo char(10) PRIMARY KEY, pessoa char(8), valor numeric(14,2), vencimento date,
     empresa char(2), portador char(3), rp char(1), status char(1), tipo char(1),
-    auxiliar char(10), descricao char(40), pagamento date, valorpago numeric(14,2)
+    auxiliar char(10), descricao char(40), pagamento date, valorpago numeric(14,2),
+    documento char(10)
 );
 CREATE INDEX ON financeiro_titulos (pessoa);
 CREATE TABLE condicoes (codigo char(3) PRIMARY KEY, tipo char(1));
@@ -99,11 +100,16 @@ def main(url: str) -> None:
             )
         # acordos do Renegocie (remarketing): RE000900 teve a entrada paga
         # (status B, pagamento antigo para não mexer na efetividade);
-        # RE000901 sumiu do SETA sem pagamento.
+        # RE000901 está ativo com a entrada vencida e em aberto.
         conn.execute(
             "INSERT INTO financeiro_titulos VALUES ('T800000001','00000005',90,%s,'06','001','R','B','4',"
             "'RE000900','ENTRADA',%s,90)",
             (hoje - timedelta(days=300), hoje - timedelta(days=300)),
+        )
+        conn.execute(
+            "INSERT INTO financeiro_titulos VALUES ('T800000002','00000027',80,%s,'06','001','R','A','4',"
+            "'RE000901','ENTRADA',NULL,0,'1')",
+            (hoje - timedelta(days=10),),
         )
     print(f"SETA falso populado: {len(NOMES)} clientes, {tit} títulos")
 

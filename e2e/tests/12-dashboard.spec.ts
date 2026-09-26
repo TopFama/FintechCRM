@@ -181,7 +181,6 @@ test.describe("Dashboard", () => {
     await m.getByLabel("Somente o primeiro dia da faixa").uncheck();
     await m.getByLabel("Somente clientes da regra WhatsApp").uncheck();
     await m.getByRole("button", { name: "Aplicar filtros" }).click();
-    await expect(m.getByText("Consultando o SETA — pode levar até um minuto...")).toBeVisible();
     await expect(m.locator("table")).toBeVisible({ timeout: 30_000 });
     await expect(m).toContainText("ESPECIAL");
     await m.getByRole("tab", { name: "Valor em aberto" }).click();

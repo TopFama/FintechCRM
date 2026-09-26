@@ -149,7 +149,12 @@ test.describe.serial("Campanhas", () => {
     expect(efet.total.clientes_cobrados).toBe(leads.total);
     const soRegua = await apiGet(page, "/reports/efetividade?campanha=regua");
     const todas = await apiGet(page, "/reports/efetividade");
-    expect(todas.total.qtd_envios).toBe(soRegua.total.qtd_envios + efet.total.qtd_envios);
+    // tudo = régua + cada campanha (inclusive o remarketing, que é campanha fixa)
+    let somaCampanhas = 0;
+    for (const c of await apiGet(page, "/campanhas/opcoes")) {
+      somaCampanhas += (await apiGet(page, `/reports/efetividade?campanha=${c.id}`)).total.qtd_envios;
+    }
+    expect(todas.total.qtd_envios).toBe(soRegua.total.qtd_envios + somaCampanhas);
 
     await page.goto("/");
     const e = card(page, "Efetividade da cobrança");
@@ -322,7 +327,9 @@ test.describe.serial("Campanhas", () => {
     await expect(feirao).toBeVisible();
     const envio = await apiGet(page, `/campanhas?periodo=envio&de=${ontem}&ate=${hoje}`);
     expect(envio.map((c: any) => c.nome)).toContain("Feirão lojas 01 e 06");
-    await expect(page.locator(".faixa-row")).toHaveCount(envio.length);
+    // o remarketing (campanha fixa) também aparece se enviou no período
+    const fixas = await apiGet(page, `/campanhas/fixas?periodo=envio&de=${ontem}&ate=${hoje}`);
+    await expect(page.locator(".faixa-row")).toHaveCount(envio.length + fixas.length);
     await foto(page, "campanhas-filtro-periodo");
   });
 

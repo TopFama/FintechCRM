@@ -166,8 +166,8 @@ def _renegocie(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"clientes": [
         cliente("00000003", "SO_IDENTIFICOU", 2, celular="5511988887777"),
         cliente("00000004", "VIU_PROPOSTA", 40),
-        cliente("00000005", "ACORDO_SEM_ENTRADA", 3, proposta="P-900", ref="RE000900"),
-        cliente("00000027", "ACORDO_SEM_ENTRADA", 3, proposta="P-901", ref="RE000901"),
+        cliente("00000005", "ACORDO_ATIVO", 3, proposta="P-900", ref="RE000900"),
+        cliente("00000027", "ACORDO_ATIVO", 3, proposta="P-901", ref="RE000901"),
         cliente("00000009", "CANCELOU_PROPOSTA", 1, proposta="P-902"),
     ]})
 
