@@ -1,6 +1,7 @@
 import { FiltrosCobranca } from "../api";
 import CamposLoja from "./CamposLoja";
 import MultiSelect from "./MultiSelect";
+import CampoValorMaximo from "./CampoValorMaximo";
 import { OpcoesCobranca, opcoesCluster } from "./useOpcoesCobranca";
 
 export const FILTROS_COBRANCA_PADRAO: FiltrosCobranca = {
@@ -130,7 +131,7 @@ export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, opcoe
         </div>
       </div>
 
-      <div className="form-row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
+      <div className="form-row" style={{ flexWrap: "wrap", alignItems: "flex-start" }}>
         <div className="field" style={{ flex: "1 1 160px" }}>
           <label htmlFor={`${idPrefixo}-atraso-min`}>Valor em atraso de (R$)</label>
           <input
@@ -143,14 +144,11 @@ export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, opcoe
           />
         </div>
         <div className="field" style={{ flex: "1 1 160px" }}>
-          <label htmlFor={`${idPrefixo}-atraso-max`}>Valor em atraso até (R$)</label>
-          <input
+          <CampoValorMaximo
             id={`${idPrefixo}-atraso-max`}
-            type="number"
-            min={0}
-            step="0.01"
+            label="Valor em atraso até (R$)"
             value={valor.valor_atraso_max ?? ""}
-            onChange={(e) => set({ valor_atraso_max: e.target.value })}
+            onChange={(v) => set({ valor_atraso_max: v })}
           />
         </div>
         <div className="field" style={{ flex: "1 1 220px" }}>

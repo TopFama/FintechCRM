@@ -9,6 +9,7 @@ import MultiSelect from "../MultiSelect";
 import Paginacao from "../Paginacao";
 import SortableTh from "../SortableTh";
 import { ordenarPor, useSort } from "../../sort";
+import CampoValorMaximo from "../CampoValorMaximo";
 import { opcoesCluster, useOpcoesCobranca } from "../useOpcoesCobranca";
 
 // Remarketing de quem desistiu no portal Renegocie (aba de Campanhas). Cada
@@ -331,14 +332,11 @@ function SegmentoForm({
               />
             </div>
             <div className="field">
-              <label htmlFor={`${id}-valor-max`}>Valor a cobrar máximo (R$)</label>
-              <input
+              <CampoValorMaximo
                 id={`${id}-valor-max`}
-                type="number"
-                min={0}
-                step="0.01"
+                label="Valor a cobrar máximo (R$)"
                 value={form.valor_max ?? ""}
-                onChange={(e) => setForm({ ...form, valor_max: e.target.value || null })}
+                onChange={(v) => setForm({ ...form, valor_max: v || null })}
               />
             </div>
           </div>

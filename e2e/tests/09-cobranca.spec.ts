@@ -34,6 +34,16 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
     await expect(campoCluster.getByRole("option", { name: /\(R\$ [\d.,]+ ou mais\)$/ })).toHaveCount(1);
   });
 
+  test("'Sem limite máximo' limpa e bloqueia o valor em atraso até", async ({ page }) => {
+    const maximo = filtros(page).getByLabel("Valor em atraso até (R$)");
+    await maximo.fill("500");
+    await filtros(page).getByLabel("Sem limite máximo").check();
+    await expect(maximo).toBeDisabled();
+    await expect(maximo).toHaveValue("");
+    await filtros(page).getByLabel("Sem limite máximo").uncheck();
+    await expect(maximo).toBeEnabled();
+  });
+
   test("aplicar mostra carregamento, total e tabela com os filtros padrão", async ({ page }) => {
     await filtros(page).getByRole("button", { name: "Aplicar filtros" }).click();
     await expect(page.getByText("Consultando o SETA — isso pode levar até 45 segundos...")).toBeVisible();
