@@ -504,6 +504,7 @@ def entradas_vencidas_em_aberto(referencias: list[str]) -> dict[str, date]:
                           FROM acordos a
                           -- auxiliar é char(10): compara bruto, como o JOIN de vendas acima
                           JOIN financeiro_titulos ft ON ft.auxiliar = CAST(a.auxiliar AS char(10))
+                         WHERE ft.tipo IN ('4', '5')
                          ORDER BY ft.auxiliar, ft.vencimento, ft.documento
                     )
                     SELECT auxiliar, vencimento FROM entradas
@@ -535,7 +536,7 @@ def situacao_titulos(codigos: list[str]) -> dict[str, dict]:
         "COALESCE(ft.valorpago, 0) AS valorpago, "
         "COALESCE(ft.valor, 0) AS valor "
         "FROM financeiro_titulos ft "
-        "WHERE ft.codigo IN :codigos"
+        "WHERE ft.codigo IN :codigos AND ft.tipo IN ('4', '5')"
     ).bindparams(bindparam("codigos", expanding=True))
 
     try:
@@ -596,7 +597,7 @@ def plano_baixas(clientes: list[tuple[str, date]], hoje: date | None = None) -> 
 
 
 def baixas_de_clientes(clientes: list[tuple[str, date]]) -> list[dict]:
-    """Títulos quitados (status 'B') de cada cliente com pagamento a partir da
+    """Títulos do crediário (tipo 4/5) quitados (status 'B') de cada cliente com pagamento a partir da
     data informada: [(codigo_cliente, desde)] → uma linha por título, com
     valor e rp brutos e o horário do caixa (pago_em) quando a baixa foi no caixa. Base da cópia local em services/pagamentos_seta.py.
     Consulta por lote, nunca em loop por cliente (ver plano_baixas)."""
@@ -627,6 +628,9 @@ def baixas_de_clientes(clientes: list[tuple[str, date]]) -> list[dict]:
                           JOIN clientes c ON c.pessoa = trim(ft.pessoa)
                           LEFT JOIN caixa_lotes l ON l.codigo = ft.lote
                          WHERE ft.status = 'B'
+                           -- 4 e 5: títulos do crediário (parcela, acréscimo, seguro...). Fora: venda à vista e o
+                           -- registro de quitação do lote (PayHub, BAIXA DE TITULO), que repete a soma das parcelas
+                           AND ft.tipo IN ('4', '5')
                            AND ft.pagamento >= :inicio
                     """
                     params = {"inicio": lote[0][1], "clientes": [c for c, _ in lote]}
@@ -656,6 +660,7 @@ def baixas_de_clientes(clientes: list[tuple[str, date]]) -> list[dict]:
                       JOIN financeiro_titulos ft ON ft.pessoa = CAST(c.pessoa AS char(8))
                       LEFT JOIN caixa_lotes l ON l.codigo = ft.lote
                      WHERE ft.status = 'B'
+                       AND ft.tipo IN ('4', '5')
                        AND ft.pagamento >= c.desde
                 """
                 for r in conn.execute(text(sql), params).mappings():

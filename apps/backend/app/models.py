@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     Numeric,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -300,8 +302,9 @@ class QueueItem(Base):
     # fila é da faixa própria delas): é por ela que o Dashboard agrupa "Por
     # faixa". Nulo nos itens da régua (a própria faixa já é a de atraso).
     faixa_atraso: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Dashboard e relatórios filtram a fila pelo período (envio ou entrada)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     faixa: Mapped[Faixa] = relationship()
     whatsapp_number: Mapped["WhatsappNumber | None"] = relationship()
@@ -434,6 +437,10 @@ class Lead(Base):
         UniqueConstraint(
             "codigo_cliente", "faixa", "vencimento_mais_antigo", "campanha_id", name="uq_leads_cliente_faixa_parcela"
         ),
+        # Primeira/última cobrança por cliente (sincronização de pagamentos) sem abrir a tabela
+        Index(
+            "ix_leads_cobrados_cliente", "codigo_cliente", "cobrado_em", postgresql_where=sql_text("status = 'cobrado'")
+        ),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
@@ -466,7 +473,7 @@ class Lead(Base):
     campanha_id: Mapped[str] = mapped_column(String, default="", server_default="", index=True)
     # Lead de campanha já passou pela régua da faixa (dia seguinte ao envio).
     regua_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    cobrado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cobrado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
