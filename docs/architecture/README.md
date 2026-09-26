@@ -1,0 +1,135 @@
+# Arquitetura do FintechCRM
+
+Pasta do review de responsabilidade por arquivo: o que cada arquivo faz hoje, onde ele deveria
+morar e o roteiro para chegar lá sem mudar comportamento. Fotografia tirada em 26/09/2026 sobre
+`main` no commit `f0a3726`.
+
+| Arquivo | O que tem |
+|---|---|
+| [`dominios-e-camadas.md`](./dominios-e-camadas.md) | Mapa-alvo: domínios, camadas e regras de dependência (a régua do review) |
+| [`churn.txt`](./churn.txt) | Os 30 arquivos que mais mudaram (commits) |
+| [`tamanho.txt`](./tamanho.txt) | Os 30 maiores arquivos de código (linhas) |
+| [`co-change.txt`](./co-change.txt) | Os 30 pares de arquivos que mais mudam juntos |
+| [`deps.svg`](./deps.svg) | Grafo de imports do backend agrupado por domínio (vermelho = viola camada) |
+| [`fichas/`](./fichas/) | Ficha de responsabilidade por arquivo, um arquivo por domínio |
+| [`backlog-refatoracao.md`](./backlog-refatoracao.md) | Backlog priorizado, um item por PR |
+| [`scripts/grafo_dependencias.py`](./scripts/grafo_dependencias.py) | Regera o `deps.svg` |
+
+## Stack
+
+**Backend** (`apps/backend`), Python 3.12:
+
+- FastAPI 0.141 / Starlette 1.7 com Uvicorn; rotas em `app/routers/`, uma por área.
+- SQLAlchemy 2.0 (ORM, `Mapped[...]`) sobre Postgres 16, via psycopg 3. Migrations com Alembic.
+- Pydantic 2 para request/response (`app/schemas.py`) e pydantic-settings para o `.env`.
+- APScheduler dentro do mesmo processo da API (`app/worker.py`): ciclo de disparo a cada
+  `DISPATCH_WORKER_INTERVAL_SECONDS` e cópia dos pagamentos do SETA a cada minuto. Não há fila
+  externa (Celery, RQ): a "fila" é a tabela `queue_items`.
+- Redis: cache das consultas pesadas ao SETA e do Dashboard (`app/cache.py`).
+- Autenticação por JWT em cookie httpOnly (python-jose), senha com bcrypt (passlib), tokens
+  revogados em tabela e limite de tentativas por conta e por dispositivo.
+- Segredos no banco cifrados com Fernet (`app/crypto.py`, `ENCRYPTION_KEY`).
+- Planilhas só em .xlsx, com openpyxl (sem pandas, sem CSV).
+
+**Frontend** (`apps/frontend`): React 18 + TypeScript + Vite, React Router 7, CSS próprio com
+variáveis (`styles.css`), sem biblioteca de UI nem de ícones.
+
+**Integrações de envio e dados**:
+
+| Integração | Módulo | Para quê |
+|---|---|---|
+| Meta WhatsApp Cloud API (Graph API) | `meta_client.py` | Templates, números, envio de template, mídia, pricing analytics |
+| Chatwoot | `chatwoot_client.py` | Envio pelo inbox do Chatwoot quando o número tem inbox vinculada |
+| SETA (ERP, Postgres de produção) | `seta_client.py` | Base de cobrança, parcelas, SPC, baixas. Só `SELECT`, conexão read-only |
+| TopFamaRenegocie (HTTP interno) | `remarketing.py` (inline) | Clientes do remarketing |
+| Google Sheets (OAuth2) | `google_client.py` | Planilha de lojas |
+| Câmbio USD→BRL | `cambio.py` | AwesomeAPI, PTAX do BCB e open.er-api, com fallback |
+
+Não há e-mail nem SMS: o único canal de envio é WhatsApp (Meta direta ou via Chatwoot).
+
+## Estrutura de pastas atual
+
+```
+apps/backend/app/
+  main.py, config.py, database.py        bootstrap, settings, engine
+  models.py (732 linhas)                 todas as tabelas
+  schemas.py (1033 linhas)               todos os modelos Pydantic
+  deps.py, security.py, rate_limit.py    autenticação
+  routers/        20 arquivos             uma área por arquivo (reports.py tem 1080 linhas)
+  services/       5 arquivos              pagamentos, efetividade, custo do WhatsApp
+  utils/          5 arquivos              telefone, documento, planilhas, SPC
+  *.py na raiz    33 módulos              serviços informais: fila_automatica, dispatch_service,
+                                          pausas, campanhas, remarketing, cobranca_base, lojas,
+                                          variaveis_template, clientes das integrações…
+  alembic/                               migrations
+apps/backend/tests/   10 scripts de validação (não é pytest: cada um imprime OK)
+apps/frontend/src/
+  api.ts (1269 linhas)                   todo o acesso ao backend e todos os tipos
+  pages/          10 páginas              Relatorios.tsx tem 871 linhas
+  components/     config/, dashboard/ e componentes soltos
+e2e/                                     Playwright: 172 cenários contra ambiente de teste
+```
+
+A camada de serviço existe, mas de forma informal: parte está em `services/`, a maior parte em
+módulos soltos na raiz de `app/`. Não existe camada de repositório: routers e serviços usam a
+`Session` do SQLAlchemy direto.
+
+## Como os testes rodam hoje
+
+**Backend**: 10 scripts em `apps/backend/tests/`, cada um sobe o app de verdade (migrations
+incluídas) contra um Postgres local e imprime `OK`. Precisam de Postgres UTF-8 em
+`localhost:15432` com senha `t`, e cada script usa o próprio banco (nome no `DATABASE_URL` do
+arquivo), que deve ser recriado antes:
+
+```bash
+cd apps/backend
+PYTHONPATH=. .venv/bin/python tests/test_regras.py
+```
+
+Em 26/09/2026 os 10 passam. **Cobertura de linhas do pacote `app` só com esses scripts: 60%**
+(6896 instruções, 2728 não executadas; medido com `coverage run -p --source=app` em cada script
+e `coverage combine`). Os pontos mais descobertos são justamente os de maior risco:
+
+| Módulo | Cobertura |
+|---|---|
+| `campanhas.py` | 18% |
+| `remarketing.py` | 20% |
+| `routers/dashboard.py` | 24% |
+| `routers/pausas.py` | 27% |
+| `routers/campanhas.py` | 30% |
+| `fila_automatica.py` | 37% |
+| `worker.py` | 48% |
+| `routers/reports.py` | 61% |
+| `dispatch_service.py` | 80% |
+
+**E2E**: `e2e/` com Playwright, 172 cenários que cobrem essas telas pelo navegador (ver
+`e2e/README.md`). Não entram na medição de cobertura acima.
+
+**CI**: só existe `security-scan.yml` (npm audit e pip-audit). Nenhum teste roda em PR hoje.
+
+## Como regerar os números
+
+Da raiz do repositório:
+
+```bash
+# churn (arquivos que mais mudam)
+git log --since="1 year ago" --name-only --format="" | grep -v '^$' | sort | uniq -c | sort -rn | head -30 > docs/architecture/churn.txt
+
+# tamanho
+find apps e2e/ambiente e2e/tests -path '*/node_modules' -prune -o -path '*/.venv' -prune \
+  -o -path '*/alembic/versions' -prune -o -type f \( -name "*.py" -o -name "*.ts" -o -name "*.tsx" \) -print \
+  | xargs wc -l | sort -rn | head -31 > docs/architecture/tamanho.txt
+
+# co-change (README/AGENTS/.env.example fora: mudam junto com tudo)
+git log --since="1 year ago" --name-only --format="tformat:---" \
+  | awk '/^---$/{if(n>1)for(i in f)for(j in f)if(i<j)print i" <-> "j; delete f; n=0; next} NF{f[$0]; n++} END{if(n>1)for(i in f)for(j in f)if(i<j)print i" <-> "j}' \
+  | grep -v "README.md\|AGENTS.md\|\.env.example" | sort | uniq -c | sort -rn | head -30 > docs/architecture/co-change.txt
+
+# grafo (precisa do Graphviz)
+python3 docs/architecture/scripts/grafo_dependencias.py
+```
+
+Observação: o histórico do repositório começa em 18/09/2026, então "1 ano" é o histórico
+inteiro (181 commits). O comando de co-change do plano original usava `--format="---"`, que o
+git recusa; aqui vai `tformat:---`. Pastas `src/` do plano viraram `apps/`, que é onde o código
+mora.
