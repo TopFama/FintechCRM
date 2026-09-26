@@ -715,6 +715,9 @@ class PagamentoSeta(Base):
     pagamento: Mapped[date] = mapped_column(Date, index=True)
     valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     rp: Mapped[str] = mapped_column(String, default="")  # R = a receber
+    # Horário do recebimento no caixa da loja (caixa_lotes.datahora, hora de
+    # Brasília). Só existe pra baixa feita no caixa; sem ele, só a data é conhecida.
+    pago_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class PagamentoSetaCliente(Base):

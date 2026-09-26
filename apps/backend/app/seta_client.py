@@ -571,6 +571,10 @@ def _linha_baixa(r) -> dict:
     linha = dict(r)
     if hasattr(linha["pagamento"], "date") and callable(linha["pagamento"].date):
         linha["pagamento"] = linha["pagamento"].date()
+    # Horário do caixa só vale se for do próprio dia do pagamento
+    pago_em = linha.get("pago_em")
+    if pago_em is not None and pago_em.date() != linha["pagamento"]:
+        linha["pago_em"] = None
     return linha
 
 
@@ -592,7 +596,7 @@ def plano_baixas(clientes: list[tuple[str, date]], hoje: date | None = None) -> 
 def baixas_de_clientes(clientes: list[tuple[str, date]]) -> list[dict]:
     """Títulos quitados (status 'B') de cada cliente com pagamento a partir da
     data informada: [(codigo_cliente, desde)] → uma linha por título, com
-    valor e rp brutos. Base da cópia local em services/pagamentos_seta.py.
+    valor e rp brutos e o horário do caixa (pago_em) quando a baixa foi no caixa. Base da cópia local em services/pagamentos_seta.py.
     Consulta por lote, nunca em loop por cliente (ver plano_baixas)."""
 
     resultado: list[dict] = []
@@ -615,9 +619,11 @@ def baixas_de_clientes(clientes: list[tuple[str, date]]) -> list[dict]:
                                trim(ft.pessoa) AS codigo_cliente,
                                ft.pagamento AS pagamento,
                                COALESCE(ft.valor, 0) AS valor,
-                               COALESCE(trim(ft.rp), '') AS rp
+                               COALESCE(trim(ft.rp), '') AS rp,
+                               l.datahora AS pago_em
                           FROM financeiro_titulos ft
                           JOIN clientes c ON c.pessoa = trim(ft.pessoa)
+                          LEFT JOIN caixa_lotes l ON l.codigo = ft.lote
                          WHERE ft.status = 'B'
                            AND ft.pagamento >= :inicio
                     """
@@ -641,50 +647,17 @@ def baixas_de_clientes(clientes: list[tuple[str, date]]) -> list[dict]:
                            c.pessoa AS codigo_cliente,
                            ft.pagamento AS pagamento,
                            COALESCE(ft.valor, 0) AS valor,
-                           COALESCE(trim(ft.rp), '') AS rp
+                           COALESCE(trim(ft.rp), '') AS rp,
+                           l.datahora AS pago_em
                       FROM clientes c
                       -- coluna char(8) bruta, pra usar idx_financeiro_titulos_pessoa
                       JOIN financeiro_titulos ft ON ft.pessoa = CAST(c.pessoa AS char(8))
+                      LEFT JOIN caixa_lotes l ON l.codigo = ft.lote
                      WHERE ft.status = 'B'
                        AND ft.pagamento >= c.desde
                 """
                 for r in conn.execute(text(sql), params).mappings():
                     resultado.append(_linha_baixa(r))
-    except SQLAlchemyError as exc:
-        logger.warning("Falha ao consultar baixas no SETA: %s", exc.__class__.__name__)
-        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
-    return resultado
-
-    engine = engine_ou_erro()
-    try:
-        with engine.connect() as conn:
-            for i in range(0, len(clientes), LOTE_CLIENTES):
-                lote = clientes[i : i + LOTE_CLIENTES]
-                linhas_values = ", ".join(f"(:p{j}, CAST(:d{j} AS date))" for j in range(len(lote)))
-                params: dict = {}
-                for j, (codigo, desde) in enumerate(lote):
-                    params[f"p{j}"] = codigo
-                    params[f"d{j}"] = desde
-                sql = f"""
-                    WITH clientes(pessoa, desde) AS (
-                        VALUES {linhas_values}
-                    )
-                    SELECT trim(ft.codigo) AS titulo_codigo,
-                           c.pessoa AS codigo_cliente,
-                           ft.pagamento AS pagamento,
-                           COALESCE(ft.valor, 0) AS valor,
-                           COALESCE(trim(ft.rp), '') AS rp
-                      FROM clientes c
-                      -- coluna char(8) bruta, pra usar idx_financeiro_titulos_pessoa
-                      JOIN financeiro_titulos ft ON ft.pessoa = CAST(c.pessoa AS char(8))
-                     WHERE ft.status = 'B'
-                       AND ft.pagamento >= c.desde
-                """
-                for r in conn.execute(text(sql), params).mappings():
-                    linha = dict(r)
-                    if hasattr(linha["pagamento"], "date") and callable(linha["pagamento"].date):
-                        linha["pagamento"] = linha["pagamento"].date()
-                    resultado.append(linha)
     except SQLAlchemyError as exc:
         logger.warning("Falha ao consultar baixas no SETA: %s", exc.__class__.__name__)
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc

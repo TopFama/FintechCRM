@@ -61,8 +61,8 @@ def baixas_de_clientes(clientes):
     leituras.append(list(clientes))
     desde = dict(clientes)
     return [
-        {"titulo_codigo": t, "codigo_cliente": c, "pagamento": p, "valor": v, "rp": rp}
-        for t, (c, p, v, rp) in seta.items()
+        {"titulo_codigo": t, "codigo_cliente": c, "pagamento": p, "valor": v, "rp": rp, "pago_em": (resto or [None])[0]}
+        for t, (c, p, v, rp, *resto) in seta.items()
         if c in desde and p >= desde[c]
     ]
 
@@ -110,5 +110,20 @@ pagamentos_seta._ultima_rodada -= 1801
 assert pagamentos_seta.rodada_devida(1800)
 pagamentos_seta._ultima_atividade -= pagamentos_seta.ATIVIDADE_JANELA_SEGUNDOS + 1
 assert not pagamentos_seta.rodada_devida(1800), "usuário saiu há mais de 15 min: para"
+
+# 5. Pago no dia da cobrança: horário do caixa decide; sem horário continua contando.
+# Cobrança às 12h de Brasília (lead() grava 15h UTC).
+meio_dia = datetime.combine(hoje, datetime.min.time()) + timedelta(hours=12)
+db.add_all([lead("00000004", hoje), lead("00000005", hoje), lead("00000006", hoje)])
+db.commit()
+seta["T6"] = ("00000004", hoje, Decimal("40"), "R", meio_dia - timedelta(hours=2))  # antes da mensagem
+seta["T7"] = ("00000005", hoje, Decimal("50"), "R", meio_dia + timedelta(hours=2))  # depois
+seta["T8"] = ("00000006", hoje, Decimal("60"), "R")  # fora do caixa: sem horário
+pares_hoje = [("00000004", hoje), ("00000005", hoje), ("00000006", hoje)]
+pagou = pagamentos_seta.pagamentos_pos_cobranca(db, pares_hoje)
+assert ("00000004", hoje) not in pagou, "pagou antes da mensagem sair não conta"
+assert ("00000005", hoje) in pagou and ("00000006", hoje) in pagou, pagou
+valores = pagamentos_seta.valores_pagos_pos_cobranca(db, pares_hoje)
+assert set(valores) == {("00000005", hoje), ("00000006", hoje)}, valores
 
 print("OK")

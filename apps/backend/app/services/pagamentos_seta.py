@@ -147,6 +147,7 @@ def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
                     "pagamento": b["pagamento"],
                     "valor": Decimal(str(b["valor"] or 0)),
                     "rp": b["rp"] or "",
+                    "pago_em": b.get("pago_em"),
                 }
                 for b in por_titulo.values()
             ],
@@ -168,6 +169,22 @@ def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
         return len(por_titulo)
 
 
+def _horarios_envio(db: Session, pares: list[tuple[str, date]]) -> dict[tuple[str, date], datetime]:
+    """(codigo_cliente, data_cobranca) → primeiro envio naquele dia, na hora de
+    Brasília (mesma referência do horário do caixa do SETA)."""
+    codigos = sorted({c for c, _ in pares})
+    horarios: dict[tuple[str, date], datetime] = {}
+    for lote in _em_lotes(codigos):
+        for codigo, cobrado_em in db.query(models.Lead.codigo_cliente, models.Lead.cobrado_em).filter(
+            models.Lead.codigo_cliente.in_(lote), models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None)
+        ):
+            local = cobrado_em.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).replace(tzinfo=None)
+            chave = (codigo, local.date())
+            if chave not in horarios or local < horarios[chave]:
+                horarios[chave] = local
+    return horarios
+
+
 def _baixas_por_cliente(
     db: Session, pares: list[tuple[str, date]], buscar_novos: bool
 ) -> dict[str, list[models.PagamentoSeta]]:
@@ -182,8 +199,14 @@ def _baixas_por_cliente(
     return baixas
 
 
-def _na_janela(b: models.PagamentoSeta, data_cobranca: date, dias_janela: int | None) -> bool:
+def _na_janela(
+    b: models.PagamentoSeta, data_cobranca: date, dias_janela: int | None, envio: datetime | None = None
+) -> bool:
     if b.pagamento < data_cobranca:
+        return False
+    # Pago no dia da cobrança, antes da mensagem sair: não foi efeito da cobrança.
+    # Sem horário do caixa (baixa fora da loja) não dá pra saber e continua valendo.
+    if b.pagamento == data_cobranca and b.pago_em is not None and envio is not None and b.pago_em < envio:
         return False
     return dias_janela is None or b.pagamento <= data_cobranca + timedelta(days=dias_janela)
 
@@ -199,9 +222,11 @@ def pagamentos_pos_cobranca(
     if not pares:
         return {}
     baixas = _baixas_por_cliente(db, pares, buscar_novos)
+    envios = _horarios_envio(db, pares)
     resultado: dict[tuple[str, date], date] = {}
     for codigo, data_cobranca in pares:
-        datas = [b.pagamento for b in baixas.get(codigo, []) if _na_janela(b, data_cobranca, dias_janela)]
+        envio = envios.get((codigo, data_cobranca))
+        datas = [b.pagamento for b in baixas.get(codigo, []) if _na_janela(b, data_cobranca, dias_janela, envio)]
         if datas:
             resultado[(codigo, data_cobranca)] = min(datas)
     return resultado
@@ -222,14 +247,16 @@ def valores_pagos_pos_cobranca(
     if not pares:
         return {}
     baixas = _baixas_por_cliente(db, pares, buscar_novos)
+    envios = _horarios_envio(db, pares)
     resultado: dict[tuple[str, date], dict] = {}
     for codigo, data_cobranca in pares:
+        envio = envios.get((codigo, data_cobranca))
         titulos = [
             b
             for b in baixas.get(codigo, [])
             if b.rp == "R"
             and b.valor > 0
-            and _na_janela(b, data_cobranca, dias_janela)
+            and _na_janela(b, data_cobranca, dias_janela, envio)
             and (pago_de is None or b.pagamento >= pago_de)
             and (pago_ate is None or b.pagamento <= pago_ate)
         ]
