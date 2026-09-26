@@ -11,3 +11,4 @@ build/
 media/
 .DS_Store
 postgres-data/
+dump.rdb
