@@ -1503,6 +1503,11 @@ button.periodo-card:hover {
   border-color: var(--color-primary);
 }
 
+/* Fica azul no hover (regra geral de button): texto branco */
+button.periodo-card:hover:not(:disabled):not(.ativo) {
+  color: var(--color-primary-contrast);
+}
+
 button.periodo-card.ativo {
   background: var(--color-primary-light);
   border-color: var(--color-primary);

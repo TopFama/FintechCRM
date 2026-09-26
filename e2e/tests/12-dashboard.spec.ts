@@ -26,6 +26,12 @@ test.describe("Dashboard", () => {
     await expect(page.getByRole("heading", { name: "Erros recentes" })).toHaveCount(0);
   });
 
+  test("botão de período que fica azul no hover mostra o texto branco", async ({ page }) => {
+    const botao = page.locator(".periodo-card", { hasText: "Últimos 7 dias" }).first();
+    await botao.hover();
+    await expect(botao).toHaveCSS("color", "rgb(255, 255, 255)");
+  });
+
   test("cards de período: 7 dias, mês e personalizado com datas", async ({ page }) => {
     const enviadosHoje = await stat(page, "Cobranças").innerText();
     await page.locator(".periodo-card", { hasText: "Últimos 7 dias" }).first().click();
