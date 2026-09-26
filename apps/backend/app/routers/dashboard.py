@@ -112,25 +112,6 @@ def _resumo(db: Session, de: date | None, ate: date | None) -> schemas.Dashboard
         chave = "pending" if status_value == models.QueueStatus.reserved else status_value.value
         entry[chave] = entry.get(chave, 0) + total
 
-    # Mesma fonte do card "Erros de envio" (itens da fila com erro no período).
-    # log_erros só é gravado no disparo; erro de upload, da extração automática
-    # e de "já cobrado hoje" não passa por lá, e o card mostrava erro com a lista vazia.
-    ultimo_log = (
-        db.query(models.ErrorLog.queue_item_id, func.max(models.ErrorLog.created_at).label("quando"))
-        .group_by(models.ErrorLog.queue_item_id)
-        .subquery()
-    )
-    quando = func.coalesce(ultimo_log.c.quando, models.QueueItem.created_at)
-    erros = (
-        db.query(models.QueueItem, models.Faixa.name, quando)
-        .join(models.Faixa, models.Faixa.id == models.QueueItem.faixa_id)
-        .outerjoin(ultimo_log, ultimo_log.c.queue_item_id == models.QueueItem.id)
-        .filter(models.QueueItem.status == models.QueueStatus.error, periodo)
-        .order_by(quando.desc())
-        .limit(20)
-        .all()
-    )
-
     total_invalidos = (
         db.query(func.count(models.InvalidPhoneRecord.id))
         .filter(_no_periodo(models.InvalidPhoneRecord.created_at, ini, fim))
@@ -150,17 +131,6 @@ def _resumo(db: Session, de: date | None, ate: date | None) -> schemas.Dashboard
         total_erros=count(models.QueueStatus.error),
         total_telefones_invalidos=total_invalidos,
         por_faixa=list(por_faixa.values()),
-        erros_recentes=[
-            {
-                "id": item.id,
-                "faixa_id": item.faixa_id,
-                "faixa": nome_faixa,
-                "cliente": f"{item.codigo_cliente} · {item.nome}" if item.nome else item.codigo_cliente,
-                "message": item.error_message or "Erro sem detalhe",
-                "created_at": momento.isoformat(),
-            }
-            for item, nome_faixa, momento in erros
-        ],
     )
 
 

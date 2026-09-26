@@ -801,7 +801,6 @@ export interface DashboardSummary {
   total_erros: number;
   total_telefones_invalidos: number;
   por_faixa: Record<string, unknown>[];
-  erros_recentes: Record<string, unknown>[];
 }
 
 // --- Cobrança ---

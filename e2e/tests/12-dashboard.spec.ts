@@ -21,20 +21,9 @@ test.describe("Dashboard", () => {
     await expect(porFaixa.locator("tbody tr", { hasText: "3 A 10" })).toBeVisible();
   });
 
-  test("erros recentes lista os mesmos erros que o card 'Erros de envio' conta", async ({ page }) => {
-    // Erro que não vem do disparo (variável em branco na planilha) também precisa aparecer
-    await expect(stat(page, "Erros de envio")).not.toHaveText("0");
-    const n = numero(await stat(page, "Erros de envio").innerText());
-    const erros = card(page, "Erros recentes");
-    await expect(erros.locator("tbody tr")).toHaveCount(Math.min(n, 20));
-    await expect(erros.locator("tbody tr", { hasText: "Lúcia" })).toContainText("Faltando coluna");
-    // Período sem movimento: card e lista zerados juntos
-    await page.locator(".periodo-card", { hasText: "Personalizado" }).first().click();
-    const periodo = page.locator(".periodo-filtro").first();
-    await periodo.locator('input[type="date"]').first().fill("2020-01-01");
-    await periodo.locator('input[type="date"]').nth(1).fill("2020-01-31");
-    await expect(stat(page, "Erros de envio")).toHaveText("0");
-    await expect(erros).toContainText("Sem erros no período");
+  test("Dashboard não tem mais a lista de erros recentes", async ({ page }) => {
+    await expect(stat(page, "Erros de envio")).not.toHaveText("…");
+    await expect(page.getByRole("heading", { name: "Erros recentes" })).toHaveCount(0);
   });
 
   test("cards de período: 7 dias, mês e personalizado com datas", async ({ page }) => {

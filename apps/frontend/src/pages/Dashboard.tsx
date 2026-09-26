@@ -7,7 +7,7 @@ import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
 import OrcamentoProgressaoCard from "../components/dashboard/OrcamentoProgressaoCard";
 import FiltroPeriodo, { OpcaoPeriodo, Periodo, periodoDe } from "../components/FiltroPeriodo";
 import SortableTh from "../components/SortableTh";
-import { formatBRL, formatDataHora, formatHora, formatNumero } from "../format";
+import { formatBRL, formatHora, formatNumero } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../components/useAtualizacaoAutomatica";
 import { IconAlert, IconBolt, IconCheckCircle, IconClock, IconInbox, IconPhone, IconRefresh } from "../icons";
@@ -239,17 +239,6 @@ function ResumoFila({
     porFaixaSort.sortDir
   );
 
-  const errosSort = useSort<"quando" | "mensagem">();
-  const errosOrdenado = ordenarPor(
-    summary.erros_recentes,
-    errosSort.sortKey === "quando"
-      ? (row) => String(row.created_at)
-      : errosSort.sortKey === "mensagem"
-      ? (row) => String(row.message)
-      : null,
-    errosSort.sortDir
-  );
-
   return (
     <>
       <div className="stat-grid">
@@ -373,53 +362,6 @@ function ResumoFila({
         )}
       </div>
 
-      <div className="card">
-        <div className="card-header">
-          <h3>Erros recentes</h3>
-        </div>
-        {summary.erros_recentes.length === 0 ? (
-          <div className="empty-state">
-            <IconCheckCircle width={28} height={28} />
-            <div className="title">Sem erros no período</div>
-            <p>Tudo certo por aqui.</p>
-          </div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <SortableTh
-                    active={errosSort.sortKey === "quando"}
-                    dir={errosSort.sortDir}
-                    onSort={() => errosSort.toggleSort("quando")}
-                  >
-                    Quando
-                  </SortableTh>
-                  <th scope="col">Faixa</th>
-                  <th scope="col">Cliente</th>
-                  <SortableTh
-                    active={errosSort.sortKey === "mensagem"}
-                    dir={errosSort.sortDir}
-                    onSort={() => errosSort.toggleSort("mensagem")}
-                  >
-                    Mensagem
-                  </SortableTh>
-                </tr>
-              </thead>
-              <tbody>
-                {errosOrdenado.map((row, i) => (
-                  <tr key={i}>
-                    <td className="text-muted">{formatDataHora(String(row.created_at))}</td>
-                    <td>{String(row.faixa ?? "—")}</td>
-                    <td>{String(row.cliente ?? "—")}</td>
-                    <td>{String(row.message)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </>
   );
 }

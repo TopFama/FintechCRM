@@ -546,7 +546,6 @@ class DashboardSummary(BaseModel):
     total_erros: int
     total_telefones_invalidos: int
     por_faixa: list[dict]
-    erros_recentes: list[dict]
 
 
 class LinhaEfetividadeBase(BaseModel):
