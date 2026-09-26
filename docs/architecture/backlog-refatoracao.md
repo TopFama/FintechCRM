@@ -58,8 +58,11 @@ pré-requisito de outro.
 Achados que mudariam o que o sistema faz. Não entram em PR de refatoração; ficam para o usuário
 decidir:
 
-- Item da fila criado por **upload de planilha na faixa** não grava `lojas` (os outros caminhos
-  gravam). "Pausar loja" e o filtro de loja dos relatórios não enxergam esses itens.
+- **Upload de planilha na faixa com Lead sem parcelas**: a variável ligada à coluna de valor
+  usa o valor em atraso com juros do Lead da faixa. O Lead que o próprio upload cria (cliente só
+  na planilha) não tem parcelas, então num upload seguinte do mesmo cliente nessa faixa o valor
+  vai "0,00" em vez do valor da planilha. Fotografado no cenário 10 de
+  `tests/test_caracterizacao_envios.py`.
 
 ## Estado
 

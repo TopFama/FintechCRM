@@ -43,8 +43,8 @@ laço do worker. É o item #4 do backlog: um módulo `elegibilidade` com `pode_e
   - [ ] Dependência circular
   - [x] Duplicação de regra existente em outro arquivo: montagem do item da fila (4 cópias: aqui, `enfileirar_clientes`, `enfileirar_leads`, `reaplicar_variaveis`).
   - [x] Utilitário de outros routers morando aqui (`_ler_planilha_limitada`).
-- **Achado de comportamento (não é refatoração):** o `QueueItem` criado pelo upload não preenche `lojas` (a extração automática, campanhas e remarketing preenchem). Consequência provável: "Pausar loja" não retém item vindo de planilha subida na faixa, e o filtro de loja dos relatórios não o encontra. Fica como pergunta ao usuário, fora dos PRs de refatoração.
-- **Churn:** 28 commits | **Linhas:** 464
+- **Achado de comportamento (não é refatoração):** a variável ligada à coluna de valor da planilha usa o "valor em atraso com juros" do Lead do cliente naquela faixa, quando existe. O Lead que o próprio upload cria para quem só está na planilha não tem parcelas, então num upload seguinte do mesmo cliente nessa faixa o valor sai "0,00" em vez do valor da planilha (fotografado em `tests/test_caracterizacao_envios.py`, cenário 10). Fica como pergunta ao usuário, fora dos PRs de refatoração.
+- **Churn:** 28 commits | **Linhas:** 464 | **Cobertura:** 70%
 - **Ação sugerida:** Extract Module: `upload_planilha` passa a só ler a requisição e chamar um serviço `fila_automatica.enfileirar_planilha(...)`; a montagem do item vai para a função única do backlog #1. `_ler_planilha_limitada` vai para `utils/spreadsheet.py`.
 - **Esforço:** M | **Risco:** médio (caminho de envio; coberto por `test_valor_e_exportacao.py` e e2e 10)
 
