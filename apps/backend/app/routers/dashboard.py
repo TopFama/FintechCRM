@@ -1,6 +1,6 @@
 import calendar
 import logging
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from .. import cache, pausas, seta_client
 from ..services import custo_whatsapp, pagamentos_service, pagos_janela_service
-from ..timezone import BUSINESS_TZ, hoje_br
+from ..timezone import hoje_br, inicio_do_dia_utc
 from ..database import get_db
 from ..deps import get_current_user
 from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx
@@ -22,12 +22,8 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 def _limites_utc(de: date | None, ate: date | None) -> tuple[datetime | None, datetime | None]:
     """Datas locais (GMT-3) → limites em UTC naive, como está gravado no banco."""
-    ini = datetime.combine(de, time.min, BUSINESS_TZ).astimezone(UTC).replace(tzinfo=None) if de else None
-    fim = (
-        datetime.combine(ate + timedelta(days=1), time.min, BUSINESS_TZ).astimezone(UTC).replace(tzinfo=None)
-        if ate
-        else None
-    )
+    ini = inicio_do_dia_utc(de) if de else None
+    fim = inicio_do_dia_utc(ate + timedelta(days=1)) if ate else None
     return ini, fim
 
 

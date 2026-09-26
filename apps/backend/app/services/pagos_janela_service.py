@@ -9,7 +9,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from .. import models
-from ..timezone import hoje_br
+from ..timezone import dia_br, hoje_br, inicio_do_dia_utc
 from . import pagamentos_service
 
 
@@ -20,9 +20,9 @@ def resumo(db: Session, de: date | None, ate: date | None, dias_janela: int = 7)
         models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None)
     )
     if de:
-        query = query.filter(models.Lead.cobrado_em >= pagamentos_service._inicio_utc(de))
+        query = query.filter(models.Lead.cobrado_em >= inicio_do_dia_utc(de))
     if ate:
-        query = query.filter(models.Lead.cobrado_em < pagamentos_service._inicio_utc(ate + timedelta(days=1)))
+        query = query.filter(models.Lead.cobrado_em < inicio_do_dia_utc(ate + timedelta(days=1)))
 
     cobrados: set[str] = set()
     em_maturacao: set[str] = set()
@@ -30,7 +30,7 @@ def resumo(db: Session, de: date | None, ate: date | None, dias_janela: int = 7)
     limite = hoje_br() - timedelta(days=dias_janela)
     for codigo, cobrado_em in query.all():
         cobrados.add(codigo)
-        if pagamentos_service._dia_br(cobrado_em) > limite:
+        if dia_br(cobrado_em) > limite:
             em_maturacao.add(codigo)
 
     linhas = pagamentos_service.clientes_que_pagaram(db, cobrado_de=de, cobrado_ate=ate, dias_janela=dias_janela)

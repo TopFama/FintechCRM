@@ -12,8 +12,7 @@ from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from ..services.pagamentos_service import _inicio_utc
-from ..timezone import hoje_br
+from ..timezone import hoje_br, inicio_do_dia_utc
 from .comum import ClienteSortColumn, ler_planilha_limitada, ordenar_clientes
 
 router = APIRouter(prefix="/campanhas", tags=["campanhas"])
@@ -180,9 +179,9 @@ def _enviadas_no_periodo(db: Session, de: date | None, ate: date | None) -> set[
         models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None), models.Lead.campanha_id != ""
     )
     if de:
-        q = q.filter(models.Lead.cobrado_em >= _inicio_utc(de))
+        q = q.filter(models.Lead.cobrado_em >= inicio_do_dia_utc(de))
     if ate:
-        q = q.filter(models.Lead.cobrado_em < _inicio_utc(ate + timedelta(days=1)))
+        q = q.filter(models.Lead.cobrado_em < inicio_do_dia_utc(ate + timedelta(days=1)))
     return {cid for (cid,) in q.distinct()}
 
 
@@ -208,9 +207,9 @@ def listar(
             q = q.filter(models.Campanha.id.in_(_enviadas_no_periodo(db, de, ate)))
         else:
             if de:
-                q = q.filter(models.Campanha.created_at >= _inicio_utc(de))
+                q = q.filter(models.Campanha.created_at >= inicio_do_dia_utc(de))
             if ate:
-                q = q.filter(models.Campanha.created_at < _inicio_utc(ate + timedelta(days=1)))
+                q = q.filter(models.Campanha.created_at < inicio_do_dia_utc(ate + timedelta(days=1)))
     campanhas = q.order_by(models.Campanha.created_at.desc()).all()
     contagens = _contagens(db, [c.faixa_id for c in campanhas])
     pausadas = _pausas_por_faixa(db)

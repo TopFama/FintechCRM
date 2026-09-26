@@ -20,13 +20,12 @@ import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, seta_client
-from ..timezone import BUSINESS_TZ, hoje_br
+from ..timezone import dia_br, hoje_br, hora_br
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +59,6 @@ def rodada_devida(intervalo_segundos: int) -> bool:
     return _ultima_rodada is None or agora - _ultima_rodada >= intervalo_segundos
 
 
-def _dia_br(dt: datetime) -> date:
-    return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).date()
-
-
 def _cobrancas(db: Session, codigos: set[str] | None = None) -> dict[str, tuple[date, date]]:
     """codigo_cliente → (primeira, última) data de cobrança, no fuso de negócio."""
     query = db.query(
@@ -80,7 +75,7 @@ def _cobrancas(db: Session, codigos: set[str] | None = None) -> dict[str, tuple[
     for lote in lotes:
         q = query if lote is None else query.filter(models.Lead.codigo_cliente.in_(lote))
         for codigo, primeira, ultima in q.group_by(models.Lead.codigo_cliente):
-            resultado[codigo] = (_dia_br(primeira), _dia_br(ultima))
+            resultado[codigo] = (dia_br(primeira), dia_br(ultima))
     return resultado
 
 
@@ -178,7 +173,7 @@ def _horarios_envio(db: Session, pares: list[tuple[str, date]]) -> dict[tuple[st
         for codigo, cobrado_em in db.query(models.Lead.codigo_cliente, models.Lead.cobrado_em).filter(
             models.Lead.codigo_cliente.in_(lote), models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None)
         ):
-            local = cobrado_em.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).replace(tzinfo=None)
+            local = hora_br(cobrado_em)
             chave = (codigo, local.date())
             if chave not in horarios or local < horarios[chave]:
                 horarios[chave] = local

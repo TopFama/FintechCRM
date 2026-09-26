@@ -1,23 +1,18 @@
 """Relatório de quem pagou o que foi cobrado, por cliente: leads cobrados no
 período de cobrança cruzados com as baixas do SETA copiadas em pagamentos_seta."""
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from .. import google_client, lojas as lojas_base, models
 from . import pagamentos_seta
-from ..timezone import BUSINESS_TZ
+from ..timezone import dia_br, inicio_do_dia_utc
 
 
-def _inicio_utc(dia: date) -> datetime:
-    return datetime.combine(dia, time.min, BUSINESS_TZ).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
 
-def _dia_br(dt: datetime) -> date:
-    return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).date()
 
 
 def clientes_que_pagaram(
@@ -41,9 +36,9 @@ def clientes_que_pagaram(
 
     query = db.query(models.Lead).filter(models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None))
     if cobrado_de:
-        query = query.filter(models.Lead.cobrado_em >= _inicio_utc(cobrado_de))
+        query = query.filter(models.Lead.cobrado_em >= inicio_do_dia_utc(cobrado_de))
     if cobrado_ate:
-        query = query.filter(models.Lead.cobrado_em < _inicio_utc(cobrado_ate + timedelta(days=1)))
+        query = query.filter(models.Lead.cobrado_em < inicio_do_dia_utc(cobrado_ate + timedelta(days=1)))
     if faixa:
         query = query.filter(models.Lead.faixa.in_(faixa))
     if campanha:
@@ -54,7 +49,7 @@ def clientes_que_pagaram(
     # diferentes) vira uma linha só, somando o valor cobrado.
     cobrancas: dict[tuple[str, date], dict] = {}
     for lead in query.all():
-        chave = (lead.codigo_cliente, _dia_br(lead.cobrado_em))
+        chave = (lead.codigo_cliente, dia_br(lead.cobrado_em))
         linha = cobrancas.get(chave)
         lojas = {l for l in (lead.lojas or "").split(",") if l}
         if linha is None:

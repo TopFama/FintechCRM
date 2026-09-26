@@ -5,7 +5,6 @@ de um dia pro outro."""
 
 import logging
 from datetime import datetime, time, timedelta
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
@@ -13,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 from . import models
 from .pausas import lojas_formatadas
 from .regras_db import carregar_regras
-from .timezone import BUSINESS_TZ
+from .timezone import BUSINESS_TZ, inicio_hoje_utc, para_br, utc_ingenuo
 from .utils.leads_xlsx import formatar_codigo, formatar_cpf, primeiro_nome
 from .utils.phone import is_valid_phone, normalize_phone
 from .variaveis_template import FonteVariavel, contexto_cliente, resolver_variaveis
@@ -21,13 +20,8 @@ from .variaveis_template import FonteVariavel, contexto_cliente, resolver_variav
 logger = logging.getLogger("fila_automatica")
 
 
-def _utc_ingenuo(local: datetime) -> datetime:
-    return local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
 
-def inicio_hoje_utc() -> datetime:
-    """Meia-noite de hoje em Brasília, em UTC ingênuo (como sent_at é gravado)."""
-    return _utc_ingenuo(datetime.combine(datetime.now(BUSINESS_TZ).date(), time.min, BUSINESS_TZ))
 
 
 # Status que "ocupam" o cliente: vai sair (pendente/reservado) ou saiu
@@ -373,12 +367,12 @@ def reaplicar_variaveis(db: Session, faixa: models.Faixa) -> tuple[int, int]:
 def ultimo_fim_de_janela(global_config: models.GlobalDispatchConfig, now_utc: datetime) -> datetime:
     """Instante (UTC ingênuo) do fim de janela mais recente já passado."""
 
-    local_now = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ)
+    local_now = para_br(now_utc)
     fim = time.fromisoformat(global_config.schedule_end)
     fim_hoje = datetime.combine(local_now.date(), fim, BUSINESS_TZ)
     if local_now < fim_hoje:
         fim_hoje -= timedelta(days=1)
-    return _utc_ingenuo(fim_hoje)
+    return utc_ingenuo(fim_hoje)
 
 
 def expirar_nao_enviados(db: Session, global_config: models.GlobalDispatchConfig, now_utc: datetime) -> tuple[int, int]:

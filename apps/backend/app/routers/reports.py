@@ -1,9 +1,8 @@
 import io
 import logging
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from openpyxl import Workbook
@@ -19,7 +18,7 @@ from ..deps import get_current_user
 from ..regras_db import carregar_regras
 from .. import cache, campanhas_fixas, pausas, seta_client
 from ..services import efetividade_service, pagamentos_service
-from ..timezone import BUSINESS_TZ
+from ..timezone import hora_br, inicio_do_dia_utc
 from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx, formula_safe
 
 api = APIRouter()
@@ -255,16 +254,14 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
     return buffer.getvalue()
 
 
-def _inicio_utc(dia: date) -> datetime:
-    return datetime.combine(dia, time.min, BUSINESS_TZ).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
 
 def _no_periodo(query, coluna, de: date | None, ate: date | None):
     """Período em dias de Brasília sobre um timestamp UTC do banco."""
     if de:
-        query = query.filter(coluna >= _inicio_utc(de))
+        query = query.filter(coluna >= inicio_do_dia_utc(de))
     if ate:
-        query = query.filter(coluna < _inicio_utc(ate + timedelta(days=1)))
+        query = query.filter(coluna < inicio_do_dia_utc(ate + timedelta(days=1)))
     return query
 
 
@@ -304,11 +301,6 @@ def _invalid_phones_query(
     return query
 
 
-def _hora_br(dt: datetime | None) -> datetime | None:
-    """Timestamp UTC ingênuo do banco → horário de Brasília (ingênuo, pro Excel)."""
-    if dt is None:
-        return None
-    return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).replace(tzinfo=None)
 
 
 @api.get("/telefones-invalidos", response_model=schemas.InvalidPhonePage)
@@ -352,7 +344,7 @@ def export_invalid_phones(
             formula_safe(r.celular_original),
             r.celular_normalizado or "",
             r.motivo,
-            _hora_br(r.created_at),
+            hora_br(r.created_at),
         ]
         for r in records
     ]
@@ -463,7 +455,7 @@ def export_dispatch_report(
             formula_safe(item.nome),
             formula_safe(item.valor or ""),
             item.whatsapp_number.display_phone_number if item.whatsapp_number else "",
-            _hora_br(item.sent_at),
+            hora_br(item.sent_at),
         ]
         for item in rows_data
         if item.sent_at
@@ -632,7 +624,7 @@ def export_pendentes(
     rows = [
         [item.codigo_cliente, formula_safe(item.nome), _separar_faixa(item, faixa)[0] or "",
          formula_safe(_separar_faixa(item, faixa)[1] or ""), formula_safe(item.valor or ""),
-         formula_safe(item.celular), (item.lojas or "").strip(","), _hora_br(item.created_at),
+         formula_safe(item.celular), (item.lojas or "").strip(","), hora_br(item.created_at),
          "Sim" if retencao.retido(item) else "Não"]
         for item, faixa, _q in linhas
     ]
@@ -725,7 +717,7 @@ def export_erros(
     rows = [
         [item.codigo_cliente, formula_safe(item.nome), _separar_faixa(item, faixa)[0] or "",
          formula_safe(_separar_faixa(item, faixa)[1] or ""), formula_safe(item.valor or ""),
-         formula_safe(item.celular), formula_safe(item.error_message or "Erro sem detalhe"), _hora_br(quando)]
+         formula_safe(item.celular), formula_safe(item.error_message or "Erro sem detalhe"), hora_br(quando)]
         for item, faixa, quando in linhas
     ]
     return Response(
