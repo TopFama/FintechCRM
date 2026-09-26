@@ -13,7 +13,8 @@ test.describe.serial("Pendentes: pausar, retomar e parar", () => {
   });
 
   test("pausar um cliente pede motivo, mostra o bloco de pausas e o badge; retomar desfaz", async ({ page }) => {
-    const linha = tabela(page).locator("tbody tr").first();
+    // item da régua 11 A 20: o de remarketing que o cenário anterior pôs na fila pode ser enviado pelo worker a qualquer momento
+    const linha = tabela(page).locator("tbody tr", { hasText: "11 A 20" }).first();
     const codigo = (await linha.locator("td").first().innerText()).trim();
     await linha.getByRole("button", { name: "Pausar cliente" }).click();
     const painel = page.getByRole("dialog");
@@ -92,7 +93,8 @@ test.describe.serial("Pendentes: pausar, retomar e parar", () => {
   test("parar pede confirmação na tela com a quantidade e tira o item dos pendentes", async ({ page }) => {
     const total = async () => Number((await page.locator(".paginacao-info").innerText()).match(/de (\d+)/)![1]);
     const antes = await total();
-    const linha = tabela(page).locator("tbody tr").first();
+    // item da régua 11 A 20: o de remarketing que o cenário anterior pôs na fila pode ser enviado pelo worker a qualquer momento
+    const linha = tabela(page).locator("tbody tr", { hasText: "11 A 20" }).first();
     const codigo = (await linha.locator("td").first().innerText()).trim();
     await linha.getByRole("button", { name: `Parar ${codigo}` }).click();
     const confirmar = page.getByRole("alertdialog");
