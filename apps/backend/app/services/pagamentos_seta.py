@@ -162,7 +162,7 @@ def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
         logger.info(
             "Pagamentos do SETA sincronizados (%s): %d clientes em %d consulta(s), %d títulos, SETA %.1f s, total %.1f s",
             "rodada" if codigos is None else "clientes novos",
-            len(leituras), -(-len(leituras) // seta_client.LOTE_CLIENTES), len(por_titulo),
+            len(leituras), len(seta_client.plano_baixas(sorted(leituras.items()), hoje)), len(por_titulo),
             segundos_seta, time.monotonic() - t0,
         )
         return len(por_titulo)

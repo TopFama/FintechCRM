@@ -15,7 +15,7 @@ Convenções do schema do SETA que o restante do código precisa conhecer:
 
 import logging
 import time
-from datetime import date
+from datetime import date, timedelta
 from functools import lru_cache
 
 from sqlalchemy import bindparam, create_engine, text
@@ -559,17 +559,101 @@ def situacao_titulos(codigos: list[str]) -> dict[str, dict]:
 
 
 LOTE_CLIENTES = 1000
+# Leitura a partir de até esse tanto de dias atrás vai pelo índice de
+# `pagamento`: lê só as baixas do período e cruza com os clientes em memória
+# (hash), então o custo no SETA não cresce com o número de clientes. Mais
+# antiga que isso, pelo índice de `pessoa` (lê o histórico do cliente).
+JANELA_RECENTE_DIAS = 31
+LOTE_RECENTE = 50000
+
+
+def _linha_baixa(r) -> dict:
+    linha = dict(r)
+    if hasattr(linha["pagamento"], "date") and callable(linha["pagamento"].date):
+        linha["pagamento"] = linha["pagamento"].date()
+    return linha
+
+
+def plano_baixas(clientes: list[tuple[str, date]], hoje: date | None = None) -> list[tuple[str, list[tuple[str, date]]]]:
+    """Divide [(codigo_cliente, desde)] nas consultas que baixas_de_clientes
+    vai fazer: ("recente", lote) pelo índice de pagamento, ("historico", lote)
+    pelo índice de pessoa."""
+
+    from .timezone import hoje_br
+
+    corte = (hoje or hoje_br()) - timedelta(days=JANELA_RECENTE_DIAS)
+    recentes = sorted((c for c in clientes if c[1] >= corte), key=lambda c: (c[1], c[0]))
+    antigos = [c for c in clientes if c[1] < corte]
+    plano = [("recente", recentes[i : i + LOTE_RECENTE]) for i in range(0, len(recentes), LOTE_RECENTE)]
+    plano += [("historico", antigos[i : i + LOTE_CLIENTES]) for i in range(0, len(antigos), LOTE_CLIENTES)]
+    return plano
 
 
 def baixas_de_clientes(clientes: list[tuple[str, date]]) -> list[dict]:
     """Títulos quitados (status 'B') de cada cliente com pagamento a partir da
     data informada: [(codigo_cliente, desde)] → uma linha por título, com
     valor e rp brutos. Base da cópia local em services/pagamentos_seta.py.
-    Consulta por lote (CTE + VALUES), nunca em loop por cliente."""
+    Consulta por lote, nunca em loop por cliente (ver plano_baixas)."""
 
     resultado: list[dict] = []
     if not clientes:
         return resultado
+
+    engine = engine_ou_erro()
+    try:
+        with engine.connect() as conn:
+            for tipo, lote in plano_baixas(clientes):
+                if tipo == "recente":
+                    # Lote ordenado por data: a menor data do lote é o início do
+                    # intervalo; o corte exato de cada cliente é feito abaixo.
+                    desde = dict(lote)
+                    # trim(ft.pessoa) de propósito: evita o índice de pessoa e faz o
+                    # Postgres ler só o intervalo de pagamento e cruzar por hash
+                    sql = """
+                        WITH clientes(pessoa) AS (SELECT unnest(CAST(:clientes AS text[])))
+                        SELECT trim(ft.codigo) AS titulo_codigo,
+                               trim(ft.pessoa) AS codigo_cliente,
+                               ft.pagamento AS pagamento,
+                               COALESCE(ft.valor, 0) AS valor,
+                               COALESCE(trim(ft.rp), '') AS rp
+                          FROM financeiro_titulos ft
+                          JOIN clientes c ON c.pessoa = trim(ft.pessoa)
+                         WHERE ft.status = 'B'
+                           AND ft.pagamento >= :inicio
+                    """
+                    params = {"inicio": lote[0][1], "clientes": [c for c, _ in lote]}
+                    for r in conn.execute(text(sql), params).mappings():
+                        linha = _linha_baixa(r)
+                        if linha["codigo_cliente"] in desde and linha["pagamento"] >= desde[linha["codigo_cliente"]]:
+                            resultado.append(linha)
+                    continue
+
+                linhas_values = ", ".join(f"(:p{j}, CAST(:d{j} AS date))" for j in range(len(lote)))
+                params = {}
+                for j, (codigo, desde_cliente) in enumerate(lote):
+                    params[f"p{j}"] = codigo
+                    params[f"d{j}"] = desde_cliente
+                sql = f"""
+                    WITH clientes(pessoa, desde) AS (
+                        VALUES {linhas_values}
+                    )
+                    SELECT trim(ft.codigo) AS titulo_codigo,
+                           c.pessoa AS codigo_cliente,
+                           ft.pagamento AS pagamento,
+                           COALESCE(ft.valor, 0) AS valor,
+                           COALESCE(trim(ft.rp), '') AS rp
+                      FROM clientes c
+                      -- coluna char(8) bruta, pra usar idx_financeiro_titulos_pessoa
+                      JOIN financeiro_titulos ft ON ft.pessoa = CAST(c.pessoa AS char(8))
+                     WHERE ft.status = 'B'
+                       AND ft.pagamento >= c.desde
+                """
+                for r in conn.execute(text(sql), params).mappings():
+                    resultado.append(_linha_baixa(r))
+    except SQLAlchemyError as exc:
+        logger.warning("Falha ao consultar baixas no SETA: %s", exc.__class__.__name__)
+        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
+    return resultado
 
     engine = engine_ou_erro()
     try:
