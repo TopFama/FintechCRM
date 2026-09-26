@@ -18,6 +18,7 @@ import {
 import EnviosFaixa from "../components/EnviosFaixa";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
+import { formatHora } from "../format";
 import { SortDirection, useSort } from "../sort";
 
 type ColunaFila = "codigo_cliente" | "nome" | "cpf" | "celular" | "valor" | "status" | "error_message";
@@ -230,7 +231,7 @@ export default function FaixaDetail() {
           <h3>Fila desta faixa</h3>
           <span className="text-faint" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
             <IconRefresh width={13} height={13} />
-            {lastQueueUpdate ? `atualizado ${lastQueueUpdate.toLocaleTimeString("pt-BR")}` : "atualizando..."}
+            {lastQueueUpdate ? `atualizado ${formatHora(lastQueueUpdate)}` : "atualizando..."}
           </span>
         </div>
         {queue.length === 0 ? (

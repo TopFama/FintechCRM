@@ -178,10 +178,10 @@ with TestClient(app) as client:
         },
     ]
 
-    with patch("app.routers.cobranca.cobranca_base.buscar_base", return_value=fake_clientes_relatorio):
+    with patch("app.routers.cobranca.cobranca_base.buscar_base", return_value={"status": "ready", "data": fake_clientes_relatorio}):
         res_rel = client.get("/cobranca/relatorio", headers=auth_headers)
         assert res_rel.status_code == 200, res_rel.text
-        rel_data = res_rel.json()
+        rel_data = res_rel.json()["data"]  # resposta assíncrona: {"status", "data"}
 
         assert "valor_em_aberto" in rel_data
         assert "quantidade" in rel_data
@@ -311,7 +311,7 @@ with TestClient(app) as client:
     ws_padrao = wb_padrao["Leads"]
 
     # Cabeçalho exato
-    assert [ws_padrao.cell(1, c).value for c in range(1, 5)] == ["Codigo", "Nome", "CPF", "Celular"]
+    assert [ws_padrao.cell(1, c).value for c in range(1, 5)] == ["Codigo", "Nome", "Celular", "CPF"]
 
     # Total de 4 linhas: 1 cabeçalho + 3 dados (lead2b, lead2, lead1).
     # lead3 (novo) e lead4 (blacklist) foram excluídos.
@@ -322,20 +322,20 @@ with TestClient(app) as client:
     linha2 = [ws_padrao.cell(2, c).value for c in range(1, 5)]
     assert linha2[0] == "00000222"
     assert linha2[1] == "Bruno"
-    assert linha2[2] == "123.456.789-01"
-    assert linha2[3] == "5563999998888"
+    assert linha2[3] == "123.456.789-01"
+    assert linha2[2] == "5563999998888"
 
     linha3 = [ws_padrao.cell(3, c).value for c in range(1, 5)]
     assert linha3[0] == "00000456"
     assert linha3[1] == "Pedro"
-    assert linha3[2] == "009.982.247-25"
-    assert linha3[3] in ("", None)
+    assert linha3[3] == "009.982.247-25"
+    assert linha3[2] in ("", None)
 
     linha4 = [ws_padrao.cell(4, c).value for c in range(1, 5)]
     assert linha4[0] == "00123456"
     assert linha4[1] == "Maria"
-    assert linha4[2] == "529.982.247-25"
-    assert linha4[3] == "5563991234567"
+    assert linha4[3] == "529.982.247-25"
+    assert linha4[2] == "5563991234567"
 
     # 3. ?faixa= restringe a faixa
     res_faixa = client.get(f"/leads/exportar.xlsx?faixa={f_recente}", headers=auth_headers)
@@ -354,8 +354,8 @@ with TestClient(app) as client:
     assert ws_novo.max_row == 2
     assert ws_novo.cell(2, 1).value == "00000789"
     assert ws_novo.cell(2, 2).value == "Ana"
-    assert ws_novo.cell(2, 3).value == "11.222.333/0001-81"
-    assert ws_novo.cell(2, 4).value == "5563991234567"
+    assert ws_novo.cell(2, 3).value == "5563991234567"
+    assert ws_novo.cell(2, 4).value == "11.222.333/0001-81"  # colunas: Codigo, Nome, Celular, CPF
 
     # 5. Resultado vazio -> planilha válida somente com cabeçalho (não 404)
     res_vazio = client.get("/leads/exportar.xlsx?faixa=151%2B", headers=auth_headers)
@@ -363,7 +363,7 @@ with TestClient(app) as client:
     assert res_vazio.headers["content-disposition"] == f'attachment; filename="leads_151+_{hoje}.xlsx"'
     ws_vazio = openpyxl.load_workbook(io.BytesIO(res_vazio.content))["Leads"]
     assert ws_vazio.max_row == 1
-    assert [ws_vazio.cell(1, c).value for c in range(1, 5)] == ["Codigo", "Nome", "CPF", "Celular"]
+    assert [ws_vazio.cell(1, c).value for c in range(1, 5)] == ["Codigo", "Nome", "Celular", "CPF"]
 
     db.close()
 

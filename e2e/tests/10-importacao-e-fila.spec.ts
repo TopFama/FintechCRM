@@ -98,7 +98,7 @@ test.describe("Detalhe da faixa: fila", () => {
   test("fila mostra os itens importados, com hora de atualização", async ({ page }) => {
     await abrirFaixa(page, "11 A 20");
     const fila = card(page, "Fila desta faixa");
-    await expect(fila).toContainText(/atualizado \d{2}:\d{2}:\d{2}/);
+    await expect(fila).toContainText(/atualizado \d{2}:\d{2}/);
     await expect(fila.locator("tbody tr", { hasText: "Roberta" })).toBeVisible();
     await expect(fila.locator("tbody tr").first().locator(".badge")).toBeVisible();
   });

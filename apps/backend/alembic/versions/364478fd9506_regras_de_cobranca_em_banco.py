@@ -125,9 +125,11 @@ def upgrade() -> None:
         {"id": faixa_ids["151+"],      "nome": "151+",      "dia_min": 151, "dia_max": None},
     ])
 
-    # Parâmetros de juros
+    # Parâmetros de juros. Carência 2 = juros a partir de 3 dias de atraso
+    # ("maior que", desde f9ffe94); só vale para banco novo, o de produção
+    # mantém o que foi configurado em Indicadores.
     op.bulk_insert(t_parametros, [
-        {"id": str(uuid.uuid4()), "juros_mes_percentual": "15.99", "multa_percentual": "2", "dias_min_juros": 3},
+        {"id": str(uuid.uuid4()), "juros_mes_percentual": "15.99", "multa_percentual": "2", "dias_min_juros": 2},
     ])
 
     # Matriz WhatsApp: cluster -> faixas que recebem

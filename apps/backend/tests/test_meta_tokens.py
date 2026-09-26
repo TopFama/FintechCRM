@@ -288,10 +288,26 @@ resp_get_tokens = client.get("/meta-tokens", headers=headers)
 token_1_after = next(t for t in resp_get_tokens.json() if t["id"] == token_1_id)
 assert token_1_after["numeros_vinculados"] == 1
 
-# 11. Teste: DELETE /meta-tokens/{id} bloqueado com 409 quando em uso
-resp_del_conflict = client.delete(f"/meta-tokens/{token_1_id}", headers=headers)
-assert resp_del_conflict.status_code == 409
-assert "usado por 1 número(s)" in resp_del_conflict.json()["detail"]
+# 11. Teste: DELETE /meta-tokens/{id} de token em uso exclui os números junto
+# (CASCADE em WhatsappNumber.meta_token_id; antes era bloqueado com 409)
+tok_cascata_id = client.post(
+    "/meta-tokens",
+    json={"nome": "Token Cascata", "token": "EAAX_TOKEN_CASCATA_1", "waba_id": "2222"},
+    headers=headers,
+).json()["id"]
+num_cascata_id = client.post(
+    "/numbers",
+    json={
+        "waba_id": "waba_teste_sp",
+        "phone_number_id": "phone_cascata",
+        "display_phone_number": "+55 11 91111-3000",
+        "meta_token_id": tok_cascata_id,
+    },
+    headers=headers,
+).json()["id"]
+resp_del_cascata = client.delete(f"/meta-tokens/{tok_cascata_id}", headers=headers)
+assert resp_del_cascata.status_code == 204
+assert all(n["id"] != num_cascata_id for n in client.get("/numbers", headers=headers).json())
 
 # 12. Teste: PATCH /numbers/{id} com null para limpar meta_token_id e chatwoot_inbox_id
 resp_patch_num_null = client.patch(

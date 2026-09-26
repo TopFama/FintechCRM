@@ -423,9 +423,9 @@ export const api = {
     });
   },
   // --- Campanhas ---
-  listarCampanhas: (filtro: { periodo?: "criacao" | "envio"; de?: string; ate?: string } = {}) =>
+  listarCampanhas: (filtro: { periodo?: "criacao" | "envio"; de?: string; ate?: string; busca?: string } = {}) =>
     request<Campanha[]>(`/campanhas?${montarQuery(filtro)}`),
-  listarCampanhasFixas: (filtro: { periodo?: "criacao" | "envio"; de?: string; ate?: string } = {}) =>
+  listarCampanhasFixas: (filtro: { periodo?: "criacao" | "envio"; de?: string; ate?: string; busca?: string } = {}) =>
     request<CampanhaFixa[]>(`/campanhas/fixas?${montarQuery(filtro)}`),
   opcoesCampanhas: (enviado: { enviado_de?: string; enviado_ate?: string } = {}) =>
     request<OpcaoCampanha[]>(`/campanhas/opcoes?${montarQuery(enviado)}`),
@@ -972,6 +972,8 @@ export interface Campanha extends CampanhaIn {
   pendentes: number;
   erros: number;
   parada_em: string | null;
+  /** Data final já passou (GMT-3): a campanha acabou. */
+  finalizada: boolean;
   pausa: { id: string; motivo: string; ate: string | null; created_by: string | null; created_at: string } | null;
   created_at: string;
 }

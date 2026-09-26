@@ -19,11 +19,12 @@ export function periodoCampanha(c: Pick<Campanha, "ativa" | "data_inicio" | "dat
   return `Envio automático de ${formatData(c.data_inicio)} ${c.data_fim ? `a ${formatData(c.data_fim)}` : "em diante"}`;
 }
 
-/** Situação da campanha para o selo: parada, pausada, automática ou manual. */
-export function situacaoCampanha(c: Pick<Campanha, "ativa" | "pausa" | "parada_em">): {
+/** Situação da campanha para o selo: finalizada, parada, pausada, automática ou manual. */
+export function situacaoCampanha(c: Pick<Campanha, "ativa" | "pausa" | "parada_em" | "finalizada">): {
   rotulo: string;
   classe: string;
 } {
+  if (c.finalizada) return { rotulo: "Finalizada", classe: "off" };
   if (c.parada_em && !c.ativa) return { rotulo: "Parada", classe: "stopped" };
   if (c.pausa) return { rotulo: "Pausada", classe: "paused" };
   if (c.ativa) return { rotulo: "Automática", classe: "on" };
@@ -83,7 +84,10 @@ export function AcoesCampanha({
   }
 
   // Sem envio automático e sem pendentes não há o que pausar ou parar.
-  const parada = (Boolean(campanha.parada_em) && !campanha.ativa) || (!campanha.ativa && campanha.pendentes === 0);
+  const parada =
+    (campanha.finalizada && campanha.pendentes === 0) ||
+    (Boolean(campanha.parada_em) && !campanha.ativa) ||
+    (!campanha.ativa && campanha.pendentes === 0);
   return (
     <div style={{ display: "flex", gap: 8 }} onClick={(e) => e.preventDefault()}>
       {campanha.pausa ? (
@@ -126,11 +130,19 @@ export default function Campanhas() {
   const [periodo, setPeriodo] = useState<"criacao" | "envio">("criacao");
   const [de, setDe] = useState("");
   const [ate, setAte] = useState("");
-  const filtrando = de !== "" || ate !== "";
+  const [busca, setBusca] = useState("");
+  const [buscaAplicada, setBuscaAplicada] = useState("");
+  const filtrando = de !== "" || ate !== "" || buscaAplicada !== "";
+
+  // Espera a pessoa parar de digitar antes de buscar.
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaAplicada(busca.trim()), 400);
+    return () => clearTimeout(t);
+  }, [busca]);
 
   useEffect(() => {
     let ativo = true;
-    const filtro = { periodo, de: de || undefined, ate: ate || undefined };
+    const filtro = { periodo, de: de || undefined, ate: ate || undefined, busca: buscaAplicada || undefined };
     Promise.all([api.listarCampanhas(filtro), api.listarCampanhasFixas(filtro)])
       .then(([lista, listaFixas]) => {
         if (!ativo) return;
@@ -143,7 +155,7 @@ export default function Campanhas() {
     return () => {
       ativo = false;
     };
-  }, [periodo, de, ate]);
+  }, [periodo, de, ate, buscaAplicada]);
 
   function irParaAba(nova: Aba) {
     const next = new URLSearchParams(searchParams);
@@ -200,6 +212,16 @@ export default function Campanhas() {
           )}
           {sucesso && <div className="success-box">{sucesso}</div>}
           <div className="form-row" style={{ flexWrap: "wrap", marginBottom: 12 }}>
+            <div className="field" style={{ flex: "2 1 240px" }}>
+              <label htmlFor="campanhas-busca">Buscar</label>
+              <input
+                id="campanhas-busca"
+                type="search"
+                placeholder="Nome da campanha"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+              />
+            </div>
             <div className="field" style={{ flex: "1 1 200px" }}>
               <label htmlFor="campanhas-periodo">Filtrar por</label>
               <select id="campanhas-periodo" value={periodo} onChange={(e) => setPeriodo(e.target.value as "criacao" | "envio")}>
@@ -223,6 +245,8 @@ export default function Campanhas() {
                   onClick={() => {
                     setDe("");
                     setAte("");
+                    setBusca("");
+                    setBuscaAplicada("");
                   }}
                 >
                   Limpar
@@ -234,7 +258,11 @@ export default function Campanhas() {
             <div className="loading-state">Carregando campanhas...</div>
           ) : campanhas && campanhas.length === 0 && fixas.length === 0 && filtrando ? (
             <div className="empty-state">
-              <p>Nenhuma campanha {periodo === "criacao" ? "criada" : "com envio"} no período escolhido.</p>
+              <p>
+                {de || ate
+                  ? `Nenhuma campanha ${periodo === "criacao" ? "criada" : "com envio"} no período escolhido${buscaAplicada ? ` com "${buscaAplicada}" no nome` : ""}.`
+                  : `Nenhuma campanha com "${buscaAplicada}" no nome.`}
+              </p>
             </div>
           ) : campanhas && campanhas.length === 0 && fixas.length === 0 ? (
             <div className="empty-state">

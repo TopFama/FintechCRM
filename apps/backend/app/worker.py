@@ -8,6 +8,7 @@ reservar os itens da fila — *como* um item é efetivamente enviado é
 responsabilidade de dispatch_service.py.
 """
 
+import asyncio
 import logging
 from datetime import datetime, time as dt_time, timedelta
 from zoneinfo import ZoneInfo
@@ -78,10 +79,17 @@ def _deve_extrair_leads(global_config: models.GlobalDispatchConfig, now_utc: dat
     if global_config.leads_auto_extract_last_run == local_now.date():
         return False
     inicio_disparo = dt_time.fromisoformat(global_config.schedule_start)
-    janela_inicio = (
-        datetime.combine(local_now.date(), inicio_disparo) - timedelta(minutes=global_config.leads_auto_extract_minutos_antes)
-    ).time()
-    return janela_inicio <= local_now.time() < inicio_disparo
+    return _inicio_antecipado(global_config) <= local_now.time() < inicio_disparo
+
+
+def _inicio_antecipado(global_config: models.GlobalDispatchConfig) -> dt_time:
+    """Início do disparo menos os minutos da extração de leads, sem voltar para
+    o dia anterior: com início 00:10 e 15 min antes, a conta dava 23:55 e a
+    janela 23:55–00:10 nunca era verdadeira. Nesse caso começa à meia-noite."""
+
+    inicio = dt_time.fromisoformat(global_config.schedule_start)
+    minutos = inicio.hour * 60 + inicio.minute - global_config.leads_auto_extract_minutos_antes
+    return dt_time(*divmod(max(minutos, 0), 60))
 
 
 def _extrair_leads_automatico(db: Session) -> bool:
@@ -121,46 +129,64 @@ def _na_janela_diaria(global_config: models.GlobalDispatchConfig, now_utc: datet
     local_now = _local_now(now_utc)
     if _WEEKDAY_MAP[local_now.weekday()] not in global_config.schedule_days.split(","):
         return False
-    inicio = (
-        datetime.combine(local_now.date(), dt_time.fromisoformat(global_config.schedule_start))
-        - timedelta(minutes=global_config.leads_auto_extract_minutos_antes)
-    ).time()
-    return inicio <= local_now.time() < dt_time.fromisoformat(global_config.schedule_end)
+    return _inicio_antecipado(global_config) <= local_now.time() < dt_time.fromisoformat(global_config.schedule_end)
 
 
-async def run_dispatch_cycle() -> None:
-    """Varre todo FaixaEnvio (par número+template) com disparo devido.
-    Envios da mesma faixa disputam a mesma fila (QueueItem.faixa_id): cada
-    ciclo reserva o lote de um envio (marca status=reserved e comita) antes
-    de processar o próximo envio, então dois envios da mesma faixa nunca
-    pegam o mesmo item — sem isso, dois números diferentes poderiam cobrar
-    o mesmo cliente na mesma passada."""
+# Espera depois de uma falha (SETA, Renegocie) antes de tentar de novo: sem
+# isso a rotina era refeita a cada ciclo do worker (5 s) o dia inteiro.
+ESPERA_APOS_FALHA = timedelta(minutes=5)
+_proxima_tentativa: dict[str, datetime] = {}
+
+
+def _pode_tentar(chave: str, now: datetime) -> bool:
+    return _proxima_tentativa.get(chave, now) <= now
+
+
+def _falhou(chave: str, now: datetime) -> None:
+    _proxima_tentativa[chave] = now + ESPERA_APOS_FALHA
+    logger.warning("'%s' falhou; nova tentativa em %s min", chave, int(ESPERA_APOS_FALHA.total_seconds() // 60))
+
+
+def _ok(chave: str) -> None:
+    _proxima_tentativa.pop(chave, None)
+
+
+def _global_config(db: Session) -> models.GlobalDispatchConfig:
+    global_config = db.query(models.GlobalDispatchConfig).filter(models.GlobalDispatchConfig.id == "global").first()
+    if global_config is None:
+        global_config = models.GlobalDispatchConfig(id="global")
+        db.add(global_config)
+        db.commit()
+        db.refresh(global_config)
+    return global_config
+
+
+def _rotinas_do_dia(now: datetime) -> None:
+    """Extração de leads, remarketing, régua de quem recebeu campanha,
+    campanhas e expiração da fila. São consultas pesadas e bloqueantes (SETA,
+    Renegocie), então rodam numa thread à parte (ver run_dispatch_cycle), com
+    sessão própria, sem travar a API enquanto isso."""
 
     db: Session = SessionLocal()
     try:
-        global_config = db.query(models.GlobalDispatchConfig).filter(models.GlobalDispatchConfig.id == "global").first()
-        if global_config is None:
-            global_config = models.GlobalDispatchConfig(id="global")
-            db.add(global_config)
-            db.commit()
-            db.refresh(global_config)
+        global_config = _global_config(db)
 
-        now = datetime.utcnow()
-
-        if _deve_extrair_leads(global_config, now):
+        if _deve_extrair_leads(global_config, now) and _pode_tentar("extracao", now):
             try:
                 concluiu = _extrair_leads_automatico(db)
             except Exception:  # noqa: BLE001 - falha na extração não pode travar o disparo
                 db.rollback()
                 logger.exception("Falha na extração automática de leads")
+                _falhou("extracao", now)
             else:
+                _ok("extracao")
                 # Base ainda calculando (cache frio): não marca o dia como feito,
                 # senão a extração nunca roda de verdade.
                 if concluiu:
                     global_config.leads_auto_extract_last_run = _local_now(now).date()
                     db.commit()
 
-        if _deve_rodar_remarketing(global_config, now):
+        if _deve_rodar_remarketing(global_config, now) and _pode_tentar("remarketing", now):
             from . import remarketing  # import local: evita ciclo de import com worker
 
             # Só conta o dia como feito quando algum segmento ligado já tem
@@ -171,7 +197,9 @@ async def run_dispatch_cycle() -> None:
                 except Exception:  # noqa: BLE001 - Renegocie/SETA fora não pode travar o disparo
                     db.rollback()
                     logger.exception("Falha no remarketing do Renegocie")
+                    _falhou("remarketing", now)
                 else:
+                    _ok("remarketing")
                     global_config.remarketing_last_run = _local_now(now).date()
                     db.commit()
 
@@ -181,19 +209,28 @@ async def run_dispatch_cycle() -> None:
 
             # Antes das campanhas do dia: quem recebeu campanha em dia anterior
             # entra na régua da faixa de atraso (base calculando = próximo ciclo).
-            try:
-                campanhas.enfileirar_na_regua(db)
-            except Exception:  # noqa: BLE001 - SETA fora não pode travar o disparo
-                db.rollback()
-                logger.exception("Falha ao levar à régua quem recebeu campanha")
+            if _pode_tentar("regua", now):
+                try:
+                    campanhas.enfileirar_na_regua(db)
+                except Exception:  # noqa: BLE001 - SETA fora não pode travar o disparo
+                    db.rollback()
+                    logger.exception("Falha ao levar à régua quem recebeu campanha")
+                    _falhou("regua", now)
+                else:
+                    _ok("regua")
 
             for campanha in campanhas.campanhas_para_hoje(db):
+                chave = f"campanha:{campanha.id}"
+                if not _pode_tentar(chave, now):
+                    continue
                 try:
                     resultado = campanhas.executar(db, campanha)
                 except Exception:  # noqa: BLE001 - SETA fora não pode travar o disparo
                     db.rollback()
                     logger.exception("Falha na campanha '%s'", campanha.nome)
+                    _falhou(chave, now)
                     continue
+                _ok(chave)
                 # Base ainda calculando no SETA: tenta de novo no próximo ciclo.
                 if resultado.get("status") == "ready":
                     campanha.ultima_execucao_dia = _local_now(now).date()
@@ -204,6 +241,26 @@ async def run_dispatch_cycle() -> None:
         except Exception:  # noqa: BLE001 - limpeza não pode travar o disparo
             db.rollback()
             logger.exception("Falha ao expirar a fila após o horário final")
+    finally:
+        db.close()
+
+
+async def run_dispatch_cycle() -> None:
+    """Varre todo FaixaEnvio (par número+template) com disparo devido.
+    Envios da mesma faixa disputam a mesma fila (QueueItem.faixa_id): cada
+    ciclo reserva o lote de um envio (marca status=reserved e comita) antes
+    de processar o próximo envio, então dois envios da mesma faixa nunca
+    pegam o mesmo item — sem isso, dois números diferentes poderiam cobrar
+    o mesmo cliente na mesma passada."""
+
+    now = datetime.utcnow()
+    # O worker divide o event loop com a API: as rotinas bloqueantes vão para
+    # uma thread, e o loop segue atendendo as telas enquanto elas rodam.
+    await asyncio.to_thread(_rotinas_do_dia, now)
+
+    db: Session = SessionLocal()
+    try:
+        global_config = _global_config(db)
 
         dentro_da_janela = _within_schedule_window(global_config, now)
         # Pausas ativas lidas uma vez por ciclo; conferidas de novo antes de cada envio

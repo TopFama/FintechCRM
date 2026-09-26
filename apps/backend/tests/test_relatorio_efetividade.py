@@ -253,45 +253,6 @@ assert sum(p["valor_cobrar"] for p in parcelas_res) == valor_base
 
 
 # ============================================================================
-# 2. Testes de janela de pagamento (lógica de data)
-# ============================================================================
-
-data_cob = date(2026, 9, 10)
-
-
-def _avaliar_pagamento(data_cobranca, dt_pagamento, status_tit, dias_janela=None):
-    if status_tit == "S":
-        return False, True  # pago=False, renegociada=True
-    if status_tit == "B" and dt_pagamento:
-        if dt_pagamento >= data_cobranca:
-            if dias_janela is None or dt_pagamento <= data_cobranca + timedelta(days=dias_janela):
-                return True, False
-    return False, False
-
-
-# Pago antes da cobrança -> não pago
-p, r = _avaliar_pagamento(data_cob, date(2026, 9, 9), "B")
-assert p is False and r is False
-
-# Pago no dia da cobrança -> pago
-p, r = _avaliar_pagamento(data_cob, date(2026, 9, 10), "B")
-assert p is True and r is False
-
-# Com dias_janela = 7:
-# Pago no dia +7 -> pago
-p, r = _avaliar_pagamento(data_cob, date(2026, 9, 17), "B", dias_janela=7)
-assert p is True and r is False
-
-# Pago no dia +8 -> fora da janela (não pago)
-p, r = _avaliar_pagamento(data_cob, date(2026, 9, 18), "B", dias_janela=7)
-assert p is False and r is False
-
-# Status 'S' -> renegociado, não pago
-p, r = _avaliar_pagamento(data_cob, date(2026, 9, 12), "S", dias_janela=7)
-assert p is False and r is True
-
-
-# ============================================================================
 # 3. Testes de integração via API (TestClient + Postgres agy_efet)
 # ============================================================================
 
@@ -386,7 +347,8 @@ with TestClient(app) as client:
 
     # Monkeypatching de serviços externos (SETA e Google)
     def mock_buscar_base(db, **kwargs):
-        return [cliente_mock_1, cliente_mock_2]
+        # mesmo formato do cache em segundo plano (app/cache.py)
+        return {"status": "ready", "data": [cliente_mock_1, cliente_mock_2]}
 
     def mock_buscar_spc(codigos):
         return {}
@@ -430,7 +392,7 @@ with TestClient(app) as client:
     # 1. Gera leads e confere gravação das parcelas
     gerar_res = client.post("/leads/gerar", headers=headers)
     assert gerar_res.status_code == 200, gerar_res.text
-    dados_gerar = gerar_res.json()
+    dados_gerar = gerar_res.json()["data"]  # resposta assíncrona: {"status", "data"}
     assert dados_gerar["criados"] == 2
 
     # Confere que o juros recebido veio das regras configuradas no banco
@@ -499,6 +461,18 @@ with TestClient(app) as client:
 
     seta_client.situacao_titulos = mock_situacao_titulos
 
+    # "Pagou" é por cliente e data da cobrança (qualquer título quitado depois
+    # dela, ver seta_client.pagamentos_pos_cobranca): o cliente 00100001 pagou
+    # 165,00 hoje; o valor é repartido entre as parcelas cobradas dele.
+    def mock_pagamentos_pos_cobranca(pares, dias_janela=None):
+        return {par: par[1] for par in pares if par[0] == "00100001"}
+
+    def mock_valores_pagos_pos_cobranca(pares, pago_de=None, pago_ate=None, dias_janela=None):
+        return {par: {"valor_pago": Decimal("165.00")} for par in pares if par[0] == "00100001"}
+
+    seta_client.pagamentos_pos_cobranca = mock_pagamentos_pos_cobranca
+    seta_client.valores_pagos_pos_cobranca = mock_valores_pagos_pos_cobranca
+
     # 4. Consulta /reports/efetividade
     rep_res = client.get("/reports/efetividade", headers=headers)
     assert rep_res.status_code == 200, rep_res.text
@@ -514,7 +488,7 @@ with TestClient(app) as client:
     assert tot_api["clientes_pagaram"] == 1  # lead 1 pagou TIT101
     assert Decimal(str(tot_api["valor_pago"])) == Decimal("165.00")
     assert tot_api["parcelas_cobradas"] == 3
-    assert tot_api["parcelas_pagas"] == 1
+    assert tot_api["parcelas_pagas"] == 2  # as duas parcelas cobradas de quem pagou
     assert tot_api["parcelas_renegociadas"] == 1
     assert Decimal(str(tot_api["conversao_clientes"])) == Decimal("0.5000")
     assert Decimal(str(tot_api["recuperacao_valor"])) == (Decimal("165") / Decimal("550")).quantize(Decimal("0.0001"))
@@ -553,24 +527,27 @@ with TestClient(app) as client:
 
     # Filtro dias_janela (pago hoje está dentro de janela=0)
     rf_jan0 = client.get("/reports/efetividade?dias_janela=0", headers=headers).json()
-    assert rf_jan0["total"]["parcelas_pagas"] == 1
+    assert rf_jan0["total"]["parcelas_pagas"] == 2
 
-    # 6. Loja por atributos e disponibilidade do Google:
-    # Se Google indisponível ao pedir filtro de atributo -> 503
+    # 6. Atributos da loja vêm da tabela `lojas` (Configurações → Lojas), não
+    # mais direto da planilha Google: com o Google fora, o filtro continua
+    # funcionando. Nenhuma loja do cenário é da regional NORTE.
     def mock_ler_aba_erro(db, sheet_id, gid):
         raise google_client.GoogleIndisponivel("Google desconectado")
 
     google_client.ler_aba = mock_ler_aba_erro
 
-    res_503 = client.get("/reports/efetividade?regional=NORTE", headers=headers)
-    assert res_503.status_code == 503, res_503.text
+    res_regional = client.get("/reports/efetividade?regional=NORTE", headers=headers)
+    assert res_regional.status_code == 200, res_regional.text
+    assert res_regional.json()["total"]["clientes_cobrados"] == 0
 
-    # Sem filtro de atributo -> 200, regional/cluster_inad nulos
+    # Sem filtro de atributo -> 200; a loja 01 vem da carga inicial da tabela
+    # `lojas`, a 02 não está cadastrada (atributos nulos)
     res_sem_attr = client.get("/reports/efetividade", headers=headers)
     assert res_sem_attr.status_code == 200
-    for l_item in res_sem_attr.json()["por_loja"]:
-        assert l_item["regional"] is None
-        assert l_item["cluster_inad"] is None
+    por_loja = {l["loja"]: l for l in res_sem_attr.json()["por_loja"]}
+    assert por_loja["01"]["regional"] == "WALERIANNE" and por_loja["01"]["cluster_inad"] == "CLUSTER TOP"
+    assert por_loja["02"]["regional"] is None and por_loja["02"]["cluster_inad"] is None
 
     # 7. Relatórios exportáveis existentes continuam funcionando
     assert client.get("/reports/envios/export", headers=headers).status_code == 200
@@ -594,11 +571,12 @@ with TestClient(app) as client:
     ws_f = wb["Por faixa"]
     headers_esperados_faixa = [
         "Faixa de atraso",
+        "Qtd. de envios",
         "Clientes cobrados",
         "Valor cobrado",
         "Clientes que pagaram",
-        "Valor pago",
-        "Conversão (%)",
+        "Recebimento",
+        "% Conv.",
         "Recuperação (%)",
     ]
     assert [cell.value for cell in ws_f[1]] == headers_esperados_faixa
@@ -607,34 +585,37 @@ with TestClient(app) as client:
     assert linha_tot_f[0].value == "Total"
     assert all(cell.font.bold is True for cell in linha_tot_f)
     # Formatação de moeda e porcentagem na linha total
-    assert linha_tot_f[2].number_format == '"R$" #,##0.00'
-    assert linha_tot_f[5].number_format == "0.0%"
+    assert linha_tot_f[3].number_format == '"R$" #,##0.00'
+    assert linha_tot_f[6].number_format == "0.0%"
 
     # Validação da aba 'Por loja'
     ws_l = wb["Por loja"]
     headers_esperados_loja = [
-        "Loja",
+        "Código loja",
+        "Nome da loja",
         "Regional",
         "Cluster INAD",
+        "Qtd. de envios",
         "Clientes cobrados",
         "Valor cobrado",
         "Clientes que pagaram",
-        "Valor pago",
-        "Conversão (%)",
+        "Recebimento",
+        "% Conv.",
         "Recuperação (%)",
     ]
     assert [cell.value for cell in ws_l[1]] == headers_esperados_loja
     linha_tot_l = [cell for cell in ws_l[ws_l.max_row]]
     assert linha_tot_l[0].value == "Total"
     assert all(cell.font.bold is True for cell in linha_tot_l)
-    assert linha_tot_l[4].number_format == '"R$" #,##0.00'
-    assert linha_tot_l[7].number_format == "0.0%"
+    assert linha_tot_l[6].number_format == '"R$" #,##0.00'
+    assert linha_tot_l[9].number_format == "0.0%"
+    assert "Por campanha" in wb.sheetnames
 
     # Validação da formatação condicional na coluna Cluster INAD
     cfs = list(ws_l.conditional_formatting)
     assert len(cfs) > 0
     total_regras = sum(len(cf.rules) for cf in cfs)
-    assert total_regras == 3  # ALT, MED, BAIX
+    assert total_regras == 3  # CLUSTER TOP, CLUSTER UTI e CLUSTER UTI +
 
 
 # ============================================================================

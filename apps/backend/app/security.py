@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timedelta
 
 from jose import JWTError, jwt
@@ -18,16 +19,46 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 def create_access_token(subject: str) -> str:
     expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
-    payload = {"sub": subject, "exp": expire}
+    # jti identifica esta sessão, para o "Sair" conseguir invalidá-la (tokens_revogados)
+    payload = {"sub": subject, "exp": expire, "jti": uuid.uuid4().hex}
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def decode_access_token(token: str) -> str | None:
+def decode_access_token(token: str) -> dict | None:
+    """Payload de um token de login válido ({"sub", "jti", "exp"}). Token sem
+    jti (emitido antes do "Sair" invalidar sessão) não vale mais."""
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-        return payload.get("sub")
     except JWTError:
         return None
+    return payload if payload.get("sub") and payload.get("jti") else None
+
+
+DISPOSITIVO_DIAS = 90
+
+
+def create_device_token(user_email: str) -> str:
+    """Cookie de "dispositivo conhecido": navegador onde o usuário já entrou
+    com a senha certa. Quem tem esse cookie não fica bloqueado pelas senhas
+    erradas que outra pessoa tentar na conta (ver rate_limit)."""
+
+    payload = {
+        "usr": user_email,
+        "typ": "dispositivo",
+        "jti": uuid.uuid4().hex,
+        "exp": datetime.utcnow() + timedelta(days=DISPOSITIVO_DIAS),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_device_token(token: str | None) -> dict | None:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except JWTError:
+        return None
+    return payload if payload.get("typ") == "dispositivo" and payload.get("usr") else None
 
 
 def create_oauth_state(user_email: str, minutes: int = 10) -> str:

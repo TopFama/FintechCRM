@@ -47,6 +47,16 @@ const dataHoraBR = new Intl.DateTimeFormat("pt-BR", {
 
 const horaBR = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
 
+const diaBR = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" });
+
+// "Hoje" no calendário de Brasília (GMT-3), como o backend decide o dia,
+// mesmo que o computador de quem abre esteja em outro fuso. Volta um Date
+// local à meia-noite desse dia, para somar/subtrair dias com setDate.
+export function hojeBR(): Date {
+  const [a, m, d] = diaBR.format(new Date()).split("-").map(Number);
+  return new Date(a, m - 1, d);
+}
+
 export function formatHora(d: Date): string {
   return horaBR.format(d);
 }

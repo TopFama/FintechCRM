@@ -246,32 +246,19 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
     num_dados_loja = len(relatorio["por_loja"])
     cf_range = f"D2:D{num_dados_loja + 1}" if num_dados_loja > 0 else "D2:D2"
 
-    red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-    red_font = Font(color="9C0006")
-    yellow_fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
-    yellow_font = Font(color="9C5700")
-    green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-    green_font = Font(color="006100")
+    # Mesmas cores da planilha de lojas e da tela (TOP azul, UTI vermelho,
+    # UTI + roxo). "UTI +" vem antes e para ali, senão pegaria a regra de "UTI".
+    def regra(formula: str, cor: str) -> FormulaRule:
+        return FormulaRule(
+            formula=[formula],
+            fill=PatternFill(start_color=cor, end_color=cor, fill_type="solid"),
+            font=Font(color="FFFFFF"),
+            stopIfTrue=True,
+        )
 
-    rule_alt = FormulaRule(
-        formula=['NOT(ISERROR(SEARCH("ALT", D2)))'],
-        fill=red_fill,
-        font=red_font,
-    )
-    rule_med = FormulaRule(
-        formula=['NOT(ISERROR(SEARCH("MED", D2)))'],
-        fill=yellow_fill,
-        font=yellow_font,
-    )
-    rule_baix = FormulaRule(
-        formula=['NOT(ISERROR(SEARCH("BAIX", D2)))'],
-        fill=green_fill,
-        font=green_font,
-    )
-
-    ws_loja.conditional_formatting.add(cf_range, rule_alt)
-    ws_loja.conditional_formatting.add(cf_range, rule_med)
-    ws_loja.conditional_formatting.add(cf_range, rule_baix)
+    ws_loja.conditional_formatting.add(cf_range, regra('TRIM(D2)="CLUSTER UTI +"', "702F9F"))
+    ws_loja.conditional_formatting.add(cf_range, regra('TRIM(D2)="CLUSTER UTI"', "F9000B"))
+    ws_loja.conditional_formatting.add(cf_range, regra('TRIM(D2)="CLUSTER TOP"', "4B73C3"))
 
     # Aba 3: Por campanha (régua de atraso numa linha, cada campanha na sua)
     ws_camp = wb.create_sheet(title="Por campanha")

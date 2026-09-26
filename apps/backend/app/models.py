@@ -691,3 +691,13 @@ class Campanha(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     faixa: Mapped[Faixa] = relationship()
+
+
+class TokenRevogado(Base):
+    """Sessões encerradas pelo "Sair": o token de login continua assinado até
+    expirar, então fica aqui até lá e é recusado em get_current_user."""
+
+    __tablename__ = "tokens_revogados"
+
+    jti: Mapped[str] = mapped_column(String, primary_key=True)
+    expira_em: Mapped[datetime] = mapped_column(DateTime, index=True)

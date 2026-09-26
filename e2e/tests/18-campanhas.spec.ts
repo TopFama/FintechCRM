@@ -211,16 +211,16 @@ test.describe.serial("Campanhas", () => {
     await page.locator('input[aria-label="Planilha de clientes"]').setInputFiles(path.join(DADOS, "clientes_campanha.xlsx"));
     await expect(page.getByText("clientes_campanha.xlsx · será lida ao criar a campanha")).toBeVisible();
     await page.getByLabel("Valor, celular e variáveis vêm").selectOption("planilha");
-    // envio automático num período já passado: salva a configuração sem rodar sozinho durante o teste
+    // envio automático num período futuro: salva a configuração sem rodar sozinho durante o teste
     await page.getByLabel("Envio automático").check();
-    await page.getByLabel("Período: de").fill("2026-01-01");
-    await page.getByLabel("Até (vazio = sem data final)").fill("2026-01-02");
+    await page.getByLabel("Período: de").fill("2099-01-01");
+    await page.getByLabel("Até (vazio = sem data final)").fill("2099-01-02");
     await page.getByRole("button", { name: "Criar campanha" }).click();
     await expect(page.getByRole("heading", { name: "Planilha promo" })).toBeVisible();
     await expect(page.getByText("clientes_campanha.xlsx · 3 cliente(s)")).toBeVisible();
     await expect(page.getByLabel("Valor, celular e variáveis vêm")).toHaveValue("planilha");
     await expect(page.locator(".status-pill").first()).toHaveText("Automática");
-    await expect(page.locator(".page-header .subtitle")).toContainText("Envio automático de 01/01/2026 a 02/01/2026");
+    await expect(page.locator(".page-header .subtitle")).toContainText("Envio automático de 01/01/2099 a 02/01/2099");
 
     await atribuirTemplate(page, "lembrete_vencimento", "Obs");
     const previa = card(page, "Quem entraria agora");
@@ -417,6 +417,35 @@ test.describe.serial("Campanhas", () => {
     await expect(page.getByLabel("Envio automático")).not.toBeChecked();
     const campanha = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Planilha promo");
     expect(campanha.pendentes).toBe(0);
+  });
+
+  test("busca pelo nome e campanha com prazo vencido aparece como Finalizada", async ({ page }) => {
+    await page.goto("/campanhas");
+    await page.getByLabel("Buscar").fill("planilha PROMO");
+    await expect(page.locator(".faixa-row", { hasText: "Planilha promo" })).toBeVisible();
+    await expect(page.locator(".faixa-row", { hasText: "Feirão lojas 01 e 06" })).toHaveCount(0);
+    await page.getByLabel("Buscar").fill("não existe essa");
+    await expect(page.getByText('Nenhuma campanha com "não existe essa" no nome.')).toBeVisible();
+    await page.getByRole("button", { name: "Limpar" }).click();
+    await expect(page.locator(".faixa-row", { hasText: "Feirão lojas 01 e 06" })).toBeVisible();
+
+    // prazo terminou ontem: deixa de ser "Parada" e vira "Finalizada"
+    const campanha = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Planilha promo");
+    const r = await apiSend(page, "PUT", `/campanhas/${campanha.id}`, {
+      nome: campanha.nome,
+      ativa: false,
+      data_inicio: "2020-01-01",
+      data_fim: "2020-01-02",
+      fonte_valores: campanha.fonte_valores,
+      recontato_dias: campanha.recontato_dias,
+      filtros: campanha.filtros,
+    });
+    expect(r.status).toBe(200);
+    expect(r.corpo.finalizada).toBe(true);
+    await page.reload();
+    const linha = page.locator(".faixa-row", { hasText: "Planilha promo" });
+    await expect(linha.locator(".status-pill")).toHaveText("Finalizada");
+    await expect(linha.getByRole("button", { name: "Parar" })).toHaveCount(0);
   });
 
   test("excluir arquiva a campanha e mantém o histórico", async ({ page }) => {

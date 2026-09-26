@@ -378,7 +378,11 @@ print("  GET /cobranca/regras reflete estado atual: OK")
 
 print("=== 4. Serviço cobranca_base (mock do SETA) ===")
 
-from app import cobranca_base
+from app import cache, cobranca_base
+
+# A base do SETA passa pelo cache Redis em segundo plano (status processing →
+# ready); aqui calcula na hora, sem Redis.
+cache.buscar_ou_iniciar = lambda chave, calcular: {"status": "ready", "data": calcular()}
 
 CLIENTES_FALSOS = [
     {
@@ -403,6 +407,8 @@ CLIENTES_FALSOS = [
         "valor_em_aberto": Decimal("150"),
         "qtd_parcelas_cobranca": 1,
         "valor_cobrar": Decimal("155"),
+        "valor_atraso_original": Decimal("150"),
+        "valor_atraso_juros": Decimal("155"),
         "vencimento_mais_antigo": None,
         "lojas": "01",
         "portadores": "001",
@@ -418,7 +424,7 @@ def _seta_falso(**kwargs):
 
 with Session() as db:
     with patch("app.cobranca_base.seta_client.buscar_base_cobranca", side_effect=_seta_falso):
-        resultado = cobranca_base.buscar_base(db, somente_regra_whatsapp=False)
+        resultado = cobranca_base.buscar_base(db, somente_regra_whatsapp=False)["data"]
 
 assert len(resultado) == 1
 assert resultado[0]["cluster"] == "ESPECIAL"
@@ -440,7 +446,7 @@ assert resp.status_code == 200
 
 with Session() as db:
     with patch("app.cobranca_base.seta_client.buscar_base_cobranca", side_effect=_seta_falso):
-        resultado2 = cobranca_base.buscar_base(db, somente_regra_whatsapp=False)
+        resultado2 = cobranca_base.buscar_base(db, somente_regra_whatsapp=False)["data"]
 
 # valor_pago=350 >= 300 → agora é POTENCIAL
 assert resultado2[0]["cluster"] == "POTENCIAL", f"esperado POTENCIAL, got {resultado2[0]['cluster']}"
@@ -475,7 +481,7 @@ assert resp.status_code == 200
 # Verifica que somente_regra_whatsapp=True filtra o cliente
 with Session() as db:
     with patch("app.cobranca_base.seta_client.buscar_base_cobranca", side_effect=_seta_falso):
-        resultado3 = cobranca_base.buscar_base(db, somente_regra_whatsapp=True)
+        resultado3 = cobranca_base.buscar_base(db, somente_regra_whatsapp=True)["data"]
 
 # ESPECIAL + "21 A 30" está na matriz (segundo TAREFA.md)
 assert any(c["cluster"] == "ESPECIAL" and c["faixa"] == "21 A 30" for c in resultado3), (
@@ -506,7 +512,7 @@ def _seta_nova_faixa(**kwargs):
 
 with Session() as db:
     with patch("app.cobranca_base.seta_client.buscar_base_cobranca", side_effect=_seta_nova_faixa):
-        resultado4 = cobranca_base.buscar_base(db, somente_regra_whatsapp=False)
+        resultado4 = cobranca_base.buscar_base(db, somente_regra_whatsapp=False)["data"]
 
 assert resultado4[0]["faixa"] == "200 A 250"
 

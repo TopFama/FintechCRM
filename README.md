@@ -128,7 +128,7 @@ na Meta e disparar mensagens vão falhar com aviso de token não configurado.
 3. Acesse:
    - Portal: http://localhost:5173
    - API (docs interativas): http://localhost:8000/docs
-   - Postgres, se precisar inspecionar direto: `localhost:5432` (usuário/senha do `.env`).
+   - Postgres, se precisar inspecionar direto: `localhost:5432` (usuário/senha do `.env`). A porta só abre na própria máquina (`127.0.0.1`); de fora, use um túnel SSH: `ssh -L 5432:127.0.0.1:5432 usuario@vps`.
 
 4. Login inicial: o backend cria automaticamente um usuário admin na primeira subida, com
    `ADMIN_EMAIL` / `ADMIN_PASSWORD` definidos no `.env`.

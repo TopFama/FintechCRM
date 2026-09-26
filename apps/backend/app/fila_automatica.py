@@ -37,6 +37,25 @@ def inicio_hoje_utc() -> datetime:
 STATUS_OCUPA_CLIENTE = (models.QueueStatus.pending, models.QueueStatus.reserved, models.QueueStatus.sent)
 
 
+def ocupa_cliente():
+    """Filtro de STATUS_OCUPA_CLIENTE mais o erro incerto (timeout no envio),
+    que pode ter chegado ao cliente."""
+    return or_(
+        models.QueueItem.status.in_(STATUS_OCUPA_CLIENTE),
+        and_(models.QueueItem.status == models.QueueStatus.error, models.QueueItem.sent_at.isnot(None)),
+    )
+
+
+def _cobrado_hoje():
+    """Enviado hoje (GMT-3), ou erro incerto de hoje: timeout/queda de rede no
+    envio grava `sent_at` mesmo com erro, porque a mensagem pode ter chegado
+    (dispatch_service). Erro devolvido pela Meta não grava e libera o cliente."""
+    return and_(
+        models.QueueItem.status.in_((models.QueueStatus.sent, models.QueueStatus.error)),
+        models.QueueItem.sent_at >= inicio_hoje_utc(),
+    )
+
+
 def clientes_bloqueados_hoje(db: Session) -> set[str]:
     """Códigos que não podem entrar na fila agora, em QUALQUER faixa: quem já
     está pendente/reservado (vai sair) e quem já foi cobrado hoje (GMT-3).
@@ -48,7 +67,7 @@ def clientes_bloqueados_hoje(db: Session) -> set[str]:
         for (codigo,) in db.query(models.QueueItem.codigo_cliente).filter(
             or_(
                 models.QueueItem.status.in_([models.QueueStatus.pending, models.QueueStatus.reserved]),
-                and_(models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.sent_at >= inicio_hoje_utc()),
+                _cobrado_hoje(),
             )
         )
     }
@@ -74,9 +93,7 @@ def cobrados_hoje(db: Session) -> set[str]:
 
     return {
         codigo
-        for (codigo,) in db.query(models.QueueItem.codigo_cliente).filter(
-            models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.sent_at >= inicio_hoje_utc()
-        )
+        for (codigo,) in db.query(models.QueueItem.codigo_cliente).filter(_cobrado_hoje())
     }
 
 
@@ -88,8 +105,7 @@ def ja_cobrado_hoje(db: Session, item: models.QueueItem) -> bool:
         .filter(
             models.QueueItem.codigo_cliente == item.codigo_cliente,
             models.QueueItem.id != item.id,
-            models.QueueItem.status == models.QueueStatus.sent,
-            models.QueueItem.sent_at >= inicio_hoje_utc(),
+            _cobrado_hoje(),
         )
         .first()
         is not None

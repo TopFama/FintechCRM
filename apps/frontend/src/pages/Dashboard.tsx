@@ -268,7 +268,7 @@ function ResumoFila({
         <StatLink
           to={linkRelatorio("envios", periodo)}
           valor={formatNumero(summary.total_enviados)}
-          rotulo="Cobrados (enviados)"
+          rotulo="Cobranças"
           ariaLabel={`Ver ${formatNumero(summary.total_enviados)} cobranças enviadas`}
           tom="tone-success"
           icone={<IconCheckCircle />}

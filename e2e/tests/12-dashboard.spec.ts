@@ -14,7 +14,7 @@ test.describe("Dashboard", () => {
 
   test("resumo de hoje reflete a fila, os envios e os telefones inválidos", async ({ page }) => {
     await expect(page.locator(".periodo-card", { hasText: "Hoje" }).first()).toHaveAttribute("aria-pressed", "true");
-    await expect(stat(page, "Cobrados (enviados)")).not.toHaveText("0");
+    await expect(stat(page, "Cobranças")).not.toHaveText("0");
     await expect(stat(page, "Pendentes na fila")).not.toHaveText("0");
     await expect(stat(page, "Telefones inválidos")).not.toHaveText("0");
     const porFaixa = card(page, "Por faixa");
@@ -38,15 +38,15 @@ test.describe("Dashboard", () => {
   });
 
   test("cards de período: 7 dias, mês e personalizado com datas", async ({ page }) => {
-    const enviadosHoje = await stat(page, "Cobrados (enviados)").innerText();
+    const enviadosHoje = await stat(page, "Cobranças").innerText();
     await page.locator(".periodo-card", { hasText: "Últimos 7 dias" }).first().click();
     await expect(page.locator(".periodo-card", { hasText: "Últimos 7 dias" }).first()).toHaveAttribute("aria-pressed", "true");
-    await expect(stat(page, "Cobrados (enviados)")).toHaveText(enviadosHoje);
+    await expect(stat(page, "Cobranças")).toHaveText(enviadosHoje);
     await page.locator(".periodo-card", { hasText: "Personalizado" }).first().click();
     const periodo = page.locator(".periodo-filtro").first();
     await periodo.locator('input[type="date"]').first().fill("2020-01-01");
     await periodo.locator('input[type="date"]').nth(1).fill("2020-01-31");
-    await expect(stat(page, "Cobrados (enviados)")).toHaveText("0");
+    await expect(stat(page, "Cobranças")).toHaveText("0");
     await expect(stat(page, "Pendentes na fila")).toHaveText("0");
   });
 
@@ -55,7 +55,7 @@ test.describe("Dashboard", () => {
     const periodo = page.locator(".periodo-filtro").first();
     await periodo.locator('input[type="date"]').first().fill("2020-01-01");
     await periodo.locator('input[type="date"]').nth(1).fill("2020-01-31");
-    await expect(stat(page, "Cobrados (enviados)")).toHaveText("0");
+    await expect(stat(page, "Cobranças")).toHaveText("0");
     await expect(card(page, "Por faixa")).not.toContainText("RENEGOCIE");
     await expect(card(page, "Por faixa")).toContainText("Nenhuma faixa com movimento ainda");
   });
@@ -73,7 +73,7 @@ test.describe("Dashboard", () => {
 
   for (const [rotulo, aba] of [
     ["Pendentes na fila", "pendentes"],
-    ["Cobrados (enviados)", "envios"],
+    ["Cobranças", "envios"],
     ["Erros de envio", "erros"],
     ["Telefones inválidos", "invalidos"],
   ] as const) {
@@ -123,7 +123,7 @@ test.describe("Dashboard", () => {
     await page.reload();
     const cardPagos = page.locator(".stat", { has: page.locator(".label", { hasText: "Pagaram em até 7 dias" }) });
     await expect(cardPagos).toContainText("SETA indisponível");
-    await expect(stat(page, "Cobrados (enviados)")).not.toHaveText("…");
+    await expect(stat(page, "Cobranças")).not.toHaveText("…");
     await expect(page.locator(".error-box")).toHaveCount(0);
   });
 
@@ -135,7 +135,7 @@ test.describe("Dashboard", () => {
     });
     await page.reload();
     await expect(stat(page, "Pendentes na fila")).toHaveText("12.345");
-    await expect(stat(page, "Cobrados (enviados)")).toHaveText("98.765");
+    await expect(stat(page, "Cobranças")).toHaveText("98.765");
     await expect(page.locator("a.stat-link").first()).toContainText("12.345 pendentes · 1.234 pausados");
     const caixa = (await page.locator("a.stat-link").first().boundingBox())!;
     expect(caixa.width).toBeGreaterThan(caixa.height);

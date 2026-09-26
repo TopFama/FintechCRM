@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../useAtualizacaoAutomatica";
 import { api, OrcamentoProgressao } from "../../api";
-import { formatBRL, formatData } from "../../format";
+import { formatBRL, formatData, hojeBR } from "../../format";
 import { IconAlert } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 import SortableTh from "../SortableTh";
@@ -15,7 +15,7 @@ const NOMES_MES = [
 
 // Últimos 12 meses no formato "ano-mes" para a lista suspensa.
 function mesesRecentes(): { valor: string; rotulo: string }[] {
-  const hoje = new Date();
+  const hoje = hojeBR();
   return Array.from({ length: 12 }, (_, i) => {
     const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
     return { valor: `${d.getFullYear()}-${d.getMonth() + 1}`, rotulo: `${NOMES_MES[d.getMonth()]}/${d.getFullYear()}` };

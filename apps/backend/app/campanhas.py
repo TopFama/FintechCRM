@@ -35,6 +35,7 @@ from .fila_automatica import (
     enfileirar_clientes,
     enfileirar_leads,
     inicio_hoje_utc,
+    ocupa_cliente,
 )
 from .leads_service import gerar_leads_de_clientes
 from .regras_db import carregar_regras
@@ -115,7 +116,7 @@ def ja_receberam(db: Session, campanha: models.Campanha, agora: datetime | None 
 
     q = db.query(models.QueueItem.codigo_cliente).filter(
         models.QueueItem.faixa_id == campanha.faixa_id,
-        models.QueueItem.status.in_(STATUS_OCUPA_CLIENTE),
+        ocupa_cliente(),
     )
     if campanha.recontato_dias:
         agora = agora or datetime.utcnow()

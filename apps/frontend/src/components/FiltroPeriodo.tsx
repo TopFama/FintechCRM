@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { hojeBR } from "../format";
 
 export type OpcaoPeriodo = "hoje" | "7dias" | "mes" | "personalizado";
 export type Periodo = { de?: string; ate?: string };
@@ -10,14 +11,14 @@ const ROTULOS: Record<OpcaoPeriodo, string> = {
   personalizado: "Personalizado",
 };
 
-// Data local (GMT-3 do navegador) em yyyy-mm-dd, sem passar por UTC.
+// Data do Date (já no calendário de Brasília, ver hojeBR) em yyyy-mm-dd, sem passar por UTC.
 export function isoLocal(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 export function periodoDe(opcao: OpcaoPeriodo, de = "", ate = ""): Periodo {
-  const hoje = new Date();
+  const hoje = hojeBR();
   if (opcao === "hoje") return { de: isoLocal(hoje), ate: isoLocal(hoje) };
   if (opcao === "7dias") {
     const inicio = new Date(hoje);

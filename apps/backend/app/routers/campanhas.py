@@ -101,6 +101,8 @@ def _out(
         "pendentes": contagem.get("pending", 0) + contagem.get("reserved", 0),
         "erros": contagem.get("error", 0),
         "parada_em": c.parada_em,
+        # Passou o prazo (data final antes de hoje, GMT-3): acabou, parada ou não.
+        "finalizada": bool(c.data_fim and c.data_fim < hoje_br()),
         "pausa": _pausa_out(pausa),
         "created_at": c.created_at,
     }
@@ -190,13 +192,18 @@ def listar(
     periodo: Literal["criacao", "envio"] = "criacao",
     de: date | None = None,
     ate: date | None = None,
+    busca: str | None = None,
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
     """Campanhas ativas; com `de`/`ate`, só as criadas (periodo=criacao) ou
-    com envio (periodo=envio) nesse intervalo."""
+    com envio (periodo=envio) nesse intervalo; com `busca`, só as que têm o
+    texto no nome, sem diferenciar maiúsculas."""
 
     q = db.query(models.Campanha).filter(models.Campanha.arquivada_em.is_(None))
+    if busca and busca.strip():
+        termo = busca.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        q = q.filter(models.Campanha.nome.ilike(f"%{termo}%", escape="\\"))
     if de or ate:
         if periodo == "envio":
             q = q.filter(models.Campanha.id.in_(_enviadas_no_periodo(db, de, ate)))
@@ -239,6 +246,7 @@ def fixas(
     periodo: Literal["criacao", "envio"] = "criacao",
     de: date | None = None,
     ate: date | None = None,
+    busca: str | None = None,
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
@@ -247,6 +255,8 @@ def fixas(
     criação não aparece; com período de envio, só se enviou no período."""
 
     lista = campanhas_fixas.listar(db)
+    if busca and busca.strip():
+        lista = [f for f in lista if busca.strip().lower() in f["nome"].lower()]
     if de or ate:
         if periodo == "criacao":
             return []

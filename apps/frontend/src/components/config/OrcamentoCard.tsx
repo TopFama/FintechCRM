@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, OrcamentoMes } from "../../api";
-import { formatBRL } from "../../format";
+import { formatBRL, hojeBR } from "../../format";
 import { IconAlert, IconCheckCircle } from "../../icons";
 
 const NOMES_MES = [
@@ -11,7 +11,7 @@ const NOMES_MES = [
 // Orçamento mensal (BRL) de gasto com disparo de WhatsApp — comparado no
 // Dashboard com o custo real das conversas cobradas pela Meta no período.
 export default function OrcamentoCard() {
-  const anoAtual = new Date().getFullYear();
+  const anoAtual = hojeBR().getFullYear();
   const [ano, setAno] = useState(anoAtual);
   const [meses, setMeses] = useState<OrcamentoMes[]>([]);
   const [erro, setErro] = useState<string | null>(null);
