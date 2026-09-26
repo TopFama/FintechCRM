@@ -133,10 +133,13 @@ def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
         return len(por_titulo)
 
 
-def _baixas_por_cliente(db: Session, pares: list[tuple[str, date]]) -> dict[str, list[models.PagamentoSeta]]:
+def _baixas_por_cliente(
+    db: Session, pares: list[tuple[str, date]], buscar_novos: bool
+) -> dict[str, list[models.PagamentoSeta]]:
     codigos = {c for c, _ in pares}
     # Quem foi cobrado depois da última rodada ainda não está copiado: busca só esses
-    sincronizar(db, codigos)
+    if buscar_novos:
+        sincronizar(db, codigos)
     baixas: dict[str, list[models.PagamentoSeta]] = defaultdict(list)
     for lote in _em_lotes(sorted(codigos)):
         for b in db.query(models.PagamentoSeta).filter(models.PagamentoSeta.codigo_cliente.in_(lote)):
@@ -151,15 +154,16 @@ def _na_janela(b: models.PagamentoSeta, data_cobranca: date, dias_janela: int | 
 
 
 def pagamentos_pos_cobranca(
-    db: Session, pares: list[tuple[str, date]], dias_janela: int | None = None
+    db: Session, pares: list[tuple[str, date]], dias_janela: int | None = None, buscar_novos: bool = True
 ) -> dict[tuple[str, date], date]:
     """Pra cada (codigo_cliente, data_cobranca), a primeira data em que o
     cliente quitou QUALQUER título (status 'B') a partir da cobrança (e até
-    data_cobranca + dias_janela, se informado). Só entra quem pagou."""
+    data_cobranca + dias_janela, se informado). Só entra quem pagou.
+    `buscar_novos=False` não vai ao SETA nem para cliente ainda não copiado."""
 
     if not pares:
         return {}
-    baixas = _baixas_por_cliente(db, pares)
+    baixas = _baixas_por_cliente(db, pares, buscar_novos)
     resultado: dict[tuple[str, date], date] = {}
     for codigo, data_cobranca in pares:
         datas = [b.pagamento for b in baixas.get(codigo, []) if _na_janela(b, data_cobranca, dias_janela)]
@@ -174,6 +178,7 @@ def valores_pagos_pos_cobranca(
     pago_de: date | None = None,
     pago_ate: date | None = None,
     dias_janela: int | None = None,
+    buscar_novos: bool = True,
 ) -> dict[tuple[str, date], dict]:
     """Quanto cada cliente pagou depois de cobrado: soma dos títulos a receber
     (rp 'R', valor > 0) quitados a partir da cobrança, dentro de
@@ -181,7 +186,7 @@ def valores_pagos_pos_cobranca(
 
     if not pares:
         return {}
-    baixas = _baixas_por_cliente(db, pares)
+    baixas = _baixas_por_cliente(db, pares, buscar_novos)
     resultado: dict[tuple[str, date], dict] = {}
     for codigo, data_cobranca in pares:
         titulos = [

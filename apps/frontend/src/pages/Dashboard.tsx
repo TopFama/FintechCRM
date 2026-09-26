@@ -228,13 +228,14 @@ function ResumoFila({
 }) {
   const navigate = useNavigate();
   const ordemFaixa = ordemFaixaFn(nomesFaixa);
-  const porFaixaSort = useSort<"faixa" | "pending" | "sent" | "error">("faixa");
+  type ColunaNumerica = "pending" | "sent" | "error" | "pagaram" | "valor_pago";
+  const porFaixaSort = useSort<"faixa" | ColunaNumerica>("faixa");
   const porFaixaOrdenado = ordenarPor(
     summary.por_faixa,
     porFaixaSort.sortKey === "faixa"
       ? (row) => ordemFaixa(String(row.faixa))
       : porFaixaSort.sortKey
-      ? (row) => Number(row[porFaixaSort.sortKey as "pending" | "sent" | "error"] ?? 0)
+      ? (row) => Number(row[porFaixaSort.sortKey as ColunaNumerica] ?? 0)
       : null,
     porFaixaSort.sortDir
   );
@@ -324,6 +325,20 @@ function ResumoFila({
                   >
                     Erro
                   </SortableTh>
+                  <SortableTh
+                    active={porFaixaSort.sortKey === "pagaram"}
+                    dir={porFaixaSort.sortDir}
+                    onSort={() => porFaixaSort.toggleSort("pagaram")}
+                  >
+                    Pagaram após cobrança
+                  </SortableTh>
+                  <SortableTh
+                    active={porFaixaSort.sortKey === "valor_pago"}
+                    dir={porFaixaSort.sortDir}
+                    onSort={() => porFaixaSort.toggleSort("valor_pago")}
+                  >
+                    Valor pago
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
@@ -353,6 +368,8 @@ function ResumoFila({
                       {celula("pendentes", row.pending, "pendentes")}
                       {celula("envios", row.sent, "enviados")}
                       {celula("erros", row.error, "erros")}
+                      {celula("pagamentos", row.pagaram, "clientes que pagaram")}
+                      <td>{formatBRL(Number(row.valor_pago ?? 0))}</td>
                     </tr>
                   );
                 })}

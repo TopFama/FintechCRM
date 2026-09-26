@@ -144,6 +144,23 @@ test.describe("Dashboard", () => {
     if (enviados !== "0") await expect(page.locator(".paginacao-info")).toContainText(`de ${enviados}`);
   });
 
+  test("por faixa mostra quem pagou após a cobrança e abre Quem pagou da faixa com o mesmo total", async ({ page }) => {
+    const porFaixa = card(page, "Por faixa");
+    await expect(porFaixa.getByRole("columnheader", { name: /Pagaram após cobrança/ })).toBeVisible();
+    await expect(porFaixa.getByRole("columnheader", { name: /Valor pago/ })).toBeVisible();
+    // O SETA falso tem clientes que pagam hoje: alguma faixa cobrada hoje tem pagamento
+    const linha = porFaixa.locator("tbody tr").filter({ has: page.locator("td:nth-child(5) a", { hasText: /^[1-9]/ }) }).first();
+    await expect(linha).toBeVisible({ timeout: 30_000 });
+    const pagaram = numero(await linha.locator("td").nth(4).innerText());
+    await expect(linha.locator("td").nth(5)).toContainText(/R\$\s?[1-9]/);
+    await linha.locator("td").nth(4).getByRole("link").click();
+    await expect(page).toHaveURL(/aba=pagamentos.*faixa_id=/);
+    await expect(page.locator(".stat", { hasText: "Clientes que pagaram" }).locator(".value")).toHaveText(
+      pagaram.toLocaleString("pt-BR"),
+      { timeout: 30_000 }
+    );
+  });
+
   test("tabela por faixa ordena pela ordem de atraso e por números", async ({ page }) => {
     const porFaixa = card(page, "Por faixa");
     await porFaixa.getByRole("columnheader", { name: /^Enviado/ }).click();

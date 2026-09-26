@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from .. import cache, pausas, seta_client
-from ..services import custo_whatsapp, pagos_janela_service
+from ..services import custo_whatsapp, pagamentos_service, pagos_janela_service
 from ..timezone import BUSINESS_TZ, hoje_br
 from ..database import get_db
 from ..deps import get_current_user
@@ -55,7 +55,7 @@ def summary(
     _user: models.User = Depends(get_current_user),
 ):
     def calcular():
-        return _resumo(db, de, ate).model_dump(mode="json")
+        return _resumo(db, de, ate, buscar_novos=not auto).model_dump(mode="json")
 
     try:
         dados = cache.obter_ou_calcular(
@@ -66,9 +66,10 @@ def summary(
     return schemas.DashboardSummary(**dados)
 
 
-def _resumo(db: Session, de: date | None, ate: date | None) -> schemas.DashboardSummary:
+def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool = True) -> schemas.DashboardSummary:
     """Cards e tabela por faixa respeitam o período: enviado conta pela data
-    do envio, o resto pela data em que entrou na fila."""
+    do envio, o resto pela data em que entrou na fila. Pagos por faixa vêm da
+    cópia local do SETA; a atualização automática não vai ao SETA."""
 
     ini, fim = _limites_utc(de, ate)
     periodo = or_(
@@ -112,6 +113,8 @@ def _resumo(db: Session, de: date | None, ate: date | None) -> schemas.Dashboard
         chave = "pending" if status_value == models.QueueStatus.reserved else status_value.value
         entry[chave] = entry.get(chave, 0) + total
 
+    _somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos)
+
     total_invalidos = (
         db.query(func.count(models.InvalidPhoneRecord.id))
         .filter(_no_periodo(models.InvalidPhoneRecord.created_at, ini, fim))
@@ -132,6 +135,32 @@ def _resumo(db: Session, de: date | None, ate: date | None) -> schemas.Dashboard
         total_telefones_invalidos=total_invalidos,
         por_faixa=list(por_faixa.values()),
     )
+
+
+def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> None:
+    """Clientes cobrados no período que pagaram depois da cobrança (qualquer
+    data), por faixa: mesma lista do relatório Quem pagou filtrado pela faixa."""
+
+    for entry in por_faixa.values():
+        entry["pagaram"] = 0
+        entry["valor_pago"] = "0.00"
+    try:
+        linhas = pagamentos_service.clientes_que_pagaram(
+            db, cobrado_de=de, cobrado_ate=ate, buscar_novos=buscar_novos
+        )
+    except seta_client.SetaIndisponivel:
+        # SETA fora com cliente novo sem cópia: mostra o que já está copiado
+        linhas = pagamentos_service.clientes_que_pagaram(db, cobrado_de=de, cobrado_ate=ate, buscar_novos=False)
+    clientes: dict[str, set[str]] = {}
+    valores: dict[str, Decimal] = {}
+    for l in linhas:
+        for nome in l["faixa"].split(", "):
+            if nome in por_faixa:
+                clientes.setdefault(nome, set()).add(l["codigo_cliente"])
+                valores[nome] = valores.get(nome, Decimal("0")) + l["valor_pago"]
+    for nome, codigos in clientes.items():
+        por_faixa[nome]["pagaram"] = len(codigos)
+        por_faixa[nome]["valor_pago"] = str(valores[nome].quantize(Decimal("0.01")))
 
 
 @router.get("/orcamento-progressao", response_model=schemas.OrcamentoProgressaoOut)

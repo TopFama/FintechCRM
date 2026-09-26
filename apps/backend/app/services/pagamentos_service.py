@@ -30,12 +30,14 @@ def clientes_que_pagaram(
     faixa: list[str] | None = None,
     dias_janela: int | None = None,
     campanha: str | None = None,
+    buscar_novos: bool = True,
 ) -> list[dict]:
     """Uma linha por cliente e data de cobrança, só de quem pagou. Com
     `dias_janela`, "pagou" segue exatamente pagamentos_seta.pagamentos_pos_cobranca
     (quitou qualquer título até data_cobranca + dias_janela), a mesma regra do
     Relatório de Efetividade e do card do Dashboard. Levanta
-    seta_client.SetaIndisponivel se o SETA estiver fora."""
+    seta_client.SetaIndisponivel se o SETA estiver fora (com `buscar_novos`,
+    o padrão, quando algum cliente ainda não foi copiado do SETA)."""
 
     query = db.query(models.Lead).filter(models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None))
     if cobrado_de:
@@ -71,8 +73,10 @@ def clientes_que_pagaram(
             linha["valor_cobrado"] += Decimal(lead.valor_cobrar or 0)
 
     pares = sorted(cobrancas)
-    pagos = pagamentos_seta.valores_pagos_pos_cobranca(db, pares, pago_de, pago_ate, dias_janela)
-    na_janela = pagamentos_seta.pagamentos_pos_cobranca(db, pares, dias_janela) if dias_janela is not None else None
+    pagos = pagamentos_seta.valores_pagos_pos_cobranca(db, pares, pago_de, pago_ate, dias_janela, buscar_novos)
+    na_janela = (
+        pagamentos_seta.pagamentos_pos_cobranca(db, pares, dias_janela, buscar_novos) if dias_janela is not None else None
+    )
 
     try:
         nomes_loja = {l["filial"]: l.get("nome_com_cod") for l in lojas_base.listar_lojas(db)}
