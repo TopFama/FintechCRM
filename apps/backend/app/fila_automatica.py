@@ -265,3 +265,23 @@ def expirar_nao_enviados(db: Session, global_config: models.GlobalDispatchConfig
         db.commit()
         logger.info("Expirados após o horário final: %s item(ns) da fila, %s lead(s)", itens, leads)
     return itens, leads
+
+
+def descartar_pendentes(db: Session, ids: list[str]) -> int:
+    """"Descartar fila": apaga os pendentes escolhidos, como a expiração do fim
+    do dia faz (sem registro "parado"); o cliente pode voltar à fila depois.
+    Item que um envio já reservou fica. Comita e devolve quantos saíram."""
+
+    total = 0
+    for i in range(0, len(ids), 1000):
+        lote = ids[i : i + 1000]
+        db.query(models.ErrorLog).filter(models.ErrorLog.queue_item_id.in_(lote)).update(
+            {models.ErrorLog.queue_item_id: None}, synchronize_session=False
+        )
+        total += (
+            db.query(models.QueueItem)
+            .filter(models.QueueItem.id.in_(lote), models.QueueItem.status == models.QueueStatus.pending)
+            .delete(synchronize_session=False)
+        )
+    db.commit()
+    return total

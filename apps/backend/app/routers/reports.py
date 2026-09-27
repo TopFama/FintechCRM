@@ -1,6 +1,6 @@
 import io
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -9,42 +9,19 @@ from openpyxl import Workbook
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
-from sqlalchemy import case, func, or_, select
-from sqlalchemy.orm import Session, contains_eager, selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from .. import cache, campanhas_fixas, pausas, seta_client
+from .. import cache, consultas_fila, fila_automatica, pausas, seta_client
 from ..services import efetividade_service, pagamentos_service
-from ..timezone import hora_br, inicio_do_dia_utc
+from ..timezone import hora_br
 from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx, formula_safe
 
 api = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-
-
-def filtro_faixa(db: Session, faixa_id: str):
-    """Itens da faixa. Numa faixa de atraso (régua), também os envios de
-    campanha/remarketing a clientes que estavam nela, como no "Por faixa"
-    do Dashboard."""
-    faixa = db.get(models.Faixa, faixa_id)
-    if faixa is None or faixa.tipo != models.TIPO_REGUA:
-        return models.QueueItem.faixa_id == faixa_id
-    return or_(models.QueueItem.faixa_id == faixa_id, models.QueueItem.faixa_atraso == faixa.name)
-
-def filtro_campanha(db: Session, coluna_faixa_id, campanha: str | None):
-    """Filtro "Campanha" dos relatórios da fila: "regua" = só as faixas de
-    atraso; id = só os envios feitos por aquela campanha (a faixa dela)."""
-    if campanha == "regua":
-        return coluna_faixa_id.in_(select(models.Faixa.id).where(models.Faixa.tipo == models.TIPO_REGUA))
-    if campanhas_fixas.eh_fixa(campanha):
-        return coluna_faixa_id == campanhas_fixas.faixa_id(db, campanha)
-    c = db.get(models.Campanha, campanha)
-    return coluna_faixa_id == (c.faixa_id if c else None)
 
 
 def _build_efetividade_xlsx(relatorio: dict) -> bytes:
@@ -256,15 +233,6 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
 
 
 
-def _no_periodo(query, coluna, de: date | None, ate: date | None):
-    """Período em dias de Brasília sobre um timestamp UTC do banco."""
-    if de:
-        query = query.filter(coluna >= inicio_do_dia_utc(de))
-    if ate:
-        query = query.filter(coluna < inicio_do_dia_utc(ate + timedelta(days=1)))
-    return query
-
-
 InvalidPhoneSortColumn = Literal["codigo_cliente", "celular_original", "celular_normalizado", "motivo", "created_at"]
 
 _INVALID_PHONE_SORT_COLUNAS = {
@@ -289,8 +257,8 @@ def _invalid_phones_query(
     if faixa_id:
         query = query.filter(models.InvalidPhoneRecord.faixa_id == faixa_id)
     if campanha:
-        query = query.filter(filtro_campanha(db, models.InvalidPhoneRecord.faixa_id, campanha))
-    query = _no_periodo(query, models.InvalidPhoneRecord.created_at, de, ate)
+        query = query.filter(consultas_fila.filtro_campanha(db, models.InvalidPhoneRecord.faixa_id, campanha))
+    query = consultas_fila.no_periodo(query, models.InvalidPhoneRecord.created_at, de, ate)
     coluna = _INVALID_PHONE_SORT_COLUNAS.get(sort_by) if sort_by else None
     if coluna is not None:
         query = query.order_by(
@@ -358,55 +326,6 @@ def export_invalid_phones(
 DispatchSortColumn = Literal["codigo_cliente", "faixa", "nome", "valor", "telefone", "enviado_em"]
 
 
-def _dispatch_report_query(
-    db: Session,
-    faixa_id: str | None,
-    de: date | None = None,
-    ate: date | None = None,
-    sort_by: str | None = None,
-    sort_dir: str = "asc",
-    campanha: str | None = None,
-):
-    query = (
-        db.query(models.QueueItem)
-        .options(
-            selectinload(models.QueueItem.faixa),
-            selectinload(models.QueueItem.whatsapp_number),
-        )
-        .filter(models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.sent_at.isnot(None))
-    )
-    if faixa_id:
-        query = query.filter(filtro_faixa(db, faixa_id))
-    if campanha:
-        query = query.filter(filtro_campanha(db, models.QueueItem.faixa_id, campanha))
-    query = _no_periodo(query, models.QueueItem.sent_at, de, ate)
-
-    def _ordenado(coluna):
-        return coluna.desc() if sort_dir == "desc" else coluna.asc()
-
-    if sort_by == "faixa":
-        # ordena pela progressão do atraso (mesma ordem de RegrasCobranca.faixas),
-        # não alfabeticamente — mesmo critério usado em /leads
-        nomes_faixa = carregar_regras(db).nomes_faixa
-        expr = (
-            case({nome: i for i, nome in enumerate(nomes_faixa)}, value=models.Faixa.name, else_=len(nomes_faixa))
-            if nomes_faixa
-            else models.Faixa.name
-        )
-        query = query.join(models.QueueItem.faixa).order_by(_ordenado(expr), models.QueueItem.id)
-    elif sort_by == "telefone":
-        query = query.outerjoin(models.QueueItem.whatsapp_number).order_by(
-            _ordenado(models.WhatsappNumber.display_phone_number), models.QueueItem.id
-        )
-    elif sort_by in ("codigo_cliente", "nome", "valor"):
-        query = query.order_by(_ordenado(getattr(models.QueueItem, sort_by)), models.QueueItem.id)
-    elif sort_by == "enviado_em":
-        query = query.order_by(_ordenado(models.QueueItem.sent_at), models.QueueItem.id)
-    else:
-        query = query.order_by(models.QueueItem.sent_at.desc())
-    return query
-
-
 def _to_report_item(item: models.QueueItem) -> schemas.DispatchReportItemOut:
     return schemas.DispatchReportItemOut(
         codigo_cliente=item.codigo_cliente,
@@ -431,7 +350,7 @@ def list_dispatch_report(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    query = _dispatch_report_query(db, faixa_id, de, ate, sort_by, sort_dir, campanha)
+    query = consultas_fila.envios_realizados(db, faixa_id, de, ate, sort_by, sort_dir, campanha)
     total = query.count()
     itens = [_to_report_item(item) for item in query.offset(offset).limit(limit).all()]
     return schemas.DispatchReportPage(total=total, itens=itens)
@@ -446,7 +365,7 @@ def export_dispatch_report(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    rows_data = _dispatch_report_query(db, faixa_id, de, ate, campanha=campanha).all()
+    rows_data = consultas_fila.envios_realizados(db, faixa_id, de, ate, campanha=campanha).all()
     headers = ["Código do cliente", "Faixa de atraso", "Nome", "Valor cobrado", "Telefone que cobrou", "Data/hora"]
     rows = [
         [
@@ -476,84 +395,7 @@ FilaSortColumn = Literal[
     "codigo_cliente", "nome", "faixa", "campanha", "valor", "telefone", "entrou_em", "quando", "mensagem"
 ]
 
-def _separar_faixa(item: models.QueueItem, nome_faixa: str) -> tuple[str | None, str | None]:
-    """(faixa de atraso, campanha) do item, pelo tipo da faixa: régua tem só a
-    faixa; campanha e remarketing têm o nome da campanha e a faixa de atraso
-    do cliente."""
-    if item.faixa.tipo == models.TIPO_REGUA:
-        return nome_faixa, None
-    return item.faixa_atraso, nome_faixa.removeprefix("Campanha: ")
-
 _STATUS_PENDENTE = (models.QueueStatus.pending, models.QueueStatus.reserved)
-
-
-def _ultimo_erro():
-    return (
-        select(models.ErrorLog.queue_item_id, func.max(models.ErrorLog.created_at).label("quando"))
-        .group_by(models.ErrorLog.queue_item_id)
-        .subquery()
-    )
-
-
-def _fila_report_query(
-    db: Session,
-    status_fila: tuple[models.QueueStatus, ...],
-    faixa_id: str | None,
-    de: date | None,
-    ate: date | None,
-    sort_by: str | None = None,
-    sort_dir: str = "asc",
-    loja: str | None = None,
-    campanha: str | None = None,
-):
-    ultimo = _ultimo_erro()
-    # erro de upload/extração não passa por log_erros: vale a entrada na fila
-    quando = func.coalesce(ultimo.c.quando, models.QueueItem.created_at)
-    query = (
-        db.query(models.QueueItem, models.Faixa.name, quando)
-        .join(models.Faixa, models.Faixa.id == models.QueueItem.faixa_id)
-        .options(contains_eager(models.QueueItem.faixa))  # tipo da faixa sem consulta por item
-        .outerjoin(ultimo, ultimo.c.queue_item_id == models.QueueItem.id)
-        .filter(models.QueueItem.status.in_(status_fila))
-    )
-    if faixa_id:
-        query = query.filter(filtro_faixa(db, faixa_id))
-    if campanha:
-        query = query.filter(filtro_campanha(db, models.QueueItem.faixa_id, campanha))
-    if loja:
-        query = query.filter(models.QueueItem.lojas.like(f"%,{pausas.normalizar_valor('loja', loja)},%"))
-    query = _no_periodo(query, models.QueueItem.created_at, de, ate)
-
-    def _ordenado(coluna):
-        return coluna.desc() if sort_dir == "desc" else coluna.asc()
-
-    eh_campanha = models.Faixa.tipo != models.TIPO_REGUA
-    if sort_by == "faixa":
-        nomes_faixa = carregar_regras(db).nomes_faixa
-        faixa_atraso = case((eh_campanha, models.QueueItem.faixa_atraso), else_=models.Faixa.name)
-        expr = (
-            case({nome: i for i, nome in enumerate(nomes_faixa)}, value=faixa_atraso, else_=len(nomes_faixa))
-            if nomes_faixa
-            else faixa_atraso
-        )
-        return query.order_by(_ordenado(expr), models.QueueItem.id)
-    if sort_by == "campanha":
-        # régua (sem campanha) fica junto, antes das campanhas no crescente
-        expr = case((eh_campanha, models.Faixa.name), else_="")
-        return query.order_by(_ordenado(expr), models.QueueItem.id)
-    colunas = {
-        "codigo_cliente": models.QueueItem.codigo_cliente,
-        "nome": models.QueueItem.nome,
-        "valor": models.QueueItem.valor,
-        "telefone": models.QueueItem.celular,
-        "entrou_em": models.QueueItem.created_at,
-        "quando": quando,
-        "mensagem": models.QueueItem.error_message,
-    }
-    if sort_by in colunas:
-        return query.order_by(_ordenado(colunas[sort_by]), models.QueueItem.id)
-    padrao = quando if models.QueueStatus.error in status_fila else models.QueueItem.created_at
-    return query.order_by(padrao.desc(), models.QueueItem.id)
 
 
 def _to_fila_item(
@@ -566,8 +408,8 @@ def _to_fila_item(
         codigo_cliente=item.codigo_cliente,
         nome=item.nome,
         faixa_id=item.faixa_id,
-        faixa=_separar_faixa(item, nome_faixa)[0],
-        campanha=_separar_faixa(item, nome_faixa)[1],
+        faixa=consultas_fila.separar_faixa(item, nome_faixa)[0],
+        campanha=consultas_fila.separar_faixa(item, nome_faixa)[1],
         valor=item.valor,
         telefone=item.celular,
         entrou_em=item.created_at,
@@ -577,7 +419,7 @@ def _to_fila_item(
 
 
 def _pagina_fila(db, status_fila, faixa_id, de, ate, limit, offset, sort_by, sort_dir, loja=None, campanha=None):
-    query = _fila_report_query(db, status_fila, faixa_id, de, ate, sort_by, sort_dir, loja, campanha)
+    query = consultas_fila.itens_da_fila(db, status_fila, faixa_id, de, ate, sort_by, sort_dir, loja, campanha)
     total = query.count()
     retencao = pausas.Retencao.carregar(db)
     itens = [_to_fila_item(*linha, retencao) for linha in query.offset(offset).limit(limit).all()]
@@ -615,15 +457,15 @@ def export_pendentes(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _fila_report_query(db, _STATUS_PENDENTE, faixa_id, de, ate, loja=loja, campanha=campanha).all()
+    linhas = consultas_fila.itens_da_fila(db, _STATUS_PENDENTE, faixa_id, de, ate, loja=loja, campanha=campanha).all()
     retencao = pausas.Retencao.carregar(db)
     headers = [
         "Código do cliente", "Nome", "Faixa de atraso", "Campanha", "Valor", "Telefone", "Lojas", "Entrou na fila em",
         "Pausado",
     ]
     rows = [
-        [item.codigo_cliente, formula_safe(item.nome), _separar_faixa(item, faixa)[0] or "",
-         formula_safe(_separar_faixa(item, faixa)[1] or ""), formula_safe(item.valor or ""),
+        [item.codigo_cliente, formula_safe(item.nome), consultas_fila.separar_faixa(item, faixa)[0] or "",
+         formula_safe(consultas_fila.separar_faixa(item, faixa)[1] or ""), formula_safe(item.valor or ""),
          formula_safe(item.celular), (item.lojas or "").strip(","), hora_br(item.created_at),
          "Sim" if retencao.retido(item) else "Não"]
         for item, faixa, _q in linhas
@@ -641,7 +483,7 @@ def export_pendentes(
 
 
 def _descartaveis(db, faixa_id, loja, de, ate, campanha):
-    query = _fila_report_query(db, (models.QueueStatus.pending,), faixa_id, de, ate, loja=loja, campanha=campanha)
+    query = consultas_fila.itens_da_fila(db, (models.QueueStatus.pending,), faixa_id, de, ate, loja=loja, campanha=campanha)
     return [item.id for item, _f, _q in query.order_by(None).all()]
 
 
@@ -668,19 +510,7 @@ def descartar_pendentes(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    ids = _descartaveis(db, faixa_id, loja, de, ate, campanha)
-    total = 0
-    for i in range(0, len(ids), 1000):
-        lote = ids[i : i + 1000]
-        db.query(models.ErrorLog).filter(models.ErrorLog.queue_item_id.in_(lote)).update(
-            {models.ErrorLog.queue_item_id: None}, synchronize_session=False
-        )
-        total += (
-            db.query(models.QueueItem)
-            .filter(models.QueueItem.id.in_(lote), models.QueueItem.status == models.QueueStatus.pending)
-            .delete(synchronize_session=False)
-        )
-    db.commit()
+    total = fila_automatica.descartar_pendentes(db, _descartaveis(db, faixa_id, loja, de, ate, campanha))
     logger.info("Fila descartada por %s: %s pendente(s)", user.email, total)
     return schemas.PararEnvioOut(qtd=total)
 
@@ -712,11 +542,11 @@ def export_erros(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _fila_report_query(db, (models.QueueStatus.error,), faixa_id, de, ate, campanha=campanha).all()
+    linhas = consultas_fila.itens_da_fila(db, (models.QueueStatus.error,), faixa_id, de, ate, campanha=campanha).all()
     headers = ["Código do cliente", "Nome", "Faixa de atraso", "Campanha", "Valor", "Telefone", "Mensagem de erro", "Quando"]
     rows = [
-        [item.codigo_cliente, formula_safe(item.nome), _separar_faixa(item, faixa)[0] or "",
-         formula_safe(_separar_faixa(item, faixa)[1] or ""), formula_safe(item.valor or ""),
+        [item.codigo_cliente, formula_safe(item.nome), consultas_fila.separar_faixa(item, faixa)[0] or "",
+         formula_safe(consultas_fila.separar_faixa(item, faixa)[1] or ""), formula_safe(item.valor or ""),
          formula_safe(item.celular), formula_safe(item.error_message or "Erro sem detalhe"), hora_br(quando)]
         for item, faixa, quando in linhas
     ]
