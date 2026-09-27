@@ -196,12 +196,14 @@ ele **antes** do merge (item 8).
 5. Faça o merge com **merge commit** (padrão do histórico: "Merge pull request #N"), passando o
    SHA do commit avaliado (`expectedHeadSha`), para não mesclar um commit que chegou depois da
    avaliação.
-6. No resumo para o usuário, diga o que entrou na `main` e o que o deploy vai exigir: dependência
-   nova ou migration pedem `docker compose up --build` no servidor. O deploy é automático
-   (decisão do dono, 27/09/2026): o workflow `deploy.yml` publica o commit quando o `testes.yml` da
-   `main` passa inteiro, e termina conferindo `/api/health` de produção. Depois do merge, acompanhe
-   o CI da `main` e o "Deploy (VPS)" e reporte o resultado; deploy ❌ é trabalho imediato (leia o
-   log e corrija, ou consulte o dono se for problema na VPS). A ação manual `testar` só confere a
+6. No resumo para o usuário, diga o que entrou na `main` e se o deploy exige algo fora do código:
+   dependência nova e migration o deploy já cobre (`docker compose up -d --build`, migration na
+   subida do backend); variável nova no `.env` da VPS, não (o dono põe à mão **antes** do merge).
+   O deploy é automático (decisão do dono, 27/09/2026): o workflow `deploy.yml` publica o commit
+   quando o `testes.yml` da `main` passa inteiro, e termina conferindo `/api/health` de produção.
+   Depois do merge, acompanhe o CI da `main` e o "Deploy (VPS)" e reporte o resultado; deploy ❌ é
+   trabalho imediato (leia o log e corrija, ou consulte o dono se for problema na VPS; erros
+   comuns em `README.md` → "Deploy em produção (VPS)"). A ação manual `testar` só confere a
    conexão, sem mudar nada.
 7. `security-scan.yml` falhou na rodada agendada de segunda-feira (a `main` não mudou, surgiu uma
    falha nova numa dependência)? É trabalho: abra um PR atualizando a dependência. Exceção nova no

@@ -116,7 +116,10 @@ e `coverage combine`). Os pontos mais descobertos são justamente os de maior ri
 
 **CI**: no momento da análise só existia `security-scan.yml` (npm audit e pip-audit). A Fase 5
 (PR #2) acrescentou `testes.yml` (scripts do backend, build do frontend e e2e em todo PR) e a
-Fase 7 (PR #9) o job de regras de import (`apps/backend/.importlinter`).
+Fase 7 (PR #9) o job de regras de import (`apps/backend/.importlinter`). Depois da análise
+entraram o `e2e-mapa.yml` (PR #15, e2e só das telas afetadas em PR) e o `deploy.yml` (PR #16,
+deploy automático na VPS depois do CI verde na `main`); a lista atual fica em `README.md` → "CI
+(GitHub Actions)".
 
 ## Como regerar os números
 
