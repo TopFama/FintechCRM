@@ -4,7 +4,7 @@ período de cobrança cruzados com as baixas do SETA copiadas em pagamentos_seta
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import and_, func
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from .. import consultas_fila, google_client, lojas as lojas_base, models

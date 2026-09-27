@@ -302,6 +302,14 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    atualizam sozinhos, só ao abrir, trocar o filtro ou em "Atualizar agora". Os pedidos
    automáticos (`auto=true`) leem do cache compartilhado no Redis (15 s o resumo, 10 min o
    orçamento).
+   A tabela **Por faixa** mostra Pendente, Erro, Enviado, Clientes cobrados (distintos, mesma
+   base do "Pagaram após cobrança"), Frequência (mensagens do período aos clientes cobrados ÷
+   cobrados que receberam mensagem), Pagaram após cobrança, % Conv. (pagaram ÷ cobrados),
+   % Rep. (pagaram da faixa ÷ soma das faixas, fecha 100%) e Valor pago, com linha de total
+   (clientes e pagamentos contados uma vez, mesmo em mais de uma faixa) e um ícone 🛈 com a
+   fórmula de cada indicador. A matriz **Base de cobrança — cluster × faixa** tem as abas
+   Clientes, SPC, Valor em aberto e Valor em atraso (só parcelas vencidas, original ou com multa
+   e juros conforme o filtro "Valor considerado").
    **Pagamentos**: "Pagaram em até 7 dias", Efetividade e "Quem pagou" leem a tabela local
    `pagamentos_seta` (baixas do SETA de quem já foi cobrado), não o SETA direto. O worker relê as
    baixas só enquanto alguém usa o CRM (requisição de usuário nos últimos 15 min, sem contar a

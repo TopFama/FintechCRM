@@ -94,7 +94,8 @@ WhatsApp, juros) e leads. Ordenado do arquivo com mais violações para o com me
 ### `apps/backend/app/services/pagamentos_service.py`, `pagos_janela_service.py`
 - **Domínio:** Pagamentos
 - **Camada:** aplicação
-- **Responsabilidade:** responder "quem pagou" numa janela.
+- **Responsabilidade:** responder "quem pagou" numa janela. `condicao_cobrados` é a definição de "lead cobrado no período", base de "Quem pagou" e das colunas Clientes cobrados/Frequência/% Conv. do Dashboard (`clientes_cobrados_por_faixa`).
+- **Depende de:** `consultas_fila` (`limites_utc`/`condicao_periodo`, só os limites do período), `google_client`, `lojas`, `services/pagamentos_seta`, `timezone`.
 - **Violações encontradas:** nenhuma. A de 26/09 (cópias de `_inicio_utc`/`_dia_br`, uma importada como "privada" por `routers/campanhas`) foi resolvida pelo backlog #10: usam `timezone`.
 - **Churn:** 6 / 1 | **Linhas:** 127 / 50
 
