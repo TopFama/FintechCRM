@@ -36,14 +36,19 @@ export default function BlacklistCard() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Só a busca mais recente vale: a resposta de "123" chegando depois da de
+  // "1234" não pode trocar a tabela
+  const reqRef = useRef(0);
   const carregar = useCallback((termo: string) => {
     setCarregando(true);
     setErroTabela(null);
+    const seq = ++reqRef.current;
+    const atual = () => seq === reqRef.current;
     api
       .listarBlacklist(termo || undefined)
-      .then(setLista)
-      .catch((e) => setErroTabela(e instanceof Error ? e.message : "Erro ao carregar"))
-      .finally(() => setCarregando(false));
+      .then((l) => atual() && setLista(l))
+      .catch((e) => atual() && setErroTabela(e instanceof Error ? e.message : "Erro ao carregar"))
+      .finally(() => atual() && setCarregando(false));
   }, []);
 
   useEffect(() => {

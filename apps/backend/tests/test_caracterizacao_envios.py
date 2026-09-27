@@ -52,7 +52,7 @@ from app.timezone import hoje_br  # noqa: E402
 # --- Meta simulada: guarda o que teria saído -----------------------------------
 
 enviados: list[dict] = []
-modo_meta = {"resposta": "ok"}  # "ok" | "erro" (400 da Meta) | "queda" (falha de rede)
+modo_meta = {"resposta": "ok"}  # "ok" | "erro" (400 da Meta) | "servidor" (503) | "queda" (falha de rede)
 
 
 def _meta(request: httpx.Request) -> httpx.Response:
@@ -62,6 +62,8 @@ def _meta(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("conexão caiu", request=request)
         if modo_meta["resposta"] == "erro":
             return httpx.Response(400, json={"error": {"message": "número não tem WhatsApp"}})
+        if modo_meta["resposta"] == "servidor":
+            return httpx.Response(503, json={"error": {"message": "Service temporarily unavailable"}})
         enviados.append(corpo)
         return httpx.Response(200, json={"messages": [{"id": f"wamid.{len(enviados)}"}]})
     return httpx.Response(404, json={"error": {"message": request.url.path}})
@@ -282,6 +284,12 @@ ciclo()
 assert status(it2) == models.QueueStatus.error and it2.sent_at is not None
 assert it2.error_message.startswith("Falha inesperada ao enviar")
 assert "00000010" in elegibilidade.clientes_bloqueados_hoje(db)
+# 5xx da Meta: a mensagem pode ter saído, ocupa o cliente como a queda
+modo_meta["resposta"] = "servidor"
+it5 = item(faixa_a, "00000015", "5511911110015")
+ciclo()
+assert status(it5) == models.QueueStatus.error and it5.sent_at is not None
+assert "00000015" in elegibilidade.clientes_bloqueados_hoje(db)
 # e segura um segundo item do mesmo cliente no mesmo dia
 modo_meta["resposta"] = "ok"
 it3 = item(faixa_b, "00000010", "5511911110010")
@@ -391,6 +399,30 @@ assert it.lojas == ",03," and it.faixa_atraso is None
 assert db.query(models.QueueItem).filter_by(codigo_cliente="00000031").count() == 1  # só o enviado
 assert fila_automatica.enfileirar_leads(db, base) == 0  # de novo: todos bloqueados
 
+# Lead de outro dia com a mesma faixa e vencimento: a mensagem usa os dados da
+# base de hoje e as parcelas atuais, não o retrato do dia em que o lead nasceu
+limpar()
+antigo = lead("00000034", created_at=datetime.utcnow() - timedelta(days=5), status="cobrado")
+parcelas_seta = {"00000034": [{"titulo_codigo": "T9", "empresa": "01", "vencimento": date(2026, 9, 1),
+                               "valor": Decimal("120.00"), "valor_cobrar": Decimal("120.00")}]}
+original_parcelas = fila_automatica.seta_client.buscar_parcelas_cobranca
+fila_automatica.seta_client.buscar_parcelas_cobranca = lambda codigos, juros=None: parcelas_seta
+try:
+    hoje_base = [{
+        "codigo": "00000034", "nome": "JOAO PEREIRA", "cpfcnpj": "12345678909", "celular": "5511977776666",
+        "cluster": "ESPECIAL", "faixa": "11 A 20", "dias_atraso": 15, "qtd_parcelas_cobranca": 1,
+        "valor_em_aberto": Decimal("120.00"), "valor_cobrar": Decimal("120.00"),
+        "vencimento_mais_antigo": date(2026, 9, 1), "lojas": ["03"],
+    }]
+    assert fila_automatica.enfileirar_leads(db, hoje_base) == 1
+finally:
+    fila_automatica.seta_client.buscar_parcelas_cobranca = original_parcelas
+it = db.query(models.QueueItem).filter_by(codigo_cliente="00000034").one()
+assert it.variables_json == {"nome": "Joao", "valor": "120,00"}, it.variables_json
+assert it.valor == "120.00"
+db.refresh(antigo)
+assert antigo.valor_cobrar == Decimal("300.00") and antigo.parcelas == []  # o lead não muda
+
 # =============================================================================
 print("=== 10. Upload de planilha na faixa ===")
 limpar()
@@ -499,13 +531,35 @@ assert db.query(models.QueueItem).filter_by(codigo_cliente="00000061").count() =
 r = client.post(url, json={"filename": "zerados.xlsx", "mapping": mapeamento, "linhas": [escolha]})
 assert r.json()["accepted_count"] == 0 and "Linha 2: cliente já está na fila" in r.json()["rejected_reasons"][0]
 
+# Expressão com texto em volta do valor: o valor escolhido entra nela também,
+# e "-50" conta como zerado
+limpar()
+com_expressao = {**mapeamento, "variables": {vars_["nome"]: "Nome"}, "expressoes": {vars_["valor"]: "{Valor} à vista"}}
+conteudo = planilha([
+    ["65", "Lia Mota", "11122233365", "11911110065", "0,00"],
+    ["66", "Max Reis", "11122233366", "11911110066", "-50"],
+])
+r = client.post(
+    f"/faixas/{faixa_a.id}/uploads",
+    files={"file": ("expr.xlsx", conteudo, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    data={"mapping": json.dumps(com_expressao)},
+)
+assert r.status_code == 200, r.text
+zerados = {z["codigo_cliente"]: z for z in r.json()["valores_zerados"]}
+assert set(zerados) == {"00000065", "00000066"}, r.json()
+r = client.post(url, json={"filename": "expr.xlsx", "mapping": com_expressao,
+                           "linhas": [{"linha": 2, "dados": zerados["00000065"]["dados"], "valor": "300"}]})
+assert r.status_code == 200 and r.json()["accepted_count"] == 1, r.text
+it = db.query(models.QueueItem).filter_by(codigo_cliente="00000065").one()
+assert it.variables_json == {"nome": "Lia", "valor": "300,00 à vista"}, it.variables_json
+
 # Leitura de valor escrito de vários jeitos
 from app.upload_service import ler_valor
 
 for texto, esperado in [
     ("1.234,56", "1234.56"), ("1234.56", "1234.56"), ("R$ 10", "10"), ("1 500,00", "1500.00"),
     ("10,00 reais", "10.00"), ("US$ 50", "50"), ("1.500", "1500"), ("1500.0", "1500.0"),
-    ("1,234.56", "1234.56"), ("0,00", "0.00"), ("R$\u00a01\u00a0500,50", "1500.50"),
+    ("1,234.56", "1234.56"), ("0,00", "0.00"), (",50", "0.50"), ("0.500", "0.500"), ("-50", "-50"), ("R$\u00a01\u00a0500,50", "1500.50"),
 ]:
     assert ler_valor(texto) == Decimal(esperado), (texto, ler_valor(texto))
 assert ler_valor("") is None and ler_valor("sem valor") is None
@@ -530,6 +584,23 @@ assert restantes[id_reservado].error_message.startswith("Envio interrompido")
 assert restantes[id_novo].status == models.QueueStatus.pending
 assert restantes[id_enviado].status == models.QueueStatus.sent
 assert {l.codigo_cliente for l in db.query(models.Lead)} == {"00000055"}
+
+# =============================================================================
+print("=== 12. Número desativado não envia; variável vazia não chama a Meta ===")
+limpar()
+numero2.active = False
+db.commit()
+parado = item(faixa_b, "00000070", "5511911110070")
+ciclo()
+assert status(parado) == models.QueueStatus.pending and enviados == []
+numero2.active = True
+db.commit()
+sem_valor = item(faixa_a, "00000071", "5511911110071", variables_json={"nome": "Ana"})
+ciclo()
+assert status(sem_valor) == models.QueueStatus.error, sem_valor.error_message
+assert sem_valor.error_message == "Variável sem valor para o template cobranca: valor"
+assert para("5511911110071") == [] and sem_valor.sent_at is None
+assert status(parado) == models.QueueStatus.sent  # número de volta: sai
 
 db.close()
 client.__exit__(None, None, None)

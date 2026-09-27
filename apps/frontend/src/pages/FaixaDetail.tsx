@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   api,
@@ -54,6 +54,7 @@ export default function FaixaDetail() {
   const [queueOffset, setQueueOffset] = useState(0);
   const [queueLimit, setQueueLimit] = useState(LIMIT_OPCOES_PADRAO[1]);
   const [error, setError] = useState<string | null>(null);
+  const [erroFila, setErroFila] = useState<string | null>(null);
   const [faixaErro, setFaixaErro] = useState<string | null>(null);
   const [lastQueueUpdate, setLastQueueUpdate] = useState<Date | null>(null);
 
@@ -81,6 +82,8 @@ export default function FaixaDetail() {
       .catch((e) => setFaixaErro(e.message));
   }
 
+  const queueReqRef = useRef(0);
+
   function loadQueue(
     novoOffset: number = queueOffset,
     novoLimit: number = queueLimit,
@@ -88,14 +91,19 @@ export default function FaixaDetail() {
     sortDir: SortDirection = filaSort.sortDir
   ) {
     if (!id) return;
+    // A atualização de 4 s corre junto com a troca de página: só a consulta
+    // mais recente vale, e um erro passageiro some na próxima que der certo
+    const seq = ++queueReqRef.current;
     api
       .listQueue(id, { limit: novoLimit, offset: novoOffset, sort_by: sortBy ?? undefined, sort_dir: sortDir })
       .then((r) => {
+        if (seq !== queueReqRef.current) return;
         setQueue(r.itens);
         setQueueTotal(r.total);
         setLastQueueUpdate(new Date());
+        setErroFila(null);
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => seq === queueReqRef.current && setErroFila(e.message));
   }
 
   function mudarPaginaQueue(novoOffset: number) {
@@ -217,10 +225,10 @@ export default function FaixaDetail() {
         <span className={`status-pill ${algumAgendado ? "on" : "off"}`}>{algumAgendado ? "Agendado" : "Pausado"}</span>
       </div>
 
-      {error && (
+      {(error || erroFila) && (
         <div className="error-box">
           <IconAlert width={16} height={16} />
-          <span>{error}</span>
+          <span>{error || erroFila}</span>
         </div>
       )}
 

@@ -19,6 +19,7 @@ from . import cache, seta_client
 from .services import compras_seta
 from .cobranca_regras import NOMES_FAIXA_COMPRA, faixa_de_compra
 from .regras_db import carregar_regras
+from .timezone import hoje_br
 from .blacklist import codigos_bloqueados
 from .utils.phone import escolher_telefone, primeiro_telefone_preenchido
 
@@ -118,6 +119,8 @@ def buscar_base(
     chave_cache = cache.chave(
         "seta_base_cobranca",
         {
+            # Dias de atraso e juros mudam na virada do dia: a base de ontem não serve hoje
+            "dia": hoje_br(),
             "intervalos": intervalos,
             "dias_exatos": dias_exatos,
             "lojas": sorted(lojas) if lojas else None,

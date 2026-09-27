@@ -61,17 +61,15 @@ def _due(
 def _deve_extrair_leads(global_config: models.GlobalDispatchConfig, now_utc: datetime) -> bool:
     """Extração automática de leads pouco antes do disparo começar (opcional),
     pra reduzir a chance de cobrar quem já pagou mais cedo no mesmo dia. Roda
-    no máximo uma vez por dia, na janela [schedule_start - N min, schedule_start)."""
+    no máximo uma vez por dia, a partir de N min antes do início; se o backend
+    estava fora ou a base não ficou pronta a tempo, ainda roda até o fim da
+    janela, em vez de deixar a régua sem fila no dia."""
 
     if not global_config.leads_auto_extract:
         return False
-    local_now = para_br(now_utc)
-    if _WEEKDAY_MAP[local_now.weekday()] not in global_config.schedule_days.split(","):
+    if global_config.leads_auto_extract_last_run == para_br(now_utc).date():
         return False
-    if global_config.leads_auto_extract_last_run == local_now.date():
-        return False
-    inicio_disparo = dt_time.fromisoformat(global_config.schedule_start)
-    return _inicio_antecipado(global_config) <= local_now.time() < inicio_disparo
+    return _na_janela_diaria(global_config, now_utc)
 
 
 def _inicio_antecipado(global_config: models.GlobalDispatchConfig) -> dt_time:
@@ -263,7 +261,13 @@ async def run_dispatch_cycle() -> None:
             db.query(models.DispatchConfig)
             .join(models.FaixaEnvio)
             .join(models.Faixa)
-            .filter(models.Faixa.active.is_(True), models.FaixaEnvio.active.is_(True))
+            .join(models.WhatsappNumber, models.FaixaEnvio.whatsapp_number_id == models.WhatsappNumber.id)
+            .filter(
+                models.Faixa.active.is_(True),
+                models.FaixaEnvio.active.is_(True),
+                # Número desativado (banido, qualidade baixa) para de enviar
+                models.WhatsappNumber.active.is_(True),
+            )
             .options(
                 selectinload(models.DispatchConfig.envio).selectinload(models.FaixaEnvio.whatsapp_number).selectinload(
                     models.WhatsappNumber.meta_token
@@ -280,6 +284,8 @@ async def run_dispatch_cycle() -> None:
                 continue
 
             envio = config.envio
+            pending_items: list[models.QueueItem] = []
+            em_andamento: int | None = None
             try:
                 if envio.faixa_id in retencao.faixas:
                     continue
@@ -299,7 +305,8 @@ async def run_dispatch_cycle() -> None:
                     item.status = models.QueueStatus.reserved
                 db.commit()
 
-                for item in pending_items:
+                for posicao, item in enumerate(pending_items):
+                    em_andamento = posicao
                     # Pausa criada ou parada feita depois da reserva: relê o item e as pausas
                     db.refresh(item)
                     if item.status != models.QueueStatus.reserved:
@@ -319,12 +326,44 @@ async def run_dispatch_cycle() -> None:
             except Exception:  # noqa: BLE001 - um envio com problema não pode travar os demais
                 db.rollback()
                 logger.exception("Falha ao processar disparo do envio %s (faixa %s)", envio.id, envio.faixa_id)
+                _liberar_lote(db, pending_items, em_andamento)
             finally:
                 config.last_run_at = now
                 config.force_run = False
                 db.commit()
     finally:
         db.close()
+
+
+def _liberar_lote(db: Session, lote: list[models.QueueItem], em_andamento: int | None) -> None:
+    """Depois de uma falha no meio do lote: o item que estava sendo enviado pode
+    ter saído, então vira erro e ocupa o cliente no dia (como falha inesperada
+    no envio); os que nem foram tentados voltam a pendente em vez de ficar
+    reservados (e bloqueando o cliente) até o fim da janela."""
+
+    inicio = 0 if em_andamento is None else em_andamento + 1
+    try:
+        if em_andamento is not None:
+            db.query(models.QueueItem).filter(
+                models.QueueItem.id == lote[em_andamento].id,
+                models.QueueItem.status == models.QueueStatus.reserved,
+            ).update(
+                {
+                    models.QueueItem.status: models.QueueStatus.error,
+                    models.QueueItem.error_message: "Envio interrompido por falha no processamento",
+                    models.QueueItem.sent_at: datetime.utcnow(),
+                },
+                synchronize_session=False,
+            )
+        restantes = [i.id for i in lote[inicio:]]
+        if restantes:
+            db.query(models.QueueItem).filter(
+                models.QueueItem.id.in_(restantes), models.QueueItem.status == models.QueueStatus.reserved
+            ).update({models.QueueItem.status: models.QueueStatus.pending}, synchronize_session=False)
+        db.commit()
+    except Exception:  # noqa: BLE001 - banco fora: expirar_nao_enviados resolve no fim da janela
+        db.rollback()
+        logger.exception("Falha ao liberar o lote interrompido")
 
 
 def sincronizar_pagamentos() -> None:

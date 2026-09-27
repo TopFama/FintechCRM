@@ -4,7 +4,7 @@ mesmas consultas, para card e relatório contarem igual. Só leitura."""
 
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import and_, case, func, or_, select, true
+from sqlalchemy import Numeric, and_, case, func, or_, select, true
 from sqlalchemy.orm import Session, contains_eager, selectinload
 
 from . import campanhas_fixas, models, pausas
@@ -79,13 +79,28 @@ def envios_realizados(
         query = query.outerjoin(models.QueueItem.whatsapp_number).order_by(
             _ordenado(models.WhatsappNumber.display_phone_number), models.QueueItem.id
         )
-    elif sort_by in ("codigo_cliente", "nome", "valor"):
+    elif sort_by == "valor":
+        query = query.order_by(_ordenado(valor_numerico()).nulls_last(), models.QueueItem.id)
+    elif sort_by in ("codigo_cliente", "nome"):
         query = query.order_by(_ordenado(getattr(models.QueueItem, sort_by)), models.QueueItem.id)
     elif sort_by == "enviado_em":
         query = query.order_by(_ordenado(models.QueueItem.sent_at), models.QueueItem.id)
     else:
         query = query.order_by(models.QueueItem.sent_at.desc())
     return query
+
+def valor_numerico():
+    """QueueItem.valor (texto: "1.500,00" da planilha ou "1500.00" do SETA)
+    como número, para ordenar pelo valor e não em ordem alfabética. Texto
+    fora desses formatos fica sem valor (vai para o fim)."""
+
+    texto = models.QueueItem.valor
+    sem_milhar = case(
+        (texto.like("%,%"), func.replace(func.replace(texto, ".", ""), ",", ".")),
+        else_=texto,
+    )
+    return case((sem_milhar.op("~")(r"^-?[0-9]+(\.[0-9]+)?$"), func.cast(sem_milhar, Numeric)), else_=None)
+
 
 def separar_faixa(item: models.QueueItem, nome_faixa: str) -> tuple[str | None, str | None]:
     """(faixa de atraso, campanha) do item, pelo tipo da faixa: régua tem só a
@@ -152,14 +167,14 @@ def itens_da_fila(
     colunas = {
         "codigo_cliente": models.QueueItem.codigo_cliente,
         "nome": models.QueueItem.nome,
-        "valor": models.QueueItem.valor,
+        "valor": valor_numerico(),
         "telefone": models.QueueItem.celular,
         "entrou_em": models.QueueItem.created_at,
         "quando": quando,
         "mensagem": models.QueueItem.error_message,
     }
     if sort_by in colunas:
-        return query.order_by(_ordenado(colunas[sort_by]), models.QueueItem.id)
+        return query.order_by(_ordenado(colunas[sort_by]).nulls_last(), models.QueueItem.id)
     padrao = quando if models.QueueStatus.error in status_fila else models.QueueItem.created_at
     return query.order_by(padrao.desc(), models.QueueItem.id)
 

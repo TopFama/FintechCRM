@@ -3,8 +3,7 @@
 aqui cada linha vira item da fila, com o mesmo bloqueio de uma cobrança por
 cliente por dia e a mesma blacklist dos outros caminhos."""
 
-import re
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from sqlalchemy.orm import Session, selectinload
 
@@ -16,7 +15,9 @@ from .regras_db import carregar_regras
 from .timezone import hoje_br
 from .utils.document import extract_first_name, format_cpf, normalize_seta_code
 from .utils.phone import eh_fixo, escolher_telefone, is_valid_phone, normalize_phone
+from .utils.valor import ler_valor
 from .variaveis_template import (
+    CAMPOS_CLIENTE,
     extrair_placeholders,
     formatar_moeda,
     normalizar_chave,
@@ -25,49 +26,30 @@ from .variaveis_template import (
 )
 
 
-# Primeiro número do texto: "1.234,56", "1234.56", "1 500,00", "R$ 10",
-# "10,00 reais", "US$ 50". Espaço só conta como separador de milhar.
-_NUMERO = re.compile(r"-?\d{1,3}(?:[ \u00a0]\d{3})+(?:[.,]\d+)?|-?\d[\d.,]*")
-
-
-def ler_valor(texto: str | None) -> Decimal | None:
-    """Valor em reais escrito na planilha, ou None se não tem número."""
-    achado = _NUMERO.search(texto or "")
-    if not achado:
-        return None
-    num = re.sub(r"[ \u00a0]", "", achado.group()).rstrip(".,")
-    if "," in num and "." in num:
-        # O último separador é o decimal
-        decimal, milhar = (",", ".") if num.rfind(",") > num.rfind(".") else (".", ",")
-        num = num.replace(milhar, "").replace(decimal, ".")
-    elif "," in num:
-        num = num.replace(",", ".") if num.count(",") == 1 else num.replace(",", "")
-    elif num.count(".") > 1 or re.fullmatch(r"-?\d{1,3}\.\d{3}", num):
-        num = num.replace(".", "")  # "1.500" é mil e quinhentos
-    try:
-        return Decimal(num)
-    except InvalidOperation:
-        return None
-
-
 def _zerado(valor: str | None) -> bool:
-    """Valor com número e igual a zero ("0", "0,00", "R$ 0,00"). Vazio não conta."""
-    return ler_valor(valor) == 0
+    """Valor com número, igual a zero ou negativo ("0", "0,00", "R$ 0,00", "-5").
+    Vazio não conta."""
+    numero = ler_valor(valor)
+    return numero is not None and numero <= 0
 
 
 # Campos do cadastro que são o valor da dívida (ver variaveis_template.contexto_cliente)
-_CAMPOS_VALOR = {normalizar_chave("valor_atraso"), normalizar_chave("valor_em_aberto")}
+_CAMPOS_VALOR = ("valor_atraso", "valor_em_aberto")
+_CHAVES_VALOR = {normalizar_chave(c) for c in _CAMPOS_VALOR} | {
+    normalizar_chave(CAMPOS_CLIENTE[c]) for c in _CAMPOS_VALOR
+}
+
+
+def _coluna_de_valor(coluna: str, coluna_valor: str | None) -> bool:
+    """Coluna da planilha que é o valor da dívida: a marcada como valor no
+    upload ou qualquer uma com "valor" no nome."""
+    return coluna == coluna_valor or "valor" in normalizar_chave(coluna)
 
 
 def _expressao_de_valor(expressao: str, coluna_valor: str | None) -> bool:
-    """Expressão que é só o valor da dívida (ex.: "{valor_atraso}" ou a coluna de valor)."""
-    placeholders = extrair_placeholders(expressao)
-    alvo = _CAMPOS_VALOR | ({normalizar_chave(coluna_valor)} if coluna_valor else set())
-    return (
-        len(placeholders) == 1
-        and re.fullmatch(r"\s*\{+[^{}]*\}+\s*", expressao) is not None
-        and normalizar_chave(placeholders[0]) in alvo
-    )
+    """Expressão que usa o valor da dívida (ex.: "{valor_atraso} com juros")."""
+    alvo = _CHAVES_VALOR | ({normalizar_chave(coluna_valor)} if coluna_valor else set())
+    return any(normalizar_chave(p) in alvo for p in extrair_placeholders(expressao))
 
 
 def _opcoes_valor(db: Session, codigos: set[str], leads_da_faixa: dict[str, models.Lead], juros) -> dict[str, list]:
@@ -250,6 +232,11 @@ def importar_planilha(
 
         missing_var_cols = []
         valor_zerado = escolhido is None and _zerado(valor)
+        if escolhido is not None:
+            # Valor escolhido pelo usuário para a linha zerada: vale em qualquer
+            # variável que use o valor da dívida, direto ou dentro de expressão
+            for chave in (*_CAMPOS_VALOR, *([field_mapping.valor] if field_mapping.valor else [])):
+                contexto[chave] = valor_fmt
         # Chaveado por template_variable_id (não por internal_name) — dois
         # templates distintos podem usar o mesmo internal_name pra coisas
         # diferentes, então resolver por nome colidiria entre eles.
@@ -261,18 +248,13 @@ def importar_planilha(
                 mapping.expressao if fonte_tipo == "expressao" and mapping else None
             )
 
-            coluna_valor = bool(
-                vid in field_mapping.variables
-                and field_mapping.valor
-                and field_mapping.variables[vid] == field_mapping.valor
-            )
-            de_valor = coluna_valor or (
-                vid not in field_mapping.variables
-                and bool(expressao)
-                and _expressao_de_valor(expressao, field_mapping.valor)
-            )
-            if de_valor and escolhido is not None:
-                # Valor escolhido pelo usuário para a linha zerada
+            coluna = field_mapping.variables.get(vid)
+            coluna_valor = bool(coluna and field_mapping.valor and coluna == field_mapping.valor)
+            if coluna:
+                de_valor = _coluna_de_valor(coluna, field_mapping.valor)
+            else:
+                de_valor = bool(expressao) and _expressao_de_valor(expressao, field_mapping.valor)
+            if coluna and de_valor and escolhido is not None:
                 val = valor_fmt
             elif coluna_valor and contexto.get("valor_atraso") and not _zerado(contexto["valor_atraso"]):
                 # Variável ligada à coluna de valor da planilha passa a usar o
@@ -281,8 +263,7 @@ def importar_planilha(
                 val = contexto["valor_atraso"]
             elif coluna_valor:
                 val = valor_fmt
-            elif vid in field_mapping.variables:
-                coluna = field_mapping.variables[vid]
+            elif coluna:
                 raw_val = (row.get(coluna) or "").strip()
                 # Coluna "Nome"/"NOME"/"nome" no template vira só o primeiro nome
                 if normalizar_chave(coluna) == "nome":

@@ -36,8 +36,10 @@ from .fila_automatica import (
 )
 from .leads_service import gerar_leads_de_clientes
 from .regras_db import carregar_regras
-from .timezone import hoje_br, inicio_hoje_utc
+from .timezone import hoje_br, inicio_do_dia_utc, inicio_hoje_utc, para_br
 from .utils.phone import is_valid_phone
+from .utils.valor import ler_valor
+from .variaveis_template import formatar_moeda
 
 logger = logging.getLogger("campanhas")
 
@@ -116,8 +118,12 @@ def ja_receberam(db: Session, campanha: models.Campanha, agora: datetime | None 
         ocupa_cliente(),
     )
     if campanha.recontato_dias:
-        agora = agora or datetime.utcnow()
-        q = q.filter(models.QueueItem.created_at >= agora - timedelta(days=campanha.recontato_dias))
+        # Em dias de calendário (GMT-3), não em janelas de 24 h: com recontato
+        # de 7 dias, quem recebeu no dia 1 volta no dia 8, seja qual for a hora
+        dia = para_br(agora).date() if agora else hoje_br()
+        q = q.filter(
+            models.QueueItem.created_at >= inicio_do_dia_utc(dia - timedelta(days=campanha.recontato_dias - 1))
+        )
     return {codigo for (codigo,) in q}
 
 
@@ -147,13 +153,21 @@ def _coluna_da_linha(linha: dict[str, str], nomes: tuple[str, ...]) -> str | Non
 
 
 def _decimal_planilha(texto: str) -> Decimal | None:
-    texto = texto.replace("R$", "").strip()
-    if "," in texto:
-        texto = texto.replace(".", "").replace(",", ".")
-    try:
-        return Decimal(texto)
-    except ArithmeticError:
-        return None
+    """Valor da planilha maior que zero; zero, negativo ou sem número fica
+    com o valor do SETA."""
+    valor = ler_valor(texto)
+    return valor if valor is not None and valor > 0 else None
+
+
+def _colunas_para_variaveis(linha: dict[str, str]) -> dict[str, str]:
+    """Linha da planilha como contexto das variáveis: coluna de valor sai
+    formatada como a mensagem mostra ("1.234,50", sem "R$")."""
+
+    contexto = dict(linha)
+    for coluna, texto in linha.items():
+        if lojas_base._normalizar(coluna) in _COLUNAS_VALOR and (valor := ler_valor(str(texto))) is not None:
+            contexto[coluna] = formatar_moeda(valor)
+    return contexto
 
 
 def com_valores_da_planilha(cliente: dict, campanha: models.Campanha) -> dict:
@@ -164,10 +178,10 @@ def com_valores_da_planilha(cliente: dict, campanha: models.Campanha) -> dict:
     if not linha:
         return cliente
     novo = dict(cliente)
-    valor = _coluna_da_linha(linha, _COLUNAS_VALOR)
-    if valor is not None and _decimal_planilha(valor) is not None:
-        novo["valor_cobrar"] = _decimal_planilha(valor)
-        novo["valor_atraso"] = novo["valor_cobrar"]
+    valor = _decimal_planilha(_coluna_da_linha(linha, _COLUNAS_VALOR) or "")
+    if valor is not None:
+        novo["valor_cobrar"] = valor
+        novo["valor_atraso"] = valor
     celular = _coluna_da_linha(linha, _COLUNAS_CELULAR)
     if celular and is_valid_phone(celular):
         novo["celular"] = celular
@@ -201,7 +215,7 @@ def executar(db: Session, campanha: models.Campanha, *, created_by: str | None =
     extras = None
     if campanha.fonte_valores == "planilha":
         clientes = [com_valores_da_planilha(c, campanha) for c in clientes]
-        extras = campanha.planilha_linhas or {}
+        extras = {codigo: _colunas_para_variaveis(linha) for codigo, linha in (campanha.planilha_linhas or {}).items()}
     na_fila = 0
     if clientes:
         juros = carregar_regras(db).juros

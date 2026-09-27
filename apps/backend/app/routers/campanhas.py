@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -385,7 +386,8 @@ async def subir_clientes(
     c = _get(db, campanha_id)
     content = await ler_planilha_limitada(file)
     try:
-        lido = camp.ler_clientes(file.filename or "", content)
+        # Planilha e consulta ao SETA fora do event loop (worker no mesmo processo)
+        lido = await run_in_threadpool(camp.ler_clientes, file.filename or "", content)
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except seta_client.SetaIndisponivel as exc:

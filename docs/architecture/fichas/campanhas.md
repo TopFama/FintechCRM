@@ -45,7 +45,7 @@ Revisado em 27/09/2026 (depois dos PRs #3 a #10); churn e cobertura são os de 2
 - **Camada:** aplicação
 - **Responsabilidade:** executar uma campanha no dia.
 - **Motivos para mudar:** filtros, período, fonte de valores (SETA ou planilha), régua pós-campanha, leitura da planilha.
-- **Depende de:** `cobranca_base`, `elegibilidade`, `fila_automatica`, `leads_service`, `lojas`, `pausas`, `regras_db`, `seta_client`, `timezone`, `utils/phone`.
+- **Depende de:** `cobranca_base`, `elegibilidade`, `fila_automatica`, `leads_service`, `lojas`, `pausas`, `regras_db`, `seta_client`, `timezone`, `utils/phone`, `utils/valor`, `variaveis_template`.
 - **É usado por:** `worker`, `routers/campanhas`, `routers/lojas` (leitura de planilha).
 - **Violações encontradas:**
   - [x] Mais de uma responsabilidade: execução da campanha, "levar à régua quem recebeu campanha" e leitura de planilhas .xlsx (`_linhas_xlsx`, `colunas_planilha`, `ler_lojas`, `ler_clientes`), que `routers/lojas` também usa.

@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import func
 
 from . import lojas as lojas_base, models
 from .config import settings
@@ -78,7 +79,11 @@ def _check_secrets() -> None:
 def _ensure_admin_user() -> None:
     db = SessionLocal()
     try:
-        existing = db.query(models.User).filter(models.User.email == settings.admin_email).first()
+        existing = (
+            db.query(models.User)
+            .filter(func.lower(models.User.email) == settings.admin_email.strip().lower())
+            .first()
+        )
         if not existing:
             db.add(
                 models.User(

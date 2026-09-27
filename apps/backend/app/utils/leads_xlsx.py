@@ -9,6 +9,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
 from .phone import is_valid_phone, normalize_phone
+from .xlsx import texto_nunca_formula
 
 # Cor de preenchimento do cabeçalho definida pelo negócio
 _COR_CABECALHO = "FCE4D6"
@@ -121,6 +122,7 @@ def gerar_xlsx_leads(leads: Iterable) -> bytes:
         row_idx += 1
         for col_idx, valor in enumerate(linha_dados, start=1):
             cell = ws.cell(row=row_idx, column=col_idx, value=str(valor))
+            texto_nunca_formula(cell)
             cell.number_format = "@"
 
     buf = io.BytesIO()

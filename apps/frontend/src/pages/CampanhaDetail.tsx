@@ -197,6 +197,8 @@ export default function CampanhaDetail() {
     }
   }
 
+  const previaReqRef = useRef(0);
+
   function carregarPrevia(
     offset: number = previaOffset,
     limit: number = previaLimit,
@@ -206,6 +208,10 @@ export default function CampanhaDetail() {
     if (!id) return;
     setErro(null);
     setCarregandoPrevia(true);
+    // Só a consulta mais recente vale: página ou ordenação trocada no meio não
+    // é sobrescrita pela resposta antiga
+    const seq = ++previaReqRef.current;
+    const atual = () => seq === previaReqRef.current;
     api
       .previaCampanha(id, {
         limit,
@@ -213,9 +219,9 @@ export default function CampanhaDetail() {
         sort_by: sortBy ?? undefined,
         sort_dir: sortDir,
       })
-      .then(setPrevia)
-      .catch((e) => setErro(mensagemErroSeta(e)))
-      .finally(() => setCarregandoPrevia(false));
+      .then((p) => atual() && setPrevia(p))
+      .catch((e) => atual() && setErro(mensagemErroSeta(e)))
+      .finally(() => atual() && setCarregandoPrevia(false));
   }
 
   async function executar() {

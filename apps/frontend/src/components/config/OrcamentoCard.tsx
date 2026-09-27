@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, OrcamentoMes } from "../../api";
 import { formatBRL, hojeBR } from "../../format";
 import { IconAlert, IconCheckCircle } from "../../icons";
@@ -18,9 +18,17 @@ export default function OrcamentoCard() {
   const [sucesso, setSucesso] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
+  // Trocar o ano limpa a tabela e ignora a resposta de um ano já trocado: sem
+  // isso, Salvar gravava no ano novo os valores do anterior
+  const reqRef = useRef(0);
   function carregar(a: number) {
     setErro(null);
-    api.getOrcamento(a).then(setMeses).catch((e) => setErro(e.message));
+    setMeses([]);
+    const seq = ++reqRef.current;
+    api
+      .getOrcamento(a)
+      .then((m) => seq === reqRef.current && setMeses(m))
+      .catch((e) => seq === reqRef.current && setErro(e.message));
   }
 
   useEffect(() => carregar(ano), [ano]);
@@ -110,7 +118,7 @@ export default function OrcamentoCard() {
         </table>
       </div>
       <div className="actions-row">
-        <button type="button" onClick={salvar} disabled={salvando}>
+        <button type="button" onClick={salvar} disabled={salvando || meses.length === 0}>
           {salvando ? "Salvando..." : "Salvar orçamento"}
         </button>
       </div>

@@ -57,11 +57,20 @@ def _abrir(conteudo: bytes) -> Image.Image:
     return img
 
 
-def _precisa_recodificar(img: Image.Image) -> bool:
+def _bits_png(conteudo: bytes) -> int:
+    """Bits por canal no cabeçalho IHDR do PNG (byte 24)."""
+    return conteudo[24] if len(conteudo) > 24 else 8
+
+
+def _precisa_recodificar(img: Image.Image, conteudo: bytes) -> bool:
     if img.format not in ("JPEG", "PNG"):
         return True
     # Meta: só 8 bits RGB/RGBA; P, L, CMYK, 16 bits etc. são convertidos
     if img.mode not in ("RGB", "RGBA"):
+        return True
+    # PNG de 16 bits por canal abre como "RGB"/"RGBA" no Pillow: confere o
+    # bit depth no cabeçalho (IHDR) para converter para 8 bits
+    if img.format == "PNG" and _bits_png(conteudo) != 8:
         return True
     orientacao = img.getexif().get(0x0112, 1)
     return orientacao != 1
@@ -166,7 +175,7 @@ def otimizar(conteudo: bytes, limite: int = LIMITE_BYTES) -> ImagemOtimizada:
         formato_original=original.format,
     )
 
-    if len(conteudo) <= limite and not _precisa_recodificar(original):
+    if len(conteudo) <= limite and not _precisa_recodificar(original, conteudo):
         ext = ".jpg" if original.format == "JPEG" else ".png"
         return ImagemOtimizada(conteudo, ext, False, largura=original.width, altura=original.height,
                                qualidade=None, **base)

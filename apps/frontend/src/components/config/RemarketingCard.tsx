@@ -169,7 +169,10 @@ function SegmentoForm({
   );
   const colunasPrevia = colunasDaPrevia(segmento.segmento);
 
-  useEffect(() => setForm(paraForm(segmento)), [segmento]);
+  // Volta o formulário ao salvo só quando a configuração salva muda: recarregar
+  // a lista (template adicionado, "Buscar agora") não apaga edição pendente
+  const salvoAtual = JSON.stringify(paraForm(segmento));
+  useEffect(() => setForm(JSON.parse(salvoAtual)), [salvoAtual]);
 
   // Número e template do segmento ficam aqui mesmo, não na lista de faixas de atraso.
   const [faixa, setFaixa] = useState<Faixa | null>(null);

@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session, selectinload
 
@@ -320,7 +322,10 @@ def download_spreadsheet_model(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": f'attachment; filename="modelo_{faixa.name}.xlsx"'
+            # Nome com acento, travessão ou aspas: filename* em UTF-8 e um nome ASCII de reserva
+            "Content-Disposition": (
+                f'attachment; filename="modelo.xlsx"; filename*=UTF-8\'\'{quote(f"modelo_{faixa.name}.xlsx")}'
+            )
         },
     )
 
