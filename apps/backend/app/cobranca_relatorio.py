@@ -52,13 +52,19 @@ def montar_matriz(clientes: list[dict], regras: Regras, *, apenas_com_restricao_
     )
 
 
-def montar_matriz_valor(clientes: list[dict], regras: Regras, *, apenas_com_restricao_spc: bool = False) -> dict:
-    """Soma o valor em aberto dos clientes por cluster (linhas) e faixa de
-    atraso (colunas), com os totais."""
+def montar_matriz_valor(
+    clientes: list[dict],
+    regras: Regras,
+    *,
+    campo: str = "valor_em_aberto",
+    apenas_com_restricao_spc: bool = False,
+) -> dict:
+    """Soma um valor dos clientes (padrão: valor em aberto) por cluster
+    (linhas) e faixa de atraso (colunas), com os totais."""
     return _montar_matriz_generica(
         clientes,
         regras,
-        valor_fn=lambda c: Decimal(str(c["valor_em_aberto"])),
+        valor_fn=lambda c: Decimal(str(c.get(campo) or 0)),
         zero=Decimal("0"),
         apenas_com_restricao_spc=apenas_com_restricao_spc,
     )

@@ -106,10 +106,13 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
 
 
 def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> None:
-    """Clientes cobrados no período que pagaram depois da cobrança (qualquer
-    data), por faixa: mesma lista do relatório Quem pagou filtrado pela faixa."""
+    """Clientes distintos cobrados no período e, entre eles, os que pagaram
+    depois da cobrança (qualquer data), por faixa: mesma lista do relatório
+    Quem pagou filtrado pela faixa."""
 
-    for entry in por_faixa.values():
+    cobrados = pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=de, cobrado_ate=ate)
+    for nome, entry in por_faixa.items():
+        entry["clientes_cobrados"] = cobrados.get(nome, 0)
         entry["pagaram"] = 0
         entry["valor_pago"] = "0.00"
     try:

@@ -7,17 +7,20 @@ import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../BarraFiltrosCo
 import MatrizTable from "../MatrizTable";
 import { OpcoesCobranca } from "../useOpcoesCobranca";
 
-type Aba = "clientes" | "spc" | "valor";
+type Aba = "clientes" | "spc" | "valor" | "atraso";
 const ROTULOS: Record<Aba, string> = {
   clientes: "Clientes",
   spc: "Clientes com restrição no SPC",
   valor: "Valor em aberto",
+  atraso: "Valor em atraso",
 };
 
 export default function MatrizCobrancaCard({ opcoes }: { opcoes: OpcoesCobranca }) {
   const navigate = useNavigate();
   const [filtros, setFiltros] = useState<FiltrosCobranca>(FILTROS_COBRANCA_PADRAO);
   const [relatorio, setRelatorio] = useState<RelatorioCobranca | null>(null);
+  // Juros do filtro no momento em que o relatório foi consultado (não o que está só selecionado)
+  const [atrasoComJuros, setAtrasoComJuros] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aba, setAba] = useState<Aba>("clientes");
@@ -27,9 +30,14 @@ export default function MatrizCobrancaCard({ opcoes }: { opcoes: OpcoesCobranca 
     setErro(null);
     setCarregando(true);
     const seq = ++reqRef.current;
+    const comJuros = !!filtros.valor_atraso_com_juros;
     api
       .relatorioCobranca(filtros)
-      .then((r) => seq === reqRef.current && setRelatorio(r))
+      .then((r) => {
+        if (seq !== reqRef.current) return;
+        setRelatorio(r);
+        setAtrasoComJuros(comJuros);
+      })
       .catch((e) => seq === reqRef.current && setErro(mensagemErroSeta(e)))
       .finally(() => seq === reqRef.current && setCarregando(false));
   }
@@ -43,7 +51,11 @@ export default function MatrizCobrancaCard({ opcoes }: { opcoes: OpcoesCobranca 
       ? relatorio.quantidade_com_restricao_spc
       : aba === "valor"
         ? relatorio.valor_em_aberto
-        : relatorio.quantidade
+        : aba === "atraso"
+          ? atrasoComJuros
+            ? relatorio.valor_em_atraso_juros
+            : relatorio.valor_em_atraso
+          : relatorio.quantidade
     : null;
 
   return (
@@ -88,11 +100,13 @@ export default function MatrizCobrancaCard({ opcoes }: { opcoes: OpcoesCobranca 
             clusters={relatorio.clusters}
             faixas={relatorio.faixas}
             matriz={matriz}
-            formato={aba === "valor" ? formatBRL : (v) => Number(v).toLocaleString("pt-BR")}
+            formato={aba === "valor" || aba === "atraso" ? formatBRL : (v) => Number(v).toLocaleString("pt-BR")}
             elegivel={(c, f) => (opcoes.regras?.faixas_whatsapp[c] ?? []).includes(f)}
             onCelulaClick={abrirNaCobranca}
           />
           <div className="field-hint">
+            {aba === "atraso" &&
+              `Soma só as parcelas já vencidas, ${atrasoComJuros ? "com multa e juros" : "pelo valor original"} (filtro "Valor considerado"). `}
             Clique numa célula para ver os clientes na tela Cobrança. Células esmaecidas não recebem WhatsApp pela regra
             atual.
           </div>

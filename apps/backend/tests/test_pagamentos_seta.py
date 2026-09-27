@@ -24,7 +24,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app import models, seta_client
 from app.database import Base
-from app.services import pagamentos_seta
+from app.services import pagamentos_seta, pagamentos_service
 from app.timezone import hoje_br
 
 engine = create_engine("sqlite://")
@@ -125,5 +125,32 @@ assert ("00000004", hoje) not in pagou, "pagou antes da mensagem sair não conta
 assert ("00000005", hoje) in pagou and ("00000006", hoje) in pagou, pagou
 valores = pagamentos_seta.valores_pagos_pos_cobranca(db, pares_hoje)
 assert set(valores) == {("00000005", hoje), ("00000006", hoje)}, valores
+
+# 5. Clientes cobrados por faixa (coluna do Dashboard): clientes distintos na
+# mesma base do "Pagaram após cobrança" (lead cobrado no período, pela faixa do lead)
+dia_cob = hoje - timedelta(days=3)
+
+
+def lead_faixa(codigo: str, faixa: str, venc_dias: int, status: str = "cobrado", dia: date = dia_cob) -> models.Lead:
+    return models.Lead(
+        codigo_cliente=codigo, nome="X", cluster="TOP", faixa=faixa, dias_atraso=10,
+        vencimento_mais_antigo=dia - timedelta(days=venc_dias), status=status,
+        cobrado_em=datetime.combine(dia, datetime.min.time()) + timedelta(hours=15),
+    )
+
+
+db.add_all([
+    lead_faixa("00000020", "FA", 10),
+    lead_faixa("00000020", "FA", 40),  # mesmo cliente, outra parcela: conta uma vez
+    lead_faixa("00000020", "FB", 70),  # mesmo cliente em outra faixa: conta nas duas
+    lead_faixa("00000021", "FA", 10),
+    lead_faixa("00000022", "FA", 10, status="novo"),  # não cobrado: fora
+    lead_faixa("00000023", "FA", 10, dia=dia_cob - timedelta(days=30)),  # cobrado fora do período: fora
+])
+db.commit()
+cobrados = pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=dia_cob, cobrado_ate=dia_cob)
+assert cobrados == {"FA": 2, "FB": 1}, cobrados
+# Sem período: conta todo cobrado da faixa
+assert pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=None, cobrado_ate=None)["FA"] == 3
 
 print("OK")

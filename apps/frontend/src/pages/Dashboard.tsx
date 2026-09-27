@@ -6,8 +6,9 @@ import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
 import OrcamentoProgressaoCard from "../components/dashboard/OrcamentoProgressaoCard";
 import FiltroPeriodo, { OpcaoPeriodo, Periodo, periodoDe } from "../components/FiltroPeriodo";
+import DicaIndicador from "../components/DicaIndicador";
 import SortableTh from "../components/SortableTh";
-import { formatBRL, formatHora, formatNumero } from "../format";
+import { formatBRL, formatHora, formatNumero, formatPercentual } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../components/useAtualizacaoAutomatica";
 import { IconAlert, IconBolt, IconCheckCircle, IconClock, IconInbox, IconPhone, IconRefresh } from "../icons";
@@ -228,16 +229,28 @@ function ResumoFila({
 }) {
   const navigate = useNavigate();
   const ordemFaixa = ordemFaixaFn(nomesFaixa);
-  type ColunaNumerica = "pending" | "sent" | "error" | "pagaram" | "valor_pago";
-  const porFaixaSort = useSort<"faixa" | ColunaNumerica>("faixa");
+  const linhas = linhasPorFaixa(summary.por_faixa);
+  const total = totalPorFaixa(linhas);
+  const porFaixaSort = useSort<"faixa" | ColunaPorFaixa>("faixa");
   const porFaixaOrdenado = ordenarPor(
-    summary.por_faixa,
+    linhas,
     porFaixaSort.sortKey === "faixa"
-      ? (row) => ordemFaixa(String(row.faixa))
+      ? (row) => ordemFaixa(row.faixa)
       : porFaixaSort.sortKey
-      ? (row) => Number(row[porFaixaSort.sortKey as ColunaNumerica] ?? 0)
+      ? (row) => row[porFaixaSort.sortKey as ColunaPorFaixa]
       : null,
     porFaixaSort.sortDir
+  );
+  const th = (chave: "faixa" | ColunaPorFaixa, rotulo: string, dica?: Dica) => (
+    <SortableTh
+      key={chave}
+      active={porFaixaSort.sortKey === chave}
+      dir={porFaixaSort.sortDir}
+      onSort={() => porFaixaSort.toggleSort(chave)}
+    >
+      {rotulo}
+      {dica && <DicaIndicador titulo={rotulo} texto={dica.texto} formula={dica.formula} />}
+    </SortableTh>
   );
 
   return (
@@ -294,86 +307,72 @@ function ResumoFila({
           </div>
         ) : (
           <div className="table-wrap">
-            <table>
+            <table className="tabela-por-faixa">
               <thead>
                 <tr>
-                  <SortableTh
-                    active={porFaixaSort.sortKey === "faixa"}
-                    dir={porFaixaSort.sortDir}
-                    onSort={() => porFaixaSort.toggleSort("faixa")}
-                  >
-                    Faixa
-                  </SortableTh>
-                  <SortableTh
-                    active={porFaixaSort.sortKey === "pending"}
-                    dir={porFaixaSort.sortDir}
-                    onSort={() => porFaixaSort.toggleSort("pending")}
-                  >
-                    Pendente
-                  </SortableTh>
-                  <SortableTh
-                    active={porFaixaSort.sortKey === "sent"}
-                    dir={porFaixaSort.sortDir}
-                    onSort={() => porFaixaSort.toggleSort("sent")}
-                  >
-                    Enviado
-                  </SortableTh>
-                  <SortableTh
-                    active={porFaixaSort.sortKey === "error"}
-                    dir={porFaixaSort.sortDir}
-                    onSort={() => porFaixaSort.toggleSort("error")}
-                  >
-                    Erro
-                  </SortableTh>
-                  <SortableTh
-                    active={porFaixaSort.sortKey === "pagaram"}
-                    dir={porFaixaSort.sortDir}
-                    onSort={() => porFaixaSort.toggleSort("pagaram")}
-                  >
-                    Pagaram após cobrança
-                  </SortableTh>
-                  <SortableTh
-                    active={porFaixaSort.sortKey === "valor_pago"}
-                    dir={porFaixaSort.sortDir}
-                    onSort={() => porFaixaSort.toggleSort("valor_pago")}
-                  >
-                    Valor pago
-                  </SortableTh>
+                  {th("faixa", "Faixa")}
+                  {th("pending", "Pendente")}
+                  {th("error", "Erro")}
+                  {th("sent", "Enviado")}
+                  {th("clientes_cobrados", "Clientes cobrados", DICAS.clientes_cobrados)}
+                  {th("frequencia", "Frequência", DICAS.frequencia)}
+                  {th("pagaram", "Pagaram após cobrança")}
+                  {th("conversao", "%\u00a0Conv.", DICAS.conversao)}
+                  {th("representatividade", "%\u00a0Rep.", DICAS.representatividade)}
+                  {th("valor_pago", "Valor pago")}
                 </tr>
               </thead>
               <tbody>
                 {porFaixaOrdenado.map((row) => {
-                  const faixaId = String(row.faixa_id);
-                  const link = (aba: string) => linkRelatorio(aba, periodo, { faixa_id: faixaId });
-                  const celula = (aba: string, valor: unknown, rotulo: string) => (
+                  const link = (aba: string) => linkRelatorio(aba, periodo, { faixa_id: row.faixa_id });
+                  const celula = (aba: string, valor: number, rotulo: string) => (
                     <td>
                       <Link
                         to={link(aba)}
                         className="link-celula"
-                        aria-label={`Ver ${formatNumero(Number(valor ?? 0))} ${rotulo} da faixa ${String(row.faixa)}`}
+                        aria-label={`Ver ${formatNumero(valor)} ${rotulo} da faixa ${row.faixa}`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {formatNumero(Number(valor ?? 0))}
+                        {formatNumero(valor)}
                       </Link>
                     </td>
                   );
                   return (
                     // A linha inteira abre os envios da faixa; cada número abre o próprio relatório
-                    <tr key={faixaId} className="linha-clicavel" onClick={() => navigate(link("envios"))}>
+                    <tr key={row.faixa_id} className="linha-clicavel" onClick={() => navigate(link("envios"))}>
                       <td className="cell-strong">
                         <Link to={link("envios")} className="link-celula" onClick={(e) => e.stopPropagation()}>
-                          {String(row.faixa)}
+                          {row.faixa}
                         </Link>
                       </td>
                       {celula("pendentes", row.pending, "pendentes")}
-                      {celula("envios", row.sent, "enviados")}
                       {celula("erros", row.error, "erros")}
+                      {celula("envios", row.sent, "enviados")}
+                      {celula("envios", row.clientes_cobrados, "clientes cobrados")}
+                      <td>{formatFrequencia(row.frequencia)}</td>
                       {celula("pagamentos", row.pagaram, "clientes que pagaram")}
-                      <td>{formatBRL(Number(row.valor_pago ?? 0))}</td>
+                      <td>{formatPercentual(row.conversao)}</td>
+                      <td>{formatPercentual(row.representatividade)}</td>
+                      <td>{formatBRL(row.valor_pago)}</td>
                     </tr>
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="linha-total">
+                  <td className="cell-strong">Total</td>
+                  <td>{formatNumero(total.pending)}</td>
+                  <td>{formatNumero(total.error)}</td>
+                  <td>{formatNumero(total.sent)}</td>
+                  <td>{formatNumero(total.clientes_cobrados)}</td>
+                  <td>{formatFrequencia(total.frequencia)}</td>
+                  <td>{formatNumero(total.pagaram)}</td>
+                  <td>{formatPercentual(total.conversao)}</td>
+                  {/* Sempre 100%: não traz nada */}
+                  <td />
+                  <td>{formatBRL(total.valor_pago)}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -381,4 +380,82 @@ function ResumoFila({
 
     </>
   );
+}
+
+type Dica = { texto: string; formula: string };
+
+const DICAS: Record<"clientes_cobrados" | "frequencia" | "conversao" | "representatividade", Dica> = {
+  clientes_cobrados: {
+    texto: "Clientes distintos que receberam cobrança nesta faixa no período.",
+    formula: "Contagem de clientes distintos cobrados na faixa",
+  },
+  frequencia: {
+    texto: "Média de mensagens enviadas por cliente cobrado.",
+    formula: "Enviado ÷ Clientes cobrados",
+  },
+  conversao: {
+    texto: "Dos clientes cobrados na faixa, quantos pagaram depois da cobrança.",
+    formula: "Pagaram após cobrança ÷ Clientes cobrados × 100",
+  },
+  representatividade: {
+    texto: "Quanto esta faixa representa do total de clientes que pagaram após cobrança.",
+    formula: "Pagaram após cobrança da faixa ÷ Σ Pagaram após cobrança de todas as faixas × 100",
+  },
+};
+
+type LinhaPorFaixa = {
+  faixa: string;
+  faixa_id: string;
+  pending: number;
+  error: number;
+  sent: number;
+  clientes_cobrados: number;
+  frequencia: number | null;
+  pagaram: number;
+  conversao: number | null;
+  representatividade: number | null;
+  valor_pago: number;
+};
+type ColunaPorFaixa = Exclude<keyof LinhaPorFaixa, "faixa" | "faixa_id">;
+
+// Divisão por zero (faixa sem cliente cobrado) vira "—", não 0
+const razao = (a: number, b: number) => (b ? a / b : null);
+
+function linhasPorFaixa(porFaixa: DashboardSummary["por_faixa"]): LinhaPorFaixa[] {
+  const base = porFaixa.map((row) => ({
+    faixa: String(row.faixa),
+    faixa_id: String(row.faixa_id),
+    pending: Number(row.pending ?? 0),
+    error: Number(row.error ?? 0),
+    sent: Number(row.sent ?? 0),
+    clientes_cobrados: Number(row.clientes_cobrados ?? 0),
+    pagaram: Number(row.pagaram ?? 0),
+    valor_pago: Number(row.valor_pago ?? 0),
+  }));
+  // % Rep. sobre a soma das faixas (não clientes distintos), para fechar 100%
+  const somaPagaram = base.reduce((s, r) => s + r.pagaram, 0);
+  return base.map((r) => ({
+    ...r,
+    frequencia: razao(r.sent, r.clientes_cobrados),
+    conversao: razao(r.pagaram, r.clientes_cobrados),
+    representatividade: razao(r.pagaram, somaPagaram),
+  }));
+}
+
+function totalPorFaixa(linhas: LinhaPorFaixa[]) {
+  const soma = (campo: "pending" | "error" | "sent" | "clientes_cobrados" | "pagaram" | "valor_pago") =>
+    linhas.reduce((s, r) => s + r[campo], 0);
+  const t = {
+    pending: soma("pending"),
+    error: soma("error"),
+    sent: soma("sent"),
+    clientes_cobrados: soma("clientes_cobrados"),
+    pagaram: soma("pagaram"),
+    valor_pago: soma("valor_pago"),
+  };
+  return { ...t, frequencia: razao(t.sent, t.clientes_cobrados), conversao: razao(t.pagaram, t.clientes_cobrados) };
+}
+
+function formatFrequencia(v: number | null): string {
+  return v === null ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }

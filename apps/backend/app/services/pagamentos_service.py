@@ -4,15 +4,30 @@ período de cobrança cruzados com as baixas do SETA copiadas em pagamentos_seta
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Query, Session
 
 from .. import google_client, lojas as lojas_base, models
 from . import pagamentos_seta
 from ..timezone import dia_br, inicio_do_dia_utc
 
 
+def _filtrar_cobrados(query: Query, cobrado_de: date | None, cobrado_ate: date | None) -> Query:
+    query = query.filter(models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None))
+    if cobrado_de:
+        query = query.filter(models.Lead.cobrado_em >= inicio_do_dia_utc(cobrado_de))
+    if cobrado_ate:
+        query = query.filter(models.Lead.cobrado_em < inicio_do_dia_utc(cobrado_ate + timedelta(days=1)))
+    return query
 
 
+def clientes_cobrados_por_faixa(db: Session, *, cobrado_de: date | None, cobrado_ate: date | None) -> dict[str, int]:
+    """Clientes distintos cobrados no período, por faixa do lead: a mesma base
+    de clientes_que_pagaram, então quem pagou numa faixa sempre está aqui."""
+
+    query = db.query(models.Lead.faixa, func.count(func.distinct(models.Lead.codigo_cliente)))
+    query = _filtrar_cobrados(query, cobrado_de, cobrado_ate)
+    return dict(query.group_by(models.Lead.faixa).all())
 
 
 def clientes_que_pagaram(
@@ -34,11 +49,7 @@ def clientes_que_pagaram(
     seta_client.SetaIndisponivel se o SETA estiver fora (com `buscar_novos`,
     o padrão, quando algum cliente ainda não foi copiado do SETA)."""
 
-    query = db.query(models.Lead).filter(models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None))
-    if cobrado_de:
-        query = query.filter(models.Lead.cobrado_em >= inicio_do_dia_utc(cobrado_de))
-    if cobrado_ate:
-        query = query.filter(models.Lead.cobrado_em < inicio_do_dia_utc(cobrado_ate + timedelta(days=1)))
+    query = _filtrar_cobrados(db.query(models.Lead), cobrado_de, cobrado_ate)
     if faixa:
         query = query.filter(models.Lead.faixa.in_(faixa))
     if campanha:

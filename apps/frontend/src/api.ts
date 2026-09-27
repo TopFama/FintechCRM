@@ -930,6 +930,9 @@ export interface RelatorioCobranca {
   quantidade: MatrizDados<number>;
   quantidade_com_restricao_spc: MatrizDados<number>;
   valor_em_aberto: MatrizDados<string>;
+  // só parcelas já vencidas, sem e com multa/juros
+  valor_em_atraso: MatrizDados<string>;
+  valor_em_atraso_juros: MatrizDados<string>;
 }
 
 export interface FiltrosCobranca {
