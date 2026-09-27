@@ -69,12 +69,12 @@ apps/backend/app/
                                           blacklist, pausas, campanhas, remarketing, cobranca_base,
                                           lojas, variaveis_template, clientes das integrações…
   alembic/                               migrations
-apps/backend/tests/   13 scripts de validação + rodar_todos.sh (não é pytest: cada um imprime OK)
+apps/backend/tests/   14 scripts de validação + rodar_todos.sh (não é pytest: cada um imprime OK)
 apps/frontend/src/
   api.ts (1272 linhas)                   todo o acesso ao backend e todos os tipos
   pages/          10 páginas              Relatorios.tsx tem 871 linhas
   components/     config/, dashboard/ e componentes soltos
-e2e/                                     Playwright: 173 cenários (+ login de setup) contra ambiente de teste
+e2e/                                     Playwright: 174 cenários (+ login de setup) contra ambiente de teste
 ```
 
 A camada de serviço existe, mas de forma informal: parte está em `services/`, a maior parte em
@@ -83,7 +83,7 @@ módulos soltos na raiz de `app/`. Não existe camada de repositório: routers e
 
 ## Como os testes rodam hoje
 
-**Backend**: 13 scripts em `apps/backend/tests/`, cada um sobe o app de verdade (migrations
+**Backend**: 14 scripts em `apps/backend/tests/`, cada um sobe o app de verdade (migrations
 incluídas) contra um Postgres local e imprime `OK`. Precisam de Postgres UTF-8 em
 `localhost:15432` com senha `t`, e cada script usa o próprio banco (nome no `DATABASE_URL` do
 arquivo), que deve ser recriado antes:
@@ -111,7 +111,7 @@ e `coverage combine`). Os pontos mais descobertos são justamente os de maior ri
 | `routers/reports.py` | 61% |
 | `dispatch_service.py` | 80% |
 
-**E2E**: `e2e/` com Playwright, 173 cenários (mais o login de setup) que cobrem essas telas pelo navegador (ver
+**E2E**: `e2e/` com Playwright, 174 cenários (mais o login de setup) que cobrem essas telas pelo navegador (ver
 `e2e/README.md`). Não entram na medição de cobertura acima.
 
 **CI**: no momento da análise só existia `security-scan.yml` (npm audit e pip-audit). A Fase 5

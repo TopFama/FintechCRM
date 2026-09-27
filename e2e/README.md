@@ -1,6 +1,6 @@
 # Testes ponta a ponta (Playwright)
 
-Agente de QA do FintechCRM: 173 cenários (mais o login de setup, `tests/auth.setup.ts`) que usam o app pelo navegador, tela por tela, contra um
+Agente de QA do FintechCRM: 174 cenários (mais o login de setup, `tests/auth.setup.ts`) que usam o app pelo navegador, tela por tela, contra um
 ambiente **de teste** montado do zero. Nada aqui fala com produção: o SETA é um Postgres local com
 clientes fictícios, e a Meta, o Chatwoot, o Google Sheets, o câmbio e o portal TopFamaRenegocie são simulados dentro do
 próprio backend de teste. Nenhuma mensagem de WhatsApp sai de verdade.
@@ -15,7 +15,7 @@ Python 3.12 (o mesmo do CI) e Node 20+. No CI a suíte roda em todo PR (job `e2e
 cd e2e
 npm install
 ./ambiente/subir.sh          # recria os bancos de teste, sobe backend (8010) e frontend (4174)
-npx playwright test          # roda os 173 cenários em série
+npx playwright test          # roda os 174 cenários em série
 npx playwright show-report   # relatório HTML com screenshots e traces das falhas
 ```
 
