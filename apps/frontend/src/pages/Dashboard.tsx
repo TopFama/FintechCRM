@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, ApiError, DashboardPorFaixa, DashboardSummary, PagosJanela } from "../api";
+import { api, ApiError, DashboardPorFaixa, DashboardSummary, DashboardTotalPorFaixa, PagosJanela } from "../api";
 import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
@@ -230,9 +230,7 @@ function ResumoFila({
   const navigate = useNavigate();
   const ordemFaixa = ordemFaixaFn(nomesFaixa);
   const linhas = linhasPorFaixa(summary.por_faixa);
-  // Valor pago do total vem do backend: somar a coluna contaria duas vezes o
-  // pagamento de quem foi cobrado em mais de uma faixa
-  const total = { ...totalPorFaixa(linhas), valor_pago: Number(summary.valor_pago_total) };
+  const total = totalPorFaixa(linhas, summary.total_por_faixa);
   const porFaixaSort = useSort<"faixa" | ColunaPorFaixa>("faixa");
   const porFaixaOrdenado = ordenarPor(
     linhas,
@@ -318,7 +316,7 @@ function ResumoFila({
                   {th("sent", "Enviado")}
                   {th("clientes_cobrados", "Clientes cobrados", DICAS.clientes_cobrados)}
                   {th("frequencia", "Frequência", DICAS.frequencia)}
-                  {th("pagaram", "Pagaram após cobrança")}
+                  {th("pagaram", "Pagaram após cobrança", DICAS.pagaram)}
                   {th("conversao", "%\u00a0Conv.", DICAS.conversao)}
                   {th("representatividade", "%\u00a0Rep.", DICAS.representatividade)}
                   {th("valor_pago", "Valor pago", DICAS.valor_pago)}
@@ -386,33 +384,42 @@ function ResumoFila({
 
 type Dica = { texto: string; formula: string };
 
-const DICAS: Record<"clientes_cobrados" | "frequencia" | "conversao" | "representatividade" | "valor_pago", Dica> = {
+const DICAS: Record<
+  "clientes_cobrados" | "frequencia" | "pagaram" | "conversao" | "representatividade" | "valor_pago",
+  Dica
+> = {
   clientes_cobrados: {
     texto:
-      "Clientes distintos que receberam cobrança nesta faixa no período. No total, soma das faixas: quem foi cobrado em mais de uma faixa conta em cada uma.",
+      "Clientes distintos que receberam cobrança nesta faixa no período. No total, cada cliente conta uma vez, mesmo cobrado em mais de uma faixa.",
     formula: "Contagem de clientes distintos cobrados na faixa",
   },
   frequencia: {
     texto: "Média de mensagens enviadas no período por cliente cobrado que recebeu mensagem.",
     formula: "Mensagens enviadas no período aos clientes cobrados ÷ Clientes cobrados que receberam mensagem",
   },
+  pagaram: {
+    texto:
+      "Clientes cobrados no período que pagaram depois da cobrança. No total, cada cliente conta uma vez, mesmo cobrado em mais de uma faixa.",
+    formula: "Contagem de clientes distintos cobrados que pagaram após a cobrança",
+  },
   conversao: {
     texto: "Dos clientes cobrados na faixa, quantos pagaram depois da cobrança.",
     formula: "Pagaram após cobrança ÷ Clientes cobrados × 100",
   },
   representatividade: {
-    texto: "Quanto esta faixa representa do total de clientes que pagaram após cobrança.",
+    texto:
+      "Quanto esta faixa representa do total de clientes que pagaram após cobrança. Soma a coluna das faixas para fechar 100%.",
     formula: "Pagaram após cobrança da faixa ÷ Σ Pagaram após cobrança de todas as faixas × 100",
   },
   valor_pago: {
     texto:
-      "Valor pago depois da cobrança pelos clientes cobrados no período. No total, cada pagamento conta uma vez, mesmo com o cliente em mais de uma faixa.",
+      "Valor pago depois da cobrança pelos clientes cobrados no período. Cada pagamento conta uma vez por faixa e, no total, uma vez só, mesmo com o cliente em mais de uma faixa.",
     formula: "Σ valor pago após a cobrança",
   },
 };
 
-// Colunas numéricas que vêm do backend e somam na linha de total
-const CAMPOS_SOMAVEIS = [
+// Colunas numéricas que vêm do backend em cada linha
+const CAMPOS_NUMERICOS = [
   "pending",
   "error",
   "sent",
@@ -422,10 +429,10 @@ const CAMPOS_SOMAVEIS = [
   "pagaram",
   "valor_pago",
 ] as const;
-type CampoSomavel = (typeof CAMPOS_SOMAVEIS)[number];
+type CampoNumerico = (typeof CAMPOS_NUMERICOS)[number];
 
 type LinhaPorFaixa = Pick<DashboardPorFaixa, "faixa" | "faixa_id"> &
-  Record<CampoSomavel, number> & {
+  Record<CampoNumerico, number> & {
     frequencia: number | null;
     conversao: number | null;
     representatividade: number | null;
@@ -439,7 +446,7 @@ function linhasPorFaixa(porFaixa: DashboardPorFaixa[]): LinhaPorFaixa[] {
   const base = porFaixa.map((row) => ({
     faixa: row.faixa,
     faixa_id: row.faixa_id,
-    ...(Object.fromEntries(CAMPOS_SOMAVEIS.map((c) => [c, Number(row[c] ?? 0)])) as Record<CampoSomavel, number>),
+    ...(Object.fromEntries(CAMPOS_NUMERICOS.map((c) => [c, Number(row[c] ?? 0)])) as Record<CampoNumerico, number>),
   }));
   // % Rep. sobre a soma das faixas (não clientes distintos), para fechar 100%
   const somaPagaram = base.reduce((s, r) => s + r.pagaram, 0);
@@ -452,10 +459,22 @@ function linhasPorFaixa(porFaixa: DashboardPorFaixa[]): LinhaPorFaixa[] {
   }));
 }
 
-function totalPorFaixa(linhas: LinhaPorFaixa[]) {
-  const t = Object.fromEntries(
-    CAMPOS_SOMAVEIS.map((c) => [c, linhas.reduce((s, r) => s + r[c], 0)])
-  ) as Record<CampoSomavel, number>;
-  return { ...t, frequencia: razao(t.enviados_cobrados, t.clientes_com_envio), conversao: razao(t.pagaram, t.clientes_cobrados) };
+// Pendente, Erro e Enviado somam a coluna; clientes e valor pago vêm do
+// backend contando cada cliente uma vez (somar a coluna contaria em cada faixa)
+function totalPorFaixa(linhas: LinhaPorFaixa[], doBackend: DashboardTotalPorFaixa) {
+  const soma = (c: "pending" | "error" | "sent") => linhas.reduce((s, r) => s + r[c], 0);
+  const t = {
+    pending: soma("pending"),
+    error: soma("error"),
+    sent: soma("sent"),
+    clientes_cobrados: doBackend.clientes_cobrados,
+    pagaram: doBackend.pagaram,
+    valor_pago: Number(doBackend.valor_pago),
+  };
+  return {
+    ...t,
+    frequencia: razao(doBackend.enviados_cobrados, doBackend.clientes_com_envio),
+    conversao: razao(t.pagaram, t.clientes_cobrados),
+  };
 }
 

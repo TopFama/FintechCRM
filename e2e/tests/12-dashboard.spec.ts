@@ -193,17 +193,24 @@ test.describe("Dashboard", () => {
     const reps = (await col(8)).map(pct);
     if (soma(pagaram) > 0) expect(Math.abs(reps.reduce((s: number, v) => s + (v ?? 0), 0) - 100)).toBeLessThan(0.1 * n + 0.01);
 
-    // Total = soma das faixas; % Conv. do total = pagaram ÷ clientes cobrados
+    // Total: Pendente, Erro e Enviado somam a coluna; Clientes cobrados e
+    // Pagaram contam cada cliente uma vez (no máximo a soma da coluna);
+    // % Conv. do total = Pagaram ÷ Clientes cobrados do próprio total
     const total = porFaixa.locator("tfoot tr.linha-total td");
     await expect(total.first()).toHaveText("Total");
-    for (const i of [1, 2, 3, 4, 6]) {
+    for (const i of [1, 2, 3]) {
       await expect(total.nth(i)).toHaveText(soma(await col(i)).toLocaleString("pt-BR"));
     }
-    const cobrados = soma(await col(4));
-    const conv = cobrados
-      ? new Intl.NumberFormat("pt-BR", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(soma(pagaram) / cobrados)
-      : "—";
-    await expect(total.nth(7)).toHaveText(conv);
+    const cobrados = numero(await total.nth(4).innerText());
+    const pagaramTotal = numero(await total.nth(6).innerText());
+    expect(cobrados).toBeGreaterThan(0);
+    expect(cobrados).toBeLessThanOrEqual(soma(await col(4)));
+    expect(pagaramTotal).toBeLessThanOrEqual(soma(pagaram));
+    expect(pagaramTotal > 0).toBe(soma(pagaram) > 0);
+    const convTotal = new Intl.NumberFormat("pt-BR", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(
+      pagaramTotal / cobrados
+    );
+    await expect(total.nth(7)).toHaveText(convTotal);
     await expect(total.nth(8)).toHaveText("");
 
     // 🛈 abre a dica com a fórmula e não reordena a tabela
@@ -216,6 +223,12 @@ test.describe("Dashboard", () => {
     await page.getByRole("tooltip").click();
     await expect(page.getByRole("tooltip")).toHaveCount(0);
     await expect(page).toHaveURL(/\/$/);
+    // Clicar no 🛈 abre e fixa; clicar de novo fecha
+    const conv = porFaixa.getByRole("button", { name: /O que é %\sConv\./ });
+    await conv.click();
+    await expect(page.getByRole("tooltip")).toContainText("Clientes cobrados × 100");
+    await conv.click();
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
     expect(await col(0)).toEqual(ordemAntes);
   });
 

@@ -77,6 +77,8 @@ db.commit()
 
 pagaram = [
     {"codigo_cliente": "1", "faixa": "FA", "valor_pago": Decimal("10")},
+    # mesmo cliente cobrado de novo noutro dia: a linha traz o mesmo pagamento
+    {"codigo_cliente": "1", "faixa": "FA", "valor_pago": Decimal("10")},
     # cobrado em duas faixas no mesmo dia: conta nas duas linhas, uma vez no total
     {"codigo_cliente": "4", "faixa": "FA, FB", "valor_pago": Decimal("25")},
 ]
@@ -98,7 +100,16 @@ f = por_faixa["FB"]
 assert f["sent"] == 1 and f["pending"] == 1, f
 assert f["clientes_cobrados"] == 1 and f["enviados_cobrados"] == 1 and f["clientes_com_envio"] == 1, f
 assert f["pagaram"] == 1 and f["valor_pago"] == "25.00", f
-assert res.json()["valor_pago_total"] == "35.00", res.json()["valor_pago_total"]
+
+# Total: cada cliente e cada pagamento uma vez (cliente 4 está em FA e FB)
+total = res.json()["total_por_faixa"]
+assert total == {
+    "clientes_cobrados": 5,  # 1, 2, 7 (FA), 4 (FB), 8 (FC)
+    "enviados_cobrados": 5,
+    "clientes_com_envio": 3,  # 1, 2 e 4
+    "pagaram": 2,  # 1 e 4
+    "valor_pago": "35.00",
+}, total
 
 # Faixa sem fila no período, só com cliente cobrado: aparece com os cobrados
 f = por_faixa["FC"]

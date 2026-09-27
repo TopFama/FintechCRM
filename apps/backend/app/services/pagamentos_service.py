@@ -24,16 +24,20 @@ def condicao_cobrados(cobrado_de: date | None, cobrado_ate: date | None):
     )
 
 
-def clientes_cobrados_por_faixa(db: Session, *, cobrado_de: date | None, cobrado_ate: date | None) -> dict[str, int]:
+def clientes_cobrados_por_faixa(
+    db: Session, *, cobrado_de: date | None, cobrado_ate: date | None
+) -> dict[str, set[str]]:
     """Clientes distintos cobrados no período, por faixa do lead: quem pagou
     numa faixa sempre está aqui."""
 
-    return dict(
-        db.query(models.Lead.faixa, func.count(func.distinct(models.Lead.codigo_cliente)))
+    por_faixa: dict[str, set[str]] = {}
+    for faixa, codigo in (
+        db.query(models.Lead.faixa, models.Lead.codigo_cliente)
         .filter(condicao_cobrados(cobrado_de, cobrado_ate))
-        .group_by(models.Lead.faixa)
-        .all()
-    )
+        .distinct()
+    ):
+        por_faixa.setdefault(faixa, set()).add(codigo)
+    return por_faixa
 
 
 def clientes_que_pagaram(

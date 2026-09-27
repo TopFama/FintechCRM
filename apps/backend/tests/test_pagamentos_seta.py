@@ -149,8 +149,10 @@ db.add_all([
 ])
 db.commit()
 cobrados = pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=dia_cob, cobrado_ate=dia_cob)
-assert cobrados == {"FA": 2, "FB": 1}, cobrados
+assert cobrados == {"FA": {"00000020", "00000021"}, "FB": {"00000020"}}, cobrados
 # Sem período: conta todo cobrado da faixa
-assert pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=None, cobrado_ate=None)["FA"] == 3
+assert pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=None, cobrado_ate=None)["FA"] == {
+    "00000020", "00000021", "00000023"
+}
 
 print("OK")

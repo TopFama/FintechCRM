@@ -40,7 +40,7 @@ def summary(
 
     try:
         dados = cache.obter_ou_calcular(
-            cache.chave("dashboard-resumo", {"de": de, "ate": ate}), calcular, RESUMO_TTL_SEGUNDOS, reaproveitar=auto
+            cache.chave("dashboard-resumo-v2", {"de": de, "ate": ate}), calcular, RESUMO_TTL_SEGUNDOS, reaproveitar=auto
         )
     except cache.CacheIndisponivel:
         dados = calcular()
@@ -92,8 +92,10 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
         chave = "pending" if status_value == models.QueueStatus.reserved else status_value.value
         entry[chave] = entry.get(chave, 0) + total
 
-    _somar_cobrados_por_faixa(db, de, ate, por_faixa)
-    valor_pago_total = _somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos)
+    total_por_faixa = {
+        **_somar_cobrados_por_faixa(db, de, ate, por_faixa),
+        **_somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos),
+    }
 
     total_invalidos = (
         db.query(func.count(models.InvalidPhoneRecord.id))
@@ -109,16 +111,19 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
         total_erros=count(models.QueueStatus.error),
         total_telefones_invalidos=total_invalidos,
         por_faixa=list(por_faixa.values()),
-        valor_pago_total=valor_pago_total,
+        total_por_faixa=schemas.DashboardTotalPorFaixa(**total_por_faixa),
     )
 
 
-def _somar_cobrados_por_faixa(db: Session, de: date | None, ate: date | None, por_faixa: dict[str, dict]) -> None:
+def _somar_cobrados_por_faixa(
+    db: Session, de: date | None, ate: date | None, por_faixa: dict[str, dict]
+) -> dict[str, int]:
     """Clientes distintos cobrados no período (mesma base do "Pagaram após
     cobrança", base da % Conv.) e, só entre eles, as mensagens enviadas no
     período e quantos receberam alguma (base da Frequência). A coluna Enviado
     inteira misturaria mensagens a clientes cobrados antes do período, e o
-    lead marcado como cobrado à mão não recebeu mensagem."""
+    lead marcado como cobrado à mão não recebeu mensagem. Devolve os totais
+    da tabela com cada cliente uma vez, mesmo cobrado em mais de uma faixa."""
 
     cobrados = pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=de, cobrado_ate=ate)
     # Faixa cadastrada com cliente cobrado no período e sem fila (lead marcado
@@ -140,29 +145,38 @@ def _somar_cobrados_por_faixa(db: Session, de: date | None, ate: date | None, po
         )
         .exists()
     )
-    enviados = {
-        nome: (mensagens, clientes)
-        for nome, mensagens, clientes in db.query(
-            nome_faixa, func.count(models.QueueItem.id), func.count(func.distinct(models.QueueItem.codigo_cliente))
-        )
+    enviados = (
+        db.query(nome_faixa, models.QueueItem.codigo_cliente, func.count(models.QueueItem.id))
         .join(models.Faixa, models.QueueItem.faixa_id == models.Faixa.id)
         .filter(
             models.QueueItem.status == models.QueueStatus.sent,
             consultas_fila.condicao_periodo(models.QueueItem.sent_at, ini, fim),
             cliente_cobrado,
         )
-        .group_by(nome_faixa)
-    }
+        .group_by(nome_faixa, models.QueueItem.codigo_cliente)
+        .all()
+    )
     for nome, entry in por_faixa.items():
-        entry["clientes_cobrados"] = cobrados.get(nome, 0)
-        entry["enviados_cobrados"], entry["clientes_com_envio"] = enviados.get(nome, (0, 0))
+        entry["clientes_cobrados"] = len(cobrados.get(nome, ()))
+        entry["enviados_cobrados"] = entry["clientes_com_envio"] = 0
+    com_envio: set[str] = set()
+    for nome, codigo, mensagens in enviados:
+        if nome in por_faixa:
+            por_faixa[nome]["enviados_cobrados"] += mensagens
+            por_faixa[nome]["clientes_com_envio"] += 1
+            com_envio.add(codigo)
+    return {
+        "clientes_cobrados": len(set().union(*(cobrados.get(nome, set()) for nome in por_faixa))),
+        "enviados_cobrados": sum(e["enviados_cobrados"] for e in por_faixa.values()),
+        "clientes_com_envio": len(com_envio),
+    }
 
 
-def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> Decimal:
+def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> dict:
     """Clientes cobrados no período que pagaram depois da cobrança (qualquer
     data), por faixa: mesma lista do relatório Quem pagou filtrado pela faixa.
-    Devolve o valor pago das faixas da tabela contando cada pagamento uma vez
-    (cliente em duas faixas soma o valor nas duas linhas, não no total)."""
+    O valor de cada cliente conta uma vez por faixa, e nos totais devolvidos
+    (clientes e valor) uma vez só, mesmo cobrado em mais de uma faixa."""
 
     for entry in por_faixa.values():
         entry["pagaram"] = 0
@@ -174,20 +188,23 @@ def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], bus
     except seta_client.SetaIndisponivel:
         # SETA fora com cliente novo sem cópia: mostra o que já está copiado
         linhas = pagamentos_service.clientes_que_pagaram(db, cobrado_de=de, cobrado_ate=ate, buscar_novos=False)
-    clientes: dict[str, set[str]] = {}
-    valores: dict[str, Decimal] = {}
-    total = Decimal("0")
+    # Uma linha por cliente e data de cobrança: cobrado em dois dias, as duas
+    # linhas trazem o mesmo pagamento (o da primeira já inclui o da segunda).
+    # Vale o maior valor do cliente, senão o pagamento soma duas vezes.
+    por_cliente: dict[str, dict[str, Decimal]] = {}
+    total: dict[str, Decimal] = {}
     for l in linhas:
         faixas = [nome for nome in l["faixa"].split(", ") if nome in por_faixa]
+        codigo = l["codigo_cliente"]
         if faixas:
-            total += l["valor_pago"]
+            total[codigo] = max(total.get(codigo, Decimal("0")), l["valor_pago"])
         for nome in faixas:
-            clientes.setdefault(nome, set()).add(l["codigo_cliente"])
-            valores[nome] = valores.get(nome, Decimal("0")) + l["valor_pago"]
-    for nome, codigos in clientes.items():
-        por_faixa[nome]["pagaram"] = len(codigos)
-        por_faixa[nome]["valor_pago"] = str(valores[nome].quantize(Decimal("0.01")))
-    return total.quantize(Decimal("0.01"))
+            clientes = por_cliente.setdefault(nome, {})
+            clientes[codigo] = max(clientes.get(codigo, Decimal("0")), l["valor_pago"])
+    for nome, clientes in por_cliente.items():
+        por_faixa[nome]["pagaram"] = len(clientes)
+        por_faixa[nome]["valor_pago"] = str(sum(clientes.values(), Decimal("0")).quantize(Decimal("0.01")))
+    return {"pagaram": len(total), "valor_pago": sum(total.values(), Decimal("0")).quantize(Decimal("0.01"))}
 
 
 @router.get("/orcamento-progressao", response_model=schemas.OrcamentoProgressaoOut)

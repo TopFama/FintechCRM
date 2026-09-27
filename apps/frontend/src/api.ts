@@ -810,8 +810,17 @@ export interface DashboardSummary {
   total_erros: number;
   total_telefones_invalidos: number;
   por_faixa: DashboardPorFaixa[];
-  // total da tabela: cada pagamento uma vez, mesmo com o cliente em mais de uma faixa
-  valor_pago_total: string;
+  total_por_faixa: DashboardTotalPorFaixa;
+}
+
+// Linha de total de "Por faixa" no que não é soma da coluna: cada cliente (e
+// cada pagamento) uma vez, mesmo cobrado em mais de uma faixa
+export interface DashboardTotalPorFaixa {
+  clientes_cobrados: number;
+  enviados_cobrados: number;
+  clientes_com_envio: number;
+  pagaram: number;
+  valor_pago: string;
 }
 
 export interface DashboardPorFaixa {

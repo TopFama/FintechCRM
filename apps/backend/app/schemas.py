@@ -557,6 +557,17 @@ class DashboardPorFaixa(BaseModel):
     valor_pago: Decimal = Decimal("0.00")
 
 
+class DashboardTotalPorFaixa(BaseModel):
+    """Linha de total de "Por faixa" no que não é soma da coluna: cada
+    cliente (e cada pagamento) uma vez, mesmo cobrado em mais de uma faixa."""
+
+    clientes_cobrados: int = 0
+    enviados_cobrados: int = 0
+    clientes_com_envio: int = 0
+    pagaram: int = 0
+    valor_pago: Decimal = Decimal("0.00")
+
+
 class DashboardSummary(BaseModel):
     total_pendentes: int
     total_pausados: int = 0
@@ -564,9 +575,7 @@ class DashboardSummary(BaseModel):
     total_erros: int
     total_telefones_invalidos: int
     por_faixa: list[DashboardPorFaixa]
-    # Linha de total da tabela: cada pagamento uma vez, mesmo com o cliente em
-    # mais de uma faixa (a soma da coluna contaria em cada uma)
-    valor_pago_total: Decimal = Decimal("0.00")
+    total_por_faixa: DashboardTotalPorFaixa
 
 
 class LinhaEfetividadeBase(BaseModel):
