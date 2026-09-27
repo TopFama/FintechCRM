@@ -16,6 +16,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from . import cache, seta_client
+from .services import compras_seta
 from .cobranca_regras import NOMES_FAIXA_COMPRA, faixa_de_compra
 from .regras_db import carregar_regras
 from .blacklist import codigos_bloqueados
@@ -154,9 +155,14 @@ def buscar_base(
     if job["status"] != "ready":
         return {"status": "processing", "data": None}
 
+    # Faixa de compra vem da cópia local (fora do cache do SETA): depois de
+    # atualizar as compras do dia, a lista já mostra a faixa nova.
+    compras = compras_seta.obter(db, [linha["codigo"] for linha in job["data"]])
+
     resultado = []
     for linha_bruta in job["data"]:
         r = _restaurar_linha_seta(linha_bruta)
+        r["qtd_compras"], r["ultima_compra"] = compras.get(r["codigo"], (0, None))
         faixa = regras.faixa_por_dias(r["dias_atraso"])
         cluster = regras.cluster_por_valor_pago(r["valor_pago"])
         entra = regras.entra_no_whatsapp(cluster, faixa)
