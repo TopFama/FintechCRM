@@ -159,9 +159,16 @@ designado por ele como maintainer acompanha os PRs, avalia os workflows e o diff
 (o que cada workflow faz: `README.md` → "CI (GitHub Actions)"). O que exige decisão do dono vai para
 ele **antes** do merge (item 8).
 
-1. **Nunca** faça push direto na `main`. Toda mudança vai por PR de uma branch de trabalho. Se o PR
-   da sua branch já foi mergeado, trabalho novo começa de novo a partir da `main` atual, num PR
-   novo.
+1. Toda mudança vai por PR de uma branch de trabalho, com a **única exceção** abaixo. Se o PR da
+   sua branch já foi mergeado, trabalho novo começa de novo a partir da `main` atual, num PR novo.
+   - **Só documentação vai direto para a `main`** (decisão do dono, 27/09/2026): commit em que
+     **todos** os arquivos são `.md` (`README.md`, `AGENTS.md`, `GEMINI.md`, `docs/**/*.md`,
+     `e2e/README.md`) pode ser enviado direto, sem PR e sem esperar CI. Antes do push, traga a
+     `main` atual (`git pull`) e confira com `git diff --cached --name-only` que não há nenhum
+     outro arquivo. Qualquer arquivo que não seja `.md` no mesmo commit (código, testes,
+     `.github/workflows/`, `.env.example`, `docker-compose.yml`, scripts de `docs/`) faz o commit
+     inteiro ir por PR. Mudança **nesta seção "Merge na main"** também vai por PR, mesmo sendo
+     `.md`: ela define o que os agentes podem fazer sozinhos.
 2. Só faça merge quando, **no commit mais recente do PR**:
    - todos os jobs do `testes.yml` estiverem ✅ (Backend, Arquitetura, Frontend e E2E). Job ainda
      rodando é espera, não aprovação;

@@ -374,7 +374,7 @@ arquivo, não fazem commit e **não fazem deploy** (produção continua sendo `d
 | `security-scan.yml` | Push/PR que mexe em `package.json`, `package-lock.json` ou `apps/backend/requirements.txt`; toda segunda às 9h UTC (6h em Brasília, pega falha nova em dependência que não mudou); manual | **npm audit (frontend)**: reprova vulnerabilidade alta ou crítica. **pip-audit (backend)**: reprova qualquer vulnerabilidade conhecida, exceto a exceção documentada no próprio arquivo (`ecdsa`, PYSEC-2026-1325, não afeta o app porque o JWT usa HS256) |
 
 **Merge na `main`**: não há auto-merge do GitHub. Toda mudança entra por PR de uma branch de
-trabalho, e quem decide o merge é o agente de IA designado como maintainer do repositório,
+trabalho (exceto commit só de documentação `.md`, que vai direto para a `main`), e quem decide o merge é o agente de IA designado como maintainer do repositório,
 depois de avaliar os workflows e o diff do commit mais recente do PR; conflito que exige escolher
 entre dois comportamentos, ou mudança sensível, vai para o dono decidir antes. Critérios em
 [`AGENTS.md`](./AGENTS.md) → "Merge na main". O
