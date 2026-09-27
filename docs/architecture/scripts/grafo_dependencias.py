@@ -34,11 +34,13 @@ DOMINIO = {
     "cobranca_base": "Cobrança", "cobranca_regras": "Cobrança", "regras_db": "Cobrança",
     "cobranca_relatorio": "Cobrança", "routers.cobranca": "Cobrança", "routers.config_cobranca": "Cobrança",
     "leads_service": "Cobrança", "routers.leads": "Cobrança", "utils.leads_xlsx": "Cobrança", "utils.spc": "Cobrança",
+    "services.compras_seta": "Cobrança",
     # Réguas (faixas)
     "routers.faixas": "Réguas",
     # Envios (fila, disparo, pausas, blacklist)
     "fila_automatica": "Envios", "worker": "Envios", "dispatch_service": "Envios", "pausas": "Envios",
     "routers.pausas": "Envios", "routers.uploads": "Envios", "routers.blacklist": "Envios",
+    "elegibilidade": "Envios", "blacklist": "Envios", "itens_fila": "Envios", "upload_service": "Envios",
     # Campanhas e remarketing
     "campanhas": "Campanhas", "campanhas_fixas": "Campanhas", "routers.campanhas": "Campanhas",
     "remarketing": "Campanhas", "routers.remarketing": "Campanhas",
@@ -48,11 +50,12 @@ DOMINIO = {
     # Dashboard e relatórios
     "routers.dashboard": "Dashboard/Relatórios", "routers.reports": "Dashboard/Relatórios",
     "services.efetividade_service": "Dashboard/Relatórios", "relatorio_efetividade": "Dashboard/Relatórios",
-    "services.custo_whatsapp": "Dashboard/Relatórios",
+    "services.custo_whatsapp": "Dashboard/Relatórios", "consultas_fila": "Dashboard/Relatórios",
     # Plataforma (compartilhado)
     "main": "Plataforma", "config": "Plataforma", "database": "Plataforma", "models": "Plataforma",
     "schemas": "Plataforma", "cache": "Plataforma", "timezone": "Plataforma", "utils.phone": "Plataforma",
-    "utils.document": "Plataforma", "utils.spreadsheet": "Plataforma",
+    "utils.document": "Plataforma", "utils.spreadsheet": "Plataforma", "utils.xlsx": "Plataforma",
+    "routers.comum": "Plataforma",
 }
 
 CORES = {
@@ -96,7 +99,8 @@ def imports(mods: dict[str, str]) -> dict[str, set[str]]:
 
 
 def viola(origem: str, destino: str) -> bool:
-    return destino.startswith("routers.") and origem != "main"
+    # routers.comum não é router (peças HTTP compartilhadas): o .importlinter permite importá-lo
+    return destino.startswith("routers.") and destino != "routers.comum" and origem != "main"
 
 
 def main() -> None:

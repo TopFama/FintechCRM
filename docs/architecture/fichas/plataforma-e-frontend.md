@@ -12,9 +12,9 @@ uma feature de algum domínio precisou de um campo novo: o co-change mais forte 
 - **Depende de:** nada interno.
 - **É usado por:** todas as páginas e componentes.
 - **Violações encontradas:**
-  - [x] Mais de uma responsabilidade: `request`/erros/flags de sessão (linhas 1–139), o objeto `api` com todas as chamadas (140–497, ~110 métodos) e os tipos de todos os domínios (498–1269).
+  - [x] Mais de uma responsabilidade: `request`/erros/flags de sessão (linhas 1–139), o objeto `api` com todas as chamadas (140–499, ~110 métodos) e os tipos de todos os domínios (500–1272).
   - [ ] demais: não. A regra "só o `api.ts` faz `fetch`" é seguida em todas as telas.
-- **Churn:** 70 (o maior do repositório) | **Linhas:** 1269
+- **Churn:** 70 (o maior do repositório) | **Linhas:** 1272
 - **Ação sugerida:** dividir em `api/cliente.ts` (request, `ApiError`, sessão) e um arquivo por domínio com os tipos e as chamadas, mantendo `api.ts` como reexportação para nenhuma página precisar mudar de import (backlog #9).
 - **Esforço:** M | **Risco:** baixo (o `tsc` pega qualquer erro; e2e cobre as telas)
 
@@ -46,8 +46,8 @@ uma feature de algum domínio precisou de um campo novo: o co-change mais forte 
 - **Domínio:** Plataforma
 - **Camada:** infraestrutura
 - **Responsabilidade:** declarar as tabelas.
-- **Violações encontradas:** tamanho (732 linhas, 32 tabelas), mas é uma lista declarativa sem lógica.
-- **Churn:** 34 | **Linhas:** 732
+- **Violações encontradas:** tamanho (761 linhas, 34 tabelas), mas é uma lista declarativa sem lógica.
+- **Churn:** 34 | **Linhas:** 761
 - **Ação sugerida:** nenhuma. Separar em pacote só se `schemas` for separado e fizer sentido espelhar.
 
 ### `apps/backend/app/main.py`
@@ -61,11 +61,10 @@ uma feature de algum domínio precisou de um campo novo: o co-change mais forte 
 - **Domínio:** Plataforma
 - **Camada:** domínio (utilitário)
 - **Responsabilidade:** dizer que horas são em Brasília.
-- **Violações encontradas:**
-  - [x] Incompleto: só tem `agora_br` e `hoje_br`. As conversões "dia de Brasília → início em UTC ingênuo" e "UTC ingênuo → dia/hora de Brasília" estão copiadas em 8 arquivos: `routers/reports.py` (`_inicio_utc`, `_hora_br`), `routers/leads.py` (`_inicio_utc`), `routers/dashboard.py` (`_limites_utc`), `services/pagamentos_service.py` (`_inicio_utc`, `_dia_br`), `services/efetividade_service.py` (`_inicio_dia_utc`, `_dia_br`), `services/pagamentos_seta.py` (`_dia_br`), `fila_automatica.py` (`_utc_ingenuo`, `inicio_hoje_utc`), `worker.py` (`_local_now`).
-- **Churn:** 1 | **Linhas:** 22
-- **Ação sugerida:** `inicio_do_dia_utc(dia)`, `dia_br(dt_utc)`, `hora_br(dt_utc)`, `para_br(dt_utc)` aqui, e as cópias passam a chamar essas (backlog #10). Protege a regra fixa de GMT-3.
+- **Violações encontradas:** nenhuma. Em 26/09 só tinha `agora_br` e `hoje_br`, com as conversões de fuso copiadas em 8 arquivos; o backlog #10 (PR #5) trouxe `para_br`, `dia_br`, `hora_br`, `utc_ingenuo`, `inicio_do_dia_utc` e `inicio_hoje_utc` para cá, e as cópias saíram. Resta uma cópia criada depois: `services/compras_seta._dia_br`.
+- **Churn:** 1 | **Linhas:** 62
+- **Ação sugerida:** `compras_seta` passar a usar `timezone.dia_br`. Protege a regra fixa de GMT-3.
 - **Esforço:** P | **Risco:** baixo
 
 ### `apps/backend/app/utils/*`, `cache.py`, `config.py`, `database.py`
-- **Violações encontradas:** nenhuma. `utils/` não importa `models` nem FastAPI (a regra 5 já vale; só falta travar no CI).
+- **Violações encontradas:** nenhuma. `utils/` não importa `models` nem FastAPI (a regra 5 está travada no CI pelo contrato `regras-puras` do `.importlinter`).

@@ -1,40 +1,31 @@
 # Fichas — Cobrança
 
 Base de clientes em atraso lida do SETA, regras de cobrança (clusters, faixas de atraso, matriz
-WhatsApp, juros) e leads. Ordenado do arquivo com mais violações para o com menos.
+WhatsApp, juros) e leads. Ordenado do arquivo com mais violações para o com menos. Revisado em
+27/09/2026 (depois dos PRs #3 a #10); churn e cobertura são os de 26/09.
 
 ### `apps/backend/app/routers/cobranca.py`
 - **Domínio:** Cobrança
 - **Camada:** interface
 - **Responsabilidade:** expor a consulta da base de cobrança com filtros.
 - **Motivos para mudar:** filtros da tela, ordenação, exportação, relatório de matriz.
-- **Depende de:** `cobranca_base`, `cobranca_regras`, `cobranca_relatorio`, `fila_automatica.cobrados_hoje`, `google_client`, `lojas`, `seta_client`, `cache`, `routers.reports` (!).
-- **É usado por:** `main`; `routers/leads` importa `filtros_base`, `buscar_base_ou_erro`, `sem_cobrados_hoje`; `routers/campanhas` importa `ClienteSortColumn`, `_ordenar_clientes`.
-- **Violações encontradas:**
-  - [x] Mais de uma responsabilidade: é router e ao mesmo tempo a biblioteca de filtros/ordenação da base usada por outros dois routers.
-  - [x] Regra de negócio fora do serviço: "tirar da lista quem já foi cobrado hoje" (`sem_cobrados_hoje`) e a tradução de filtros de loja/cobradora em códigos de loja.
-  - [ ] SQL/ORM fora do repository
-  - [ ] Acesso direto a dados de outro domínio
-  - [ ] Chamada direta a provedor externo sem interface
-  - [x] Router importando router: usa `_build_xlsx`, `_formula_safe`, `_XLSX_MEDIA_TYPE` de `routers/reports.py`; e é importado por `routers/leads` e `routers/campanhas`.
-  - [ ] Duplicação
-- **Churn:** 14 | **Linhas:** 259
-- **Ação sugerida:** `filtros_base`, `buscar_base_ou_erro`, `_ordenar_clientes`, `sem_cobrados_hoje` vão para um `cobranca_consulta.py` (serviço); geração de .xlsx vai para `utils/xlsx.py` (backlog #2).
-- **Esforço:** P | **Risco:** baixo
+- **Depende de:** `cobranca_relatorio`, `cobranca_regras`, `regras_db`, `seta_client`, `elegibilidade.sem_cobrados_hoje`, `services/compras_seta`, `utils/spc`, `utils/xlsx`, `timezone`, `routers/comum` (`filtros_base`, `buscar_base_ou_erro`, `ordenar_clientes`, `ClienteSortColumn`).
+- **É usado por:** `main` (ninguém mais importa este router).
+- **Violações encontradas:** as de 26/09 (router servindo de biblioteca de filtros para outros dois routers, "sem cobrados hoje" no router, import de `.xlsx` de `routers/reports`) foram resolvidas pelo backlog #2 (PR #4): filtros e ordenação em `routers/comum.py`, `sem_cobrados_hoje` em `elegibilidade.py`, `.xlsx` em `utils/xlsx.py`.
+- **Churn:** 14 | **Linhas:** 169
 
 ### `apps/backend/app/routers/leads.py`
 - **Domínio:** Cobrança
 - **Camada:** interface
 - **Responsabilidade:** expor a geração, consulta e exportação de leads.
-- **Depende de:** `fila_automatica`, `leads_service`, `google_client`, `lojas`, `regras_db`, `seta_client`, `services/efetividade_service`, `routers.blacklist` (!), `routers.cobranca` (!).
+- **Depende de:** `fila_automatica.enfileirar_leads`, `leads_service`, `google_client`, `lojas`, `regras_db`, `seta_client`, `services/efetividade_service`, `blacklist`, `elegibilidade`, `timezone`, `utils/leads_xlsx`, `routers/comum`.
 - **É usado por:** `main`.
 - **Violações encontradas:**
-  - [x] Regra de negócio no router: `filtrar_leads`/`query_leads_filtrada` (60 linhas de filtro de leads, inclusive blacklist e lojas) e `enfileirar_pendentes_de_hoje`.
+  - [x] Regra de negócio no router: `filtrar_leads`/`query_leads_filtrada` (filtro de leads, inclusive blacklist e lojas) e `enfileirar_pendentes_de_hoje`.
   - [x] SQL/ORM no router.
-  - [x] Router importando router (`blacklist`, `cobranca`).
-  - [x] Duplicação: `_inicio_utc` (fuso) é a 5ª cópia do helper.
-- **Churn:** 18 | **Linhas:** 360 | **Cobertura:** 65%
-- **Ação sugerida:** filtros de lead para `leads_service.py`; imports de router resolvidos pelos itens #8 e #2 do backlog; fuso pelo #10.
+  - Resolvido: imports de `routers.blacklist`/`routers.cobranca` (backlogs #8 e #2) e a cópia de fuso `_inicio_utc` (hoje `timezone.inicio_do_dia_utc`, backlog #10).
+- **Churn:** 18 | **Linhas:** 358 | **Cobertura:** 65% (medida em 26/09)
+- **Ação sugerida:** filtros de lead para `leads_service.py`.
 - **Esforço:** M | **Risco:** baixo
 
 ### `apps/backend/app/seta_client.py`
@@ -43,12 +34,12 @@ WhatsApp, juros) e leads. Ordenado do arquivo com mais violações para o com me
 - **Responsabilidade:** consultar o SETA em modo só leitura.
 - **Motivos para mudar:** regra de parcela em aberto, juros/multa, SPC, baixas, performance da consulta.
 - **Depende de:** `cobranca_regras` (tipos), `config`, `timezone`.
-- **É usado por:** 10 módulos (routers de cobrança, leads, dashboard, reports, campanhas, remarketing, seta; `worker`; serviços de pagamento e efetividade).
+- **É usado por:** os routers `campanhas`, `cobranca`, `comum`, `dashboard`, `leads`, `remarketing`, `reports` e `seta`; os módulos `worker`, `campanhas`, `cobranca_base`, `leads_service`, `remarketing` e `upload_service`; e os serviços `compras_seta`, `efetividade_service`, `pagamentos_seta`, `pagamentos_service` e `pagos_janela_service`.
 - **Violações encontradas:**
   - [ ] Mais de uma responsabilidade (várias consultas, mas todas "ler o SETA")
   - [x] Duplicação: o filtro de parcela em aberto (`rp='R'`, `status='A'`, tipo 4/5, valor > 0, juros/multa) aparece em `_SQL_BASE_COBRANCA` e `_SQL_PARCELAS_COBRANCA`.
   - [ ] demais: não. Conexão já abre com `default_transaction_read_only=on` e `statement_timeout`; consultas por cliente são em lote.
-- **Churn:** 21 | **Linhas:** 666
+- **Churn:** 21 | **Linhas:** 766
 - **Ação sugerida:** extrair o fragmento SQL de "parcela em aberto" compartilhado. Baixa prioridade e risco alto (produção, tabela de 27M linhas): só com teste de caracterização contra o SETA falso do e2e (backlog #15).
 - **Esforço:** M | **Risco:** alto
 
@@ -56,14 +47,10 @@ WhatsApp, juros) e leads. Ordenado do arquivo com mais violações para o com me
 - **Domínio:** Cobrança
 - **Camada:** aplicação
 - **Responsabilidade:** montar a base de cobrança do dia a partir do SETA.
-- **Depende de:** `cache`, `cobranca_regras`, `regras_db`, `seta_client`, `utils/phone`, `routers.blacklist` (!).
-- **É usado por:** `worker`, `campanhas`, `remarketing`, `routers/cobranca`, `routers/campanhas`.
-- **Violações encontradas:**
-  - [x] Serviço importando router (`codigos_bloqueados`).
-  - [ ] demais: não.
-- **Churn:** 8 | **Linhas:** 223 | **Cobertura:** 80%
-- **Ação sugerida:** só o import (backlog #8).
-- **Esforço:** P | **Risco:** baixo
+- **Depende de:** `cache`, `cobranca_regras`, `regras_db`, `seta_client`, `blacklist`, `services/compras_seta`, `utils/phone`.
+- **É usado por:** `worker`, `campanhas`, `remarketing`, `routers/campanhas`, `routers/comum`.
+- **Violações encontradas:** nenhuma. A de 26/09 (import de `codigos_bloqueados` do router) foi resolvida pelo backlog #8.
+- **Churn:** 8 | **Linhas:** 232 | **Cobertura:** 80% (medida em 26/09)
 
 ### `apps/backend/app/routers/config_cobranca.py`
 - **Domínio:** Cobrança (+ Envios + Dashboard)
@@ -100,7 +87,7 @@ WhatsApp, juros) e leads. Ordenado do arquivo com mais violações para o com me
 - **Responsabilidade:** manter a cópia local das baixas do SETA.
 - **Violações encontradas:**
   - [x] Acoplamento com Autenticação: `registrar_atividade()` é chamado de dentro de `deps.get_current_user` (toda requisição autenticada marca "alguém usando o CRM"). Funciona, mas autenticação passou a conhecer pagamentos.
-- **Churn:** 5 | **Linhas:** 270
+- **Churn:** 5 | **Linhas:** 310
 - **Ação sugerida:** mover o registro de atividade para um middleware em `main.py` (backlog #16).
 - **Esforço:** P | **Risco:** baixo
 
@@ -108,7 +95,17 @@ WhatsApp, juros) e leads. Ordenado do arquivo com mais violações para o com me
 - **Domínio:** Pagamentos
 - **Camada:** aplicação
 - **Responsabilidade:** responder "quem pagou" numa janela.
+- **Violações encontradas:** nenhuma. A de 26/09 (cópias de `_inicio_utc`/`_dia_br`, uma importada como "privada" por `routers/campanhas`) foi resolvida pelo backlog #10: usam `timezone`.
+- **Churn:** 6 / 1 | **Linhas:** 127 / 50
+
+### `apps/backend/app/services/compras_seta.py`
+- **Domínio:** Cobrança (faixa de compra do cliente)
+- **Camada:** aplicação
+- **Responsabilidade:** manter a cópia local das compras no crediário de cada cliente (tabelas `compras_seta` e `sincronizacoes_seta`), atualizada pelo worker às 03:00 (GMT-3).
+- **Depende de:** `seta_client`, `models`, `timezone`.
+- **É usado por:** `worker`, `cobranca_base`, `remarketing`, `routers/cobranca`.
 - **Violações encontradas:**
-  - [x] Duplicação: `_inicio_utc` e `_dia_br` (fuso) repetidos; `_inicio_utc` é importado como "privado" por `routers/campanhas`.
-- **Churn:** 6 / 1 | **Linhas:** 134 / 50
-- **Ação sugerida:** fuso no `timezone.py` (backlog #10).
+  - [x] Duplicação: `_dia_br` repete `timezone.dia_br` (criado depois do backlog #10).
+- **Linhas:** 137
+- **Ação sugerida:** usar `timezone.dia_br`.
+- **Esforço:** P | **Risco:** baixo
