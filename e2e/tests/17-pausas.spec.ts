@@ -83,9 +83,11 @@ test.describe.serial("Pendentes: pausar, retomar e parar", () => {
     await painel.getByRole("button", { name: new RegExp(`^Pausar ${n} loja`) }).click();
     await expect(page.locator(".success-box")).toContainText(`${n} loja(s) pausada(s)`);
     await expect(blocoPausas(page).locator("tbody tr", { hasText: "Mutirão nas lojas" })).toHaveCount(n);
+    const pausasLoja = blocoPausas(page).locator("tbody tr", { hasText: "Mutirão nas lojas" });
     for (let i = 0; i < n; i++) {
-      await blocoPausas(page).getByRole("button", { name: /^Retomar/ }).first().click();
-      await expect(page.locator(".success-box")).toContainText("Envio retomado");
+      await pausasLoja.first().getByRole("button", { name: /^Retomar/ }).click();
+      // espera a linha sumir antes do próximo clique; senão o clique pode cair na mesma pausa
+      await expect(pausasLoja).toHaveCount(n - i - 1);
     }
     await expect(blocoPausas(page)).toHaveCount(0);
   });

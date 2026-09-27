@@ -228,6 +228,15 @@ test.describe.serial("Campanhas", () => {
     await expect(page.locator(".page-header .subtitle")).toContainText("Envio automático de 01/01/2099 a 02/01/2099");
 
     await atribuirTemplate(page, "lembrete_vencimento", "Obs");
+    // Segura a fila da campanha enquanto confere Pendentes: sem a pausa, o worker (a
+    // cada 2 s no teste) pode enviar o item antes da tela de Pendentes abrir.
+    const criada = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Planilha promo");
+    const pausa = await apiSend(page, "POST", "/pausas", {
+      escopo: "faixa",
+      valor: criada.faixa_id,
+      motivo: "e2e: conferir Pendentes",
+    });
+    expect(pausa.status).toBe(201);
     const previa = card(page, "Quem entraria agora");
     await previa.getByRole("button", { name: "Ver prévia" }).click();
     // 99999 não existe no SETA; 00000036 pode ter saído da base em cenários anteriores (blacklist)
@@ -245,13 +254,13 @@ test.describe.serial("Campanhas", () => {
     const item = fila.itens.find((i: any) => i.codigo_cliente === "00000027");
     if (item) {
       expect(item.valor).toBe("99.90");
-      // dentro do horário de disparo o worker (a cada 2 s no teste) pode já ter enviado
-      expect(["pending", "reserved", "sent"]).toContain(item.status);
+      expect(item.status).toBe("pending");
     }
 
     // Pendentes: faixa de atraso (régua) e campanha em colunas separadas
     const pendente = fila.itens.find((i: any) => i.status === "pending");
-    if (pendente) {
+    expect(pendente).toBeTruthy();
+    {
       const api = await apiGet(page, `/reports/pendentes?faixa_id=${campanha.faixa_id}&limit=50&offset=0`);
       const linhaApi = api.itens.find((i: any) => i.codigo_cliente === pendente.codigo_cliente);
       expect(linhaApi.campanha).toBe("Planilha promo");
@@ -263,6 +272,7 @@ test.describe.serial("Campanhas", () => {
       await expect(linha).toContainText(linhaApi.faixa);
       await expect(linha).not.toContainText("Campanha:");
     }
+    expect((await apiSend(page, "POST", `/pausas/${pausa.corpo.id}/retomar`)).status).toBe(200);
   });
 
   test("Por faixa do Dashboard mostra a faixa de atraso de quem recebeu, não a campanha", async ({ page }) => {
