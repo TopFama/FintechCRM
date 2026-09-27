@@ -1,9 +1,10 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session, selectinload
 
-from .. import itens_fila, models, schemas, upload_service
+from .. import consultas_fila, itens_fila, models, schemas, upload_service
 from ..database import get_db
 from ..deps import get_current_user
 from ..utils.spreadsheet import parse_uploaded_spreadsheet, read_spreadsheet_preview
@@ -46,7 +47,7 @@ async def read_upload_columns(
     _load_faixa(db, faixa_id)
     content = await ler_planilha_limitada(file)
     try:
-        columns, sample_row = read_spreadsheet_preview(file.filename or "planilha.xlsx", content)
+        columns, sample_row = await run_in_threadpool(read_spreadsheet_preview, file.filename or "planilha.xlsx", content)
     except Exception as exc:  # noqa: BLE001 - erro de parsing vira 400 explícito
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Não foi possível ler a planilha: {exc}") from exc
     if not columns:
@@ -126,14 +127,16 @@ async def upload_planilha(
     content = await ler_planilha_limitada(file)
     filename = file.filename or "planilha.xlsx"
     try:
-        headers, _ = read_spreadsheet_preview(filename, content)
-        rows = parse_uploaded_spreadsheet(filename, content)
+        # Planilha de até 20 MB e a importação fora do event loop: o worker de
+        # disparo e as outras telas rodam no mesmo processo
+        headers, _ = await run_in_threadpool(read_spreadsheet_preview, filename, content)
+        rows = await run_in_threadpool(parse_uploaded_spreadsheet, filename, content)
     except Exception as exc:  # noqa: BLE001 - erro de parsing vira 400 explícito
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Não foi possível ler a planilha: {exc}") from exc
 
     _validar_importacao(faixa, field_mapping, headers)
-    return upload_service.importar_planilha(
-        db, faixa, rows, field_mapping, filename=filename, usuario_id=user.id
+    return await run_in_threadpool(
+        upload_service.importar_planilha, db, faixa, rows, field_mapping, filename=filename, usuario_id=user.id
     )
 
 
@@ -174,7 +177,7 @@ _QUEUE_SORT_COLUNAS = {
     "nome": models.QueueItem.nome,
     "cpf": models.QueueItem.cpf,
     "celular": models.QueueItem.celular,
-    "valor": models.QueueItem.valor,
+    "valor": consultas_fila.valor_numerico(),
     "status": models.QueueItem.status,
     "error_message": models.QueueItem.error_message,
 }
@@ -195,7 +198,7 @@ def list_queue(
     coluna = _QUEUE_SORT_COLUNAS.get(sort_by) if sort_by else None
     if coluna is not None:
         # id como desempate: mantém a ordem estável entre páginas
-        query = query.order_by(coluna.desc() if sort_dir == "desc" else coluna.asc(), models.QueueItem.id)
+        query = query.order_by((coluna.desc() if sort_dir == "desc" else coluna.asc()).nulls_last(), models.QueueItem.id)
     else:
         query = query.order_by(models.QueueItem.created_at.desc())
     itens = query.offset(offset).limit(limit).all()

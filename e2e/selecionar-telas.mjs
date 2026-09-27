@@ -95,7 +95,7 @@ const TELAS = {
       `${B}routers/uploads.py`, `${B}upload_service.py`, `${B}itens_fila.py`, `${B}fila_automatica.py`,
       `${B}elegibilidade.py`, `${B}blacklist.py`, `${B}pausas.py`, `${B}variaveis_template.py`, `${B}seta_client.py`,
       `${B}utils/spreadsheet.py`, `${B}utils/document.py`, `${B}utils/phone.py`, `${B}utils/leads_xlsx.py`,
-      `${B}routers/leads.py`, `${B}leads_service.py`,
+      `${B}utils/valor.py`, `${B}routers/leads.py`, `${B}leads_service.py`,
     ],
   },
   "11-disparo": {
@@ -164,6 +164,7 @@ const TELAS = {
       `${F}components/EnviosFaixa.tsx`, `${B}routers/campanhas.py`, `${B}campanhas.py`, `${B}campanhas_fixas.py`,
       `${B}cobranca_base.py`, `${B}fila_automatica.py`, `${B}elegibilidade.py`, `${B}pausas.py`, `${B}routers/lojas.py`,
       `${B}lojas.py`, `${B}leads_service.py`, `${B}routers/comum.py`, `${B}routers/pausas.py`, `${B}seta_client.py`,
+      `${B}utils/valor.py`,
       `${B}routers/dashboard.py`, `${B}routers/reports.py`,
     ],
   },

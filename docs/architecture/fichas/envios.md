@@ -35,7 +35,7 @@ saída estavam escritas dentro do laço do worker. O backlog #4 (PR #6) juntou t
 - **Camada:** aplicação
 - **Responsabilidade (1 frase, sem "e"):** importar as linhas da planilha na fila de uma faixa da régua.
 - **Motivos para mudar:** formato da planilha, validação por linha (código, nome, CPF, telefone, valor zerado), criação de Lead, telefone inválido.
-- **Depende de:** `itens_fila`, `blacklist`, `elegibilidade`, `pausas.lojas_formatadas`, `regras_db`, `seta_client`, `variaveis_template`, `timezone`, `utils/document`, `utils/phone`, `models`, `schemas`.
+- **Depende de:** `itens_fila`, `blacklist`, `elegibilidade`, `pausas.lojas_formatadas`, `regras_db`, `seta_client`, `variaveis_template`, `timezone`, `utils/document`, `utils/phone`, `utils/valor`, `models`, `schemas`.
 - **É usado por:** `routers/uploads`.
 - **Violações encontradas:**
   - [x] Mais de uma responsabilidade: `importar_planilha` ainda é uma função longa (normaliza, valida, cria `QueueItem`, `Lead` e `InvalidPhoneRecord`), mas a montagem do item já vem de `itens_fila`.
