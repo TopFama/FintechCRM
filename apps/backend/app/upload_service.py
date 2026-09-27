@@ -50,7 +50,7 @@ def importar_planilha(
     invalid_phone_count = 0
     reasons: list[str] = []
 
-    # Celular da planilha inválido: tenta telefone2, telefone1 e telefone3 do
+    # Celular da planilha inválido: tenta telefone2, telefone1, telefone3 e telefone4 do
     # cadastro no SETA (mesma ordem da base de cobrança). Uma consulta só.
     codigos_sem_celular = sorted(
         {
@@ -128,7 +128,10 @@ def importar_planilha(
         if not is_valid_phone(celular_original):
             cadastro = telefones_seta.get(codigo_cliente) or {}
             alternativo, _campo = escolher_telefone(
-                telefone2=cadastro.get("telefone2"), telefone1=cadastro.get("telefone1"), telefone3=cadastro.get("telefone3")
+                telefone2=cadastro.get("telefone2"),
+                telefone1=cadastro.get("telefone1"),
+                telefone3=cadastro.get("telefone3"),
+                telefone4=cadastro.get("telefone4"),
             )
             if alternativo:
                 celular_original = alternativo
