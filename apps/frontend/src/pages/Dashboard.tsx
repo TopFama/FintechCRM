@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, ApiError, DashboardSummary, PagosJanela } from "../api";
+import { api, ApiError, DashboardPorFaixa, DashboardSummary, PagosJanela } from "../api";
 import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
@@ -339,7 +339,7 @@ function ResumoFila({
                   );
                   return (
                     // A linha inteira abre os envios da faixa; cada número abre o próprio relatório
-                    <tr key={row.faixa_id} className="linha-clicavel" onClick={() => navigate(link("envios"))}>
+                    <tr key={row.faixa} className="linha-clicavel" onClick={() => navigate(link("envios"))}>
                       <td className="cell-strong">
                         <Link to={link("envios")} className="link-celula" onClick={(e) => e.stopPropagation()}>
                           {row.faixa}
@@ -404,44 +404,41 @@ const DICAS: Record<"clientes_cobrados" | "frequencia" | "conversao" | "represen
   },
 };
 
-type LinhaPorFaixa = {
-  faixa: string;
-  faixa_id: string;
-  pending: number;
-  error: number;
-  sent: number;
-  clientes_cobrados: number;
-  // base da Frequência: mensagens e clientes que receberam, entre os cobrados
-  enviados_cobrados: number;
-  clientes_com_envio: number;
-  frequencia: number | null;
-  pagaram: number;
-  conversao: number | null;
-  representatividade: number | null;
-  valor_pago: number;
-};
+// Colunas numéricas que vêm do backend e somam na linha de total
+const CAMPOS_SOMAVEIS = [
+  "pending",
+  "error",
+  "sent",
+  "clientes_cobrados",
+  "enviados_cobrados",
+  "clientes_com_envio",
+  "pagaram",
+  "valor_pago",
+] as const;
+type CampoSomavel = (typeof CAMPOS_SOMAVEIS)[number];
+
+type LinhaPorFaixa = Pick<DashboardPorFaixa, "faixa" | "faixa_id"> &
+  Record<CampoSomavel, number> & {
+    frequencia: number | null;
+    conversao: number | null;
+    representatividade: number | null;
+  };
 type ColunaPorFaixa = Exclude<keyof LinhaPorFaixa, "faixa" | "faixa_id" | "enviados_cobrados" | "clientes_com_envio">;
 
 // Divisão por zero (faixa sem cliente cobrado) vira "—", não 0
 const razao = (a: number, b: number) => (b ? a / b : null);
 
-function linhasPorFaixa(porFaixa: DashboardSummary["por_faixa"]): LinhaPorFaixa[] {
+function linhasPorFaixa(porFaixa: DashboardPorFaixa[]): LinhaPorFaixa[] {
   const base = porFaixa.map((row) => ({
     faixa: row.faixa,
     faixa_id: row.faixa_id,
-    pending: row.pending,
-    error: row.error,
-    sent: row.sent,
-    clientes_cobrados: row.clientes_cobrados,
-    enviados_cobrados: row.enviados_cobrados,
-    clientes_com_envio: row.clientes_com_envio,
-    pagaram: row.pagaram,
-    valor_pago: Number(row.valor_pago),
+    ...(Object.fromEntries(CAMPOS_SOMAVEIS.map((c) => [c, Number(row[c] ?? 0)])) as Record<CampoSomavel, number>),
   }));
   // % Rep. sobre a soma das faixas (não clientes distintos), para fechar 100%
   const somaPagaram = base.reduce((s, r) => s + r.pagaram, 0);
   return base.map((r) => ({
     ...r,
+    // Frequência só entre quem recebeu mensagem; % Conv. sobre todos os cobrados
     frequencia: razao(r.enviados_cobrados, r.clientes_com_envio),
     conversao: razao(r.pagaram, r.clientes_cobrados),
     representatividade: razao(r.pagaram, somaPagaram),
@@ -449,28 +446,9 @@ function linhasPorFaixa(porFaixa: DashboardSummary["por_faixa"]): LinhaPorFaixa[
 }
 
 function totalPorFaixa(linhas: LinhaPorFaixa[]) {
-  const soma = (
-    campo:
-      | "pending"
-      | "error"
-      | "sent"
-      | "clientes_cobrados"
-      | "enviados_cobrados"
-      | "clientes_com_envio"
-      | "pagaram"
-      | "valor_pago"
-  ) =>
-    linhas.reduce((s, r) => s + r[campo], 0);
-  const t = {
-    pending: soma("pending"),
-    error: soma("error"),
-    sent: soma("sent"),
-    clientes_cobrados: soma("clientes_cobrados"),
-    enviados_cobrados: soma("enviados_cobrados"),
-    clientes_com_envio: soma("clientes_com_envio"),
-    pagaram: soma("pagaram"),
-    valor_pago: soma("valor_pago"),
-  };
+  const t = Object.fromEntries(
+    CAMPOS_SOMAVEIS.map((c) => [c, linhas.reduce((s, r) => s + r[c], 0)])
+  ) as Record<CampoSomavel, number>;
   return { ...t, frequencia: razao(t.enviados_cobrados, t.clientes_com_envio), conversao: razao(t.pagaram, t.clientes_cobrados) };
 }
 

@@ -71,7 +71,8 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
             models.Faixa.id, _nome_faixa(), models.QueueItem.faixa_atraso, models.QueueItem.status,
             func.count(models.QueueItem.id),
         )
-        # Só faixas com movimento no período (sem listar faixa zerada ou excluída)
+        # Só faixas com movimento no período (sem listar faixa zerada ou excluída);
+        # faixa só com cliente cobrado entra em _somar_cobrados_por_faixa
         .join(models.QueueItem, and_(models.QueueItem.faixa_id == models.Faixa.id, periodo))
         .group_by(models.Faixa.id, models.Faixa.name, models.QueueItem.faixa_atraso, models.QueueItem.status)
         .all()
@@ -119,6 +120,12 @@ def _somar_cobrados_por_faixa(db: Session, de: date | None, ate: date | None, po
     lead marcado como cobrado à mão não recebeu mensagem."""
 
     cobrados = pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=de, cobrado_ate=ate)
+    # Faixa com cliente cobrado no período e sem fila (lead marcado como
+    # cobrado à mão) também ganha linha, senão sairia dos totais
+    faltando = set(cobrados) - set(por_faixa)
+    if faltando:
+        for faixa_id, nome in db.query(models.Faixa.id, models.Faixa.name).filter(models.Faixa.name.in_(faltando)):
+            por_faixa[nome] = {"faixa": nome, "faixa_id": faixa_id}
     ini, fim = consultas_fila.limites_utc(de, ate)
     nome_faixa = _nome_faixa()
     cliente_cobrado = (

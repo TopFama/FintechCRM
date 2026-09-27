@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { IconInfo } from "../icons";
 
 const LARGURA = 260;
@@ -7,21 +8,46 @@ const DISTANCIA = 6;
 
 type Posicao = { top: number; left: number; largura: number };
 
-/** Ícone 🛈 ao lado do nome do indicador: passando o mouse ou focando,
- * mostra o que ele significa e a fórmula. O balão é `fixed` porque a tabela
- * fica num .table-wrap com overflow, que cortaria um balão absoluto. */
+// Uma dica aberta por vez: abrir outra fecha a anterior
+let aberta: { dono: object; fechar: () => void } | null = null;
+
+/** Ícone 🛈 ao lado do nome do indicador: passando o mouse, focando ou
+ * tocando, mostra o que ele significa e a fórmula. O balão vai num portal no
+ * <body> com `fixed`: fora do cabeçalho (não entra no nome da coluna para o
+ * leitor de tela) e fora do .table-wrap, cujo overflow o cortaria. */
 export default function DicaIndicador({ titulo, texto, formula }: { titulo: string; texto: string; formula: string }) {
   const id = useId();
   const botaoRef = useRef<HTMLButtonElement>(null);
   const balaoRef = useRef<HTMLSpanElement>(null);
   const [pos, setPos] = useState<Posicao | null>(null);
+  // Aberta por clique/toque/foco: não fecha quando o mouse sai do ícone. No
+  // Safari o clique não dá foco ao botão, então não dá para depender do foco.
+  const fixaRef = useRef(false);
+  const dono = useRef({}).current;
 
-  function abrir() {
+  function calcular(): Posicao | null {
     const r = botaoRef.current?.getBoundingClientRect();
-    if (!r) return;
+    if (!r) return null;
     const largura = Math.min(LARGURA, window.innerWidth - 2 * MARGEM);
     const left = Math.max(MARGEM, Math.min(r.left + r.width / 2 - largura / 2, window.innerWidth - largura - MARGEM));
-    setPos({ top: r.bottom + DISTANCIA, left, largura });
+    return { top: r.bottom + DISTANCIA, left, largura };
+  }
+
+  function abrir() {
+    if (aberta && aberta.dono !== dono) aberta.fechar();
+    aberta = { dono, fechar };
+    setPos(calcular());
+  }
+
+  // Rolagem/redimensionamento só movem a dica que ainda está aberta
+  function reposicionar() {
+    if (aberta?.dono === dono) setPos(calcular());
+  }
+
+  function fechar() {
+    fixaRef.current = false;
+    setPos(null);
+    if (aberta?.dono === dono) aberta = null;
   }
 
   // Depois de desenhado, com a altura real: sem espaço embaixo (cabeçalho
@@ -35,19 +61,27 @@ export default function DicaIndicador({ titulo, texto, formula }: { titulo: stri
     }
   }, [pos]);
 
+  const estaAberta = pos !== null;
   useEffect(() => {
-    if (!pos) return;
-    const fechar = () => setPos(null);
+    if (!estaAberta) return;
     const tecla = (e: KeyboardEvent) => e.key === "Escape" && fechar();
-    window.addEventListener("scroll", fechar, true);
-    window.addEventListener("resize", fechar);
-    window.addEventListener("keydown", tecla);
-    return () => {
-      window.removeEventListener("scroll", fechar, true);
-      window.removeEventListener("resize", fechar);
-      window.removeEventListener("keydown", tecla);
+    // Toque/clique fora do ícone e do balão fecha (no Safari não há blur)
+    const fora = (e: PointerEvent) => {
+      const alvo = e.target as Node;
+      if (!botaoRef.current?.contains(alvo) && !balaoRef.current?.contains(alvo)) fechar();
     };
-  }, [pos]);
+    // Rolar a página ou a tabela acompanha o ícone em vez de fechar
+    window.addEventListener("scroll", reposicionar, true);
+    window.addEventListener("resize", reposicionar);
+    window.addEventListener("keydown", tecla);
+    document.addEventListener("pointerdown", fora, true);
+    return () => {
+      window.removeEventListener("scroll", reposicionar, true);
+      window.removeEventListener("resize", reposicionar);
+      window.removeEventListener("keydown", tecla);
+      document.removeEventListener("pointerdown", fora, true);
+    };
+  }, [estaAberta]);
 
   return (
     <>
@@ -56,41 +90,46 @@ export default function DicaIndicador({ titulo, texto, formula }: { titulo: stri
         type="button"
         className="dica-botao"
         aria-label={`O que é ${titulo}`}
-        aria-describedby={pos ? id : undefined}
-        onMouseEnter={abrir}
-        // Aberta pelo foco (teclado ou clique) continua até o blur
-        onMouseLeave={(e) => document.activeElement !== e.currentTarget && setPos(null)}
-        onFocus={abrir}
-        onBlur={() => setPos(null)}
-        // Dentro de cabeçalho ordenável: o clique no 🛈 não reordena a tabela.
-        // Só abre (toque no celular, Enter no teclado); fecha no blur, ao sair
-        // o mouse, com Esc ou ao rolar a tela.
+        aria-describedby={id}
+        onMouseEnter={() => !pos && abrir()}
+        onMouseLeave={() => !fixaRef.current && fechar()}
+        onFocus={() => {
+          fixaRef.current = true;
+          abrir();
+        }}
+        onBlur={fechar}
+        // Dentro de cabeçalho ordenável: o clique no 🛈 não reordena a tabela
         onClick={(e) => {
           e.stopPropagation();
+          fixaRef.current = true;
           if (!pos) abrir();
         }}
       >
         <IconInfo width={14} height={14} />
       </button>
-      {pos && (
+      {createPortal(
+        // Sempre no DOM (escondido quando fechado) para o aria-describedby já
+        // valer quando o foco chega no ícone
         <span
           ref={balaoRef}
           id={id}
           role="tooltip"
           className="dica-balao"
-          style={{ top: pos.top, left: pos.left, width: pos.largura }}
-          // Sem isso o toque tira o foco do 🛈, o balão some antes do clique e o
-          // clique cai no cabeçalho (reordena) ou na linha de baixo (navega)
+          hidden={!pos}
+          style={pos ? { top: pos.top, left: pos.left, width: pos.largura } : undefined}
+          // Sem isso o toque tira o foco do 🛈 e o balão some antes do clique
           onMouseDown={(e) => e.preventDefault()}
-          // O balão fica dentro do cabeçalho e por cima das linhas: tocar nele só fecha
+          // O portal ainda propaga eventos pela árvore do React até o cabeçalho
+          // e a linha: tocar no balão só fecha, sem reordenar nem navegar
           onClick={(e) => {
             e.stopPropagation();
-            setPos(null);
+            fechar();
           }}
         >
           <span className="dica-texto">{texto}</span>
           <span className="dica-formula">{formula}</span>
-        </span>
+        </span>,
+        document.body
       )}
     </>
   );

@@ -1636,6 +1636,9 @@ button.dica-botao:active:not(:disabled) {
   text-align: left;
   cursor: default;
 }
+.dica-balao[hidden] {
+  display: none;
+}
 .dica-formula {
   font-size: 11.5px;
   opacity: 0.8;

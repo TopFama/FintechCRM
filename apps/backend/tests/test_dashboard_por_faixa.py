@@ -37,7 +37,8 @@ auth = {"Authorization": f"Bearer {res.json()['access_token']}"}
 
 db = SessionLocal()
 fa, fb, campanha = models.Faixa(name="FA"), models.Faixa(name="FB"), models.Faixa(name="CAMPANHA X", tipo="campanha")
-db.add_all([fa, fb, campanha])
+fc = models.Faixa(name="FC")  # só lead marcado como cobrado à mão, sem fila
+db.add_all([fa, fb, campanha, fc])
 db.flush()
 
 agora = datetime.utcnow()
@@ -70,6 +71,7 @@ db.add_all([
     lead("2", "FA"), lead("4", "FB"),
     lead("7", "FA"),  # marcado como cobrado à mão: sem mensagem
     lead("9", "FA", cobrado_em=agora - timedelta(days=5)),
+    lead("8", "FC"),
 ])
 db.commit()
 
@@ -79,7 +81,7 @@ with patch("app.services.pagamentos_service.clientes_que_pagaram", return_value=
     res = client.get(f"/dashboard/summary?de={hoje}&ate={hoje}", headers=auth)
 assert res.status_code == 200, res.text
 por_faixa = {r["faixa"]: r for r in res.json()["por_faixa"]}
-assert set(por_faixa) == {"FA", "FB"}, por_faixa
+assert set(por_faixa) == {"FA", "FB", "FC"}, por_faixa
 
 f = por_faixa["FA"]
 assert f["sent"] == 5 and f["error"] == 1, f
@@ -92,6 +94,11 @@ f = por_faixa["FB"]
 assert f["sent"] == 1 and f["pending"] == 1, f
 assert f["clientes_cobrados"] == 1 and f["enviados_cobrados"] == 1 and f["clientes_com_envio"] == 1, f
 assert f["pagaram"] == 0, f
+
+# Faixa sem fila no período, só com cliente cobrado: aparece com os cobrados
+f = por_faixa["FC"]
+assert f["faixa_id"] == fc.id and f["sent"] == 0 and f["pending"] == 0, f
+assert f["clientes_cobrados"] == 1 and f["enviados_cobrados"] == 0 and f["clientes_com_envio"] == 0, f
 
 db.close()
 print("OK")
