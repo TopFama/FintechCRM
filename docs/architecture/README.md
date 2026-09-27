@@ -1,8 +1,10 @@
 # Arquitetura do FintechCRM
 
 Pasta do review de responsabilidade por arquivo: o que cada arquivo faz hoje, onde ele deveria
-morar e o roteiro para chegar lá sem mudar comportamento. Fotografia tirada em 26/09/2026 sobre
-`main` no commit `f0a3726`.
+morar e o roteiro para chegar lá sem mudar comportamento. Fotografia inicial tirada em 26/09/2026
+sobre `main` no commit `f0a3726`; `churn.txt`, `tamanho.txt`, `co-change.txt`, `deps.svg` e os
+números de cobertura são dessa data. O texto (estrutura, fichas e backlog) é mantido em dia com o
+código a cada PR (ver AGENTS.md → "Documentação").
 
 | Arquivo | O que tem |
 |---|---|
@@ -23,13 +25,16 @@ morar e o roteiro para chegar lá sem mudar comportamento. Fotografia tirada em 
 - SQLAlchemy 2.0 (ORM, `Mapped[...]`) sobre Postgres 16, via psycopg 3. Migrations com Alembic.
 - Pydantic 2 para request/response (`app/schemas.py`) e pydantic-settings para o `.env`.
 - APScheduler dentro do mesmo processo da API (`app/worker.py`): ciclo de disparo a cada
-  `DISPATCH_WORKER_INTERVAL_SECONDS` e cópia dos pagamentos do SETA a cada minuto. Não há fila
-  externa (Celery, RQ): a "fila" é a tabela `queue_items`.
+  `DISPATCH_WORKER_INTERVAL_SECONDS`, conferência dos pagamentos do SETA a cada minuto (lê o SETA
+  só com alguém usando o CRM e no máximo a cada `PAGAMENTOS_SYNC_INTERVAL_SECONDS`) e cópia das
+  compras do SETA às 03:00 (GMT-3). Não há fila externa (Celery, RQ): a "fila" é a tabela
+  `cobranca_fila` (modelo `QueueItem`).
 - Redis: cache das consultas pesadas ao SETA e do Dashboard (`app/cache.py`).
 - Autenticação por JWT em cookie httpOnly (python-jose), senha com bcrypt (passlib), tokens
   revogados em tabela e limite de tentativas por conta e por dispositivo.
 - Segredos no banco cifrados com Fernet (`app/crypto.py`, `ENCRYPTION_KEY`).
 - Planilhas só em .xlsx, com openpyxl (sem pandas, sem CSV).
+- Imagem de cabeçalho de template conferida/comprimida com Pillow (`app/utils/imagem.py`).
 
 **Frontend** (`apps/frontend`): React 18 + TypeScript + Vite, React Router 7, CSS próprio com
 variáveis (`styles.css`), sem biblioteca de UI nem de ícones.
@@ -40,8 +45,8 @@ variáveis (`styles.css`), sem biblioteca de UI nem de ícones.
 |---|---|---|
 | Meta WhatsApp Cloud API (Graph API) | `meta_client.py` | Templates, números, envio de template, mídia, pricing analytics |
 | Chatwoot | `chatwoot_client.py` | Envio pelo inbox do Chatwoot quando o número tem inbox vinculada |
-| SETA (ERP, Postgres de produção) | `seta_client.py` | Base de cobrança, parcelas, SPC, baixas. Só `SELECT`, conexão read-only |
-| TopFamaRenegocie (HTTP interno) | `remarketing.py` (inline) | Clientes do remarketing |
+| SETA (ERP, Postgres de produção) | `seta_client.py` | Base de cobrança, parcelas, SPC, baixas e compras (faixa de compra). Só `SELECT`, conexão read-only |
+| TopFamaRenegocie (HTTP interno) | `remarketing.py` (inline; `routers/remarketing.py` só captura `httpx.HTTPError`) | Clientes do remarketing |
 | Google Sheets (OAuth2) | `google_client.py` | Planilha de lojas |
 | Câmbio USD→BRL | `cambio.py` | AwesomeAPI, PTAX do BCB e open.er-api, com fallback |
 
@@ -52,22 +57,24 @@ Não há e-mail nem SMS: o único canal de envio é WhatsApp (Meta direta ou via
 ```
 apps/backend/app/
   main.py, config.py, database.py        bootstrap, settings, engine
-  models.py (732 linhas)                 todas as tabelas
+  models.py (761 linhas)                 todas as tabelas
   schemas.py (1033 linhas)               todos os modelos Pydantic
   deps.py, security.py, rate_limit.py    autenticação
-  routers/        20 arquivos             uma área por arquivo (reports.py tem 1080 linhas)
-  services/       5 arquivos              pagamentos, efetividade, custo do WhatsApp
-  utils/          5 arquivos              telefone, documento, planilhas, SPC
-  *.py na raiz    33 módulos              serviços informais: fila_automatica, dispatch_service,
-                                          pausas, campanhas, remarketing, cobranca_base, lojas,
-                                          variaveis_template, clientes das integrações…
+  routers/        20 routers + comum.py   uma área por arquivo (reports.py tem 858 linhas);
+                                          comum.py = peças HTTP compartilhadas, sem rota
+  services/       6 arquivos              pagamentos, compras, efetividade, custo do WhatsApp
+  utils/          7 arquivos              telefone, documento, planilhas, xlsx, leads, SPC, imagem
+  *.py na raiz    38 módulos              serviços informais: fila_automatica, dispatch_service,
+                                          elegibilidade, itens_fila, upload_service, consultas_fila,
+                                          blacklist, pausas, campanhas, remarketing, cobranca_base,
+                                          lojas, variaveis_template, clientes das integrações…
   alembic/                               migrations
-apps/backend/tests/   10 scripts de validação (não é pytest: cada um imprime OK)
+apps/backend/tests/   13 scripts de validação + rodar_todos.sh (não é pytest: cada um imprime OK)
 apps/frontend/src/
-  api.ts (1269 linhas)                   todo o acesso ao backend e todos os tipos
+  api.ts (1272 linhas)                   todo o acesso ao backend e todos os tipos
   pages/          10 páginas              Relatorios.tsx tem 871 linhas
   components/     config/, dashboard/ e componentes soltos
-e2e/                                     Playwright: 172 cenários contra ambiente de teste
+e2e/                                     Playwright: 173 cenários (+ login de setup) contra ambiente de teste
 ```
 
 A camada de serviço existe, mas de forma informal: parte está em `services/`, a maior parte em
@@ -76,7 +83,7 @@ módulos soltos na raiz de `app/`. Não existe camada de repositório: routers e
 
 ## Como os testes rodam hoje
 
-**Backend**: 10 scripts em `apps/backend/tests/`, cada um sobe o app de verdade (migrations
+**Backend**: 13 scripts em `apps/backend/tests/`, cada um sobe o app de verdade (migrations
 incluídas) contra um Postgres local e imprime `OK`. Precisam de Postgres UTF-8 em
 `localhost:15432` com senha `t`, e cada script usa o próprio banco (nome no `DATABASE_URL` do
 arquivo), que deve ser recriado antes:
@@ -86,7 +93,9 @@ cd apps/backend
 PYTHONPATH=. .venv/bin/python tests/test_regras.py
 ```
 
-Em 26/09/2026 os 10 passam. **Cobertura de linhas do pacote `app` só com esses scripts: 60%**
+Todos de uma vez, recriando cada banco: `./tests/rodar_todos.sh` (é o que o CI roda).
+
+Em 26/09/2026 os 10 scripts que existiam passavam. **Cobertura de linhas do pacote `app` só com esses scripts: 60%**
 (6896 instruções, 2728 não executadas; medido com `coverage run -p --source=app` em cada script
 e `coverage combine`). Os pontos mais descobertos são justamente os de maior risco:
 
@@ -102,7 +111,7 @@ e `coverage combine`). Os pontos mais descobertos são justamente os de maior ri
 | `routers/reports.py` | 61% |
 | `dispatch_service.py` | 80% |
 
-**E2E**: `e2e/` com Playwright, 172 cenários que cobrem essas telas pelo navegador (ver
+**E2E**: `e2e/` com Playwright, 173 cenários (mais o login de setup) que cobrem essas telas pelo navegador (ver
 `e2e/README.md`). Não entram na medição de cobertura acima.
 
 **CI**: no momento da análise só existia `security-scan.yml` (npm audit e pip-audit). A Fase 5

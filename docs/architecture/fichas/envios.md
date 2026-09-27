@@ -1,90 +1,92 @@
 # Fichas — Envios
 
-Fila (`queue_items`), disparo, pausa/parada, blacklist e upload de planilha na faixa. É o domínio
-que carrega a regra fixa de **uma comunicação por cliente por dia**, então é o primeiro alvo.
-Ordenado do arquivo com mais violações para o com menos. Churn = commits no histórico inteiro
-(desde 18/09/2026).
+Fila (`cobranca_fila`, modelo `QueueItem`), disparo, pausa/parada, blacklist e upload de planilha
+na faixa. É o domínio que carrega a regra fixa de **uma comunicação por cliente por dia**, então
+foi o primeiro alvo. Fichas revisadas em 27/09/2026, depois dos PRs #3 a #10; churn e cobertura
+são os da fotografia de 26/09 (histórico desde 18/09/2026).
 
-## Achado central: "pode entrar?" e "pode sair?" estão espalhados
+## Achado central (resolvido): "pode entrar?" e "pode sair?" estavam espalhados
 
-A decisão de um cliente entrar na fila e a de uma mensagem sair hoje são feitas em vários lugares,
-cada um com a sua cópia:
+Em 26/09 cada caminho de envio tinha a sua cópia das checagens de entrada e saída, e as três de
+saída estavam escritas dentro do laço do worker. O backlog #4 (PR #6) juntou tudo em
+`elegibilidade.py`, e o PR #10 acrescentou a trava de entrada. Onde cada checagem mora hoje:
 
 | Checagem | Onde acontece hoje |
 |---|---|
-| Pendente/reservado ou cobrado hoje (entrada) | `fila_automatica.clientes_bloqueados_hoje`, chamada por `enfileirar_leads`, `campanhas.executar`, `remarketing.enfileirar`, `routers/uploads.upload_planilha` |
-| Cobrado hoje (lista da tela) | `fila_automatica.cobrados_hoje` via `routers/cobranca.sem_cobrados_hoje` |
-| Blacklist (entrada) | `cobranca_base.buscar_base` (na consulta ao SETA), `remarketing.selecionar`, `routers/uploads` (classe `Blacklist`), `routers/leads` |
-| Pausa (saída) | `worker.run_dispatch_cycle`: `retencao.faixas`, `~retencao.condicao()` na busca e `Retencao.carregar(db).retido(item)` antes de cada envio; `campanhas.campanhas_para_hoje` lê pausas de faixa de novo |
-| Blacklist (saída) | `worker.run_dispatch_cycle` com `Blacklist(db).contem` |
-| Cobrado hoje (saída) | `worker.run_dispatch_cycle` com `ja_cobrado_hoje` |
+| Pendente/reservado ou cobrado hoje (entrada) | `elegibilidade.clientes_bloqueados_hoje` (trava a entrada com `travar_entrada_na_fila`, lock do Postgres até o commit), chamada por `fila_automatica.enfileirar_leads`/`enfileirar_clientes`, `campanhas.executar`, `remarketing.enfileirar` e `upload_service.importar_planilha` |
+| Cobrado hoje (lista da tela) | `elegibilidade.sem_cobrados_hoje` (usa `cobrados_hoje`), chamada por `routers/cobranca` e `routers/leads` |
+| Blacklist (entrada) | classe `blacklist.Blacklist`: `cobranca_base.buscar_base` (na consulta ao SETA), `remarketing`, `upload_service`, `routers/leads` |
+| Pausa, blacklist e cobrado hoje (saída) | `elegibilidade.conferir_saida`, chamada pelo `worker.run_dispatch_cycle` antes de cada envio; o worker ainda filtra a busca de pendentes por `retencao.faixas`/`retencao.condicao()`, e `campanhas.campanhas_para_hoje` relê as pausas de faixa |
 | Janela/horário | `worker._within_schedule_window`, `_due`, `_na_janela_diaria` |
-
-Hoje funciona (conferido em 25/09 e no code review de 26/09), mas qualquer caminho novo de envio
-precisa lembrar de chamar cada checagem, e as três checagens de saída estão escritas dentro do
-laço do worker. É o item #4 do backlog: um módulo `elegibilidade` com `pode_entrar(...)` e
-`motivo_para_nao_sair(item)`, chamado por todos os caminhos.
 
 ---
 
+### `apps/backend/app/elegibilidade.py`
+- **Domínio:** Envios
+- **Camada:** aplicação (regra fixa de uma comunicação por cliente por dia)
+- **Responsabilidade (1 frase, sem "e"):** dizer quem pode entrar na fila e quem pode sair agora.
+- **Depende de:** `models`, `blacklist`, `pausas.Retencao`, `timezone`.
+- **É usado por:** `worker`, `fila_automatica`, `campanhas`, `remarketing`, `upload_service`, `routers/cobranca`, `routers/leads`.
+- **Violações encontradas:** nenhuma.
+- **Linhas:** 128
+
+### `apps/backend/app/upload_service.py`
+- **Domínio:** Envios
+- **Camada:** aplicação
+- **Responsabilidade (1 frase, sem "e"):** importar as linhas da planilha na fila de uma faixa da régua.
+- **Motivos para mudar:** formato da planilha, validação por linha (código, nome, CPF, telefone, valor zerado), criação de Lead, telefone inválido.
+- **Depende de:** `itens_fila`, `blacklist`, `elegibilidade`, `pausas.lojas_formatadas`, `regras_db`, `seta_client`, `variaveis_template`, `timezone`, `utils/document`, `utils/phone`, `models`, `schemas`.
+- **É usado por:** `routers/uploads`.
+- **Violações encontradas:**
+  - [x] Mais de uma responsabilidade: `importar_planilha` ainda é uma função longa (normaliza, valida, cria `QueueItem`, `Lead` e `InvalidPhoneRecord`), mas a montagem do item já vem de `itens_fila`.
+- **Linhas:** 332
+- **Nota de comportamento:** o valor em atraso zerado do cadastro cai no valor da planilha; se ainda assim o valor é zero, a linha vira item de erro "Valor zerado" (commit `28ab550`, 27/09/2026).
+
+### `apps/backend/app/itens_fila.py`
+- **Domínio:** Envios
+- **Camada:** aplicação
+- **Responsabilidade (1 frase, sem "e"):** montar o item da fila a partir das fontes de variável de cada template ativo da faixa.
+- **Depende de:** `models`, `variaveis_template`, `utils/leads_xlsx`.
+- **É usado por:** `fila_automatica`, `upload_service`, `routers/uploads`.
+- **Violações encontradas:** nenhuma (é o ponto único do backlog #1, PR #7).
+- **Linhas:** 108
+
 ### `apps/backend/app/routers/uploads.py`
 - **Domínio:** Envios
-- **Camada:** interface (com aplicação dentro)
+- **Camada:** interface
 - **Responsabilidade (1 frase, sem "e"):** receber a planilha de clientes de uma faixa.
-- **Motivos para mudar:** formato da planilha, regra de variável, regra de bloqueio do dia, criação de Lead, telefone inválido.
-- **Depende de:** `fila_automatica` (`Blacklist`, `clientes_bloqueados_hoje`), `variaveis_template`, `regras_db`, `pausas`, `utils/*`, `models`.
-- **É usado por:** `main`; `routers/campanhas` e `routers/lojas` importam `_ler_planilha_limitada` daqui.
-- **Violações encontradas:**
-  - [x] Mais de uma responsabilidade: `upload_planilha` tem ~350 linhas (linhas 96–443) que leem a planilha, validam mapeamento, normalizam cliente, resolvem variável, aplicam bloqueio do dia e blacklist, criam `QueueItem`, `Lead` e `InvalidPhoneRecord`.
-  - [x] Regra de negócio fora do serviço: resolução de variáveis e montagem do `variables_json` (achatado ou por template) repetem o que `fila_automatica.enfileirar_clientes` faz.
-  - [x] SQL/ORM fora do repository: queries de `Lead`, `Faixa` e inserts direto no router.
-  - [ ] Acesso direto a dados de outro domínio
-  - [ ] Chamada direta a provedor externo sem interface
-  - [ ] Dependência circular
-  - [x] Duplicação de regra existente em outro arquivo: montagem do item da fila (4 cópias: aqui, `enfileirar_clientes`, `enfileirar_leads`, `reaplicar_variaveis`).
-  - [x] Utilitário de outros routers morando aqui (`_ler_planilha_limitada`).
-- **Achado de comportamento (não é refatoração):** a variável ligada à coluna de valor da planilha usa o "valor em atraso com juros" do Lead do cliente naquela faixa, quando existe. O Lead que o próprio upload cria para quem só está na planilha não tem parcelas, então num upload seguinte do mesmo cliente nessa faixa o valor sai "0,00" em vez do valor da planilha (fotografado em `tests/test_caracterizacao_envios.py`, cenário 10). Fica como pergunta ao usuário, fora dos PRs de refatoração.
-- **Churn:** 28 commits | **Linhas:** 464 | **Cobertura:** 70%
-- **Ação sugerida:** Extract Module: `upload_planilha` passa a só ler a requisição e chamar um serviço `fila_automatica.enfileirar_planilha(...)`; a montagem do item vai para a função única do backlog #1. `_ler_planilha_limitada` vai para `utils/spreadsheet.py`.
-- **Esforço:** M | **Risco:** médio (caminho de envio; coberto por `test_valor_e_exportacao.py` e e2e 10)
+- **Depende de:** `upload_service`, `itens_fila`, `variaveis_template`, `utils/spreadsheet`, `routers/comum.ler_planilha_limitada`, `models`, `schemas`.
+- **É usado por:** `main`.
+- **Violações encontradas:** as de 26/09 (função de ~350 linhas no router, montagem duplicada do item, utilitário usado por outros routers) foram resolvidas pelos backlogs #1 e #2: `upload_planilha` lê a requisição, valida o mapeamento e chama `upload_service.importar_planilha`.
+- **Churn:** 28 commits | **Linhas:** 167 | **Cobertura:** 70% (medida em 26/09)
+- **Achado de comportamento:** resolvido em 27/09/2026 (commit `28ab550`), ver backlog → "Fora do escopo da refatoração".
 
 ### `apps/backend/app/worker.py`
 - **Domínio:** Envios
 - **Camada:** interface (agendamento) com aplicação dentro
 - **Responsabilidade (1 frase, sem "e"):** decidir quando cada rotina roda.
-- **Motivos para mudar:** horário/janela, rotinas do dia (extração, remarketing, campanhas, régua pós-campanha, expiração), regras de saída do item, espera após falha, sincronização de pagamentos.
-- **Depende de:** `campanhas`, `remarketing`, `cobranca_base`, `leads_service`, `fila_automatica`, `pausas`, `dispatch_service`, `seta_client`, `services/pagamentos_seta` (13 módulos internos).
+- **Motivos para mudar:** horário/janela, rotinas do dia (extração, remarketing, campanhas, régua pós-campanha, expiração), espera após falha, sincronização de pagamentos, cópia das compras do SETA.
+- **Depende de:** `campanhas`, `remarketing`, `cobranca_base` (import local), `leads_service`, `fila_automatica`, `elegibilidade`, `blacklist`, `pausas`, `dispatch_service`, `seta_client`, `services/pagamentos_seta`, `services/compras_seta`, `timezone`, `config`, `database`, `models`.
 - **É usado por:** `main`.
 - **Violações encontradas:**
-  - [x] Mais de uma responsabilidade: agenda, orquestra as rotinas do dia e decide se cada item pode sair.
-  - [x] Regra de negócio fora do serviço: pausa, blacklist e "já cobrado hoje" são checados dentro do laço de `run_dispatch_cycle`.
+  - [x] Mais de uma responsabilidade: agenda e orquestra as rotinas do dia (`_rotinas_do_dia`, backlog #11).
   - [x] SQL/ORM fora do repository: busca de `DispatchConfig` e de pendentes inline.
-  - [ ] Acesso direto a dados de outro domínio
-  - [ ] Chamada direta a provedor externo sem interface
   - [x] Dependência circular (contornada): `import` local de `campanhas`, `remarketing` e `cobranca_base` "para evitar ciclo".
   - [x] Duplicação de regra: janela de dia de disparo calculada em 4 funções parecidas (`_within_schedule_window`, `_deve_extrair_leads`, `_na_janela_diaria`, e `fila_automatica.ultimo_fim_de_janela`).
-- **Churn:** 22 | **Linhas:** 383
-- **Ação sugerida:** (1) checagens de saída viram `elegibilidade.motivo_para_nao_sair(db, item)` (backlog #4); (2) `_rotinas_do_dia` vai para `rotinas_diarias.py`, deixando no worker só o agendamento (backlog #11); (3) cálculo de janela vai para um `janela_disparo.py` puro.
+  - Resolvido: as checagens de saída saíram do laço para `elegibilidade.conferir_saida` (backlog #4).
+- **Churn:** 22 | **Linhas:** 396
+- **Ação sugerida:** `_rotinas_do_dia` vai para `rotinas_diarias.py`, deixando no worker só o agendamento (backlog #11); cálculo de janela vai para um `janela_disparo.py` puro.
 - **Esforço:** M | **Risco:** alto (é o disparo; `test_worker_schedule.py` cobre só a janela)
 
 ### `apps/backend/app/fila_automatica.py`
 - **Domínio:** Envios
 - **Camada:** aplicação
 - **Responsabilidade (1 frase, sem "e"):** colocar clientes na fila da faixa certa.
-- **Motivos para mudar:** regra de bloqueio do dia, blacklist, resolução de variáveis, formato do item, expiração no fim da janela, reaplicar variáveis.
-- **Depende de:** `models`, `pausas`, `regras_db`, `routers.blacklist` (!), `variaveis_template`, `utils/*`, `timezone`.
-- **É usado por:** `worker`, `campanhas`, `remarketing`, `routers/uploads`, `routers/leads`, `routers/cobranca`, `routers/pausas`.
-- **Violações encontradas:**
-  - [x] Mais de uma responsabilidade: bloqueio do dia, blacklist, montagem de item, expiração da fila e reaplicar variáveis.
-  - [ ] Regra de negócio fora do domínio
-  - [ ] SQL/ORM fora do repository (aceito: é o serviço do domínio)
-  - [x] Serviço importando router: `from .routers.blacklist import codigos_bloqueados`.
-  - [ ] Chamada direta a provedor externo sem interface
-  - [ ] Dependência circular
-  - [x] Duplicação: `enfileirar_clientes` e `enfileirar_leads` repetem o laço de resolver variáveis e criar item; `reaplicar_variaveis` tem uma terceira versão; `_utc_ingenuo`/`inicio_hoje_utc` repetem helpers de fuso de outros 6 arquivos.
-- **Churn:** 13 | **Linhas:** 428 | **Cobertura:** 37%
-- **Ação sugerida:** dividir em `elegibilidade.py` (bloqueio do dia, blacklist, pausa: backlog #4), `fila_automatica.py` (montagem única do item: backlog #1) e manter a expiração aqui. `codigos_bloqueados` vem de `blacklist.py` (backlog #8).
-- **Esforço:** M | **Risco:** alto (regra de 1 mensagem por dia)
+- **Motivos para mudar:** entrada de leads/clientes na fila, expiração no fim da janela, descarte de pendentes, reaplicar variáveis.
+- **Depende de:** `models`, `itens_fila`, `elegibilidade`, `pausas.lojas_formatadas`, `regras_db`, `variaveis_template`, `utils/leads_xlsx`, `utils/phone`, `timezone`.
+- **É usado por:** `worker`, `campanhas`, `remarketing`, `routers/leads`, `routers/pausas`, `routers/reports` (descartar fila).
+- **Violações encontradas:** as de 26/09 (serviço importando `routers.blacklist`, montagem do item repetida, helpers de fuso e de bloqueio do dia aqui dentro) foram resolvidas pelos backlogs #1, #4, #8 e #10. Restam `enfileirar_clientes`, `enfileirar_leads`, `reaplicar_variaveis`, `ultimo_fim_de_janela`, `expirar_nao_enviados` e `descartar_pendentes`.
+- **Churn:** 13 | **Linhas:** 287 | **Cobertura:** 37% (medida em 26/09)
 
 ### `apps/backend/app/dispatch_service.py`
 - **Domínio:** Envios
@@ -110,13 +112,13 @@ laço do worker. É o item #4 do backlog: um módulo `elegibilidade` com `pode_e
 - **Camada:** interface
 - **Responsabilidade:** expor pausar, retomar e parar por cliente, faixa e loja.
 - **Motivos para mudar:** telas de pausa, novos escopos.
-- **Depende de:** `pausas`, `fila_automatica.reaplicar_variaveis`, `regras_db`, `models`.
+- **Depende de:** `pausas` (serviço de pausar/retomar/parar), `fila_automatica.reaplicar_variaveis`, `regras_db`, `models`.
 - **É usado por:** `main`.
 - **Violações encontradas:**
   - [x] SQL/ORM no router: `opcoes_fila` e `_valor_legivel` consultam fila, faixa e lojas direto.
   - [ ] demais: não.
 - **Autorização:** todas as rotas usam `get_current_user` (qualquer usuário logado pausa/para), igual ao resto do app; a regra está num lugar só (`deps.py`), não duplicada.
-- **Churn:** 2 | **Linhas:** 200 | **Cobertura:** 27%
+- **Churn:** 2 | **Linhas:** 188 | **Cobertura:** 27% (medida em 26/09)
 - **Ação sugerida:** nenhuma urgente; as consultas de opções podem ir para a camada de leitura da fila (backlog #3).
 - **Esforço:** P | **Risco:** baixo
 
@@ -124,18 +126,17 @@ laço do worker. É o item #4 do backlog: um módulo `elegibilidade` com `pode_e
 - **Domínio:** Envios
 - **Camada:** interface
 - **Responsabilidade:** expor o cadastro da blacklist.
-- **Violações encontradas:**
-  - [x] Regra de negócio no router consumida por serviços: `codigos_bloqueados` é importada por `fila_automatica`, `cobranca_base`, `remarketing` e `routers/leads`. Serviço depender de router inverte a camada e é o motivo de alguns imports locais "para evitar ciclo".
-- **Churn:** 2 | **Linhas:** 97
-- **Ação sugerida:** mover `codigos_bloqueados` e a classe `Blacklist` para `app/blacklist.py` (backlog #8).
-- **Esforço:** P | **Risco:** baixo
+- **Violações encontradas:** nenhuma. A de 26/09 (serviços importando `codigos_bloqueados` do router) foi resolvida pelo backlog #8 (PR #3): `codigos_bloqueados` e a classe `Blacklist` moram em `app/blacklist.py` (29 linhas), usado por `worker`, `elegibilidade`, `cobranca_base`, `remarketing`, `upload_service` e `routers/leads`.
+- **Churn:** 2 | **Linhas:** 89
 
 ### `apps/backend/app/pausas.py`
 - **Domínio:** Envios
 - **Camada:** domínio + aplicação
-- **Responsabilidade:** dizer quais itens estão retidos por pausa ativa.
+- **Responsabilidade:** retenção por pausa ativa e pausar/retomar/parar por escopo (cliente, faixa, loja).
+- **Depende de:** `models`, `timezone`, `utils/document`.
+- **É usado por:** `worker`, `elegibilidade`, `fila_automatica`, `upload_service`, `campanhas`, `consultas_fila`, `routers/pausas`, `routers/campanhas`, `routers/reports`.
 - **Violações encontradas:**
-  - [ ] nenhuma grave. `lojas_formatadas` (formato `,01,07,`) é usado por `fila_automatica` e mora aqui por acaso.
-- **Churn:** 1 | **Linhas:** 126 | **Cobertura:** 67%
-- **Ação sugerida:** passa a ser usado só por `elegibilidade` e pelas rotas de pausa; `lojas_formatadas` pode ir para `utils`.
+  - [ ] nenhuma grave. `lojas_formatadas` (formato `,01,07,`) é usado por `fila_automatica` e `upload_service` e mora aqui por acaso.
+- **Churn:** 1 | **Linhas:** 155 | **Cobertura:** 67% (medida em 26/09)
+- **Ação sugerida:** `lojas_formatadas` pode ir para `utils`.
 - **Esforço:** P | **Risco:** baixo

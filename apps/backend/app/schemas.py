@@ -201,6 +201,33 @@ class TemplateOut(BaseModel):
     variables: list[TemplateVariableOut] = []
 
 
+class ImagemPendenteOut(BaseModel):
+    """Imagem que precisou ser comprimida para caber no limite da Meta: fica
+    guardada à parte até o usuário aprovar (ou descartar) a versão otimizada."""
+
+    token: str
+    url_previa: str
+    tamanho_original: int
+    tamanho_final: int
+    largura_original: int
+    altura_original: int
+    largura: int
+    altura: int
+    formato_original: str
+    formato_final: str
+    qualidade: int | None
+
+
+class TemplateImagemOut(BaseModel):
+    template: TemplateOut
+    # None: a imagem coube como veio e já está no template
+    pendente: ImagemPendenteOut | None = None
+
+
+class ConfirmarImagemIn(BaseModel):
+    token: str
+
+
 class CampoClienteOut(BaseModel):
     campo: str
     rotulo: str

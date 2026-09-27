@@ -1,10 +1,25 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
-import { api, CampoCliente, Template, WhatsappNumber } from "../../api";
+import { api, CampoCliente, ImagemPendente, Template, urlImagemTemplate, WhatsappNumber } from "../../api";
 import SortableTh from "../SortableTh";
-import { IconAlert, IconEye, IconPlus, IconTemplate } from "../../icons";
+import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTemplate } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 
 type ColunaTemplate = "name" | "meta_template_name" | "status";
+
+// Imagem que precisou ser comprimida: o usuário vê a original ao lado da
+// otimizada e decide se usa; só depois de aprovar ela entra no template.
+type ImagemEmValidacao = {
+  templateId: string;
+  templateNome: string;
+  urlOriginal: string;
+  pendente: ImagemPendente;
+};
+
+function formatarTamanho(bytes: number): string {
+  return bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
 // Templates de WhatsApp aprovados na Meta, usados pelas faixas de cobrança —
 // vive em Configurações porque é infraestrutura compartilhada entre faixas,
@@ -22,6 +37,10 @@ export default function TemplatesCard() {
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [selectedWabaId, setSelectedWabaId] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [emValidacao, setEmValidacao] = useState<ImagemEmValidacao | null>(null);
+  const [decidindo, setDecidindo] = useState(false);
+  const [subindoImagem, setSubindoImagem] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -129,12 +148,63 @@ export default function TemplatesCard() {
     }
   }
 
-  async function handleImageUpload(id: string, file: File) {
+  function fecharValidacao() {
+    if (emValidacao) URL.revokeObjectURL(emValidacao.urlOriginal);
+    setEmValidacao(null);
+  }
+
+  async function handleImageUpload(t: Template, file: File) {
+    setError(null);
+    setAviso(null);
+    setSubindoImagem(t.id);
     try {
-      await api.uploadTemplateImage(id, file);
+      const resultado = await api.uploadTemplateImage(t.id, file);
+      if (resultado.pendente) {
+        fecharValidacao();
+        setEmValidacao({
+          templateId: t.id,
+          templateNome: t.name,
+          urlOriginal: URL.createObjectURL(file),
+          pendente: resultado.pendente,
+        });
+      }
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao subir imagem");
+    } finally {
+      setSubindoImagem(null);
+    }
+  }
+
+  async function aprovarImagem() {
+    if (!emValidacao) return;
+    setDecidindo(true);
+    try {
+      await api.confirmarImagemOtimizada(emValidacao.templateId, emValidacao.pendente.token);
+      setAviso(`Imagem otimizada salva no template "${emValidacao.templateNome}".`);
+      fecharValidacao();
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao salvar a imagem");
+      fecharValidacao();
+    } finally {
+      setDecidindo(false);
+    }
+  }
+
+  async function recusarImagem() {
+    if (!emValidacao) return;
+    setDecidindo(true);
+    try {
+      await api.descartarImagemOtimizada(emValidacao.templateId, emValidacao.pendente.token);
+    } catch {
+      // descartar é só limpeza: a versão pendente expira sozinha
+    } finally {
+      setError(
+        `Imagem não salva no template "${emValidacao.templateNome}". Para usar a imagem sem compressão, é necessário subir uma imagem de até 5 MB (.jpg ou .png).`
+      );
+      fecharValidacao();
+      setDecidindo(false);
     }
   }
 
@@ -144,6 +214,52 @@ export default function TemplatesCard() {
         <div className="error-box">
           <IconAlert width={16} height={16} />
           <span>{error}</span>
+        </div>
+      )}
+      {aviso && (
+        <div className="success-box">
+          <IconCheckCircle width={16} height={16} />
+          <span>{aviso}</span>
+        </div>
+      )}
+
+      {emValidacao && (
+        <div className="card" aria-labelledby="validar-imagem-titulo">
+          <div className="card-header">
+            <h3 id="validar-imagem-titulo">Validar imagem otimizada: {emValidacao.templateNome}</h3>
+          </div>
+          <p className="card-subtitle">
+            A imagem enviada precisou ser otimizada para o que o WhatsApp aceita (até 5 MB, .jpg ou .png) e ficou
+            com {formatarTamanho(emValidacao.pendente.tamanho_final)} (era{" "}
+            {formatarTamanho(emValidacao.pendente.tamanho_original)}). Confira se ela ficou boa: ela só vai para o
+            template se você aprovar.
+          </p>
+          <div className="comparacao-imagens">
+            <figure>
+              <img src={emValidacao.urlOriginal} alt="Imagem original enviada" />
+              <figcaption>
+                Original · {emValidacao.pendente.formato_original} · {emValidacao.pendente.largura_original}×
+                {emValidacao.pendente.altura_original} · {formatarTamanho(emValidacao.pendente.tamanho_original)}
+              </figcaption>
+            </figure>
+            <figure>
+              <img src={urlImagemTemplate(emValidacao.pendente.url_previa)} alt="Imagem otimizada" />
+              <figcaption>
+                Otimizada · {emValidacao.pendente.formato_final}
+                {emValidacao.pendente.qualidade != null && ` (qualidade ${emValidacao.pendente.qualidade})`} ·{" "}
+                {emValidacao.pendente.largura}×{emValidacao.pendente.altura} ·{" "}
+                {formatarTamanho(emValidacao.pendente.tamanho_final)}
+              </figcaption>
+            </figure>
+          </div>
+          <div className="actions-row">
+            <button onClick={aprovarImagem} disabled={decidindo}>
+              {decidindo ? "Salvando..." : "Usar imagem otimizada"}
+            </button>
+            <button className="secondary" onClick={recusarImagem} disabled={decidindo}>
+              Não usar
+            </button>
+          </div>
         </div>
       )}
 
@@ -307,6 +423,7 @@ export default function TemplatesCard() {
                         {t.header_type === "image" ? (
                           <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
                             {t.image_url && <span className="badge sent">enviada</span>}
+                            {subindoImagem === t.id && <span className="text-muted">Enviando e otimizando…</span>}
                             {/* trocar: imagem antiga (sem link público) ou arte nova */}
                             <label style={{ cursor: "pointer", color: "var(--color-primary)", fontWeight: 600 }}>
                               {t.image_url ? "trocar" : "subir"}
@@ -317,7 +434,7 @@ export default function TemplatesCard() {
                                 onChange={(e) => {
                                   const arquivo = e.target.files?.[0];
                                   e.target.value = "";
-                                  if (arquivo) handleImageUpload(t.id, arquivo);
+                                  if (arquivo) handleImageUpload(t, arquivo);
                                 }}
                               />
                             </label>

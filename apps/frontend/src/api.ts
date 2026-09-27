@@ -204,8 +204,12 @@ export const api = {
   uploadTemplateImage: (id: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return request<Template>(`/templates/${id}/image`, { method: "POST", body: form });
+    return request<TemplateImagemResultado>(`/templates/${id}/image`, { method: "POST", body: form });
   },
+  confirmarImagemOtimizada: (id: string, token: string) =>
+    request<Template>(`/templates/${id}/image/confirmar`, { method: "POST", body: JSON.stringify({ token }) }),
+  descartarImagemOtimizada: (id: string, token: string) =>
+    request<void>(`/templates/${id}/image/pendente?token=${encodeURIComponent(token)}`, { method: "DELETE" }),
 
   listFaixas: () => request<Faixa[]>("/faixas"),
   getFaixa: (id: string) => request<Faixa>(`/faixas/${id}`),
@@ -577,6 +581,27 @@ export interface CampoCliente {
   campo: string;
   rotulo: string;
   exemplo: string;
+}
+
+/** Versão comprimida da imagem, esperando o usuário aprovar ou descartar. */
+export interface ImagemPendente {
+  token: string;
+  url_previa: string;
+  tamanho_original: number;
+  tamanho_final: number;
+  largura_original: number;
+  altura_original: number;
+  largura: number;
+  altura: number;
+  formato_original: string;
+  formato_final: string;
+  qualidade: number | null;
+}
+
+export interface TemplateImagemResultado {
+  template: Template;
+  /** null: a imagem coube no limite como veio e já está no template */
+  pendente: ImagemPendente | null;
 }
 
 export interface Template {
