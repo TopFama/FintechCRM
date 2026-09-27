@@ -819,8 +819,10 @@ export interface DashboardPorFaixa {
   sent: number;
   error: number;
   clientes_cobrados: number;
-  // mensagens do período só aos clientes cobrados no período (base da Frequência)
+  // só entre os clientes cobrados no período: mensagens enviadas no período
+  // e quantos receberam alguma (base da Frequência)
   enviados_cobrados: number;
+  clientes_com_envio: number;
   pagaram: number;
   valor_pago: string;
 }

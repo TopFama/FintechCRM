@@ -549,8 +549,10 @@ class DashboardPorFaixa(BaseModel):
     sent: int = 0
     error: int = 0
     clientes_cobrados: int = 0
-    # mensagens do período só aos clientes cobrados no período (base da Frequência)
+    # só entre os clientes cobrados no período: mensagens enviadas no período
+    # e quantos receberam alguma (base da Frequência)
     enviados_cobrados: int = 0
+    clientes_com_envio: int = 0
     pagaram: int = 0
     valor_pago: Decimal = Decimal("0.00")
 

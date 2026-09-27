@@ -212,6 +212,10 @@ test.describe("Dashboard", () => {
     await expect(page.getByRole("tooltip")).toContainText("Pagaram após cobrança ÷ Clientes cobrados × 100");
     await porFaixa.getByRole("button", { name: /O que é %\sRep\./ }).click();
     await expect(page.getByRole("tooltip")).toContainText("Σ Pagaram após cobrança de todas as faixas");
+    // Tocar no balão só fecha a dica: não reordena nem abre o relatório da linha
+    await page.getByRole("tooltip").click();
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/$/);
     expect(await col(0)).toEqual(ordemAntes);
   });
 

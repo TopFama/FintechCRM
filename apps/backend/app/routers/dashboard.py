@@ -47,6 +47,12 @@ def summary(
     return schemas.DashboardSummary(**dados)
 
 
+def _nome_faixa():
+    """Faixa da linha de "Por faixa": a de atraso do cliente (envio de
+    campanha/remarketing), senão a faixa da fila."""
+    return func.coalesce(func.nullif(models.QueueItem.faixa_atraso, ""), models.Faixa.name)
+
+
 def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool = True) -> schemas.DashboardSummary:
     """Cards e tabela por faixa respeitam o período: enviado conta pela data
     do envio, o resto pela data em que entrou na fila. Pagos por faixa vêm da
@@ -62,7 +68,7 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
     # (QueueItem.faixa_atraso), não na faixa própria da campanha.
     por_faixa_rows = (
         db.query(
-            models.Faixa.id, models.Faixa.name, models.QueueItem.faixa_atraso, models.QueueItem.status,
+            models.Faixa.id, _nome_faixa(), models.QueueItem.faixa_atraso, models.QueueItem.status,
             func.count(models.QueueItem.id),
         )
         # Só faixas com movimento no período (sem listar faixa zerada ou excluída)
@@ -77,8 +83,7 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
         )
     }
     por_faixa: dict[str, dict] = {}
-    for faixa_id, faixa_name, faixa_atraso, status_value, total in por_faixa_rows:
-        nome = faixa_atraso or faixa_name
+    for faixa_id, nome, faixa_atraso, status_value, total in por_faixa_rows:
         entry = por_faixa.setdefault(
             nome, {"faixa": nome, "faixa_id": id_por_nome.get(faixa_atraso, faixa_id) if faixa_atraso else faixa_id}
         )
@@ -86,7 +91,7 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
         chave = "pending" if status_value == models.QueueStatus.reserved else status_value.value
         entry[chave] = entry.get(chave, 0) + total
 
-    _somar_cobrados_por_faixa(db, de, ate, ini, fim, por_faixa)
+    _somar_cobrados_por_faixa(db, de, ate, por_faixa)
     _somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos)
 
     total_invalidos = (
@@ -106,15 +111,16 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
     )
 
 
-def _somar_cobrados_por_faixa(db: Session, de, ate, ini, fim, por_faixa: dict[str, dict]) -> None:
+def _somar_cobrados_por_faixa(db: Session, de: date | None, ate: date | None, por_faixa: dict[str, dict]) -> None:
     """Clientes distintos cobrados no período (mesma base do "Pagaram após
-    cobrança") e as mensagens enviadas no período a esses clientes, por faixa:
-    a Frequência divide uma pela outra. Usar a coluna Enviado inteira
-    misturaria mensagens a clientes cobrados antes do período."""
+    cobrança", base da % Conv.) e, só entre eles, as mensagens enviadas no
+    período e quantos receberam alguma (base da Frequência). A coluna Enviado
+    inteira misturaria mensagens a clientes cobrados antes do período, e o
+    lead marcado como cobrado à mão não recebeu mensagem."""
 
     cobrados = pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=de, cobrado_ate=ate)
-    # Mesma faixa da linha da tabela: a de atraso do cliente, senão a da fila
-    nome_faixa = func.coalesce(func.nullif(models.QueueItem.faixa_atraso, ""), models.Faixa.name)
+    ini, fim = consultas_fila.limites_utc(de, ate)
+    nome_faixa = _nome_faixa()
     cliente_cobrado = (
         select(models.Lead.id)
         .where(
@@ -124,8 +130,11 @@ def _somar_cobrados_por_faixa(db: Session, de, ate, ini, fim, por_faixa: dict[st
         )
         .exists()
     )
-    enviados = dict(
-        db.query(nome_faixa, func.count(models.QueueItem.id))
+    enviados = {
+        nome: (mensagens, clientes)
+        for nome, mensagens, clientes in db.query(
+            nome_faixa, func.count(models.QueueItem.id), func.count(func.distinct(models.QueueItem.codigo_cliente))
+        )
         .join(models.Faixa, models.QueueItem.faixa_id == models.Faixa.id)
         .filter(
             models.QueueItem.status == models.QueueStatus.sent,
@@ -133,11 +142,10 @@ def _somar_cobrados_por_faixa(db: Session, de, ate, ini, fim, por_faixa: dict[st
             cliente_cobrado,
         )
         .group_by(nome_faixa)
-        .all()
-    )
+    }
     for nome, entry in por_faixa.items():
         entry["clientes_cobrados"] = cobrados.get(nome, 0)
-        entry["enviados_cobrados"] = enviados.get(nome, 0)
+        entry["enviados_cobrados"], entry["clientes_com_envio"] = enviados.get(nome, (0, 0))
 
 
 def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> None:

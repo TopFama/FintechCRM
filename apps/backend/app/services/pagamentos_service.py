@@ -1,27 +1,27 @@
 """Relatório de quem pagou o que foi cobrado, por cliente: leads cobrados no
 período de cobrança cruzados com as baixas do SETA copiadas em pagamentos_seta."""
 
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
-from .. import google_client, lojas as lojas_base, models
+from .. import consultas_fila, google_client, lojas as lojas_base, models
 from . import pagamentos_seta
-from ..timezone import dia_br, inicio_do_dia_utc
+from ..timezone import dia_br
 
 
 def condicao_cobrados(cobrado_de: date | None, cobrado_ate: date | None):
     """Lead cobrado no período: a base de clientes_que_pagaram e, por isso,
     também dos clientes cobrados e da Frequência do Dashboard."""
 
-    conds = [models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None)]
-    if cobrado_de:
-        conds.append(models.Lead.cobrado_em >= inicio_do_dia_utc(cobrado_de))
-    if cobrado_ate:
-        conds.append(models.Lead.cobrado_em < inicio_do_dia_utc(cobrado_ate + timedelta(days=1)))
-    return and_(*conds)
+    ini, fim = consultas_fila.limites_utc(cobrado_de, cobrado_ate)
+    return and_(
+        models.Lead.status == "cobrado",
+        models.Lead.cobrado_em.isnot(None),
+        consultas_fila.condicao_periodo(models.Lead.cobrado_em, ini, fim),
+    )
 
 
 def clientes_cobrados_por_faixa(db: Session, *, cobrado_de: date | None, cobrado_ate: date | None) -> dict[str, int]:

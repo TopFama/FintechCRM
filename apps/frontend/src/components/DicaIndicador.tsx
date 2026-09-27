@@ -1,10 +1,11 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { IconInfo } from "../icons";
 
 const LARGURA = 260;
-const ALTURA_MINIMA = 140;
+const MARGEM = 8;
+const DISTANCIA = 6;
 
-type Posicao = { top?: number; bottom?: number; left: number; largura: number };
+type Posicao = { top: number; left: number; largura: number };
 
 /** Ícone 🛈 ao lado do nome do indicador: passando o mouse ou focando,
  * mostra o que ele significa e a fórmula. O balão é `fixed` porque a tabela
@@ -12,17 +13,27 @@ type Posicao = { top?: number; bottom?: number; left: number; largura: number };
 export default function DicaIndicador({ titulo, texto, formula }: { titulo: string; texto: string; formula: string }) {
   const id = useId();
   const botaoRef = useRef<HTMLButtonElement>(null);
+  const balaoRef = useRef<HTMLSpanElement>(null);
   const [pos, setPos] = useState<Posicao | null>(null);
 
   function abrir() {
     const r = botaoRef.current?.getBoundingClientRect();
     if (!r) return;
-    const largura = Math.min(LARGURA, window.innerWidth - 16);
-    const left = Math.max(8, Math.min(r.left + r.width / 2 - largura / 2, window.innerWidth - largura - 8));
-    // Sem espaço embaixo (cabeçalho perto do fim da tela): abre para cima
-    const embaixo = window.innerHeight - r.bottom >= ALTURA_MINIMA;
-    setPos(embaixo ? { top: r.bottom + 6, left, largura } : { bottom: window.innerHeight - r.top + 6, left, largura });
+    const largura = Math.min(LARGURA, window.innerWidth - 2 * MARGEM);
+    const left = Math.max(MARGEM, Math.min(r.left + r.width / 2 - largura / 2, window.innerWidth - largura - MARGEM));
+    setPos({ top: r.bottom + DISTANCIA, left, largura });
   }
+
+  // Depois de desenhado, com a altura real: sem espaço embaixo (cabeçalho
+  // perto do fim da tela), abre para cima
+  useLayoutEffect(() => {
+    const balao = balaoRef.current?.getBoundingClientRect();
+    const botao = botaoRef.current?.getBoundingClientRect();
+    if (!pos || !balao || !botao) return;
+    if (balao.bottom > window.innerHeight - MARGEM && botao.top - DISTANCIA - balao.height >= MARGEM) {
+      setPos({ ...pos, top: botao.top - DISTANCIA - balao.height });
+    }
+  }, [pos]);
 
   useEffect(() => {
     if (!pos) return;
@@ -56,19 +67,22 @@ export default function DicaIndicador({ titulo, texto, formula }: { titulo: stri
         // o mouse, com Esc ou ao rolar a tela.
         onClick={(e) => {
           e.stopPropagation();
-          abrir();
+          if (!pos) abrir();
         }}
       >
         <IconInfo width={14} height={14} />
       </button>
       {pos && (
         <span
+          ref={balaoRef}
           id={id}
           role="tooltip"
           className="dica-balao"
-          style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.largura }}
-          // O balão fica dentro do cabeçalho e por cima das linhas: tocar nele
-          // só fecha, sem reordenar a tabela nem abrir o relatório da linha
+          style={{ top: pos.top, left: pos.left, width: pos.largura }}
+          // Sem isso o toque tira o foco do 🛈, o balão some antes do clique e o
+          // clique cai no cabeçalho (reordena) ou na linha de baixo (navega)
+          onMouseDown={(e) => e.preventDefault()}
+          // O balão fica dentro do cabeçalho e por cima das linhas: tocar nele só fecha
           onClick={(e) => {
             e.stopPropagation();
             setPos(null);

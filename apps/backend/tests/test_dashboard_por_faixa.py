@@ -1,6 +1,6 @@
 """Tabela "Por faixa" do Dashboard (GET /dashboard/summary): clientes cobrados
-na mesma base do "Pagaram após cobrança" e as mensagens do período só a esses
-clientes (base da Frequência), por faixa de atraso.
+na mesma base do "Pagaram após cobrança" e, só entre eles, as mensagens do
+período e quantos receberam alguma (base da Frequência), por faixa de atraso.
 
 Executa com assert simples, sem pytest. Encerra imprimindo 'OK'.
 """
@@ -68,6 +68,7 @@ db.add_all([
     item(fa, "1", S.sent, sent_at=agora - timedelta(days=5)),  # fora do período
     lead("1", "FA"), lead("1", "FA", venc_dias=40),  # duas parcelas: um cliente só
     lead("2", "FA"), lead("4", "FB"),
+    lead("7", "FA"),  # marcado como cobrado à mão: sem mensagem
     lead("9", "FA", cobrado_em=agora - timedelta(days=5)),
 ])
 db.commit()
@@ -82,13 +83,15 @@ assert set(por_faixa) == {"FA", "FB"}, por_faixa
 
 f = por_faixa["FA"]
 assert f["sent"] == 5 and f["error"] == 1, f
-assert f["clientes_cobrados"] == 2, f  # clientes 1 e 2
+assert f["clientes_cobrados"] == 3, f  # clientes 1, 2 e 7
 assert f["enviados_cobrados"] == 4, f  # 2 do cliente 1 + 2 do cliente 2 (régua e campanha); o 9 fica fora
+assert f["clientes_com_envio"] == 2, f  # o 7 não recebeu mensagem: fica fora da Frequência
 assert f["pagaram"] == 1 and f["valor_pago"] == "10.00", f
 
 f = por_faixa["FB"]
 assert f["sent"] == 1 and f["pending"] == 1, f
-assert f["clientes_cobrados"] == 1 and f["enviados_cobrados"] == 1 and f["pagaram"] == 0, f
+assert f["clientes_cobrados"] == 1 and f["enviados_cobrados"] == 1 and f["clientes_com_envio"] == 1, f
+assert f["pagaram"] == 0, f
 
 db.close()
 print("OK")

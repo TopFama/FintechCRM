@@ -8,7 +8,7 @@ import OrcamentoProgressaoCard from "../components/dashboard/OrcamentoProgressao
 import FiltroPeriodo, { OpcaoPeriodo, Periodo, periodoDe } from "../components/FiltroPeriodo";
 import DicaIndicador from "../components/DicaIndicador";
 import SortableTh from "../components/SortableTh";
-import { formatBRL, formatHora, formatNumero, formatPercentual } from "../format";
+import { formatBRL, formatDecimal, formatHora, formatNumero, formatPercentual } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../components/useAtualizacaoAutomatica";
 import { IconAlert, IconBolt, IconCheckCircle, IconClock, IconInbox, IconPhone, IconRefresh } from "../icons";
@@ -349,7 +349,7 @@ function ResumoFila({
                       {celula("erros", row.error, "erros")}
                       {celula("envios", row.sent, "enviados")}
                       <td>{formatNumero(row.clientes_cobrados)}</td>
-                      <td>{formatFrequencia(row.frequencia)}</td>
+                      <td>{formatDecimal(row.frequencia)}</td>
                       {celula("pagamentos", row.pagaram, "clientes que pagaram")}
                       <td>{formatPercentual(row.conversao)}</td>
                       <td>{formatPercentual(row.representatividade)}</td>
@@ -365,7 +365,7 @@ function ResumoFila({
                   <td>{formatNumero(total.error)}</td>
                   <td>{formatNumero(total.sent)}</td>
                   <td>{formatNumero(total.clientes_cobrados)}</td>
-                  <td>{formatFrequencia(total.frequencia)}</td>
+                  <td>{formatDecimal(total.frequencia)}</td>
                   <td>{formatNumero(total.pagaram)}</td>
                   <td>{formatPercentual(total.conversao)}</td>
                   {/* Sempre 100%: não traz nada */}
@@ -391,8 +391,8 @@ const DICAS: Record<"clientes_cobrados" | "frequencia" | "conversao" | "represen
     formula: "Contagem de clientes distintos cobrados na faixa",
   },
   frequencia: {
-    texto: "Média de mensagens enviadas no período por cliente cobrado.",
-    formula: "Mensagens enviadas no período aos clientes cobrados ÷ Clientes cobrados",
+    texto: "Média de mensagens enviadas no período por cliente cobrado que recebeu mensagem.",
+    formula: "Mensagens enviadas no período aos clientes cobrados ÷ Clientes cobrados que receberam mensagem",
   },
   conversao: {
     texto: "Dos clientes cobrados na faixa, quantos pagaram depois da cobrança.",
@@ -411,15 +411,16 @@ type LinhaPorFaixa = {
   error: number;
   sent: number;
   clientes_cobrados: number;
-  // mensagens do período só aos clientes cobrados no período (base da Frequência)
+  // base da Frequência: mensagens e clientes que receberam, entre os cobrados
   enviados_cobrados: number;
+  clientes_com_envio: number;
   frequencia: number | null;
   pagaram: number;
   conversao: number | null;
   representatividade: number | null;
   valor_pago: number;
 };
-type ColunaPorFaixa = Exclude<keyof LinhaPorFaixa, "faixa" | "faixa_id" | "enviados_cobrados">;
+type ColunaPorFaixa = Exclude<keyof LinhaPorFaixa, "faixa" | "faixa_id" | "enviados_cobrados" | "clientes_com_envio">;
 
 // Divisão por zero (faixa sem cliente cobrado) vira "—", não 0
 const razao = (a: number, b: number) => (b ? a / b : null);
@@ -433,6 +434,7 @@ function linhasPorFaixa(porFaixa: DashboardSummary["por_faixa"]): LinhaPorFaixa[
     sent: row.sent,
     clientes_cobrados: row.clientes_cobrados,
     enviados_cobrados: row.enviados_cobrados,
+    clientes_com_envio: row.clientes_com_envio,
     pagaram: row.pagaram,
     valor_pago: Number(row.valor_pago),
   }));
@@ -440,7 +442,7 @@ function linhasPorFaixa(porFaixa: DashboardSummary["por_faixa"]): LinhaPorFaixa[
   const somaPagaram = base.reduce((s, r) => s + r.pagaram, 0);
   return base.map((r) => ({
     ...r,
-    frequencia: razao(r.enviados_cobrados, r.clientes_cobrados),
+    frequencia: razao(r.enviados_cobrados, r.clientes_com_envio),
     conversao: razao(r.pagaram, r.clientes_cobrados),
     representatividade: razao(r.pagaram, somaPagaram),
   }));
@@ -448,7 +450,15 @@ function linhasPorFaixa(porFaixa: DashboardSummary["por_faixa"]): LinhaPorFaixa[
 
 function totalPorFaixa(linhas: LinhaPorFaixa[]) {
   const soma = (
-    campo: "pending" | "error" | "sent" | "clientes_cobrados" | "enviados_cobrados" | "pagaram" | "valor_pago"
+    campo:
+      | "pending"
+      | "error"
+      | "sent"
+      | "clientes_cobrados"
+      | "enviados_cobrados"
+      | "clientes_com_envio"
+      | "pagaram"
+      | "valor_pago"
   ) =>
     linhas.reduce((s, r) => s + r[campo], 0);
   const t = {
@@ -457,12 +467,10 @@ function totalPorFaixa(linhas: LinhaPorFaixa[]) {
     sent: soma("sent"),
     clientes_cobrados: soma("clientes_cobrados"),
     enviados_cobrados: soma("enviados_cobrados"),
+    clientes_com_envio: soma("clientes_com_envio"),
     pagaram: soma("pagaram"),
     valor_pago: soma("valor_pago"),
   };
-  return { ...t, frequencia: razao(t.enviados_cobrados, t.clientes_cobrados), conversao: razao(t.pagaram, t.clientes_cobrados) };
+  return { ...t, frequencia: razao(t.enviados_cobrados, t.clientes_com_envio), conversao: razao(t.pagaram, t.clientes_cobrados) };
 }
 
-function formatFrequencia(v: number | null): string {
-  return v === null ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-}
