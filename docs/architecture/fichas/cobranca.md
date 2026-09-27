@@ -50,7 +50,7 @@ WhatsApp, juros) e leads. Ordenado do arquivo com mais violações para o com me
 - **Depende de:** `cache`, `cobranca_regras`, `regras_db`, `seta_client`, `blacklist`, `services/compras_seta`, `utils/phone`.
 - **É usado por:** `worker`, `campanhas`, `remarketing`, `routers/campanhas`, `routers/comum`.
 - **Violações encontradas:** nenhuma. A de 26/09 (import de `codigos_bloqueados` do router) foi resolvida pelo backlog #8.
-- **Churn:** 8 | **Linhas:** 232 | **Cobertura:** 80% (medida em 26/09)
+- **Churn:** 8 | **Linhas:** 227 | **Cobertura:** 80% (medida em 26/09)
 
 ### `apps/backend/app/routers/config_cobranca.py`
 - **Domínio:** Cobrança (+ Envios + Dashboard)

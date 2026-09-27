@@ -37,7 +37,10 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
 - `worker.py` — agendamento do disparo e das rotinas diárias, roda com APScheduler **dentro do
   mesmo processo** do backend (não é um serviço/container separado); o envio de cada item em si
   fica em `dispatch_service.py`.
-- `utils/phone.py` — normalização/validação de telefone (formato final `55DD9XXXXXXXX`).
+- `utils/phone.py` — normalização/validação de telefone (formato final `55DD9XXXXXXXX`) e a ordem
+  em que os telefones do cadastro do SETA são tentados (`ORDEM_TELEFONES`: telefone2, telefone4,
+  telefone3, telefone1), usada pela base de cobrança, pelo relatório de telefone inválido e pelo
+  upload.
 - `utils/document.py` — normalização dos campos obrigatórios de identificação do cliente:
   código SETA (até 8 dígitos, completa com zero à esquerda), CPF (formata com pontos/traço,
   completa com zero à esquerda) e nome (reduz para o primeiro nome).

@@ -39,7 +39,7 @@ saída estavam escritas dentro do laço do worker. O backlog #4 (PR #6) juntou t
 - **É usado por:** `routers/uploads`.
 - **Violações encontradas:**
   - [x] Mais de uma responsabilidade: `importar_planilha` ainda é uma função longa (normaliza, valida, cria `QueueItem`, `Lead` e `InvalidPhoneRecord`), mas a montagem do item já vem de `itens_fila`.
-- **Linhas:** 332
+- **Linhas:** 407
 - **Nota de comportamento:** o valor em atraso zerado do cadastro cai no valor da planilha; linha com valor zerado (na planilha ou na variável de valor) não entra: volta no resultado do upload para o usuário escolher um valor do sistema ou descartar, e a escolha entra por `POST /faixas/{id}/uploads/valores-zerados` (27/09/2026).
 
 ### `apps/backend/app/itens_fila.py`
@@ -58,7 +58,7 @@ saída estavam escritas dentro do laço do worker. O backlog #4 (PR #6) juntou t
 - **Depende de:** `upload_service`, `itens_fila`, `variaveis_template`, `utils/spreadsheet`, `routers/comum.ler_planilha_limitada`, `models`, `schemas`.
 - **É usado por:** `main`.
 - **Violações encontradas:** as de 26/09 (função de ~350 linhas no router, montagem duplicada do item, utilitário usado por outros routers) foram resolvidas pelos backlogs #1 e #2: `upload_planilha` lê a requisição, valida o mapeamento e chama `upload_service.importar_planilha`.
-- **Churn:** 28 commits | **Linhas:** 167 | **Cobertura:** 70% (medida em 26/09)
+- **Churn:** 28 commits | **Linhas:** 202 | **Cobertura:** 70% (medida em 26/09)
 - **Achado de comportamento:** resolvido em 27/09/2026 (commit `28ab550`), ver backlog → "Fora do escopo da refatoração".
 
 ### `apps/backend/app/worker.py`

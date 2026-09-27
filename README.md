@@ -35,7 +35,7 @@ FintechCRM/
                                 # config_cobranca, leads, google, lojas, chatwoot, remarketing,
                                 # campanhas, pausas (+ comum.py, peças HTTP compartilhadas)
         utils/
-          phone.py              # normalização/validação de telefone (formato 55DD9XXXXXXXX)
+          phone.py              # normalização/validação de telefone (55DD9XXXXXXXX) e ordem dos telefones do cadastro
           document.py           # normalização de código SETA, CPF e nome do cliente
           spreadsheet.py        # leitura de .xlsx e geração do modelo de planilha
           imagem.py             # imagem de cabeçalho de template dentro do limite da Meta (Pillow)
