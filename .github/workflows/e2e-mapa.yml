@@ -1,0 +1,83 @@
+name: Mapa de telas do e2e
+
+# Confere o mapa de e2e/selecionar-telas.mjs: cada tela (spec) roda sozinha,
+# só com os pré-requisitos declarados, numa máquina própria. Se uma falha aqui
+# e passa na suíte inteira, falta pré-requisito no mapa. Roda quando o mapa ou
+# os cenários mudam, e manualmente ("Run workflow").
+on:
+  pull_request:
+    paths:
+      - "e2e/selecionar-telas.mjs"
+      - "e2e/tests/**"
+      - ".github/workflows/e2e-mapa.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: e2e-mapa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  telas:
+    name: Listar telas
+    runs-on: ubuntu-latest
+    outputs:
+      specs: ${{ steps.lista.outputs.specs }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - id: lista
+        run: echo "specs=$(node e2e/selecionar-telas.mjs --listar | jq -Rc 'split(" ")')" >> "$GITHUB_OUTPUT"
+
+  tela:
+    name: ${{ matrix.spec }}
+    needs: telas
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        spec: ${{ fromJSON(needs.telas.outputs.specs) }}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+    env:
+      PGHOST: localhost
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/backend/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Instalar dependências
+        run: |
+          sudo apt-get install -y -q redis-tools >/dev/null
+          python -m venv apps/backend/.venv
+          apps/backend/.venv/bin/pip install -q -r apps/backend/requirements.txt
+          cd e2e && npm ci && npx playwright install --with-deps chromium
+      - name: Subir o ambiente de teste
+        working-directory: e2e
+        run: ./ambiente/subir.sh
+      - name: Rodar a tela com os pré-requisitos
+        working-directory: e2e
+        run: |
+          specs=$(node selecionar-telas.mjs --spec "${{ matrix.spec }}")
+          echo "Rodando: $specs"
+          npx playwright test --reporter=line $specs
+      - name: Logs do ambiente
+        if: failure()
+        run: tail -100 e2e/.ambiente-logs/backend.log || true
