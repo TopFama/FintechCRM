@@ -123,9 +123,9 @@ async def colunas_planilha(file: UploadFile = File(...), _user: models.User = De
     """Colunas do relatório .xlsx (com exemplos), para escolher a de loja."""
 
     from ..campanhas import colunas_planilha as ler_colunas
-    from .uploads import _ler_planilha_limitada
+    from .comum import ler_planilha_limitada
 
-    content = await _ler_planilha_limitada(file)
+    content = await ler_planilha_limitada(file)
     try:
         return ler_colunas(file.filename or "", content)
     except ValueError as exc:
@@ -144,9 +144,9 @@ async def ler_planilha(
     LOJA, CÓDIGO…)."""
 
     from ..campanhas import ler_lojas
-    from .uploads import _ler_planilha_limitada
+    from .comum import ler_planilha_limitada
 
-    content = await _ler_planilha_limitada(file)
+    content = await ler_planilha_limitada(file)
     try:
         return ler_lojas(db, file.filename or "", content, coluna)
     except ValueError as exc:

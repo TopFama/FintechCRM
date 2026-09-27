@@ -15,6 +15,7 @@ from ..utils.document import extract_first_name, format_cpf, normalize_seta_code
 from ..utils.phone import eh_fixo, escolher_telefone, is_valid_phone, normalize_phone
 from ..timezone import hoje_br
 from ..utils.spreadsheet import parse_uploaded_spreadsheet, read_spreadsheet_preview
+from .comum import ler_planilha_limitada
 from ..variaveis_template import (
     contexto_cliente,
     extrair_placeholders,
@@ -25,16 +26,6 @@ from ..variaveis_template import (
 )
 
 router = APIRouter(prefix="/faixas", tags=["uploads"])
-
-_TAMANHO_MAXIMO_PLANILHA_BYTES = 20 * 1024 * 1024
-
-
-async def _ler_planilha_limitada(file: UploadFile) -> bytes:
-    content = await file.read()
-    if len(content) > _TAMANHO_MAXIMO_PLANILHA_BYTES:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Planilha maior que o limite de 20 MB")
-    return content
-
 
 def _valor_decimal(valor: str | None) -> Decimal:
     """Aceita "1.234,56", "1234.56" ou "R$ 10" — o que vier na planilha."""
@@ -83,7 +74,7 @@ async def read_upload_columns(
     lista suspensa qual coluna alimenta cada variável/campo."""
 
     _load_faixa(db, faixa_id)
-    content = await _ler_planilha_limitada(file)
+    content = await ler_planilha_limitada(file)
     try:
         columns, sample_row = read_spreadsheet_preview(file.filename or "planilha.xlsx", content)
     except Exception as exc:  # noqa: BLE001 - erro de parsing vira 400 explícito
@@ -140,7 +131,7 @@ async def upload_planilha(
             status.HTTP_400_BAD_REQUEST, f"Faltando coluna mapeada para a(s) variável(is): {names}"
         )
 
-    content = await _ler_planilha_limitada(file)
+    content = await ler_planilha_limitada(file)
     filename = file.filename or "planilha.xlsx"
     try:
         headers, _ = read_spreadsheet_preview(filename, content)

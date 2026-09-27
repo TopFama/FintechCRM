@@ -17,7 +17,8 @@ from ..services.efetividade_service import filtrar_campanha
 from ..timezone import BUSINESS_TZ, hoje_br
 from ..utils.leads_xlsx import gerar_xlsx_leads
 from ..blacklist import codigos_bloqueados
-from .cobranca import buscar_base_ou_erro, filtros_base, sem_cobrados_hoje
+from ..fila_automatica import sem_cobrados_hoje
+from .comum import buscar_base_ou_erro, filtros_base
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 

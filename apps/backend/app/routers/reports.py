@@ -20,13 +20,11 @@ from ..regras_db import carregar_regras
 from .. import cache, campanhas_fixas, pausas, seta_client
 from ..services import efetividade_service, pagamentos_service
 from ..timezone import BUSINESS_TZ
+from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx, formula_safe
 
 api = APIRouter()
 logger = logging.getLogger(__name__)
 
-_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
-_DATETIME_FORMAT = "DD/MM/YYYY HH:MM:SS"
 
 
 
@@ -48,48 +46,6 @@ def filtro_campanha(db: Session, coluna_faixa_id, campanha: str | None):
         return coluna_faixa_id == campanhas_fixas.faixa_id(db, campanha)
     c = db.get(models.Campanha, campanha)
     return coluna_faixa_id == (c.faixa_id if c else None)
-
-
-def _formula_safe(value: str) -> str:
-    """Neutraliza injeção de fórmula (CWE-1236): nome/valor/telefone vêm da
-    planilha importada por qualquer usuário e, sem isso, um valor como
-    "=cmd|'/c calc'!A0" seria executado ao abrir o relatório no Excel/
-    LibreOffice — o openpyxl trata string começando com "=" como fórmula
-    igual ao próprio Excel."""
-
-    if value and value[0] in _FORMULA_PREFIXES:
-        return "'" + value
-    return value
-
-
-def _build_xlsx(headers: list[str], rows: list[list], formatos: dict[int, str] | None = None) -> bytes:
-    """Gera um .xlsx com cabeçalho destacado, painel congelado, autofiltro e
-    largura de coluna ajustada — usado por todos os relatórios exportáveis.
-    `formatos`: índice da coluna (0 = primeira) → formato de número."""
-
-    wb = Workbook()
-    ws = wb.active
-    ws.append(headers)
-    for cell in ws[1]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor="003090")
-    for row in rows:
-        ws.append(row)
-        for cell in ws[ws.max_row]:
-            if isinstance(cell.value, datetime):
-                cell.number_format = _DATETIME_FORMAT
-            elif isinstance(cell.value, date):
-                cell.number_format = "DD/MM/YYYY"
-            if formatos and cell.column - 1 in formatos:
-                cell.number_format = formatos[cell.column - 1]
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = ws.dimensions
-    for i, header in enumerate(headers, start=1):
-        widths = [len(header)] + [len(str(row[i - 1])) for row in rows if row[i - 1] is not None]
-        ws.column_dimensions[get_column_letter(i)].width = min(max(widths) + 4, 40)
-    buffer = io.BytesIO()
-    wb.save(buffer)
-    return buffer.getvalue()
 
 
 def _build_efetividade_xlsx(relatorio: dict) -> bytes:
@@ -393,7 +349,7 @@ def export_invalid_phones(
         [
             r.codigo_cliente,
             r.faixa.name if r.faixa else "",
-            _formula_safe(r.celular_original),
+            formula_safe(r.celular_original),
             r.celular_normalizado or "",
             r.motivo,
             _hora_br(r.created_at),
@@ -401,8 +357,8 @@ def export_invalid_phones(
         for r in records
     ]
     return Response(
-        content=_build_xlsx(headers, rows),
-        media_type=_XLSX_MEDIA_TYPE,
+        content=build_xlsx(headers, rows),
+        media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="telefones_invalidos.xlsx"'},
     )
 
@@ -504,8 +460,8 @@ def export_dispatch_report(
         [
             item.codigo_cliente,
             item.faixa.name if item.faixa else "",
-            _formula_safe(item.nome),
-            _formula_safe(item.valor or ""),
+            formula_safe(item.nome),
+            formula_safe(item.valor or ""),
             item.whatsapp_number.display_phone_number if item.whatsapp_number else "",
             _hora_br(item.sent_at),
         ]
@@ -513,8 +469,8 @@ def export_dispatch_report(
         if item.sent_at
     ]
     return Response(
-        content=_build_xlsx(headers, rows),
-        media_type=_XLSX_MEDIA_TYPE,
+        content=build_xlsx(headers, rows),
+        media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="relatorio_envios.xlsx"'},
     )
 
@@ -674,15 +630,15 @@ def export_pendentes(
         "Pausado",
     ]
     rows = [
-        [item.codigo_cliente, _formula_safe(item.nome), _separar_faixa(item, faixa)[0] or "",
-         _formula_safe(_separar_faixa(item, faixa)[1] or ""), _formula_safe(item.valor or ""),
-         _formula_safe(item.celular), (item.lojas or "").strip(","), _hora_br(item.created_at),
+        [item.codigo_cliente, formula_safe(item.nome), _separar_faixa(item, faixa)[0] or "",
+         formula_safe(_separar_faixa(item, faixa)[1] or ""), formula_safe(item.valor or ""),
+         formula_safe(item.celular), (item.lojas or "").strip(","), _hora_br(item.created_at),
          "Sim" if retencao.retido(item) else "Não"]
         for item, faixa, _q in linhas
     ]
     return Response(
-        content=_build_xlsx(headers, rows),
-        media_type=_XLSX_MEDIA_TYPE,
+        content=build_xlsx(headers, rows),
+        media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="relatorio_pendentes.xlsx"'},
     )
 
@@ -767,14 +723,14 @@ def export_erros(
     linhas = _fila_report_query(db, (models.QueueStatus.error,), faixa_id, de, ate, campanha=campanha).all()
     headers = ["Código do cliente", "Nome", "Faixa de atraso", "Campanha", "Valor", "Telefone", "Mensagem de erro", "Quando"]
     rows = [
-        [item.codigo_cliente, _formula_safe(item.nome), _separar_faixa(item, faixa)[0] or "",
-         _formula_safe(_separar_faixa(item, faixa)[1] or ""), _formula_safe(item.valor or ""),
-         _formula_safe(item.celular), _formula_safe(item.error_message or "Erro sem detalhe"), _hora_br(quando)]
+        [item.codigo_cliente, formula_safe(item.nome), _separar_faixa(item, faixa)[0] or "",
+         formula_safe(_separar_faixa(item, faixa)[1] or ""), formula_safe(item.valor or ""),
+         formula_safe(item.celular), formula_safe(item.error_message or "Erro sem detalhe"), _hora_br(quando)]
         for item, faixa, quando in linhas
     ]
     return Response(
-        content=_build_xlsx(headers, rows),
-        media_type=_XLSX_MEDIA_TYPE,
+        content=build_xlsx(headers, rows),
+        media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="relatorio_erros.xlsx"'},
     )
 
@@ -869,7 +825,7 @@ def export_relatorio_efetividade(
     content = _build_efetividade_xlsx(dados)
     return Response(
         content=content,
-        media_type=_XLSX_MEDIA_TYPE,
+        media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="relatorio_efetividade.xlsx"'},
     )
 
@@ -957,8 +913,8 @@ def export_relatorio_efetividade_clientes(
     headers = ["Código", "Nome", "Faixa", "Loja", "Título", "Data cobrança", "Valor cobrado", "Pagou", "Valor pago"]
     rows = [
         [
-            _formula_safe(it["codigo_cliente"]),
-            _formula_safe(it["nome"] or ""),
+            formula_safe(it["codigo_cliente"]),
+            formula_safe(it["nome"] or ""),
             it["faixa"],
             it["empresa"],
             it["titulo_codigo"],
@@ -969,10 +925,10 @@ def export_relatorio_efetividade_clientes(
         ]
         for it in itens
     ]
-    content = _build_xlsx(headers, rows)
+    content = build_xlsx(headers, rows)
     return Response(
         content=content,
-        media_type=_XLSX_MEDIA_TYPE,
+        media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="relatorio_efetividade_clientes.xlsx"'},
     )
 
@@ -1062,15 +1018,15 @@ def export_relatorio_pagamentos(
     ]
     rows = [
         [
-            l["codigo_cliente"], _formula_safe(l["nome"] or ""), l["cpf"] or "", _formula_safe(l["loja"]),
+            l["codigo_cliente"], formula_safe(l["nome"] or ""), l["cpf"] or "", formula_safe(l["loja"]),
             l["faixa"], l["data_cobranca"], float(l["valor_cobrado"]), float(l["valor_pago"]),
             l["qtd_titulos_pagos"], l["primeiro_pagamento"], l["ultimo_pagamento"],
         ]
         for l in linhas
     ]
     return Response(
-        content=_build_xlsx(headers, rows),
-        media_type=_XLSX_MEDIA_TYPE,
+        content=build_xlsx(headers, rows),
+        media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": 'attachment; filename="relatorio_pagamentos.xlsx"'},
     )
 
