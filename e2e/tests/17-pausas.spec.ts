@@ -59,7 +59,9 @@ test.describe.serial("Pendentes: pausar, retomar e parar", () => {
     const linhaPausa = blocoPausas(page).locator("tbody tr", { hasText: "Régua" });
     await expect(linhaPausa).toContainText("11 A 20");
     const itensFaixa = tabela(page).locator("tbody tr", { hasText: "11 A 20" });
-    await expect(itensFaixa.locator(".badge.pausado")).toHaveCount(await itensFaixa.count());
+    // A tabela pode ainda estar recarregando: espera ter itens pausados e nenhum item da faixa sem o selo.
+    await expect(itensFaixa.locator(".badge.pausado").first()).toBeVisible();
+    await expect(itensFaixa.filter({ hasNot: page.locator(".badge.pausado") })).toHaveCount(0);
     // já pausada aparece desabilitada numa segunda tentativa
     await page.getByRole("button", { name: "Pausar faixa" }).click();
     await expect(page.getByRole("dialog").locator("li", { hasText: "11 A 20" })).toContainText("já pausada");
