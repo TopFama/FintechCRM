@@ -368,6 +368,28 @@ def buscar_spc(codigos: list[str]) -> dict[str, str]:
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
 
 
+def telefones_por_codigo(codigos: list[str]) -> dict[str, dict[str, str | None]]:
+    """telefone1/2/3 do cadastro de cada cliente, pra tentar outro número quando
+    o que veio (ex.: da planilha) não serve. Índice pk_pessoas, em lotes."""
+
+    resultado: dict[str, dict[str, str | None]] = {}
+    if not codigos:
+        return resultado
+    engine = engine_ou_erro()
+    stmt = text(
+        "SELECT trim(codigo) AS codigo, telefone1, telefone2, telefone3 FROM pessoas WHERE codigo IN :codigos"
+    ).bindparams(bindparam("codigos", expanding=True))
+    try:
+        with engine.connect() as conn:
+            for i in range(0, len(codigos), 1000):
+                for r in conn.execute(stmt, {"codigos": codigos[i : i + 1000]}):
+                    resultado[r.codigo] = {"telefone1": r.telefone1, "telefone2": r.telefone2, "telefone3": r.telefone3}
+    except SQLAlchemyError as exc:
+        logger.warning("Falha ao consultar o SETA: %s", exc.__class__.__name__)
+        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
+    return resultado
+
+
 def codigos_por_cpf(cpfs: list[str]) -> dict[str, str]:
     """CPF (só dígitos) -> código do cliente, para planilhas de campanha que
     trazem só o CPF. Uma consulta só, com todos os CPFs num array."""
