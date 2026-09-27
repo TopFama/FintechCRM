@@ -1,10 +1,13 @@
 import logging
 import os
+import re
+import time
 import uuid
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session, selectinload
 
 from .. import chatwoot_client, models, schemas
@@ -13,17 +16,21 @@ from ..database import get_db
 from ..deps import get_current_user
 from ..dispatch_service import montar_parametros_envio
 from ..meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_da_waba
+from ..utils import imagem
 from ..utils.phone import is_valid_phone, normalize_phone
 from ..variaveis_template import CAMPOS_CLIENTE, contexto_cliente
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 logger = logging.getLogger(__name__)
 
-# Cabeçalho de imagem do template: só o que a Meta aceita como header de mídia
-# de template, e um teto de tamanho (o arquivo fica em /media, servido
-# publicamente sem autenticação).
-_EXTENSOES_IMAGEM_PERMITIDAS = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
-_TAMANHO_MAXIMO_IMAGEM_BYTES = 5 * 1024 * 1024
+# Cabeçalho de imagem do template: o arquivo é conferido e, se preciso,
+# comprimido para o limite da Meta (utils/imagem.py). Fica em /media, servido
+# publicamente sem autenticação.
+_EXTENSOES_IMAGEM_PERMITIDAS = {".jpg", ".jpeg", ".png", ".webp"}
+# Versão comprimida esperando o usuário aprovar; some sozinha depois de 1 h
+_PASTA_PENDENTES = "pendentes"
+_VALIDADE_PENDENTE_SEGUNDOS = 3600
+_TOKEN_PENDENTE = re.compile(r"^(?P<template>[0-9a-f-]{1,64})-[0-9a-f]{32}\.(jpg|png)$")
 
 
 def _with_variables(query):
@@ -348,14 +355,7 @@ def _base_publica(request: Request) -> str | None:
     return f"{proto}://{host}"
 
 
-@router.post("/{template_id}/image", response_model=schemas.TemplateOut)
-async def upload_template_image(
-    template_id: str,
-    file: UploadFile,
-    request: Request,
-    db: Session = Depends(get_db),
-    _user: models.User = Depends(get_current_user),
-):
+def _template_de_imagem(db: Session, template_id: str) -> models.Template:
     template = _with_variables(db.query(models.Template)).filter(
         models.Template.id == template_id
     ).first()
@@ -366,31 +366,146 @@ async def upload_template_image(
             status.HTTP_400_BAD_REQUEST,
             "Este template não tem cabeçalho de imagem habilitado — a opção de mídia só existe para templates com cabeçalho de imagem na Meta",
         )
+    return template
 
-    ext = os.path.splitext(file.filename or "")[1].lower()
-    content_type_esperado = _EXTENSOES_IMAGEM_PERMITIDAS.get(ext)
-    if not content_type_esperado or (file.content_type and file.content_type != content_type_esperado):
+
+def _pasta_pendentes() -> str:
+    pasta = os.path.join(settings.media_dir, _PASTA_PENDENTES)
+    os.makedirs(pasta, exist_ok=True)
+    return pasta
+
+
+def _limpar_pendentes_vencidas() -> None:
+    pasta = _pasta_pendentes()
+    limite = time.time() - _VALIDADE_PENDENTE_SEGUNDOS
+    for nome in os.listdir(pasta):
+        caminho = os.path.join(pasta, nome)
+        try:
+            if os.path.getmtime(caminho) < limite:
+                os.remove(caminho)
+        except FileNotFoundError:
+            pass
+
+
+def _caminho_pendente(template_id: str, token: str) -> str:
+    achado = _TOKEN_PENDENTE.match(token or "")
+    if not achado or achado.group("template") != template_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Imagem otimizada inválida para este template")
+    caminho = os.path.join(_pasta_pendentes(), token)
+    if not os.path.isfile(caminho):
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "Formato de imagem não suportado — envie .jpg ou .png",
+            status.HTTP_410_GONE, "A imagem otimizada expirou ou já foi usada — suba a imagem de novo"
         )
+    return caminho
 
-    content = await file.read()
-    if len(content) > _TAMANHO_MAXIMO_IMAGEM_BYTES:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Imagem maior que o limite de 5 MB")
 
+def _gravar_imagem_do_template(template: models.Template, conteudo: bytes, ext: str, request: Request) -> None:
     os.makedirs(settings.media_dir, exist_ok=True)
     stored_name = f"{template.id}{ext}"
-    dest_path = os.path.join(settings.media_dir, stored_name)
-    with open(dest_path, "wb") as f:
-        f.write(content)
-
+    # Troca de formato (ex.: .png → .jpg depois da compressão): não deixa o arquivo antigo para trás
+    for antiga in (".jpg", ".jpeg", ".png"):
+        if antiga != ext:
+            try:
+                os.remove(os.path.join(settings.media_dir, f"{template.id}{antiga}"))
+            except FileNotFoundError:
+                pass
+    with open(os.path.join(settings.media_dir, stored_name), "wb") as f:
+        f.write(conteudo)
     base = _base_publica(request)
     # ?v= muda a cada subida: o arquivo tem sempre o mesmo nome e navegador/Chatwoot guardariam a imagem antiga
     template.image_url = f"{base or ''}/media/{stored_name}?v={uuid.uuid4().hex[:8]}"
+
+
+@router.post("/{template_id}/image", response_model=schemas.TemplateImagemOut)
+async def upload_template_image(
+    template_id: str,
+    file: UploadFile,
+    request: Request,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Imagem que cabe no limite da Meta vai direto para o template. Se
+    precisar comprimir, a versão otimizada fica pendente e volta em
+    `pendente` para o usuário ver e aprovar (`/image/confirmar`) ou
+    descartar (`DELETE /image/pendente`)."""
+
+    template = _template_de_imagem(db, template_id)
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in _EXTENSOES_IMAGEM_PERMITIDAS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Formato de imagem não suportado — envie .jpg, .png ou .webp",
+        )
+
+    content = await file.read(imagem.LIMITE_ENTRADA_BYTES + 1)
+    try:
+        # Compressão pesa na CPU: fora do event loop, que também atende o worker de disparo
+        otimizada = await run_in_threadpool(imagem.otimizar, content)
+    except imagem.ImagemInvalida as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    if not otimizada.comprimida:
+        _gravar_imagem_do_template(template, otimizada.conteudo, otimizada.extensao, request)
+        db.commit()
+        db.refresh(template)
+        return schemas.TemplateImagemOut(template=template)
+
+    _limpar_pendentes_vencidas()
+    token = f"{template.id}-{uuid.uuid4().hex}{otimizada.extensao}"
+    with open(os.path.join(_pasta_pendentes(), token), "wb") as f:
+        f.write(otimizada.conteudo)
+    return schemas.TemplateImagemOut(
+        template=template,
+        pendente=schemas.ImagemPendenteOut(
+            token=token,
+            url_previa=f"/media/{_PASTA_PENDENTES}/{token}",
+            tamanho_original=otimizada.tamanho_original,
+            tamanho_final=len(otimizada.conteudo),
+            largura_original=otimizada.largura_original,
+            altura_original=otimizada.altura_original,
+            largura=otimizada.largura,
+            altura=otimizada.altura,
+            formato_original=otimizada.formato_original,
+            formato_final="JPEG" if otimizada.extensao == ".jpg" else "PNG",
+            qualidade=otimizada.qualidade,
+        ),
+    )
+
+
+@router.post("/{template_id}/image/confirmar", response_model=schemas.TemplateOut)
+def confirmar_imagem_otimizada(
+    template_id: str,
+    payload: schemas.ConfirmarImagemIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    template = _template_de_imagem(db, template_id)
+    caminho = _caminho_pendente(template.id, payload.token)
+    with open(caminho, "rb") as f:
+        conteudo = f.read()
+    _gravar_imagem_do_template(template, conteudo, os.path.splitext(caminho)[1], request)
     db.commit()
+    os.remove(caminho)
     db.refresh(template)
     return template
+
+
+@router.delete("/{template_id}/image/pendente", status_code=status.HTTP_204_NO_CONTENT)
+def descartar_imagem_otimizada(
+    template_id: str,
+    token: str,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    template = _template_de_imagem(db, template_id)
+    try:
+        os.remove(_caminho_pendente(template.id, token))
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_410_GONE:
+            raise
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{template_id}/testar-envio-chatwoot", response_model=schemas.ChatwootTestResult)

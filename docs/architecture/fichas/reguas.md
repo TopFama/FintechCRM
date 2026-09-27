@@ -6,9 +6,10 @@ variáveis (`FaixaVariableMapping`).
 
 **Réguas × Envios:** a separação pedida no plano ("a régua só decide quando e o que enviar; o
 disparo fica em Envios") já existe no nível de arquivo: `routers/faixas.py` só configura, e o
-disparo está em `worker.py` + `dispatch_service.py`. O que se mistura é a **resolução de
-variáveis** (o "o que enviar"), que hoje é feita em quatro lugares de Envios (ver
-`fichas/envios.md`) em vez de numa função da régua.
+disparo está em `worker.py` + `dispatch_service.py`. A **resolução de variáveis** (o "o que
+enviar"), que em 26/09 era feita em quatro lugares de Envios, está centralizada desde o backlog #1
+(PR #7) em `itens_fila.py` (`fontes_por_template`, `resolver_por_template`, `formato_variaveis`,
+`novo_item`), usado por `fila_automatica` e `upload_service` (ver `fichas/envios.md`).
 
 ### `apps/backend/app/routers/faixas.py`
 - **Domínio:** Réguas
@@ -23,7 +24,7 @@ variáveis** (o "o que enviar"), que hoje é feita em quatro lugares de Envios (
   - [x] SQL/ORM no router (23 queries, o maior número entre os routers).
   - [ ] demais: não.
 - **Churn:** 9 | **Linhas:** 406
-- **Ação sugerida:** criar `reguas.py` com o mapeamento de variáveis e a resolução de variáveis de um cliente para os templates ativos da faixa (usado pelo backlog #1). O resto pode ficar.
+- **Ação sugerida:** feito de outro jeito: o papel que seria do `reguas.py` ficou com `itens_fila.py` (backlog #1). O resto pode ficar.
 - **Esforço:** M | **Risco:** médio
 
 ### `apps/backend/app/variaveis_template.py`

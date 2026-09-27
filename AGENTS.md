@@ -19,28 +19,50 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
   (ver "Antes de considerar uma mudança pronta" abaixo).
 - `schemas.py` — modelos Pydantic de request/response, um bloco por área (comentários `# --- Área
   ---` separam).
-- `routers/` — um arquivo por área: `auth`, `numbers`, `templates`, `faixas`, `uploads`,
-  `dashboard`, `reports`, `pausas`, `campanhas`. Rotas novas de uma área existente entram no arquivo dela.
+- `routers/` — um arquivo por área: `auth`, `users`, `meta_tokens`, `numbers`, `templates`,
+  `faixas`, `uploads`, `dashboard`, `reports` (montado em `/relatorios` e `/reports`), `seta`,
+  `blacklist`, `cobranca`, `config_cobranca`, `leads`, `google`, `lojas`, `chatwoot`,
+  `remarketing`, `campanhas`, `pausas`; `comum.py` não é router, só peças HTTP compartilhadas.
+  Rotas novas de uma área existente entram no arquivo dela; router novo precisa ser registrado em
+  `main.py` e entrar nas listas de `apps/backend/.importlinter`.
+- Regras de domínio ficam em módulos soltos de `app/` e em `app/services/` (mapa completo em
+  `docs/architecture/dominios-e-camadas.md`); os mais tocados: `elegibilidade.py` (quem entra/sai
+  da fila, uma cobrança por cliente por dia), `dispatch_service.py` (envio de um item),
+  `upload_service.py` (import da planilha), `fila_automatica.py`, `campanhas.py`,
+  `campanhas_fixas.py`, `remarketing.py`, `pausas.py`, `blacklist.py`, `cobranca_base.py`/
+  `cobranca_regras.py`.
 - `meta_client.py` — **único** ponto de integração com a Graph API da Meta. Qualquer chamada nova
-  à Meta entra aqui, nunca direto num router.
-- `worker.py` — worker de disparo, roda com APScheduler **dentro do mesmo processo** do backend
-  (não é um serviço/container separado).
+  à Meta entra aqui, nunca direto num router. Mesma regra para `seta_client.py` (ERP SETA, só
+  leitura), `google_client.py` (OAuth2 + Sheets) e `chatwoot_client.py` (envio pelo Chatwoot).
+- `worker.py` — agendamento do disparo e das rotinas diárias, roda com APScheduler **dentro do
+  mesmo processo** do backend (não é um serviço/container separado); o envio de cada item em si
+  fica em `dispatch_service.py`.
 - `utils/phone.py` — normalização/validação de telefone (formato final `55DD9XXXXXXXX`).
 - `utils/document.py` — normalização dos campos obrigatórios de identificação do cliente:
   código SETA (até 8 dígitos, completa com zero à esquerda), CPF (formata com pontos/traço,
   completa com zero à esquerda) e nome (reduz para o primeiro nome).
 - `utils/spreadsheet.py` — leitura de .xlsx (sem pandas, usa `openpyxl`) e geração do modelo de
-  planilha para download. `routers/reports.py` tem sua própria geração de .xlsx para os
-  relatórios exportáveis. Não há CSV em lugar nenhum do sistema — todo upload/download de
-  planilha é em Excel (.xlsx).
+  planilha para download. `utils/xlsx.py` gera os .xlsx exportáveis (relatórios, cobrança,
+  dashboard) com proteção contra injeção de fórmula; `utils/leads_xlsx.py` exporta leads e
+  formata código/CPF/nome/celular. Não há CSV em lugar nenhum do sistema — todo upload/download
+  de planilha é em Excel (.xlsx).
+- `utils/spc.py` — leitura do texto da consulta SPC guardado no SETA.
+- `utils/imagem.py` — confere e, se preciso, comprime a imagem de cabeçalho de template para o
+  limite da Meta (5 MB, .jpg/.png), com a menor perda possível. Usa Pillow.
 - `alembic/` — migrations. Ver seção própria abaixo.
 
 **Frontend** (`apps/frontend/src/`):
 - `api.ts` — único lugar que fala com o backend: wrapper de `fetch` + todos os tipos TypeScript
   espelhando os schemas do backend. Endpoint novo no backend → método novo aqui, não `fetch` direto
   numa página.
-- `pages/` — uma página por rota (`Login`, `Dashboard`, `Cobranca`, `Leads`, `Blacklist`, `Templates`, `Faixas`,
-  `FaixaWizard`, `FaixaDetail`, `Campanhas`, `CampanhaDetail`, `Relatorios`, `Configuracoes`).
+- `pages/` — uma página por rota (`Login`, `Dashboard`, `Cobranca`, `Campanhas`, `CampanhaDetail`,
+  `Relatorios`, `Configuracoes`, `FaixaWizard`, `FaixaDetail`); `Faixas` é renderizada dentro da
+  aba Faixas de Configurações. Templates, Blacklist, Usuários, Lojas, Horário etc. são abas de
+  `Configuracoes` (`?aba=...`), com os cards em `components/config/`; as rotas antigas
+  (`/templates`, `/blacklist`, `/usuarios`, `/faixas`, `/leads`, `/remarketing`) só redirecionam
+  (ver `App.tsx`).
+- `components/` — peças reaproveitadas entre páginas; `components/dashboard/` tem os cards do
+  Dashboard.
 - `styles.css` — todo o design vive aqui: tokens em `:root` (cores, espaçamento, sombra) e classes
   utilitárias reaproveitadas entre páginas (`.card`, `.badge`, `.form-row`, `.stat`, etc.). Não é
   CSS Modules nem styled-components.
@@ -78,7 +100,8 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
    teste. As regras de import entre camadas (nenhum módulo importa router, router não importa
    router, regras puras sem infraestrutura, `deps.py` só autentica, HTTP externo só nos clientes)
    estão em `apps/backend/.importlinter` e rodam no CI: `pip install import-linter && lint-imports`
-   dentro de `apps/backend`. Fora isso, não há suíte formal: a validação é exercitar os endpoints tocados via
+   dentro de `apps/backend`. Há também a suíte e2e com Playwright em `e2e/` (ver
+   `e2e/README.md`), que roda no CI. Fora isso, a validação é exercitar os endpoints tocados via
    `fastapi.testclient.TestClient` (ele passa pelo `lifespan` de verdade: roda as migrations e cria
    o admin, igual a produção). SQLite (`DATABASE_URL=sqlite:///...`) serve para uma checagem rápida
    de que nada quebrou; para qualquer coisa envolvendo `Enum` ou tipos específicos do Postgres,
@@ -99,6 +122,33 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
 3. Delete `dist/`, `node_modules/` e `tsconfig.tsbuildinfo` do working tree antes de commitar
    (já estão no `.gitignore`, mas confira `git status` mesmo assim).
 
+**Documentação (obrigatório, em toda task e antes de todo commit):**
+
+Ao finalizar **qualquer** task e **antes de qualquer commit**, confira se a mudança deixou algum
+documento desatualizado e atualize-o **no mesmo commit** do código. A documentação tem que
+continuar 100% condizente com o código — documento que descreve algo que não existe mais é bug.
+
+1. Rode `git diff --name-only` (ou `git diff --cached --name-only`) e, para cada área tocada,
+   revise os documentos que falam dela:
+   - `README.md` — estrutura do monorepo, tabela de variáveis de ambiente (compare com
+     `app/config.py`, `.env.example` e `docker-compose.yml`), fluxo do sistema, rotas citadas,
+     testes/CI e limitações conhecidas.
+   - `AGENTS.md` (este arquivo) — "Onde fica cada coisa" (routers, módulos, utils, páginas,
+     componentes), convenções, validação e cuidados conhecidos.
+   - `.env.example` — toda variável nova/renomeada/removida em `app/config.py` ou no
+     `docker-compose.yml`, com comentário coerente com o README.
+   - `docs/architecture/` — `dominios-e-camadas.md` e a ficha da área em `fichas/` quando mudar
+     módulo, dono de regra ou dependência entre camadas; `backlog-refatoracao.md` quando um item
+     for feito (marque como feito) ou surgir um novo.
+   - `apps/backend/.importlinter` — módulo ou router novo entra nas listas dos contratos.
+   - `e2e/README.md` e `GEMINI.md` — quando mudar como rodar a suíte e2e ou os comandos de
+     validação e convenções que eles repetem.
+2. Procure referências ao que você renomeou/removeu (`grep -rn "nome_antigo" README.md AGENTS.md
+   GEMINI.md .env.example docs e2e/README.md`) e corrija todas.
+3. Não documente o que não existe: toda afirmação nova sobre o código (arquivo, rota, tabela,
+   variável, default, intervalo) tem que ser conferida no código antes de escrever.
+4. Se a mudança não afeta nenhum documento, diga isso explicitamente no resumo final da task.
+
 ## Cuidados conhecidos
 
 - **Enum + Postgres + Alembic**: o `downgrade()` gerado por autogenerate não derruba o tipo ENUM
@@ -110,7 +160,10 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
 - O worker de disparo roda no mesmo processo do backend; não assuma um serviço/fila separada.
 - Imagem de header de template: pela Meta vai como `media_id` (não precisa de URL pública); pelo
   Chatwoot precisa de link público (ver `README.md` → "Limitações conhecidas"). Teste:
-  `tests/test_imagem_template.py`.
+  `tests/test_imagem_template.py`. O limite (5 MB, .jpg/.png) é conferido no upload por
+  `utils/imagem.py`: o que não cabe é otimizado e só entra no template depois que o usuário
+  aprova a versão otimizada na tela (upload em duas etapas: `POST /templates/{id}/image` →
+  `/image/confirmar` ou `DELETE /image/pendente`). Teste: `tests/test_otimizacao_imagem.py`.
 - Upload de planilha (`POST /faixas/{id}/uploads`) é em duas etapas: primeiro lê só o cabeçalho
   (`/uploads/columns`), o frontend monta o mapeamento variável→coluna real e só então confirma o
   import — não assuma nomes de coluna fixos como "nome"/"celular".

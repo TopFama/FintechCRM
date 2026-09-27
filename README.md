@@ -10,35 +10,57 @@ próprio, rodando em container — não há dependência do Supabase.
 ```
 FintechCRM/
   apps/
-    backend/                    # FastAPI + SQLAlchemy + APScheduler + cliente Graph API
+    backend/                    # FastAPI + SQLAlchemy + APScheduler + clientes das integrações
       app/
-        main.py                 # cria o app, roda migrations e cria o admin na subida
-        config.py                # Settings (pydantic-settings, lê o .env)
-        database.py              # engine/Session/Base do SQLAlchemy
-        models.py                 # todas as tabelas
-        schemas.py                # modelos Pydantic de request/response
-        security.py / deps.py     # hash de senha, JWT, dependência de usuário autenticado
-        meta_client.py             # único ponto de integração com a Graph API da Meta
-        seta_client.py             # único ponto de integração com o ERP SETA (Postgres, só leitura)
-        worker.py                  # worker de disparo (APScheduler, dentro do próprio processo)
-        routers/                   # um arquivo por área: auth, numbers, templates, faixas,
-                                    # uploads, dashboard, reports
+        main.py                 # cria o app, roda migrations, cria o admin e sobe o worker
+        config.py               # Settings (pydantic-settings, lê o .env)
+        database.py             # engine/Session/Base do SQLAlchemy
+        models.py               # todas as tabelas
+        schemas.py              # modelos Pydantic de request/response
+        security.py / deps.py   # hash de senha, JWT, dependência de usuário autenticado
+        crypto.py / segredos.py # cifra Fernet dos segredos no banco e re-cifra na subida
+        meta_client.py          # único ponto de integração com a Graph API da Meta
+        chatwoot_client.py      # único ponto de integração com o Chatwoot (envio pela inbox)
+        seta_client.py          # único ponto de integração com o ERP SETA (Postgres, só leitura)
+        google_client.py        # único ponto de integração com o Google (OAuth2 + Sheets)
+        worker.py               # agendamento do disparo e das rotinas diárias (APScheduler, no mesmo processo)
+        dispatch_service.py     # envio de um item da fila (Meta ou Chatwoot)
+        elegibilidade.py        # quem entra/sai da fila (uma cobrança por cliente por dia)
+        cobranca_*.py, regras_db.py, leads_service.py, fila_automatica.py, campanhas*.py,
+        remarketing.py, pausas.py, blacklist.py, lojas*.py, upload_service.py, itens_fila.py,
+        consultas_fila.py, ...  # regras de domínio (ver docs/architecture/dominios-e-camadas.md)
+        services/               # pagamentos/compras do SETA, efetividade, custo do WhatsApp
+        routers/                # um arquivo por área: auth, users, meta_tokens, numbers, templates,
+                                # faixas, uploads, dashboard, reports, seta, blacklist, cobranca,
+                                # config_cobranca, leads, google, lojas, chatwoot, remarketing,
+                                # campanhas, pausas (+ comum.py, peças HTTP compartilhadas)
         utils/
-          phone.py                 # normalização/validação de telefone (formato 55DD9XXXXXXXX)
-          document.py               # normalização de código SETA, CPF e nome do cliente
-          spreadsheet.py             # leitura de .xlsx e geração do modelo de planilha
-      alembic/                    # migrations do schema (ver seção Migrations abaixo)
+          phone.py              # normalização/validação de telefone (formato 55DD9XXXXXXXX)
+          document.py           # normalização de código SETA, CPF e nome do cliente
+          spreadsheet.py        # leitura de .xlsx e geração do modelo de planilha
+          imagem.py             # imagem de cabeçalho de template dentro do limite da Meta (Pillow)
+          xlsx.py               # geração dos .xlsx exportáveis (relatórios, cobrança, dashboard)
+          leads_xlsx.py         # exportação de leads e formatação de código/CPF/nome/celular
+          spc.py                # leitura do texto da consulta SPC guardado no SETA
+      alembic/                  # migrations do schema (ver seção Migrations abaixo)
+      tests/                    # scripts de teste (rodar_todos.sh), rodam no CI
+      .importlinter             # regras de import entre camadas (lint-imports, roda no CI)
       requirements.txt
       Dockerfile
     frontend/                   # React + TypeScript + Vite
       src/
-        api.ts                   # único lugar que fala com o backend (fetch + tipos)
-        pages/                    # uma página por rota (Login, Dashboard, Cobranca, Leads, Blacklist, Templates,
-                                   # Faixas, FaixaWizard, FaixaDetail, Campanhas, CampanhaDetail, Relatorios)
-        styles.css                 # design tokens (CSS vars) e classes utilitárias
-        icons.tsx                   # ícones inline SVG, sem lib externa
-      public/topfama-logo.png       # logo oficial da marca
+        api.ts                  # único lugar que fala com o backend (fetch + tipos)
+        pages/                  # uma página por rota (Login, Dashboard, Cobranca, Campanhas,
+                                # CampanhaDetail, Relatorios, Configuracoes, Faixas, FaixaWizard,
+                                # FaixaDetail)
+        components/             # peças reaproveitadas; config/ = cards das abas de Configurações,
+                                # dashboard/ = cards do Dashboard
+        styles.css              # design tokens (CSS vars) e classes utilitárias
+        icons.tsx               # ícones inline SVG, sem lib externa
+      public/topfama-logo.png   # logo oficial da marca
       Dockerfile / nginx.conf
+  e2e/                          # suíte Playwright ponta a ponta (ver e2e/README.md)
+  docs/architecture/            # mapa de domínios/camadas, fichas por área e backlog de refatoração
   docker-compose.yml
   .env.example
 ```
@@ -75,6 +97,13 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 | `REDIS_URL` | backend | não | `redis://redis:6379/0` | Cache das consultas pesadas ao SETA (`GET /cobranca/clientes`, `/cobranca/relatorio` e `POST /leads/gerar` — a tabela de títulos tem mais de 27 milhões de linhas). Ver `app/cache.py`. |
 | `CORS_ALLOWED_ORIGINS` | backend | não | `*` | Origens liberadas no CORS, separadas por vírgula (ex: `https://crm.topfama.com.br`). O padrão `*` mantém o comportamento anterior; em produção, restrinja ao(s) domínio(s) real(is) do frontend. |
 | `COOKIE_SECURE` | backend | não | `true` | Atributo `Secure` do cookie httpOnly de sessão (ver "Limitações conhecidas / próximos passos" abaixo). Exige `https`; em desenvolvimento local sobre `http` puro, defina como `false`, senão o navegador descarta o cookie. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | backend | não | `720` | Validade do JWT de login (12 h). |
+| `PUBLIC_BASE_URL` | backend | não | *(vazio)* | Endereço público deste backend (sem barra final). Só o envio pelo **Chatwoot** precisa dele, para montar o link da imagem de cabeçalho do template; pela Meta a imagem vai como `media_id`. Ver "Limitações conhecidas". |
+| `MEDIA_DIR` | backend | não | `/app/media` | Pasta onde ficam as imagens de cabeçalho subidas em Templates (volume `media-data` no Docker; servida em `/media`). Precisa existir. |
+| `DISPATCH_WORKER_INTERVAL_SECONDS` | backend | não | `5` | De quanto em quanto tempo o worker roda o ciclo de disparo. O ritmo real (intervalo entre rodadas e quantidade por rodada) é configurado na tela, em **Configurações → Horário**. |
+| `PAGAMENTOS_SYNC_INTERVAL_SECONDS` | backend | não | `1800` | Intervalo mínimo entre as releituras das baixas do SETA para `pagamentos_seta` (ver "Fluxo do sistema" → Dashboard). |
+| `BUSINESS_TIMEZONE` | backend | não | `America/Sao_Paulo` | Fuso usado para a janela de disparo e para decidir "que dia é hoje" (o banco guarda tudo em UTC). |
+| `DB_BIND` / `BACKEND_BIND` / `FRONTEND_BIND` | `docker-compose.yml` | não | `127.0.0.1:5432` / `127.0.0.1:8000` / `127.0.0.1:5173` | Onde cada container publica a porta no host. O padrão nunca expõe para a internet; atrás de proxy reverso, aponte para a porta que o proxy chama. |
 | `VITE_API_URL` | frontend (build) | não | `http://localhost:8000` | URL base da API que o frontend chama — usada só no build do Vite (fica embutida no bundle). |
 
 WABA ID, `phone_number_id` e os **tokens de acesso da Meta** **não** vão no `.env` — são cadastrados dentro do
@@ -110,7 +139,7 @@ ele é cadastrado em **Configurações → Tokens da Meta** e guardado cifrado n
    - Ao salvar o token (com o WABA ID), o portal lista os números da WABA direto da Meta: marque os que
      vão disparar e clique em **Importar selecionados**. No card **Números de WhatsApp** informe a inbox do
      Chatwoot de cada número e desative os que não devem enviar.
-6. Tela **Templates**: use **"Sincronizar templates da Meta"** para puxar os templates já aprovados,
+6. **Configurações → Templates**: use **"Sincronizar templates da Meta"** para puxar os templates já aprovados,
    ou crie um novo template pelo próprio portal (com a opção de já submeter para aprovação).
 
 Sem um token ativo cadastrado e vinculado ao número ou à sua WABA, sincronizar templates, criar template
@@ -118,23 +147,31 @@ na Meta e disparar mensagens vão falhar com aviso de token não configurado.
 
 ## Como rodar localmente
 
-1. Copie `.env.example` para `.env` e preencha pelo menos `ENCRYPTION_KEY` (ver seção acima).
-2. Suba tudo:
+1. Copie `.env.example` para `.env` e preencha pelo menos `ENCRYPTION_KEY`, `JWT_SECRET` e
+   `ADMIN_PASSWORD` (o backend recusa subir com os valores de exemplo; ver seção acima).
+2. Crie uma vez a rede Docker compartilhada com o TopFamaRenegocie (o backend a declara como
+   `external`, então o `compose up` falha sem ela — o remarketing chama `http://renegocie-api:8000`
+   por essa rede):
+
+   ```bash
+   docker network create topfama-interno
+   ```
+3. Suba tudo (Postgres, Redis, backend e frontend):
 
    ```bash
    docker compose up --build
    ```
 
-3. Acesse:
+4. Acesse:
    - Portal: http://localhost:5173
    - API (docs interativas): http://localhost:8000/docs
    - Postgres, se precisar inspecionar direto: `localhost:5432` (usuário/senha do `.env`). A porta só abre na própria máquina (`127.0.0.1`); de fora, use um túnel SSH: `ssh -L 5432:127.0.0.1:5432 usuario@vps`.
 
-4. Login inicial: o backend cria automaticamente um usuário admin na primeira subida, com
+5. Login inicial: o backend cria automaticamente um usuário admin na primeira subida, com
    `ADMIN_EMAIL` / `ADMIN_PASSWORD` definidos no `.env`.
 
 Para parar tudo: `docker compose down` (os dados do Postgres e os arquivos de mídia ficam nos
-volumes `postgres-data`/`media-data`, então sobrevivem a um `down`/`up`; use `docker compose down
+volumes `postgres-data`/`media-data`/`redis-data`, então sobrevivem a um `down`/`up`; use `docker compose down
 -v` para apagar tudo do zero).
 
 ### Rodando sem Docker
@@ -142,7 +179,10 @@ volumes `postgres-data`/`media-data`, então sobrevivem a um `down`/`up`; use `d
 Útil para iterar mais rápido no backend ou no frontend isoladamente.
 
 **Backend** (precisa de um Postgres acessível — pode ser o do `docker compose up db` sozinho, ou
-qualquer outro):
+qualquer outro — e de um Redis, ex. `docker compose up db redis`: sem Redis as telas que usam o
+cache, como Cobrança e Dashboard, respondem erro de cache indisponível). Aponte `DATABASE_URL` e
+`REDIS_URL` para `localhost` (no `.env` eles apontam para os nomes dos containers, `db`/`redis`) e
+`MEDIA_DIR` para uma pasta que exista:
 
 ```bash
 cd apps/backend
@@ -205,15 +245,20 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
 
 ## Fluxo do sistema
 
-1. **Números** — cadastre os números de WhatsApp (WABA ID + phone number ID) conectados à Meta.
+1. **Números** — em **Configurações → Conexões**, cadastre o token da Meta (com o WABA ID) e
+   importe os números da WABA (ver "Configurando a API da Meta" acima).
 2. **Templates** — sincronize os templates já aprovados na Meta (por WABA ID) ou crie um novo
    template pelo portal (com opção de já submeter para análise da Meta e acompanhar o status de
    aprovação depois). Templates com cabeçalho de imagem permitem subir a imagem, reaproveitada em
-   todo envio daquele template.
-3. **Faixas de cobrança** — wizard guiado: nome da faixa (texto livre, ex. "21 A 30" ou
-   "RENEGOCIE") → template aprovado → número(s) de envio (com rotação automática quando mais de
-   um) → nomes de coluna sugeridos para o modelo de planilha (o mapeamento de verdade acontece no
-   upload, veja o próximo passo).
+   todo envio daquele template; se ela passar do limite do WhatsApp, o sistema mostra a versão
+   otimizada para o usuário aprovar (ver "Limitações conhecidas").
+3. **Faixas de cobrança** (**Configurações → Faixas**) — as faixas da régua (faixas de atraso)
+   podem ser sincronizadas a partir das faixas de atraso configuradas
+   (`POST /faixas/sincronizar-faixas-atraso`) ou criadas pelo wizard em três passos: nome e
+   template → número(s) de envio → variáveis (nomes de coluna sugeridos para o modelo de planilha;
+   o mapeamento de verdade acontece no upload, veja o próximo passo). Cada faixa tem um ou mais
+   **envios** (par número + template, `faixa_envios`); todos os envios ativos da faixa disputam a
+   mesma fila, então cada cliente é reservado por um só número.
 4. Dentro da faixa: baixe o **modelo de planilha** (sugestão de colunas: Codigo, Nome, CPF,
    Celular, Valor) ou suba direto a planilha que já tiver. O sistema lê o cabeçalho (primeira
    linha) e mostra um mapeamento em lista suspensa — você escolhe qual coluna real vira cada
@@ -224,23 +269,31 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
      à esquerda.
    - **Celular** — normalizado para `55DD9XXXXXXXX` (ver validação por linha abaixo).
 
-   O valor cobrado é opcional. Só depois de confirmar o mapeamento a planilha é importada para a
-   fila.
+   A coluna de valor é opcional no mapeamento. Só depois de confirmar o mapeamento a planilha é
+   importada para a fila (`app/upload_service.py`).
 5. Validação por linha: telefone é normalizado para `55DD9XXXXXXXX` (detecta se falta o DDI `55`
    ou o 9º dígito e completa; se tiver menos dígitos que o padrão, a linha vai para o **relatório
    de telefones inválidos**, com código do cliente e telefone informado). Linhas sem código,
-   nome ou CPF válidos são rejeitadas e listadas no resultado do upload. Também é rejeitado quem já
-   está pendente/reservado na fila da mesma faixa (qualquer data) ou já foi enviado nela **hoje** —
-   não cobra o mesmo cliente na mesma faixa duas vezes no mesmo dia, mas permite reentrar em outro
-   dia (cobrança recorrente da mesma faixa).
-6. Configure **intervalo entre rodadas de envio**, **quantidade de cobranças por rodada** e a
-   **janela de agendamento** (dias/horário) — ou dispare **"Cobrar esta base agora"** para rodar
-   imediatamente, sem esperar o agendamento. A fila da faixa é acompanhada quase em tempo real
-   (atualização automática a cada poucos segundos).
-7. O **worker interno** (APScheduler, dentro do próprio processo do backend) varre periodicamente
-   as faixas ativas/marcadas para rodar agora, reserva um lote de clientes pendentes, envia via
-   Graph API alternando entre os números configurados, e atualiza o status de cada envio
-   (enviado/erro), com log de erro consultável no dashboard.
+   nome ou CPF válidos são rejeitadas e listadas no resultado do upload, assim como clientes da
+   **blacklist**. Também é rejeitado quem já está pendente/reservado na fila de **qualquer** faixa
+   ou já foi cobrado **hoje** (horário de Brasília) em qualquer caminho — a regra fixa é no máximo
+   uma cobrança por cliente por dia (`app/elegibilidade.py`); em outro dia o cliente pode voltar.
+   Linha com valor zerado (depois de tentar o valor em atraso com juros do cadastro) não é cobrada:
+   vira item de erro "Valor zerado" na fila.
+6. O ritmo e a janela de disparo são **globais** (**Configurações → Horário**,
+   `global_dispatch_config`): **intervalo entre rodadas**, **quantidade de cobranças por rodada** e
+   **janela de agendamento** (dias/horário, em horário de Brasília), valendo para todas as faixas e
+   envios. Na mesma aba, **"Cobrar esta base agora"** (`POST /faixas/{id}/dispatch-now`) roda a
+   faixa imediatamente, sem esperar o agendamento. A fila da faixa é acompanhada quase em tempo
+   real (atualização automática a cada poucos segundos).
+7. O **worker interno** (`app/worker.py`, APScheduler dentro do próprio processo do backend) roda o
+   ciclo de disparo a cada `DISPATCH_WORKER_INTERVAL_SECONDS`: para cada envio ativo e devido,
+   reserva um lote de pendentes da fila da faixa, confere de novo pausa/blacklist/uma-por-dia antes
+   de cada item e envia (`app/dispatch_service.py`) pela Graph API da Meta ou pela inbox do
+   Chatwoot, conforme o número, atualizando o status (enviado/erro), com log de erro consultável.
+   O mesmo worker roda as rotinas do dia (extração automática de leads antes da janela,
+   remarketing, régua de quem recebeu campanha, campanhas e expiração da fila no fim do dia), a
+   cópia das baixas do SETA e, às 3h, a cópia das compras do SETA.
 8. **Dashboard** — pendentes (e quantos estão pausados), enviados, erros, telefones inválidos,
    "Pagaram em até 7 dias" (via SETA) e por faixa. Cada card abre o
    relatório dele com o mesmo período (`/relatorios?aba=…&de=…&ate=…`). A tela se atualiza
@@ -307,15 +360,26 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
 
 ## Testes / validação de mudanças
 
-Não existe suíte de testes automatizados formal ainda. Para validar uma mudança antes de subir:
+O CI (`.github/workflows/testes.yml`) roda em todo PR e em todo push na `main` quatro jobs:
+scripts de teste do backend, regras de import (import-linter), build do frontend e a suíte e2e.
+Para validar localmente antes de subir:
 
-- **Backend**: suba um ambiente virtual (`pip install -r requirements.txt`), aponte `DATABASE_URL`
-  para um Postgres (ou SQLite, para checagens rápidas sem Postgres) e exercite os endpoints
-  relevantes com o `TestClient` do FastAPI (`from fastapi.testclient import TestClient`), que já
-  passa pelo `lifespan` (migrations + criação do admin) igual à aplicação real.
+- **Scripts de teste do backend** (`apps/backend/tests/`): `./tests/rodar_todos.sh` dentro de
+  `apps/backend`. Precisa de um Postgres UTF-8 em `localhost:15432` (usuário `postgres`, senha `t`)
+  e do venv em `.venv`; cada script recria o próprio banco e imprime `OK` na última linha.
+  `test_caracterizacao_envios.py` fotografa o fluxo de envio (fila, pausa, blacklist, uma mensagem
+  por cliente por dia).
+- **Regras de import entre camadas**: `pip install import-linter && lint-imports` dentro de
+  `apps/backend` (contratos em `apps/backend/.importlinter`, explicados em
+  `docs/architecture/dominios-e-camadas.md`).
+- **E2E (Playwright)**: ver [`e2e/README.md`](./e2e/README.md).
+- **Checagem manual de endpoints**: aponte `DATABASE_URL` para um Postgres (ou SQLite, para
+  checagens rápidas sem `Enum`/tipos do Postgres) e exercite os endpoints relevantes com o
+  `TestClient` do FastAPI (`from fastapi.testclient import TestClient`), que já passa pelo
+  `lifespan` (migrations + criação do admin) igual à aplicação real.
 - **Mudança em `app/models.py`**: gere a migration (`alembic revision --autogenerate`) e valide o
-  ciclo `upgrade head` → `downgrade base` → `upgrade head` contra um Postgres real antes de
-  commitar — ver seção Migrations acima.
+  ciclo `upgrade head` → `downgrade base` → `upgrade head` e `alembic check` contra um Postgres
+  real antes de commitar — ver seção Migrations acima.
 - **Frontend**: `npm run build` (roda `tsc -b && vite build`) já pega a maioria dos erros de tipo
   e import quebrado.
 
@@ -326,6 +390,19 @@ Não existe suíte de testes automatizados formal ainda. Para validar uma mudan�
   precisar de link público. Pelo Chatwoot ainda é link: vale `PUBLIC_BASE_URL` (opcional) ou o
   endereço público por onde a imagem foi subida; sem nenhum dos dois o envio dá erro claro.
   Template com cabeçalho de imagem e sem imagem subida vira erro sem chamar a Meta.
+- **Tamanho da imagem de header** (`app/utils/imagem.py`): o limite é o da Meta, 5 MB em .jpg ou
+  .png de 8 bits RGB/RGBA. Vale para os dois canais: o Chatwoot não tem limite próprio para o
+  cabeçalho do template, ele só repassa o link para a Meta (`image.link`), que baixa a imagem.
+  No upload (Configurações → Templates, aceita .jpg, .png e .webp até 30 MB e 60 MP), a imagem
+  que já cabe e está no formato certo é guardada como veio. A que não cabe (ou vem em .webp,
+  CMYK, paleta, rotação por EXIF) é otimizada com a menor perda possível, nesta ordem: PNG sem
+  perda → JPEG com a maior qualidade que couber (95 a 82) na resolução original → redução da
+  resolução só o necessário (JPEG qualidade 88). PNG com transparência continua PNG e só perde
+  resolução. A versão otimizada **não** entra no template sozinha: fica pendente (pasta
+  `media/pendentes`, expira em 1 h) e a tela mostra a original ao lado dela para o usuário
+  aprovar (`POST /templates/{id}/image/confirmar`) ou recusar
+  (`DELETE /templates/{id}/image/pendente`); recusando, o template fica com a imagem anterior e o
+  aviso pede uma imagem de até 5 MB.
 - **Submissão de template para aprovação**: o endpoint de criação já está implementado
   (`POST /templates`, com `submit_to_meta=true`), mas os requisitos exatos de formatação de
   componentes variam por categoria — revise o payload em `app/routers/templates.py` contra a
@@ -339,7 +416,9 @@ Não existe suíte de testes automatizados formal ainda. Para validar uma mudan�
 - **Autenticação e segurança**: login usuário/senha + JWT. `POST /auth/login` grava o JWT num cookie
   `access_token` httpOnly (o frontend nunca guarda o token em `localStorage`/JS — mitiga roubo de sessão via
   XSS) e também devolve o token no corpo da resposta só para uso programático (scripts de validação,
-  integrações), que autenticam via header `Authorization: Bearer`; `POST /auth/logout` limpa o cookie. Só
+  integrações), que autenticam via header `Authorization: Bearer`; `POST /auth/logout` limpa o cookie e
+  revoga a sessão (o `jti` do JWT vai para `tokens_revogados`, então o token deixa de valer mesmo se
+  copiado antes). Tentativas de login erradas são limitadas em memória (`app/rate_limit.py`). Só
   dois papéis existem: administrador (`is_admin=true`, sempre o usuário de `ADMIN_EMAIL`) e usuário comum.
   O admin gerencia outros usuários em **Usuários** (`GET/POST/DELETE /users`) — quem ele cria tem acesso a
   tudo que o admin tem, exceto gerenciar outros usuários; não há papéis mais granulares que isso. Segredos
@@ -353,9 +432,13 @@ Este sistema foi desenhado a partir do fluxo `FINTECH - FLUXO DE COBRANÇA` que 
 - `templates_wpp` (Supabase) → tabelas `templates` + `template_variables` (Postgres próprio).
 - `cobranca_wpp` (fila) → tabela `cobranca_fila`.
 - Regras de normalização/validação de telefone → `app/utils/phone.py` (mesma lógica do Code node).
-- Rotação de números por faixa e reserva antes do envio → `app/worker.py`.
-- Schedule Trigger (cron fixo) → `dispatch_configs` (intervalo/lote/janela configuráveis por
-  faixa, editáveis pela própria interface, sem precisar editar workflow nenhum).
+- Rotação de números por faixa e reserva antes do envio → `app/worker.py` (vários envios
+  número + template por faixa, `faixa_envios`, disputando a mesma fila) e `app/dispatch_service.py`
+  (envio de cada item).
+- Schedule Trigger (cron fixo) → `global_dispatch_config` (janela de dias/horário, intervalo e
+  lote únicos para toda a operação, editáveis em Configurações → Horário, sem precisar editar
+  workflow nenhum); `dispatch_configs` guarda, por envio, se ele está ativo, a última rodada e o
+  "rodar agora".
 
 ## Para agentes de IA
 

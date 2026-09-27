@@ -120,6 +120,37 @@ test.describe("Configurações → Templates", () => {
     await expect(linha.locator(".badge", { hasText: "enviada" })).toBeVisible();
   });
 
+  test("imagem que precisa de otimização: mostra para validar, recusar mantém a anterior, aprovar troca", async ({ page }) => {
+    // .webp 64x40: o WhatsApp não aceita, então o backend converte e pede validação
+    const webp = Buffer.from(
+      "UklGRlAAAABXRUJQVlA4IEQAAACwAwCdASpAACgAPjEYi0QiIaERVAAgAwSzgDsAfgAAFRpjHD4MwAD+9Sdf//wJ34E78Cd/4E7//9Tj8nH5OP6ygAAAAA==",
+      "base64"
+    );
+    const linha = card(page, "Templates cadastrados").locator("tbody tr", { hasText: "Com imagem" });
+    const imagem = async () =>
+      (await apiGet(page, "/templates")).find((t: any) => t.name === "Com imagem").image_url as string | null;
+    const antes = await imagem();
+    const validacao = card(page, /Validar imagem otimizada/);
+
+    await linha.locator("label", { hasText: "trocar" }).locator("input[type=file]").setInputFiles({ name: "arte.webp", mimeType: "image/webp", buffer: webp });
+    await expect(validacao).toBeVisible();
+    await expect(validacao).toContainText("precisou ser otimizada");
+    await expect(validacao.getByRole("img", { name: "Imagem original enviada" })).toBeVisible();
+    await expect(validacao.getByRole("img", { name: "Imagem otimizada" })).toBeVisible();
+    await expect(validacao).toContainText("Otimizada · JPEG");
+    expect(await imagem()).toBe(antes);
+
+    await validacao.getByRole("button", { name: "Não usar" }).click();
+    await expect(validacao).toHaveCount(0);
+    await expect(page.locator(".error-box").first()).toContainText("é necessário subir uma imagem de até 5 MB");
+    expect(await imagem()).toBe(antes);
+
+    await linha.locator("label", { hasText: "trocar" }).locator("input[type=file]").setInputFiles({ name: "arte.webp", mimeType: "image/webp", buffer: webp });
+    await validacao.getByRole("button", { name: "Usar imagem otimizada" }).click();
+    await expect(page.locator(".success-box").first()).toContainText("Imagem otimizada salva");
+    await expect.poll(imagem).toMatch(/\/media\/.+\.jpg\?v=/);
+  });
+
   test("falha na sincronização aparece como erro e o botão volta ao normal", async ({ page }) => {
     permitirErrosConsole(page, "400");
     await page.route("**/templates/meta/sync", (r) =>

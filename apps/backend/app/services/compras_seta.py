@@ -13,12 +13,11 @@ import logging
 import threading
 import time
 from datetime import date, datetime
-from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from .. import models, seta_client
-from ..timezone import BUSINESS_TZ, agora_br, hoje_br
+from ..timezone import agora_br, dia_br, hoje_br
 
 logger = logging.getLogger("compras_seta")
 
@@ -97,7 +96,7 @@ def atualizar_incremental(db: Session, forcar: bool = True) -> int:
             and (agora - registro.executado_em).total_seconds() < INTERVALO_MINIMO_SEGUNDOS
         ):
             return 0
-        desde = hoje_br() if registro is None else min(hoje_br(), _dia_br(registro.executado_em))
+        desde = hoje_br() if registro is None else min(hoje_br(), dia_br(registro.executado_em))
         t0 = time.monotonic()
         codigos = seta_client.clientes_com_venda_desde(desde)
         compras = seta_client.compras_de_clientes(codigos)
@@ -123,10 +122,6 @@ def carga_completa(db: Session) -> int:
         _marcar(db, agora)
         logger.info("Compras do SETA (carga completa): %d cliente(s) em %.1f s", len(compras), time.monotonic() - t0)
         return len(compras)
-
-
-def _dia_br(dt: datetime) -> date:
-    return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).date()
 
 
 def rodada_da_madrugada(db: Session) -> None:
