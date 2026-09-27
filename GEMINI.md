@@ -34,9 +34,10 @@ comments stay in Portuguese** (see §2).
   debug `print`/`console.log`, no decorative separator comments.
 - Backend (FastAPI, SQLAlchemy 2.0 `Mapped[...]`, Pydantic v2): schemas in `schemas.py` under a
   `# --- Área ---` comment; new routes go in the existing router of the area; each external system is
-  reached through **one client module** (`seta_client.py`, `google_client.py`, `meta_client.py`).
+  reached through **one client module** (`seta_client.py`, `google_client.py`, `meta_client.py`,
+  `chatwoot_client.py`).
   Inside `app/`, use **relative imports** (`from .phone import ...`, `from ..utils.x import ...`).
-- Frontend (React 18 + TypeScript + Vite + react-router 6): **no UI framework, no icon/table/chart/date
+- Frontend (React 18 + TypeScript + Vite + react-router 7): **no UI framework, no icon/table/chart/date
   library**. Styling only in `src/styles.css` (tokens in `:root`, reuse `.card`, `.page-header`,
   `.form-row`, `.field`, `.table-wrap`, `.badge`, `.empty-state`, `.error-box`, `.success-box`, …). New icons go
   in `src/icons.tsx` in the existing style. **Every HTTP call goes through `src/api.ts`** (new method +
@@ -65,7 +66,8 @@ comments stay in Portuguese** (see §2).
   and show it as `salario`, never "faturamento".
 - **`valor_cobrar`**: amount with fine and interest per parcel — goes in the WhatsApp template.
   **`valor_em_aberto`**: plain sum of `ft.valor`, no interest — shown in reports/visuals.
-- **Chatwoot**: customer-chat platform through which collection messages will be sent (task-specific).
+- **Chatwoot**: customer-chat platform; numbers linked to a Chatwoot inbox send collection through it
+  (`chatwoot_client.py`) instead of the Meta API.
 
 ## 4. How to validate
 
@@ -79,8 +81,9 @@ cd <your-workspace>/apps/backend
 PYTHONPATH=. "$PY" <script.py>
 ```
 
-- There is no formal test suite. Validate by exercising code: pure functions with `assert` scripts (put
-  them in `apps/backend/tests/`, runnable as `PYTHONPATH=. "$PY" tests/<file>.py`, printing `OK` at the end)
+- Test scripts live in `apps/backend/tests/` (all run by `./tests/rodar_todos.sh` and in CI). Validate by
+  exercising code: pure functions with `assert` scripts (put them in `apps/backend/tests/`, runnable as
+  `PYTHONPATH=. "$PY" tests/<file>.py`, printing `OK` at the end)
   and endpoints with `fastapi.testclient.TestClient` (it runs the real `lifespan`: migrations + admin
   creation). Minimum env to boot the app in a test script: `DATABASE_URL`, `JWT_SECRET` (any long text ≠
   `change-me-too`), `ADMIN_PASSWORD` (≠ `change-me-admin`), `MEDIA_DIR` (an existing temp dir). Test login:
