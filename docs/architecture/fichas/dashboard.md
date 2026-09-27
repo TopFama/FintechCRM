@@ -33,7 +33,7 @@ fila" chama `fila_automatica.descartar_pendentes` (Envios).
 ### `apps/backend/app/routers/dashboard.py`
 - **Domínio:** Dashboard/Relatórios
 - **Camada:** interface
-- **Responsabilidade:** servir os cards do Dashboard. Na tabela "Por faixa", `_nome_faixa` é a única definição da faixa da linha (a de atraso do cliente, senão a da fila); os totais que não são soma da coluna (clientes e valor pago contados uma vez) vêm em `total_por_faixa`.
+- **Responsabilidade:** servir os cards do Dashboard.
 - **Depende de:** `cache`, `consultas_fila`, `seta_client`, `services/custo_whatsapp`, `services/pagamentos_service`, `services/pagos_janela_service`, `utils/xlsx`, `timezone`.
 - **Violações encontradas:** nenhuma grave. As de 26/09 (import de `routers.reports`, `_limites_utc` e contagem de pausados no router) foram resolvidas pelo backlog #3: `_resumo` monta o card a partir de `consultas_fila` (`limites_utc`, `contar_pausados`), a mesma fonte dos relatórios.
 - **Churn:** 15 | **Linhas:** 274 | **Cobertura:** 24% (medida em 26/09)
