@@ -13,7 +13,7 @@ são desse domínio (a mesma tabela está em `scripts/grafo_dependencias.py`, qu
 |---|---|---|
 | **Autenticação** | Login, sessão, usuários, permissão (admin) | `routers/auth.py`, `routers/users.py`, `security.py`, `deps.py`, `rate_limit.py` |
 | **Integrações** | Clientes de sistemas externos e seus cadastros (tokens, números, conexões) | `meta_client.py`, `chatwoot_client.py`, `google_client.py`, `seta_client.py`, `cambio.py`, `crypto.py`, `segredos.py`, `routers/meta_tokens.py`, `routers/numbers.py`, `routers/chatwoot.py`, `routers/google.py`, `routers/seta.py` |
-| **Templates** | Templates da Meta, variáveis e como cada variável é resolvida | `routers/templates.py`, `variaveis_template.py` |
+| **Templates** | Templates da Meta, variáveis e como cada variável é resolvida | `routers/templates.py`, `variaveis_template.py`, `utils/imagem.py` |
 | **Lojas** | Cadastro de lojas, cluster INAD, cobradora, sincronização com a planilha | `lojas.py`, `lojas_iniciais.py`, `routers/lojas.py` |
 | **Cobrança** | Base de clientes em atraso do SETA, regras (clusters, faixas de atraso, matriz WhatsApp, juros), leads | `cobranca_base.py`, `cobranca_regras.py`, `regras_db.py`, `cobranca_relatorio.py`, `leads_service.py`, `routers/cobranca.py`, `routers/config_cobranca.py`, `routers/leads.py`, `utils/leads_xlsx.py`, `utils/spc.py`, `services/compras_seta.py` |
 | **Réguas** | Faixas de envio: pares número + template, mapeamento de variáveis, agenda por envio | `routers/faixas.py` (modelos `Faixa`, `FaixaEnvio`, `DispatchConfig`, `FaixaVariableMapping`) |

@@ -47,6 +47,8 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
   formata código/CPF/nome/celular. Não há CSV em lugar nenhum do sistema — todo upload/download
   de planilha é em Excel (.xlsx).
 - `utils/spc.py` — leitura do texto da consulta SPC guardado no SETA.
+- `utils/imagem.py` — confere e, se preciso, comprime a imagem de cabeçalho de template para o
+  limite da Meta (5 MB, .jpg/.png), com a menor perda possível. Usa Pillow.
 - `alembic/` — migrations. Ver seção própria abaixo.
 
 **Frontend** (`apps/frontend/src/`):
@@ -158,7 +160,10 @@ continuar 100% condizente com o código — documento que descreve algo que não
 - O worker de disparo roda no mesmo processo do backend; não assuma um serviço/fila separada.
 - Imagem de header de template: pela Meta vai como `media_id` (não precisa de URL pública); pelo
   Chatwoot precisa de link público (ver `README.md` → "Limitações conhecidas"). Teste:
-  `tests/test_imagem_template.py`.
+  `tests/test_imagem_template.py`. O limite (5 MB, .jpg/.png) é conferido no upload por
+  `utils/imagem.py`: o que não cabe é otimizado e só entra no template depois que o usuário
+  aprova a versão otimizada na tela (upload em duas etapas: `POST /templates/{id}/image` →
+  `/image/confirmar` ou `DELETE /image/pendente`). Teste: `tests/test_otimizacao_imagem.py`.
 - Upload de planilha (`POST /faixas/{id}/uploads`) é em duas etapas: primeiro lê só o cabeçalho
   (`/uploads/columns`), o frontend monta o mapeamento variável→coluna real e só então confirma o
   import — não assuma nomes de coluna fixos como "nome"/"celular".

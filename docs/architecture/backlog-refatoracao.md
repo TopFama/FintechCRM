@@ -15,8 +15,8 @@ prioridade = (churn normalizado × 2) + nº de violações + (1 se desbloqueia a
   ou é pré-requisito para travar as regras no CI (Fase 7).
 
 Nenhum item muda comportamento. Cada um é um PR, validado com os scripts de `apps/backend/tests`
-(hoje 12, rodados por `tests/rodar_todos.sh`), os testes de caracterização da Fase 5 e a suíte
-e2e (172 cenários + login de setup). Itens #1, #2, #3, #4, #8 e #10 já estão feitos (ver
+(hoje 13, rodados por `tests/rodar_todos.sh`), os testes de caracterização da Fase 5 e a suíte
+e2e (173 cenários + login de setup). Itens #1, #2, #3, #4, #8 e #10 já estão feitos (ver
 "Estado").
 
 | # | Arquivo(s) | Ação | Esforço | Risco | Desbloqueia | Pontos |

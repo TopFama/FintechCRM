@@ -34,6 +34,7 @@ código a cada PR (ver AGENTS.md → "Documentação").
   revogados em tabela e limite de tentativas por conta e por dispositivo.
 - Segredos no banco cifrados com Fernet (`app/crypto.py`, `ENCRYPTION_KEY`).
 - Planilhas só em .xlsx, com openpyxl (sem pandas, sem CSV).
+- Imagem de cabeçalho de template conferida/comprimida com Pillow (`app/utils/imagem.py`).
 
 **Frontend** (`apps/frontend`): React 18 + TypeScript + Vite, React Router 7, CSS próprio com
 variáveis (`styles.css`), sem biblioteca de UI nem de ícones.
@@ -62,18 +63,18 @@ apps/backend/app/
   routers/        20 routers + comum.py   uma área por arquivo (reports.py tem 858 linhas);
                                           comum.py = peças HTTP compartilhadas, sem rota
   services/       6 arquivos              pagamentos, compras, efetividade, custo do WhatsApp
-  utils/          6 arquivos              telefone, documento, planilhas, xlsx, leads, SPC
+  utils/          7 arquivos              telefone, documento, planilhas, xlsx, leads, SPC, imagem
   *.py na raiz    38 módulos              serviços informais: fila_automatica, dispatch_service,
                                           elegibilidade, itens_fila, upload_service, consultas_fila,
                                           blacklist, pausas, campanhas, remarketing, cobranca_base,
                                           lojas, variaveis_template, clientes das integrações…
   alembic/                               migrations
-apps/backend/tests/   12 scripts de validação + rodar_todos.sh (não é pytest: cada um imprime OK)
+apps/backend/tests/   13 scripts de validação + rodar_todos.sh (não é pytest: cada um imprime OK)
 apps/frontend/src/
   api.ts (1272 linhas)                   todo o acesso ao backend e todos os tipos
   pages/          10 páginas              Relatorios.tsx tem 871 linhas
   components/     config/, dashboard/ e componentes soltos
-e2e/                                     Playwright: 172 cenários (+ login de setup) contra ambiente de teste
+e2e/                                     Playwright: 173 cenários (+ login de setup) contra ambiente de teste
 ```
 
 A camada de serviço existe, mas de forma informal: parte está em `services/`, a maior parte em
@@ -82,7 +83,7 @@ módulos soltos na raiz de `app/`. Não existe camada de repositório: routers e
 
 ## Como os testes rodam hoje
 
-**Backend**: 12 scripts em `apps/backend/tests/`, cada um sobe o app de verdade (migrations
+**Backend**: 13 scripts em `apps/backend/tests/`, cada um sobe o app de verdade (migrations
 incluídas) contra um Postgres local e imprime `OK`. Precisam de Postgres UTF-8 em
 `localhost:15432` com senha `t`, e cada script usa o próprio banco (nome no `DATABASE_URL` do
 arquivo), que deve ser recriado antes:
@@ -110,7 +111,7 @@ e `coverage combine`). Os pontos mais descobertos são justamente os de maior ri
 | `routers/reports.py` | 61% |
 | `dispatch_service.py` | 80% |
 
-**E2E**: `e2e/` com Playwright, 172 cenários (mais o login de setup) que cobrem essas telas pelo navegador (ver
+**E2E**: `e2e/` com Playwright, 173 cenários (mais o login de setup) que cobrem essas telas pelo navegador (ver
 `e2e/README.md`). Não entram na medição de cobertura acima.
 
 **CI**: no momento da análise só existia `security-scan.yml` (npm audit e pip-audit). A Fase 5

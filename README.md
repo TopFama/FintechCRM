@@ -38,6 +38,7 @@ FintechCRM/
           phone.py              # normalização/validação de telefone (formato 55DD9XXXXXXXX)
           document.py           # normalização de código SETA, CPF e nome do cliente
           spreadsheet.py        # leitura de .xlsx e geração do modelo de planilha
+          imagem.py             # imagem de cabeçalho de template dentro do limite da Meta (Pillow)
           xlsx.py               # geração dos .xlsx exportáveis (relatórios, cobrança, dashboard)
           leads_xlsx.py         # exportação de leads e formatação de código/CPF/nome/celular
           spc.py                # leitura do texto da consulta SPC guardado no SETA
@@ -249,7 +250,8 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
 2. **Templates** — sincronize os templates já aprovados na Meta (por WABA ID) ou crie um novo
    template pelo portal (com opção de já submeter para análise da Meta e acompanhar o status de
    aprovação depois). Templates com cabeçalho de imagem permitem subir a imagem, reaproveitada em
-   todo envio daquele template.
+   todo envio daquele template; se ela passar do limite do WhatsApp, o sistema mostra a versão
+   otimizada para o usuário aprovar (ver "Limitações conhecidas").
 3. **Faixas de cobrança** (**Configurações → Faixas**) — as faixas da régua (faixas de atraso)
    podem ser sincronizadas a partir das faixas de atraso configuradas
    (`POST /faixas/sincronizar-faixas-atraso`) ou criadas pelo wizard em três passos: nome e
@@ -388,6 +390,19 @@ Para validar localmente antes de subir:
   precisar de link público. Pelo Chatwoot ainda é link: vale `PUBLIC_BASE_URL` (opcional) ou o
   endereço público por onde a imagem foi subida; sem nenhum dos dois o envio dá erro claro.
   Template com cabeçalho de imagem e sem imagem subida vira erro sem chamar a Meta.
+- **Tamanho da imagem de header** (`app/utils/imagem.py`): o limite é o da Meta, 5 MB em .jpg ou
+  .png de 8 bits RGB/RGBA. Vale para os dois canais: o Chatwoot não tem limite próprio para o
+  cabeçalho do template, ele só repassa o link para a Meta (`image.link`), que baixa a imagem.
+  No upload (Configurações → Templates, aceita .jpg, .png e .webp até 30 MB e 60 MP), a imagem
+  que já cabe e está no formato certo é guardada como veio. A que não cabe (ou vem em .webp,
+  CMYK, paleta, rotação por EXIF) é otimizada com a menor perda possível, nesta ordem: PNG sem
+  perda → JPEG com a maior qualidade que couber (95 a 82) na resolução original → redução da
+  resolução só o necessário (JPEG qualidade 88). PNG com transparência continua PNG e só perde
+  resolução. A versão otimizada **não** entra no template sozinha: fica pendente (pasta
+  `media/pendentes`, expira em 1 h) e a tela mostra a original ao lado dela para o usuário
+  aprovar (`POST /templates/{id}/image/confirmar`) ou recusar
+  (`DELETE /templates/{id}/image/pendente`); recusando, o template fica com a imagem anterior e o
+  aviso pede uma imagem de até 5 MB.
 - **Submissão de template para aprovação**: o endpoint de criação já está implementado
   (`POST /templates`, com `submit_to_meta=true`), mas os requisitos exatos de formatação de
   componentes variam por categoria — revise o payload em `app/routers/templates.py` contra a

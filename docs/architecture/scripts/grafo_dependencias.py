@@ -27,7 +27,7 @@ DOMINIO = {
     "routers.meta_tokens": "Integrações", "routers.chatwoot": "Integrações", "routers.google": "Integrações",
     "routers.seta": "Integrações", "routers.numbers": "Integrações",
     # Templates
-    "routers.templates": "Templates", "variaveis_template": "Templates",
+    "routers.templates": "Templates", "variaveis_template": "Templates", "utils.imagem": "Templates",
     # Lojas
     "lojas": "Lojas", "lojas_iniciais": "Lojas", "routers.lojas": "Lojas",
     # Base de cobrança (SETA) e leads
