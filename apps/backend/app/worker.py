@@ -22,7 +22,8 @@ from .pausas import Retencao
 from .config import settings
 from .database import SessionLocal
 from .dispatch_service import enviar_item
-from .fila_automatica import Blacklist, enfileirar_leads, expirar_nao_enviados, ja_cobrado_hoje
+from .blacklist import Blacklist
+from .fila_automatica import enfileirar_leads, expirar_nao_enviados, ja_cobrado_hoje
 from .leads_service import gerar_leads_de_clientes
 from .timezone import BUSINESS_TZ
 

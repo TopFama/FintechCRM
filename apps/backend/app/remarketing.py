@@ -24,7 +24,7 @@ from .fila_automatica import clientes_bloqueados_hoje, enfileirar_clientes, ocup
 from .leads_service import gerar_leads_de_clientes
 from .regras_db import carregar_regras
 from .timezone import BUSINESS_TZ
-from .routers.blacklist import codigos_bloqueados
+from .blacklist import codigos_bloqueados
 from .services import compras_seta
 from .utils.phone import is_valid_phone
 
