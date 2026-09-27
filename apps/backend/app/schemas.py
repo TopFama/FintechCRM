@@ -722,7 +722,7 @@ class ClienteCobrancaOut(BaseModel):
     codigo: str
     nome: str
     celular: str | None
-    celular_origem: str | None  # de qual campo do SETA veio: telefone2 / telefone1 / telefone3
+    celular_origem: str | None  # de qual campo do SETA veio (ver utils.phone.ORDEM_TELEFONES)
     celular_original: str | None
     cpfcnpj: str | None
     status: str

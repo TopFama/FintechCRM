@@ -20,7 +20,7 @@ from .services import compras_seta
 from .cobranca_regras import NOMES_FAIXA_COMPRA, faixa_de_compra
 from .regras_db import carregar_regras
 from .blacklist import codigos_bloqueados
-from .utils.phone import escolher_telefone
+from .utils.phone import escolher_telefone, primeiro_telefone_preenchido
 
 
 class FiltroInvalido(ValueError):
@@ -189,14 +189,9 @@ def buscar_base(
 
 
 def _montar_cliente(r: dict, faixa: str | None, cluster: str, entra: bool, faixa_compra: str | None) -> dict:
-    celular, origem = escolher_telefone(
-        telefone2=r["telefone2"], telefone1=r["telefone1"], telefone3=r["telefone3"], telefone4=r.get("telefone4")
-    )
+    celular, origem = escolher_telefone(r)
     # Para relatório de telefone inválido: o primeiro campo que tinha algum dígito.
-    celular_original = next(
-        (r.get(c) for c in ("telefone2", "telefone1", "telefone3", "telefone4") if r.get(c) and any(ch.isdigit() for ch in r[c])),
-        None,
-    )
+    celular_original = primeiro_telefone_preenchido(r)
     return {
         "codigo": r["codigo"],
         "nome": r["nome"],

@@ -2,6 +2,7 @@
 fluxos n8n de cobrança (DDI 55, DDD, 9º dígito)."""
 
 import re
+from typing import Any, Mapping
 
 _INVALID = {
     "0000000000000",
@@ -52,16 +53,31 @@ def eh_fixo(raw: str | None) -> bool:
     return bool(_RE_10_DIGITS.match(digits)) and digits[2] in "2345"
 
 
-def escolher_telefone(**candidatos: str | None) -> tuple[str | None, str | None]:
-    """Percorre os telefones na ordem recebida (ex.: telefone2, telefone1,
-    telefone3) e devolve (celular_normalizado, nome_do_campo) do primeiro
-    utilizável. Campo sem dígito nenhum (vazio ou só máscara, como `(  )     -`)
-    é pulado sem contar como erro. Se nenhum servir, devolve (None, None)."""
+# Ordem de preferência dos telefones do cadastro do SETA para mandar mensagem.
+ORDEM_TELEFONES = ("telefone2", "telefone4", "telefone3", "telefone1")
 
-    for campo, raw in candidatos.items():
+
+def escolher_telefone(cadastro: Mapping[str, Any]) -> tuple[str | None, str | None]:
+    """Percorre os telefones do cadastro na ORDEM_TELEFONES e devolve
+    (celular_normalizado, nome_do_campo) do primeiro utilizável. Campo sem
+    dígito nenhum (vazio ou só máscara, como `(  )     -`) é pulado sem contar
+    como erro. Se nenhum servir, devolve (None, None)."""
+
+    for campo in ORDEM_TELEFONES:
+        raw = cadastro.get(campo)
         if not raw or not re.search(r"\d", str(raw)):
             continue
         if not is_valid_phone(raw):
             continue
         return normalize_phone(raw), campo
     return None, None
+
+
+def primeiro_telefone_preenchido(cadastro: Mapping[str, Any]) -> str | None:
+    """Primeiro telefone com algum dígito, na ORDEM_TELEFONES (para o
+    relatório de telefones inválidos)."""
+
+    return next(
+        (cadastro.get(c) for c in ORDEM_TELEFONES if cadastro.get(c) and re.search(r"\d", str(cadastro[c]))),
+        None,
+    )

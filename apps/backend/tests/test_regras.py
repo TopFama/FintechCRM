@@ -615,5 +615,17 @@ matriz_novo_cluster = cobranca_relatorio.montar_matriz(clientes_teste, regras_ex
 assert "NOVO CLUSTER" in matriz_novo_cluster["celulas"], "NOVO CLUSTER deveria aparecer como linha"
 print("  montar_matriz com novo cluster como linha: OK")
 
+# Ordem dos telefones do cadastro: telefone2, telefone4, telefone3, telefone1.
+from app.utils.phone import escolher_telefone, primeiro_telefone_preenchido
+
+todos = {"telefone1": "63999990001", "telefone2": "63999990002", "telefone3": "63999990003", "telefone4": "63999990004"}
+assert escolher_telefone(todos) == ("5563999990002", "telefone2")
+assert escolher_telefone({**todos, "telefone2": "(  )     -"}) == ("5563999990004", "telefone4")
+assert escolher_telefone({**todos, "telefone2": "", "telefone4": "123"}) == ("5563999990003", "telefone3")
+assert escolher_telefone({"telefone1": "63999990001", "telefone2": None}) == ("5563999990001", "telefone1")
+assert escolher_telefone({"telefone2": "", "telefone4": ""}) == (None, None)
+assert primeiro_telefone_preenchido({"telefone1": "11", "telefone4": "22"}) == "22"
+print("  ordem dos telefones (2, 4, 3, 1): OK")
+
 print("\n===================================")
 print("OK")
