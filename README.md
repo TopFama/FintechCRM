@@ -383,14 +383,17 @@ arquivo, não fazem commit e **não fazem deploy** (produção continua sendo `d
 |---|---|---|
 | `testes.yml` | Todo PR e todo push na `main` (menos quando só mudam arquivos `.md`) e manual ("Run workflow") | **Backend (scripts de teste)**: Postgres descartável + `tests/rodar_todos.sh`. **Arquitetura (import-linter)**: `lint-imports` com `apps/backend/.importlinter`. **Frontend (build)**: `npm run build:frontend`. **E2E (Playwright)**: sobe Postgres, Redis, backend com Meta/Chatwoot/SETA/Google/Renegocie simulados e frontend, e um navegador percorre as telas (relatório do Playwright fica 7 dias como artefato quando falha) |
 | `security-scan.yml` | Push/PR que mexe em `package.json`, `package-lock.json` ou `apps/backend/requirements.txt`; toda segunda às 9h UTC (6h em Brasília, pega falha nova em dependência que não mudou); manual | **npm audit (frontend)**: reprova vulnerabilidade alta ou crítica. **pip-audit (backend)**: reprova qualquer vulnerabilidade conhecida, exceto a exceção documentada no próprio arquivo (`ecdsa`, PYSEC-2026-1325, não afeta o app porque o JWT usa HS256) |
+| `deploy.yml` | Manual ("Run workflow", escolhendo `testar` ou `deploy`); PR que mexe no próprio arquivo roda o `testar` | Entra na VPS por SSH como o usuário `deploy`, com a chave nos segredos do repositório (`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, opcional `VPS_PORT`). **testar**: só lê (usuário, commit atual, alterações locais, containers, acesso da VPS ao GitHub). **deploy** (só a partir da `main`): `git merge --ff-only origin/main` em `/opt/FintechCRM` e `docker compose up -d --build`. Os dois terminam conferindo `https://fintech.lojastopfama.com.br/api/health` |
 
 **Merge na `main`**: não há auto-merge do GitHub. Toda mudança entra por PR de uma branch de
 trabalho (exceto commit só de documentação `.md`, que vai direto para a `main`), e quem decide o merge é o agente de IA designado como maintainer do repositório,
 depois de avaliar os workflows e o diff do commit mais recente do PR; conflito que exige escolher
 entre dois comportamentos, ou mudança sensível, vai para o dono decidir antes. Critérios em
 [`AGENTS.md`](./AGENTS.md) → "Merge na main". O
-merge não publica nada: se entrou dependência nova ou migration, o deploy precisa de
-`docker compose up --build` no servidor.
+merge não publica nada: o deploy é o workflow `deploy.yml` (Actions → "Deploy (VPS)" → Run
+workflow na `main`, ação `deploy`), que traz a `main` para a VPS, roda `docker compose up -d
+--build` (já cobre dependência nova e migration, que roda na subida do backend) e confere a saúde
+do backend em produção.
 
 ### Validação local
 

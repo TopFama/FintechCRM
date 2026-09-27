@@ -1,0 +1,118 @@
+name: Deploy (VPS)
+
+# Deploy do CRM na VPS por SSH, com a chave do usuário deploy guardada nos
+# segredos do repositório (VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS e,
+# opcional, VPS_PORT). Manual ("Run workflow"):
+#   - testar: só lê (usuário, commit atual, acesso ao GitHub, containers) e
+#     confere a saúde do backend; não muda nada na VPS.
+#   - deploy: traz a main, reconstrói os containers do CRM e confere a saúde.
+#     Só a partir da main.
+# PR que mexe neste arquivo roda o "testar", para validar a conexão antes do merge.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      acao:
+        description: "testar (só confere conexão e saúde) ou deploy"
+        type: choice
+        options: [testar, deploy]
+        default: testar
+
+# Um deploy por vez; nunca cancela um em andamento no meio do docker compose.
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+env:
+  PASTA: /opt/FintechCRM
+  URL_SAUDE: https://fintech.lojastopfama.com.br/api/health
+
+jobs:
+  vps:
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.acao == 'deploy' && 'Deploy na VPS' || 'Testar conexão com a VPS' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conferir os segredos
+        env:
+          HOST: ${{ secrets.VPS_HOST }}
+          USUARIO: ${{ secrets.VPS_USER }}
+          CHAVE: ${{ secrets.VPS_SSH_KEY }}
+          CONHECIDOS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          faltando=""
+          [ -n "$HOST" ] || faltando="$faltando VPS_HOST"
+          [ -n "$USUARIO" ] || faltando="$faltando VPS_USER"
+          [ -n "$CHAVE" ] || faltando="$faltando VPS_SSH_KEY"
+          [ -n "$CONHECIDOS" ] || faltando="$faltando VPS_KNOWN_HOSTS"
+          if [ -n "$faltando" ]; then echo "::error::Segredos faltando:$faltando"; exit 1; fi
+
+      - name: Preparar o SSH
+        env:
+          HOST: ${{ secrets.VPS_HOST }}
+          USUARIO: ${{ secrets.VPS_USER }}
+          PORTA: ${{ secrets.VPS_PORT }}
+          CHAVE: ${{ secrets.VPS_SSH_KEY }}
+          CONHECIDOS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$CHAVE" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$CONHECIDOS" > ~/.ssh/known_hosts
+          # StrictHostKeyChecking=yes: só conecta se a VPS for a mesma do VPS_KNOWN_HOSTS
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName $HOST
+            User $USUARIO
+            Port ${PORTA:-22}
+            IdentityFile ~/.ssh/deploy
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            ConnectTimeout 20
+          EOF
+
+      - name: Testar a conexão (só leitura)
+        run: |
+          ssh vps "PASTA='$PASTA' bash -s" <<'REMOTO'
+          set -euo pipefail
+          echo "Usuário: $(whoami)"
+          cd "$PASTA"
+          echo "Commit atual: $(git log --oneline -1)"
+          echo "Branch: $(git rev-parse --abbrev-ref HEAD)"
+          echo "Alterações locais (deve ficar vazio):"; git status --short
+          docker compose version
+          docker compose ps --format '{{.Name}}: {{.State}}'
+          # por último: sem acesso ao GitHub o deploy não consegue trazer a main
+          principal=$(git ls-remote origin -h refs/heads/main | cut -c1-12)
+          echo "main no GitHub: $principal"
+          REMOTO
+
+      - name: Deploy
+        if: github.event_name == 'workflow_dispatch' && inputs.acao == 'deploy'
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Deploy só a partir da main (rodando em $GITHUB_REF)"; exit 1
+          fi
+          ssh vps "PASTA='$PASTA' bash -s" <<'REMOTO'
+          set -euo pipefail
+          cd "$PASTA"
+          antes=$(git rev-parse --short HEAD)
+          git fetch origin main
+          # só avança; se a VPS tiver alteração local ou histórico divergente, para aqui
+          git merge --ff-only origin/main
+          echo "Código: $antes -> $(git rev-parse --short HEAD)"
+          docker compose up -d --build
+          docker compose ps --format '{{.Name}}: {{.State}}'
+          REMOTO
+
+      - name: Saúde do backend
+        run: |
+          for i in $(seq 1 30); do
+            if resposta=$(curl -fsS -m 10 "$URL_SAUDE"); then
+              echo "OK: $resposta"; exit 0
+            fi
+            echo "Tentativa $i: backend ainda não respondeu"; sleep 5
+          done
+          echo "::error::$URL_SAUDE não respondeu em 150 s"; exit 1
