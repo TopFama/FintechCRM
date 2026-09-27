@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, text
 from sqlalchemy.orm import Session, selectinload
 
 from . import models
@@ -56,12 +56,29 @@ def _cobrado_hoje():
     )
 
 
+# Chave do lock do Postgres que serializa quem coloca clientes na fila.
+TRAVA_ENTRADA_FILA = 72_010_001
+
+
+def travar_entrada_na_fila(db: Session) -> None:
+    """Uma entrada na fila por vez (régua, campanha, remarketing, planilha).
+    Sem isso, duas rotinas ao mesmo tempo liam a fila antes de uma gravar e o
+    mesmo cliente entrava duas vezes. O lock vale até o commit ou rollback."""
+
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(:chave)"), {"chave": TRAVA_ENTRADA_FILA})
+
+
 def clientes_bloqueados_hoje(db: Session) -> set[str]:
     """Códigos que não podem entrar na fila agora, em QUALQUER faixa: quem já
     está pendente/reservado (vai sair) e quem já foi cobrado hoje (GMT-3).
     Cliente cobrado em dia anterior pode voltar, e quem entrou na fila mas
-    não foi cobrado (erro, parado, descartado, expirado) também."""
+    não foi cobrado (erro, parado, descartado, expirado) também.
 
+    Trava a entrada na fila até o commit de quem chamou: quem chama tem que
+    gravar os itens e dar commit na mesma transação."""
+
+    travar_entrada_na_fila(db)
     return {
         codigo
         for (codigo,) in db.query(models.QueueItem.codigo_cliente).filter(

@@ -259,7 +259,6 @@ def enfileirar(db: Session, selecionados: dict[str, list[dict]]) -> dict[str, in
             selectinload(models.RemarketingSegmento.faixa).selectinload(models.Faixa.variable_mappings),
         )
     }
-    bloqueados = clientes_bloqueados_hoje(db)
     juros = carregar_regras(db).juros
     todos = [c["codigo"] for lista in selecionados.values() for c in lista]
     parcelas = seta_client.buscar_parcelas_cobranca(todos, juros=juros) if todos else {}
@@ -271,6 +270,9 @@ def enfileirar(db: Session, selecionados: dict[str, list[dict]]) -> dict[str, in
             totais[segmento] = 0
             continue
         enfileirados: list[dict] = []
+        # Relido a cada segmento: gerar_leads_de_clientes dá commit e solta a
+        # trava da fila. Fica depois da consulta ao SETA para não segurar a trava.
+        bloqueados = clientes_bloqueados_hoje(db)
         totais[segmento] = enfileirar_clientes(
             db,
             regra.faixa,
