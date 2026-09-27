@@ -86,6 +86,7 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
         chave = "pending" if status_value == models.QueueStatus.reserved else status_value.value
         entry[chave] = entry.get(chave, 0) + total
 
+    _somar_cobrados_por_faixa(db, de, ate, por_faixa)
     _somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos)
 
     total_invalidos = (
@@ -105,14 +106,38 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
     )
 
 
-def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> None:
-    """Clientes distintos cobrados no período e, entre eles, os que pagaram
-    depois da cobrança (qualquer data), por faixa: mesma lista do relatório
-    Quem pagou filtrado pela faixa."""
+def _somar_cobrados_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict]) -> None:
+    """Clientes distintos cobrados no período (mesma base do "Pagaram após
+    cobrança") e as mensagens enviadas no período a esses clientes, por faixa:
+    a Frequência divide uma pela outra. Usar a coluna Enviado inteira
+    misturaria mensagens a clientes cobrados antes do período."""
 
     cobrados = pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=de, cobrado_ate=ate)
-    for nome, entry in por_faixa.items():
-        entry["clientes_cobrados"] = cobrados.get(nome, 0)
+    ini, fim = consultas_fila.limites_utc(de, ate)
+    enviados = (
+        db.query(models.Faixa.name, models.QueueItem.faixa_atraso, models.QueueItem.codigo_cliente, func.count())
+        .join(models.QueueItem, models.QueueItem.faixa_id == models.Faixa.id)
+        .filter(
+            models.QueueItem.status == models.QueueStatus.sent,
+            consultas_fila.condicao_periodo(models.QueueItem.sent_at, ini, fim),
+        )
+        .group_by(models.Faixa.name, models.QueueItem.faixa_atraso, models.QueueItem.codigo_cliente)
+        .all()
+    )
+    for entry in por_faixa.values():
+        entry["clientes_cobrados"] = len(cobrados.get(entry["faixa"], ()))
+        entry["enviados_cobrados"] = 0
+    for faixa_name, faixa_atraso, codigo, total in enviados:
+        nome = faixa_atraso or faixa_name
+        if nome in por_faixa and codigo in cobrados.get(nome, ()):
+            por_faixa[nome]["enviados_cobrados"] += total
+
+
+def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> None:
+    """Clientes cobrados no período que pagaram depois da cobrança (qualquer
+    data), por faixa: mesma lista do relatório Quem pagou filtrado pela faixa."""
+
+    for entry in por_faixa.values():
         entry["pagaram"] = 0
         entry["valor_pago"] = "0.00"
     try:

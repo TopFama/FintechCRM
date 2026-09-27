@@ -37,17 +37,18 @@ export function ordenarPor<T>(
 ): T[] {
   if (!valorFn) return itens;
   const copia = [...itens];
+  const sinal = dir === "desc" ? -1 : 1;
   copia.sort((a, b) => {
     const va = valorFn(a);
     const vb = valorFn(b);
+    // Vazios no fim nas duas direções: só os valores preenchidos invertem
     if (va == null && vb == null) return 0;
     if (va == null) return 1;
     if (vb == null) return -1;
-    if (va < vb) return -1;
-    if (va > vb) return 1;
+    if (va < vb) return -sinal;
+    if (va > vb) return sinal;
     return 0;
   });
-  if (dir === "desc") copia.reverse();
   return copia;
 }
 

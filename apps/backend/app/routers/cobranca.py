@@ -157,6 +157,7 @@ def relatorio(
 
     clientes = job["data"]
     r = carregar_regras(db)
+    com_juros = bool(filtros.get("valor_atraso_com_juros"))
     return schemas.RelatorioCobrancaAsyncOut(
         status="ready",
         data=schemas.RelatorioCobrancaOut(
@@ -165,8 +166,10 @@ def relatorio(
             quantidade=cobranca_relatorio.montar_matriz(clientes, r),
             quantidade_com_restricao_spc=cobranca_relatorio.montar_matriz(clientes, r, apenas_com_restricao_spc=True),
             valor_em_aberto=cobranca_relatorio.montar_matriz_valor(clientes, r),
-            valor_em_atraso=cobranca_relatorio.montar_matriz_valor(clientes, r, campo="valor_atraso_original"),
-            valor_em_atraso_juros=cobranca_relatorio.montar_matriz_valor(clientes, r, campo="valor_atraso_juros"),
+            valor_em_atraso=cobranca_relatorio.montar_matriz_valor(
+                clientes, r, campo="valor_atraso_juros" if com_juros else "valor_atraso_original"
+            ),
+            valor_em_atraso_com_juros=com_juros,
         ),
     )
 

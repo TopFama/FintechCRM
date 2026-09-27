@@ -142,8 +142,8 @@ test.describe("Dashboard", () => {
     await expect(pend).toBeFocused();
     await expect(pend).toContainText("Ver detalhes →");
     const linha = card(page, "Por faixa").locator("tbody tr", { hasText: "3 A 10" });
-    const enviados = (await linha.locator("td").nth(2).innerText()).trim();
-    await linha.locator("td").nth(2).getByRole("link").click();
+    const enviados = (await linha.locator("td").nth(3).innerText()).trim();
+    await linha.locator("td").nth(3).getByRole("link").click();
     await expect(page).toHaveURL(/aba=envios.*faixa_id=/);
     await expect(page.locator("select").first()).toHaveValue(/.+/);
     await expect(page.getByText("Carregando...")).toHaveCount(0);
@@ -155,11 +155,11 @@ test.describe("Dashboard", () => {
     await expect(porFaixa.getByRole("columnheader", { name: /Pagaram após cobrança/ })).toBeVisible();
     await expect(porFaixa.getByRole("columnheader", { name: /Valor pago/ })).toBeVisible();
     // O SETA falso tem clientes que pagam hoje: alguma faixa cobrada hoje tem pagamento
-    const linha = porFaixa.locator("tbody tr").filter({ has: page.locator("td:nth-child(5) a", { hasText: /^[1-9]/ }) }).first();
+    const linha = porFaixa.locator("tbody tr").filter({ has: page.locator("td:nth-child(7) a", { hasText: /^[1-9]/ }) }).first();
     await expect(linha).toBeVisible({ timeout: 30_000 });
-    const pagaram = numero(await linha.locator("td").nth(4).innerText());
-    await expect(linha.locator("td").nth(5)).toContainText(/R\$\s?[1-9]/);
-    await linha.locator("td").nth(4).getByRole("link").click();
+    const pagaram = numero(await linha.locator("td").nth(6).innerText());
+    await expect(linha.locator("td").nth(9)).toContainText(/R\$\s?[1-9]/);
+    await linha.locator("td").nth(6).getByRole("link").click();
     await expect(page).toHaveURL(/aba=pagamentos.*faixa_id=/);
     await expect(page.locator(".stat", { hasText: "Clientes que pagaram" }).locator(".value")).toHaveText(
       pagaram.toLocaleString("pt-BR"),
@@ -170,9 +170,49 @@ test.describe("Dashboard", () => {
   test("tabela por faixa ordena pela ordem de atraso e por números", async ({ page }) => {
     const porFaixa = card(page, "Por faixa");
     await porFaixa.getByRole("columnheader", { name: /^Enviado/ }).click();
-    const col = async () => (await porFaixa.locator("tbody tr td:nth-child(3)").allInnerTexts()).map(Number);
+    const col = async () => (await porFaixa.locator("tbody tr td:nth-child(4)").allInnerTexts()).map(Number);
     const v = await col();
     expect(v).toEqual([...v].sort((a, b) => a - b));
+  });
+
+  test("por faixa: ordem das colunas, indicadores com fórmula e linha de total", async ({ page }) => {
+    const porFaixa = card(page, "Por faixa");
+    await expect(porFaixa.locator("thead th")).toHaveText([
+      /^Faixa/, /^Pendente/, /^Erro/, /^Enviado/, /^Clientes cobrados/, /^Frequência/,
+      /^Pagaram após cobrança/, /^%\sConv\./, /^%\sRep\./, /^Valor pago/,
+    ]);
+    const linhas = porFaixa.locator("tbody tr");
+    await expect(linhas.first()).toBeVisible();
+    const n = await linhas.count();
+    const col = async (i: number) => (await linhas.locator(`td:nth-child(${i + 1})`).allInnerTexts()).map((t) => t.trim());
+    const pct = (t: string) => (t === "—" ? null : Number(t.replace("%", "").replace(",", ".")));
+    const soma = (v: string[]) => v.reduce((s, t) => s + numero(t), 0);
+
+    // % Rep. soma 100% quando alguém pagou (ou é 0,0% em todas as faixas)
+    const pagaram = await col(6);
+    const reps = (await col(8)).map(pct);
+    if (soma(pagaram) > 0) expect(Math.abs(reps.reduce((s: number, v) => s + (v ?? 0), 0) - 100)).toBeLessThan(0.1 * n + 0.01);
+
+    // Total = soma das faixas; % Conv. do total = pagaram ÷ clientes cobrados
+    const total = porFaixa.locator("tfoot tr.linha-total td");
+    await expect(total.first()).toHaveText("Total");
+    for (const i of [1, 2, 3, 4, 6]) {
+      await expect(total.nth(i)).toHaveText(soma(await col(i)).toLocaleString("pt-BR"));
+    }
+    const cobrados = soma(await col(4));
+    const conv = cobrados
+      ? new Intl.NumberFormat("pt-BR", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(soma(pagaram) / cobrados)
+      : "—";
+    await expect(total.nth(7)).toHaveText(conv);
+    await expect(total.nth(8)).toHaveText("");
+
+    // 🛈 abre a dica com a fórmula e não reordena a tabela
+    const ordemAntes = await col(0);
+    await porFaixa.getByRole("button", { name: /O que é %\sConv\./ }).hover();
+    await expect(page.getByRole("tooltip")).toContainText("Pagaram após cobrança ÷ Clientes cobrados × 100");
+    await porFaixa.getByRole("button", { name: /O que é %\sRep\./ }).click();
+    await expect(page.getByRole("tooltip")).toContainText("Σ Pagaram após cobrança de todas as faixas");
+    expect(await col(0)).toEqual(ordemAntes);
   });
 
   test("matriz cluster × faixa: aplicar, abas e clique leva para Cobrança filtrada", async ({ page }) => {
@@ -186,6 +226,10 @@ test.describe("Dashboard", () => {
     await m.getByRole("tab", { name: "Valor em aberto" }).click();
     await expect(m.getByRole("tab", { name: "Valor em aberto" })).toHaveAttribute("aria-selected", "true");
     await expect(m.locator("table")).toContainText("R$");
+    await m.getByRole("tab", { name: "Valor em atraso" }).click();
+    await expect(m.getByRole("tab", { name: "Valor em atraso" })).toHaveAttribute("aria-selected", "true");
+    await expect(m.locator("table")).toContainText("R$");
+    await expect(m).toContainText("Soma só as parcelas já vencidas, pelo valor original");
     await m.getByRole("tab", { name: "Clientes com restrição no SPC" }).click();
     await m.getByRole("tab", { name: "Clientes", exact: true }).click();
     const celula = m.locator("tbody td").filter({ hasText: /^[1-9]\d*$/ }).first();

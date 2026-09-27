@@ -64,7 +64,7 @@ def montar_matriz_valor(
     return _montar_matriz_generica(
         clientes,
         regras,
-        valor_fn=lambda c: Decimal(str(c.get(campo) or 0)),
+        valor_fn=lambda c: Decimal(str(c[campo])),
         zero=Decimal("0"),
         apenas_com_restricao_spc=apenas_com_restricao_spc,
     )

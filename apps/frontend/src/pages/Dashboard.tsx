@@ -348,7 +348,7 @@ function ResumoFila({
                       {celula("pendentes", row.pending, "pendentes")}
                       {celula("erros", row.error, "erros")}
                       {celula("envios", row.sent, "enviados")}
-                      {celula("envios", row.clientes_cobrados, "clientes cobrados")}
+                      <td>{formatNumero(row.clientes_cobrados)}</td>
                       <td>{formatFrequencia(row.frequencia)}</td>
                       {celula("pagamentos", row.pagaram, "clientes que pagaram")}
                       <td>{formatPercentual(row.conversao)}</td>
@@ -390,8 +390,8 @@ const DICAS: Record<"clientes_cobrados" | "frequencia" | "conversao" | "represen
     formula: "Contagem de clientes distintos cobrados na faixa",
   },
   frequencia: {
-    texto: "Média de mensagens enviadas por cliente cobrado.",
-    formula: "Enviado ÷ Clientes cobrados",
+    texto: "Média de mensagens enviadas no período por cliente cobrado.",
+    formula: "Mensagens enviadas no período aos clientes cobrados ÷ Clientes cobrados",
   },
   conversao: {
     texto: "Dos clientes cobrados na faixa, quantos pagaram depois da cobrança.",
@@ -410,13 +410,15 @@ type LinhaPorFaixa = {
   error: number;
   sent: number;
   clientes_cobrados: number;
+  // mensagens do período só aos clientes cobrados no período (base da Frequência)
+  enviados_cobrados: number;
   frequencia: number | null;
   pagaram: number;
   conversao: number | null;
   representatividade: number | null;
   valor_pago: number;
 };
-type ColunaPorFaixa = Exclude<keyof LinhaPorFaixa, "faixa" | "faixa_id">;
+type ColunaPorFaixa = Exclude<keyof LinhaPorFaixa, "faixa" | "faixa_id" | "enviados_cobrados">;
 
 // Divisão por zero (faixa sem cliente cobrado) vira "—", não 0
 const razao = (a: number, b: number) => (b ? a / b : null);
@@ -429,6 +431,7 @@ function linhasPorFaixa(porFaixa: DashboardSummary["por_faixa"]): LinhaPorFaixa[
     error: Number(row.error ?? 0),
     sent: Number(row.sent ?? 0),
     clientes_cobrados: Number(row.clientes_cobrados ?? 0),
+    enviados_cobrados: Number(row.enviados_cobrados ?? 0),
     pagaram: Number(row.pagaram ?? 0),
     valor_pago: Number(row.valor_pago ?? 0),
   }));
@@ -436,24 +439,27 @@ function linhasPorFaixa(porFaixa: DashboardSummary["por_faixa"]): LinhaPorFaixa[
   const somaPagaram = base.reduce((s, r) => s + r.pagaram, 0);
   return base.map((r) => ({
     ...r,
-    frequencia: razao(r.sent, r.clientes_cobrados),
+    frequencia: razao(r.enviados_cobrados, r.clientes_cobrados),
     conversao: razao(r.pagaram, r.clientes_cobrados),
     representatividade: razao(r.pagaram, somaPagaram),
   }));
 }
 
 function totalPorFaixa(linhas: LinhaPorFaixa[]) {
-  const soma = (campo: "pending" | "error" | "sent" | "clientes_cobrados" | "pagaram" | "valor_pago") =>
+  const soma = (
+    campo: "pending" | "error" | "sent" | "clientes_cobrados" | "enviados_cobrados" | "pagaram" | "valor_pago"
+  ) =>
     linhas.reduce((s, r) => s + r[campo], 0);
   const t = {
     pending: soma("pending"),
     error: soma("error"),
     sent: soma("sent"),
     clientes_cobrados: soma("clientes_cobrados"),
+    enviados_cobrados: soma("enviados_cobrados"),
     pagaram: soma("pagaram"),
     valor_pago: soma("valor_pago"),
   };
-  return { ...t, frequencia: razao(t.sent, t.clientes_cobrados), conversao: razao(t.pagaram, t.clientes_cobrados) };
+  return { ...t, frequencia: razao(t.enviados_cobrados, t.clientes_cobrados), conversao: razao(t.pagaram, t.clientes_cobrados) };
 }
 
 function formatFrequencia(v: number | null): string {

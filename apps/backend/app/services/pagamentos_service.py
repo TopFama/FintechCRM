@@ -4,7 +4,6 @@ período de cobrança cruzados com as baixas do SETA copiadas em pagamentos_seta
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func
 from sqlalchemy.orm import Query, Session
 
 from .. import google_client, lojas as lojas_base, models
@@ -21,13 +20,17 @@ def _filtrar_cobrados(query: Query, cobrado_de: date | None, cobrado_ate: date |
     return query
 
 
-def clientes_cobrados_por_faixa(db: Session, *, cobrado_de: date | None, cobrado_ate: date | None) -> dict[str, int]:
+def clientes_cobrados_por_faixa(
+    db: Session, *, cobrado_de: date | None, cobrado_ate: date | None
+) -> dict[str, set[str]]:
     """Clientes distintos cobrados no período, por faixa do lead: a mesma base
     de clientes_que_pagaram, então quem pagou numa faixa sempre está aqui."""
 
-    query = db.query(models.Lead.faixa, func.count(func.distinct(models.Lead.codigo_cliente)))
-    query = _filtrar_cobrados(query, cobrado_de, cobrado_ate)
-    return dict(query.group_by(models.Lead.faixa).all())
+    query = db.query(models.Lead.faixa, models.Lead.codigo_cliente).distinct()
+    por_faixa: dict[str, set[str]] = {}
+    for faixa, codigo in _filtrar_cobrados(query, cobrado_de, cobrado_ate):
+        por_faixa.setdefault(faixa, set()).add(codigo)
+    return por_faixa
 
 
 def clientes_que_pagaram(

@@ -770,9 +770,10 @@ class RelatorioCobrancaOut(BaseModel):
     quantidade: MatrizQuantidadeOut
     quantidade_com_restricao_spc: MatrizQuantidadeOut
     valor_em_aberto: MatrizValorOut
-    # só parcelas já vencidas: valor original e com multa/juros
+    # só parcelas já vencidas, pelo valor original ou com multa/juros
+    # conforme o filtro valor_atraso_com_juros
     valor_em_atraso: MatrizValorOut
-    valor_em_atraso_juros: MatrizValorOut
+    valor_em_atraso_com_juros: bool
 
 
 class RelatorioCobrancaAsyncOut(BaseModel):
