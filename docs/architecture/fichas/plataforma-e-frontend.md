@@ -61,10 +61,8 @@ uma feature de algum domínio precisou de um campo novo: o co-change mais forte 
 - **Domínio:** Plataforma
 - **Camada:** domínio (utilitário)
 - **Responsabilidade:** dizer que horas são em Brasília.
-- **Violações encontradas:** nenhuma. Em 26/09 só tinha `agora_br` e `hoje_br`, com as conversões de fuso copiadas em 8 arquivos; o backlog #10 (PR #5) trouxe `para_br`, `dia_br`, `hora_br`, `utc_ingenuo`, `inicio_do_dia_utc` e `inicio_hoje_utc` para cá, e as cópias saíram. Resta uma cópia criada depois: `services/compras_seta._dia_br`.
+- **Violações encontradas:** nenhuma. Em 26/09 só tinha `agora_br` e `hoje_br`, com as conversões de fuso copiadas em 8 arquivos; o backlog #10 (PR #5) trouxe `para_br`, `dia_br`, `hora_br`, `utc_ingenuo`, `inicio_do_dia_utc` e `inicio_hoje_utc` para cá, e as cópias saíram (inclusive `services/compras_seta._dia_br`, criada depois e removida em 27/09).
 - **Churn:** 1 | **Linhas:** 62
-- **Ação sugerida:** `compras_seta` passar a usar `timezone.dia_br`. Protege a regra fixa de GMT-3.
-- **Esforço:** P | **Risco:** baixo
 
 ### `apps/backend/app/utils/*`, `cache.py`, `config.py`, `database.py`
 - **Violações encontradas:** nenhuma. `utils/` não importa `models` nem FastAPI (a regra 5 está travada no CI pelo contrato `regras-puras` do `.importlinter`).

@@ -30,7 +30,7 @@ e2e (172 cenários + login de setup). Itens #1, #2, #3, #4, #8 e #10 já estão 
 | 7 | `dispatch_service.py` | `MessageSender` com adaptadores Meta e Chatwoot; tratamento de resultado (enviado, erro, incerto) num lugar | M | médio | Troca ou novo provedor de envio | 0,2 + 3 = **3,2** |
 | 8 ✅ | `routers/blacklist.py` | `codigos_bloqueados` e a classe `Blacklist` para `app/blacklist.py` | P | baixo | Fase 7 (serviço não importa router); pré-requisito do #4 | 0,1 + 2 + 1 = **3,1** |
 | 9 | `apps/frontend/src/api.ts` | Dividir por domínio (`api/cliente.ts` + um arquivo por domínio), `api.ts` reexporta | M | baixo | — | 2,0 + 1 = **3,0** |
-| 10 ✅ | 8 arquivos (ver ficha de `timezone.py`) | Conversões de fuso em `timezone.py`; as 8 cópias chamam as funções de lá (resta `services/compras_seta._dia_br`, criado depois) | P | baixo | Regra fixa GMT-3 num lugar só | 0,8 + 1 + 1 = **2,8** |
+| 10 ✅ | 8 arquivos (ver ficha de `timezone.py`) | Conversões de fuso em `timezone.py`; as 8 cópias chamam as funções de lá (a última, `services/compras_seta._dia_br`, criada depois, também saiu) | P | baixo | Regra fixa GMT-3 num lugar só | 0,8 + 1 + 1 = **2,8** |
 | 11 | `worker.py` | `_rotinas_do_dia` → `rotinas_diarias.py`; worker fica só com agendamento; janela de disparo em funções puras | M | alto | — | 0,6 + 2 = **2,6** |
 | 12 | `remarketing.py`, `routers/remarketing.py` | `renegocie_client.py` (buscar e testar conexão), sem `httpx` solto | P | baixo | — | 0,3 + 2 = **2,3** |
 | 13 | `routers/config_cobranca.py` | Separar `/config/cobranca/disparo` e `/orcamento` em routers próprios, mesmas URLs | P | baixo | — | 0,2 + 2 = **2,2** |

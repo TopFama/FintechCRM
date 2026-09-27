@@ -104,8 +104,5 @@ WhatsApp, juros) e leads. Ordenado do arquivo com mais violações para o com me
 - **Responsabilidade:** manter a cópia local das compras no crediário de cada cliente (tabelas `compras_seta` e `sincronizacoes_seta`), atualizada pelo worker às 03:00 (GMT-3).
 - **Depende de:** `seta_client`, `models`, `timezone`.
 - **É usado por:** `worker`, `cobranca_base`, `remarketing`, `routers/cobranca`.
-- **Violações encontradas:**
-  - [x] Duplicação: `_dia_br` repete `timezone.dia_br` (criado depois do backlog #10).
-- **Linhas:** 137
-- **Ação sugerida:** usar `timezone.dia_br`.
-- **Esforço:** P | **Risco:** baixo
+- **Violações encontradas:** nenhuma (a cópia própria `_dia_br` foi trocada por `timezone.dia_br` em 27/09).
+- **Linhas:** 132
