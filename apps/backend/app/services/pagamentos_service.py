@@ -73,10 +73,8 @@ def clientes_que_pagaram(
             linha["valor_cobrado"] += Decimal(lead.valor_cobrar or 0)
 
     pares = sorted(cobrancas)
-    pagos = pagamentos_seta.valores_pagos_pos_cobranca(db, pares, pago_de, pago_ate, dias_janela, buscar_novos)
-    na_janela = (
-        pagamentos_seta.pagamentos_pos_cobranca(db, pares, dias_janela, buscar_novos) if dias_janela is not None else None
-    )
+    pagou, pagos = pagamentos_seta.analisar_pos_cobranca(db, pares, dias_janela, pago_de, pago_ate, buscar_novos)
+    na_janela = pagou if dias_janela is not None else None
 
     try:
         nomes_loja = {l["filial"]: l.get("nome_com_cod") for l in lojas_base.listar_lojas(db)}

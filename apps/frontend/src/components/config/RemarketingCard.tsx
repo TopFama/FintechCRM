@@ -91,7 +91,7 @@ type ColunaPrevia =
   | "faixa"
   | "valor_cobrar"
   | "evento_em"
-  | "referencia_seta"
+  | "proposta"
   | "entrada_vencimento";
 
 // Rótulo da data do evento em cada segmento
@@ -109,7 +109,7 @@ function colunasDaPrevia(segmento: string): [ColunaPrevia, string][] {
     ["faixa", "Faixa"],
     ["valor_cobrar", "Valor a cobrar"],
     ["evento_em", ROTULO_EVENTO[segmento] ?? "Data"],
-    ["referencia_seta", "Proposta"],
+    ["proposta", "Proposta"],
   ];
   if (segmento === "ACORDO_ATIVO") colunas.push(["entrada_vencimento", "Entrada venceu em"]);
   return colunas;
@@ -403,7 +403,7 @@ function SegmentoForm({
                       </td>
                       <td>{formatBRL(c.valor_cobrar)}</td>
                       <td>{formatDataHora(c.evento_em)}</td>
-                      <td>{c.referencia_seta ?? "—"}</td>
+                      <td>{c.proposta ?? "—"}</td>
                       {acordo && <td>{c.entrada_vencimento ? formatData(c.entrada_vencimento) : "—"}</td>}
                     </tr>
                   ))}

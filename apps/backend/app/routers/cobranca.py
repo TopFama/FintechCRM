@@ -11,6 +11,7 @@ from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
 from ..fila_automatica import cobrados_hoje
+from ..services import compras_seta
 from ..timezone import hoje_br
 from ..utils.spc import parse_spc
 from .reports import _XLSX_MEDIA_TYPE, _build_xlsx, _formula_safe
@@ -150,6 +151,17 @@ def sem_cobrados_hoje(db: Session, clientes: list[dict]) -> list[dict]:
 
     bloqueados = cobrados_hoje(db)
     return [c for c in clientes if c["codigo"] not in bloqueados]
+
+
+@router.post("/compras/atualizar")
+def atualizar_compras(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+    """Ao abrir o filtro de faixa de compra: relê no SETA as compras de quem teve
+    venda hoje (no máximo uma vez por minuto; ver services/compras_seta.py)."""
+
+    try:
+        return {"clientes_atualizados": compras_seta.atualizar_incremental(db, forcar=False)}
+    except seta_client.SetaIndisponivel as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "SETA indisponível") from exc
 
 
 @router.get("/clientes", response_model=schemas.ClientesCobrancaAsyncOut)
