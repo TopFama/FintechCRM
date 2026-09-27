@@ -50,11 +50,6 @@ def importar_planilha(
     invalid_phone_count = 0
     reasons: list[str] = []
 
-    # Não cobrar o mesmo cliente mais de uma vez por dia, em nenhuma faixa: bloqueia
-    # quem já está pendente/reservado e quem já foi enviado hoje (GMT-3).
-    clientes_bloqueados = clientes_bloqueados_hoje(db)
-    blacklist = Blacklist(db)
-
     # Celular da planilha inválido: tenta telefone2, telefone1, telefone3 e telefone4 do
     # cadastro no SETA (mesma ordem da base de cobrança). Uma consulta só.
     codigos_sem_celular = sorted(
@@ -69,6 +64,12 @@ def importar_planilha(
         telefones_seta = seta_client.telefones_por_codigo(codigos_sem_celular)
     except seta_client.SetaIndisponivel:
         telefones_seta = {}  # SETA fora: segue como antes, telefone inválido vai pro relatório
+
+    # Não cobrar o mesmo cliente mais de uma vez por dia, em nenhuma faixa: bloqueia
+    # quem já está pendente/reservado e quem já foi enviado hoje (GMT-3).
+    # Fica depois da consulta ao SETA para não segurar a trava da fila enquanto ela roda.
+    clientes_bloqueados = clientes_bloqueados_hoje(db)
+    blacklist = Blacklist(db)
 
     # Base de leads (Cobrança → Leads) desta faixa, pra resolver variáveis com
     # fonte_tipo="campo_cliente" direto do cadastro, sem depender da planilha
