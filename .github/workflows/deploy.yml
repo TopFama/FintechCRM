@@ -2,7 +2,10 @@ name: Deploy (VPS)
 
 # Deploy do CRM na VPS por SSH, com a chave do usuário deploy guardada nos
 # segredos do repositório (VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS e,
-# opcional, VPS_PORT).
+# opcional, VPS_PORT). O SSH da VPS só aceita conexão pela rede do Tailscale
+# (porta 22 fechada para a internet): a máquina do Actions entra no Tailscale
+# só durante o job, como dispositivo efêmero com a tag tag:ci (OAuth client em
+# TS_OAUTH_CLIENT_ID/TS_OAUTH_SECRET), e VPS_HOST é o IP do Tailscale da VPS.
 # Automático (decisão do dono, 27/09/2026): quando o workflow "Testes" termina
 # verde num push na main, publica exatamente o commit testado. CI vermelho não
 # publica nada; push só de .md não roda "Testes" e, por isso, não publica.
@@ -50,13 +53,24 @@ jobs:
           USUARIO: ${{ secrets.VPS_USER }}
           CHAVE: ${{ secrets.VPS_SSH_KEY }}
           CONHECIDOS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          TS_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_SEGREDO: ${{ secrets.TS_OAUTH_SECRET }}
         run: |
           faltando=""
+          [ -n "$TS_ID" ] || faltando="$faltando TS_OAUTH_CLIENT_ID"
+          [ -n "$TS_SEGREDO" ] || faltando="$faltando TS_OAUTH_SECRET"
           [ -n "$HOST" ] || faltando="$faltando VPS_HOST"
           [ -n "$USUARIO" ] || faltando="$faltando VPS_USER"
           [ -n "$CHAVE" ] || faltando="$faltando VPS_SSH_KEY"
           [ -n "$CONHECIDOS" ] || faltando="$faltando VPS_KNOWN_HOSTS"
           if [ -n "$faltando" ]; then echo "::error::Segredos faltando:$faltando"; exit 1; fi
+
+      - name: Entrar no Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
 
       - name: Preparar o SSH
         env:
