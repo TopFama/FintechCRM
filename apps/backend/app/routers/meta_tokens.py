@@ -204,7 +204,11 @@ async def update_meta_token(
         token.ativo = payload.ativo
 
     if "waba_id" in payload.model_fields_set:
-        token.waba_id = _waba_valida(payload.waba_id)
+        nova_waba = _waba_valida(payload.waba_id)
+        if nova_waba and nova_waba != token.waba_id and "token" not in payload.model_fields_set:
+            # Mesma checagem do cadastro: o token tem que enxergar a WABA nova
+            await _numeros_da_waba(crypto.decifrar(token.token_cifrado), nova_waba)
+        token.waba_id = nova_waba
 
     if "token" in payload.model_fields_set:
         token_raw = (payload.token or "").strip()

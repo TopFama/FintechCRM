@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -20,12 +21,14 @@ def create_user(
     db: Session = Depends(get_db),
     _admin: models.User = Depends(require_admin),
 ):
-    existing = db.query(models.User).filter(models.User.email == payload.email).first()
+    # E-mail sem diferença de maiúsculas, igual ao login: "Bruno@" e "bruno@" são a mesma conta
+    email = payload.email.strip().lower()
+    existing = db.query(models.User).filter(func.lower(models.User.email) == email).first()
     if existing:
         raise HTTPException(status.HTTP_409_CONFLICT, "Já existe um usuário com esse email")
     # Usuário criado por aqui nunca nasce admin: tem acesso a tudo que o admin tem,
     # menos gerenciar outros usuários (só quem já é admin passa por require_admin).
-    user = models.User(email=payload.email, password_hash=hash_password(payload.password), is_admin=False)
+    user = models.User(email=email, password_hash=hash_password(payload.password), is_admin=False)
     db.add(user)
     db.commit()
     db.refresh(user)

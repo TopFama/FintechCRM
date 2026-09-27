@@ -16,7 +16,8 @@ _TAMANHO_MAXIMO_PLANILHA_BYTES = 20 * 1024 * 1024
 
 
 async def ler_planilha_limitada(file: UploadFile) -> bytes:
-    content = await file.read()
+    # Lê no máximo o limite + 1 byte: arquivo gigante não vai inteiro para a memória
+    content = await file.read(_TAMANHO_MAXIMO_PLANILHA_BYTES + 1)
     if len(content) > _TAMANHO_MAXIMO_PLANILHA_BYTES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Planilha maior que o limite de 20 MB")
     return content
@@ -109,7 +110,8 @@ def ordenar_clientes(clientes: list[dict], sort_by: str, sort_dir: str, db: Sess
     else:
         valor_fn = lambda c: c.get(sort_by)
 
-    ordenados = sorted(clientes, key=lambda c: (valor_fn(c) is None, valor_fn(c) if valor_fn(c) is not None else 0))
-    if sort_dir == "desc":
-        ordenados.reverse()
-    return ordenados
+    # Vazios sempre no fim, nas duas direções
+    preenchidos = sorted(
+        (c for c in clientes if valor_fn(c) is not None), key=valor_fn, reverse=sort_dir == "desc"
+    )
+    return preenchidos + [c for c in clientes if valor_fn(c) is None]

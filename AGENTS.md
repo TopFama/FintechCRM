@@ -46,10 +46,12 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
   completa com zero à esquerda) e nome (reduz para o primeiro nome).
 - `utils/spreadsheet.py` — leitura de .xlsx (sem pandas, usa `openpyxl`) e geração do modelo de
   planilha para download. `utils/xlsx.py` gera os .xlsx exportáveis (relatórios, cobrança,
-  dashboard) com proteção contra injeção de fórmula; `utils/leads_xlsx.py` exporta leads e
+  dashboard) com proteção contra injeção de fórmula (texto que começa com "=" é gravado como texto); `utils/leads_xlsx.py` exporta leads e
   formata código/CPF/nome/celular. Não há CSV em lugar nenhum do sistema — todo upload/download
   de planilha é em Excel (.xlsx).
 - `utils/spc.py` — leitura do texto da consulta SPC guardado no SETA.
+- `utils/valor.py` — `ler_valor`: valor em reais escrito de qualquer jeito na planilha ("1.500,00",
+  "1 500,00", "10,00 reais", "US$ 50"); usado no upload da faixa e na planilha de campanha.
 - `utils/imagem.py` — confere e, se preciso, comprime a imagem de cabeçalho de template para o
   limite da Meta (5 MB, .jpg/.png), com a menor perda possível. Usa Pillow.
 - `alembic/` — migrations. Ver seção própria abaixo.

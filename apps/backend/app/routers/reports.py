@@ -18,7 +18,7 @@ from ..regras_db import carregar_regras
 from .. import cache, consultas_fila, fila_automatica, pausas, seta_client
 from ..services import efetividade_service, pagamentos_service
 from ..timezone import hora_br
-from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx, formula_safe
+from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx, formula_safe, texto_nunca_formula
 
 api = APIRouter()
 logger = logging.getLogger(__name__)
@@ -225,6 +225,12 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
                 cell.number_format = "0.0%"
     ws_camp.freeze_panes = "A2"
     ws_camp.column_dimensions["A"].width = 40
+
+    # Nome de campanha, faixa e loja vêm de cadastro: nada vira fórmula
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                texto_nunca_formula(cell)
 
     buffer = io.BytesIO()
     wb.save(buffer)

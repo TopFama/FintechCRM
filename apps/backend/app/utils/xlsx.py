@@ -25,6 +25,15 @@ def formula_safe(value: str) -> str:
     return value
 
 
+def texto_nunca_formula(cell) -> None:
+    """Texto que começa com "=" é gravado como texto, não como fórmula: o
+    relatório não executa nada ao abrir e o conteúdo aparece igual (sem o
+    apóstrofo que formula_safe acrescenta)."""
+
+    if cell.data_type == "f":
+        cell.data_type = "s"
+
+
 def build_xlsx(headers: list[str], rows: list[list], formatos: dict[int, str] | None = None) -> bytes:
     """Gera um .xlsx com cabeçalho destacado, painel congelado, autofiltro e
     largura de coluna ajustada — usado por todos os relatórios exportáveis.
@@ -39,6 +48,7 @@ def build_xlsx(headers: list[str], rows: list[list], formatos: dict[int, str] | 
     for row in rows:
         ws.append(row)
         for cell in ws[ws.max_row]:
+            texto_nunca_formula(cell)
             if isinstance(cell.value, datetime):
                 cell.number_format = DATETIME_FORMAT
             elif isinstance(cell.value, date):
