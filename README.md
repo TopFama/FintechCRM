@@ -376,22 +376,27 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
 A cada evento no GitHub (PR aberto/atualizado, push, horário agendado), o GitHub liga uma máquina
 Linux temporária, baixa o código, roda os passos de um arquivo de `.github/workflows/` e mostra o
 resultado como ✅/❌ no commit e no PR. Os workflows **só leem e conferem o código**: não alteram
-arquivo, não fazem commit e **não fazem deploy** (produção continua sendo `docker compose up
---build` no servidor, manual).
+arquivo nem fazem commit. A única exceção é o `deploy.yml`, que publica na VPS depois do CI verde
+na `main`; para isso, o usuário `deploy` da VPS lê o repositório com uma deploy key **somente
+leitura** (remote `git@github.com:TopFama/FintechCRM.git` em `/opt/FintechCRM`).
 
 | Workflow | Quando roda | Jobs (cada um numa máquina própria, em paralelo) |
 |---|---|---|
 | `testes.yml` | Todo PR e todo push na `main` (menos quando só mudam arquivos `.md`) e manual ("Run workflow") | **Backend (scripts de teste)**: Postgres descartável + `tests/rodar_todos.sh`. **Arquitetura (import-linter)**: `lint-imports` com `apps/backend/.importlinter`. **Frontend (build)**: `npm run build:frontend`. **E2E (Playwright)**: sobe Postgres, Redis, backend com Meta/Chatwoot/SETA/Google/Renegocie simulados e frontend, e um navegador percorre as telas (relatório do Playwright fica 7 dias como artefato quando falha). Em PR roda só as telas afetadas pelos arquivos alterados, com os cenários de que elas dependem (`e2e/selecionar-telas.mjs`; arquivo usado por todas as telas roda tudo; nada afetado pula o e2e); push na `main` e execução manual rodam a suíte inteira |
 | `e2e-mapa.yml` | PR que mexe em `e2e/selecionar-telas.mjs`, `e2e/tests/**` ou no próprio workflow; manual | Um job por tela: roda o spec só com os pré-requisitos declarados no mapa, para provar que a seleção do e2e em PR não depende de cenário fora do mapa |
 | `security-scan.yml` | Push/PR que mexe em `package.json`, `package-lock.json` ou `apps/backend/requirements.txt`; toda segunda às 9h UTC (6h em Brasília, pega falha nova em dependência que não mudou); manual | **npm audit (frontend)**: reprova vulnerabilidade alta ou crítica. **pip-audit (backend)**: reprova qualquer vulnerabilidade conhecida, exceto a exceção documentada no próprio arquivo (`ecdsa`, PYSEC-2026-1325, não afeta o app porque o JWT usa HS256) |
+| `deploy.yml` | **Automático** depois que o `testes.yml` passa inteiro num push na `main` (publica exatamente o commit testado; CI vermelho não publica). Manual ("Run workflow", `testar` ou `deploy`). PR que mexe no próprio arquivo roda o `testar` | Entra na rede Tailscale só durante o job (dispositivo efêmero `tag:ci`, segredos `TS_OAUTH_CLIENT_ID`/`TS_OAUTH_SECRET`; o SSH da VPS não aceita conexão da internet) e na VPS por SSH como o usuário `deploy` (`VPS_HOST` = IP do Tailscale da VPS, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, opcional `VPS_PORT`). **testar**: só lê (usuário, commit atual, alterações locais, containers, acesso da VPS ao GitHub). **deploy** (automático ou manual na `main`): `git merge --ff-only` do commit em `/opt/FintechCRM` e `docker compose up -d --build`. Os dois terminam conferindo `https://fintech.lojastopfama.com.br/api/health` |
 
 **Merge na `main`**: não há auto-merge do GitHub. Toda mudança entra por PR de uma branch de
 trabalho (exceto commit só de documentação `.md`, que vai direto para a `main`), e quem decide o merge é o agente de IA designado como maintainer do repositório,
 depois de avaliar os workflows e o diff do commit mais recente do PR; conflito que exige escolher
 entre dois comportamentos, ou mudança sensível, vai para o dono decidir antes. Critérios em
 [`AGENTS.md`](./AGENTS.md) → "Merge na main". O
-merge não publica nada: se entrou dependência nova ou migration, o deploy precisa de
-`docker compose up --build` no servidor.
+deploy é automático: quando o CI da `main` passa inteiro depois do merge, o workflow `deploy.yml`
+publica na VPS exatamente o commit testado (`docker compose up -d --build`, que já cobre
+dependência nova e migration, rodada na subida do backend) e confere a saúde do backend em
+produção. CI vermelho na `main` não publica nada. Para refazer um deploy à mão: Actions →
+"Deploy (VPS)" → Run workflow na `main`, ação `deploy`.
 
 ### Validação local
 
