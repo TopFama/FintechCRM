@@ -75,7 +75,9 @@ const TELAS = {
     arquivos: [`${F}pages/Configuracoes.tsx`, `${F}components/config/UsuariosCard.tsx`, `${B}routers/users.py`],
   },
   "09-cobranca": {
-    depende: [],
+    // "Enviar para fila" precisa das faixas (04) com disparo configurado (05); as
+    // contagens esperadas contam com as regras (06) e a blacklist (07) da suíte
+    depende: ["04-faixas", "05-horario", "06-indicadores", "07-blacklist"],
     arquivos: [
       `${F}pages/Cobranca.tsx`, `${F}components/BarraFiltrosCobranca.tsx`, `${F}components/CampoValorMaximo.tsx`,
       `${F}components/CamposLoja.tsx`, `${F}components/MultiSelect.tsx`, `${F}components/useOpcoesCobranca.ts`,
@@ -97,7 +99,8 @@ const TELAS = {
     ],
   },
   "11-disparo": {
-    depende: ["02-conexoes", "03-templates", "04-faixas", "05-horario", "10-importacao-e-fila"],
+    // a fila da faixa 3 A 10 é enchida pelo "Enviar para fila" da Cobrança (09)
+    depende: ["02-conexoes", "03-templates", "04-faixas", "05-horario", "09-cobranca", "10-importacao-e-fila"],
     arquivos: [
       `${F}pages/FaixaDetail.tsx`, `${F}components/EnviosFaixa.tsx`, `${B}dispatch_service.py`, `${B}elegibilidade.py`,
       `${B}fila_automatica.py`, `${B}pausas.py`, `${B}meta_client.py`, `${B}chatwoot_client.py`, `${B}routers/faixas.py`,
@@ -137,7 +140,8 @@ const TELAS = {
     ],
   },
   "16-remarketing": {
-    depende: [],
+    // Configurações → Faixas precisa ter faixas de atraso (sincronizadas no 04)
+    depende: ["04-faixas"],
     arquivos: [
       `${F}pages/Configuracoes.tsx`, `${F}pages/Campanhas.tsx`, `${F}components/config/RemarketingCard.tsx`,
       `${F}components/config/RenegocieConexaoCard.tsx`, `${B}routers/remarketing.py`, `${B}remarketing.py`,
