@@ -132,7 +132,8 @@ def buscar_base(
             "dias_min_juros": regras.juros.dias_min,
             "codigos": sorted(codigos) if codigos else None,
             # linhas com valor em atraso (sem e com juros); não reaproveita cache de antes
-            "versao": 2,
+            # 3: linhas trazem telefone4 (quarta opção de celular)
+            "versao": 3,
         },
     )
 
@@ -188,10 +189,12 @@ def buscar_base(
 
 
 def _montar_cliente(r: dict, faixa: str | None, cluster: str, entra: bool, faixa_compra: str | None) -> dict:
-    celular, origem = escolher_telefone(telefone2=r["telefone2"], telefone1=r["telefone1"], telefone3=r["telefone3"])
+    celular, origem = escolher_telefone(
+        telefone2=r["telefone2"], telefone1=r["telefone1"], telefone3=r["telefone3"], telefone4=r.get("telefone4")
+    )
     # Para relatório de telefone inválido: o primeiro campo que tinha algum dígito.
     celular_original = next(
-        (r[c] for c in ("telefone2", "telefone1", "telefone3") if r[c] and any(ch.isdigit() for ch in r[c])),
+        (r.get(c) for c in ("telefone2", "telefone1", "telefone3", "telefone4") if r.get(c) and any(ch.isdigit() for ch in r[c])),
         None,
     )
     return {
