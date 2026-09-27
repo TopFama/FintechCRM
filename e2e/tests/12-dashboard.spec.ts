@@ -1,4 +1,4 @@
-import { baixar, card, escolherMulti, expect, permitirErrosConsole, test } from "./fixtures";
+import { apiGet, baixar, card, escolherMulti, expect, permitirErrosConsole, test } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 const stat = (page: Page, rotulo: string) =>
@@ -311,11 +311,7 @@ test.describe("Dashboard", () => {
   });
   test("resumo e leads se atualizam sozinhos, sem F5, e param com a aba oculta", async ({ page }) => {
     await page.clock.install();
-    const [primeiro] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes("/dashboard/summary?")),
-      page.reload(),
-    ]);
-    const resumoReal = await primeiro.json();
+    await Promise.all([page.waitForResponse((r) => r.url().includes("/dashboard/summary?")), page.reload()]);
     await expect(stat(page, "Pendentes na fila")).not.toHaveText("999");
     await expect(page.locator(".atualizacao-auto")).toContainText(/atualizado às \d{2}:\d{2}/);
     const pedidos: URL[] = [];
@@ -324,6 +320,9 @@ test.describe("Dashboard", () => {
       if (/\/(dashboard\/(summary|pagos-7-dias)|leads)$/.test(u.pathname)) pedidos.push(u);
     });
     // Simula um envio acontecendo enquanto a tela está aberta
+    // resumo real lido pela API (ler o corpo da resposta do reload falha quando ela
+    // é de antes da navegação)
+    const resumoReal = await apiGet(page, "/dashboard/summary");
     await page.route("**/dashboard/summary?*", (r) => r.fulfill({ json: { ...resumoReal, total_pendentes: 999 } }));
     const resumos = () => pedidos.filter((u) => u.pathname.endsWith("/dashboard/summary"));
 
