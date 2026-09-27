@@ -737,3 +737,25 @@ class PagamentoSetaCliente(Base):
     codigo_cliente: Mapped[str] = mapped_column(String, primary_key=True)
     desde: Mapped[date] = mapped_column(Date)
     marca_dagua: Mapped[date] = mapped_column(Date, index=True)
+
+
+class CompraSeta(Base):
+    """Compras no crediário de cada cliente (faixa de compra), copiadas do SETA
+    (services/compras_seta.py): toda madrugada relê quem teve venda nova, aos
+    domingos relê todos, e ao abrir o filtro de faixa de compra relê as do dia."""
+
+    __tablename__ = "compras_seta"
+
+    codigo_cliente: Mapped[str] = mapped_column(String, primary_key=True)
+    qtd_compras: Mapped[int] = mapped_column(Integer, default=0)
+    ultima_compra: Mapped[date | None] = mapped_column(Date, nullable=True)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SincronizacaoSeta(Base):
+    """Quando cada cópia do SETA foi atualizada pela última vez (nome → data)."""
+
+    __tablename__ = "sincronizacoes_seta"
+
+    nome: Mapped[str] = mapped_column(String, primary_key=True)
+    executado_em: Mapped[datetime] = mapped_column(DateTime)

@@ -210,28 +210,24 @@ pagos AS (
        AND COALESCE(ft.auxiliar, '') NOT LIKE 'RE%'
        AND trim(ft.descricao) <> :descricao_seguro
      GROUP BY ft.pessoa
-),
--- Compras no crediário direto de vendas (índice de cliente), numa leitura só:
--- venda atual de condição tipo 4 (menos a 130) e venda migrada do ERP antigo
--- (condição 100 com CREDIARIO na obs), que não tem título VE correspondente.
-compras AS (
-    SELECT v.cliente AS pessoa, count(*) AS qtd_compras, max(v.data) AS ultima_compra
-      FROM vendas v
-      JOIN condicoes c ON c.codigo = v.condicoes
-      JOIN base b ON b.pessoa = v.cliente
-     WHERE v.status = 'S'
-       AND ((c.tipo = '4' AND c.codigo <> :condicao_ignorada)
-            OR (v.condicoes = :condicao_migrada AND v.obs LIKE '%CREDIARIO%'))
-     GROUP BY v.cliente
 )
+-- Compras (faixa de compra) não vêm daqui: ficam na cópia local do CRM
+-- (services/compras_seta.py), atualizada de madrugada.
 SELECT b.*,
-       COALESCE(g.valor_pago, 0)  AS valor_pago,
-       COALESCE(k.qtd_compras, 0) AS qtd_compras,
-       k.ultima_compra
+       COALESCE(g.valor_pago, 0)  AS valor_pago
   FROM base b
   LEFT JOIN pagos g ON g.pessoa = b.pessoa
-  LEFT JOIN compras k ON k.pessoa = b.pessoa
 """
+
+
+# Compra no crediário: venda finalizada (status S) de condição tipo 4 (menos a
+# 130) ou venda migrada do ERP antigo (condição 100 com CREDIARIO na obs).
+_SQL_VENDA_CREDIARIO = """
+    v.status = 'S'
+    AND ((c.tipo = '4' AND c.codigo <> :condicao_ignorada)
+         OR (v.condicoes = :condicao_migrada AND v.obs LIKE '%CREDIARIO%'))
+"""
+_PARAMS_VENDA = {"condicao_ignorada": CONDICAO_IGNORADA, "condicao_migrada": CONDICAO_MIGRADA}
 
 
 _DIAS_ATRASO = "(current_date - a.vencimento_mais_antigo)"
@@ -289,9 +285,8 @@ def buscar_base_cobranca(
       cobrança (`vencimento <= max(hoje, parcela mais antiga)`: as vencidas e,
       no lembrete, a que vence amanhã) e o valor leva multa e juros (`juros`).
     - `valor_pago` soma tudo que o cliente pagou (menos auxiliar `RE…`), sem seguro.
-    - `qtd_compras` conta vendas finalizadas (`status = 'S'`) no crediário:
-      condição tipo 4 (menos a 130) ou venda migrada do ERP antigo (condição
-      100 com "CREDIARIO" na obs); `ultima_compra` é a data da mais recente.
+    - compras (faixa de compra) não vêm desta consulta: ver compras_de_clientes
+      e a cópia local em services/compras_seta.py.
     - blacklist e o código ignorado ficam de fora, com ou sem atraso.
     - `codigos` restringe a esses clientes (remarketing), num CTE com VALUES
       em lotes de 1000, nunca uma consulta por cliente."""
@@ -304,8 +299,6 @@ def buscar_base_cobranca(
         "bl_codigos": bloqueados_codigos or [],
         "bl_cpfs": bloqueados_cpfs or [],
         "descricao_seguro": DESCRICAO_SEGURO,
-        "condicao_ignorada": CONDICAO_IGNORADA,
-        "condicao_migrada": CONDICAO_MIGRADA,
         "dias_min_juros": juros.dias_min,
         "juros_dia": juros.juros_dia,
         "multa": juros.multa,
@@ -382,6 +375,81 @@ def buscar_spc(codigos: list[str]) -> dict[str, str]:
             return {r.codigo: r.scpcresultado for r in conn.execute(stmt, {"codigos": codigos})}
     except SQLAlchemyError as exc:
         logger.warning("Falha ao consultar o SETA: %s", exc.__class__.__name__)
+        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
+
+
+def compras_de_clientes(codigos: list[str]) -> dict[str, tuple[int, date | None]]:
+    """Compras no crediário de cada cliente: código → (quantidade, data da mais
+    recente). Vendas pelo índice de cliente, em lotes de 1000. Cliente sem
+    compra volta com (0, None)."""
+
+    resultado: dict[str, tuple[int, date | None]] = {c: (0, None) for c in codigos}
+    if not codigos:
+        return resultado
+    engine = engine_ou_erro()
+    try:
+        with engine.connect() as conn:
+            for i in range(0, len(codigos), 1000):
+                lote = codigos[i : i + 1000]
+                values = ", ".join(f"(:p{j})" for j in range(len(lote)))
+                sql = f"""
+                    WITH alvo(pessoa) AS (VALUES {values})
+                    SELECT trim(v.cliente) AS codigo, count(*) AS qtd, max(v.data) AS ultima
+                      FROM vendas v
+                      JOIN condicoes c ON c.codigo = v.condicoes
+                      -- char(8) bruto, pra usar idx_vendas_cliente
+                      JOIN alvo a ON v.cliente = CAST(a.pessoa AS char(8))
+                     WHERE {_SQL_VENDA_CREDIARIO}
+                     GROUP BY v.cliente
+                """
+                params = {**_PARAMS_VENDA, **{f"p{j}": c for j, c in enumerate(lote)}}
+                for r in conn.execute(text(sql), params):
+                    resultado[r.codigo] = (int(r.qtd), r.ultima)
+    except SQLAlchemyError as exc:
+        logger.warning("Falha ao consultar compras no SETA: %s", exc.__class__.__name__)
+        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
+    return resultado
+
+
+def clientes_com_venda_desde(desde: date) -> list[str]:
+    """Clientes com qualquer venda (finalizada ou não) a partir da data: são os
+    que podem ter mudado de faixa de compra. Índice de data de vendas."""
+
+    engine = engine_ou_erro()
+    try:
+        with engine.connect() as conn:
+            return [
+                r[0]
+                for r in conn.execute(
+                    text("SELECT DISTINCT trim(cliente) FROM vendas WHERE data >= :desde AND cliente IS NOT NULL"),
+                    {"desde": desde},
+                )
+                if r[0]
+            ]
+    except SQLAlchemyError as exc:
+        logger.warning("Falha ao consultar vendas no SETA: %s", exc.__class__.__name__)
+        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
+
+
+def compras_de_todos() -> dict[str, tuple[int, date | None]]:
+    """Compras no crediário de todos os clientes (carga completa semanal, de
+    madrugada): uma leitura da tabela de vendas agrupada por cliente."""
+
+    engine = engine_ou_erro()
+    sql = f"""
+        SELECT trim(v.cliente) AS codigo, count(*) AS qtd, max(v.data) AS ultima
+          FROM vendas v
+          JOIN condicoes c ON c.codigo = v.condicoes
+         WHERE {_SQL_VENDA_CREDIARIO}
+         GROUP BY v.cliente
+    """
+    try:
+        with engine.connect() as conn:
+            # Só de madrugada: lê a tabela de vendas inteira, passa do teto padrão por consulta
+            conn.execute(text("SET statement_timeout = 900000"))
+            return {r.codigo: (int(r.qtd), r.ultima) for r in conn.execute(text(sql), _PARAMS_VENDA) if r.codigo}
+    except SQLAlchemyError as exc:
+        logger.warning("Falha na carga de compras do SETA: %s", exc.__class__.__name__)
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
 
 
