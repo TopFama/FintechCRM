@@ -4,6 +4,13 @@ import { apiGet, apiSend, card, expect, permitirErrosConsole, test } from "./fix
 // proposta há 40 dias, 00000005 e 00000027 têm acordo ativo (no SETA falso a entrada do
 // 00000005 está paga e a do 00000027 vencida em aberto) e 00000009 vem num segmento
 // antigo (CANCELOU_PROPOSTA), que o CRM ignora.
+// Espera a chave ser gravada antes de testar; sem isso o teste pode usar a chave anterior.
+const salvar = (page: import("@playwright/test").Page, renegocie: import("@playwright/test").Locator) =>
+  Promise.all([
+    page.waitForResponse((r) => r.url().includes("/remarketing/conexao") && r.request().method() === "PUT"),
+    renegocie.getByRole("button", { name: "Salvar" }).click(),
+  ]);
+
 test.describe.serial("Remarketing do Renegocie", () => {
   const acordo = (page: import("@playwright/test").Page) => card(page, "Acordo ativo com entrada não paga");
 
@@ -12,12 +19,12 @@ test.describe.serial("Remarketing do Renegocie", () => {
     const renegocie = card(page, /^Renegocie/);
     await expect(renegocie.getByLabel("Endereço do Renegocie")).toHaveValue("http://renegocie-api:8000");
     await renegocie.getByLabel("Chave de integração").fill("chave-errada");
-    await renegocie.getByRole("button", { name: "Salvar" }).click();
+    await salvar(page, renegocie);
     await renegocie.getByRole("button", { name: "Testar conexão" }).click();
     await expect(renegocie.locator(".error-box")).toContainText("recusou a chave");
 
     await renegocie.getByLabel("Chave de integração").fill("chave-teste");
-    await renegocie.getByRole("button", { name: "Salvar" }).click();
+    await salvar(page, renegocie);
     await renegocie.getByRole("button", { name: "Testar conexão" }).click();
     await expect(renegocie.locator(".success-box")).toContainText("Conectado. 5 desistência(s)");
   });
