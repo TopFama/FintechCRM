@@ -7,6 +7,7 @@ import MultiSelect from "../MultiSelect";
 import SelectCampanha from "../SelectCampanha";
 import { OpcoesCobranca, opcoesCluster } from "../useOpcoesCobranca";
 import SortableTh from "../SortableTh";
+import TabelaAjustavel from "../TabelaAjustavel";
 import { ordemFaixaFn, ordenarPor, SortDirection, useSort } from "../../sort";
 
 type Aba = "faixa" | "loja" | "campanha";
@@ -341,7 +342,7 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
               <p>Nenhum lead enviado no período e filtros escolhidos.</p>
             </div>
           ) : (
-            <div className="table-wrap">
+            <TabelaAjustavel id="efetividade" rotulo="Efetividade">
               <table>
                 <thead>
                   <tr>
@@ -399,7 +400,7 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
                   </tr>
                 </tbody>
               </table>
-            </div>
+            </TabelaAjustavel>
           )}
         </>
       )}

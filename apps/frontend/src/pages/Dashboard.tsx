@@ -8,6 +8,7 @@ import OrcamentoProgressaoCard from "../components/dashboard/OrcamentoProgressao
 import FiltroPeriodo, { OpcaoPeriodo, Periodo, periodoDe } from "../components/FiltroPeriodo";
 import DicaIndicador from "../components/DicaIndicador";
 import SortableTh from "../components/SortableTh";
+import TabelaAjustavel from "../components/TabelaAjustavel";
 import { formatBRL, formatDecimal, formatHora, formatNumero, formatPercentual } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../components/useAtualizacaoAutomatica";
@@ -306,7 +307,7 @@ function ResumoFila({
             <p>Nenhum cliente entrou na fila de nenhuma faixa neste período.</p>
           </div>
         ) : (
-          <div className="table-wrap">
+          <TabelaAjustavel id="por-faixa" rotulo="Por faixa">
             <table className="tabela-por-faixa">
               <thead>
                 <tr>
@@ -374,7 +375,7 @@ function ResumoFila({
                 </tr>
               </tfoot>
             </table>
-          </div>
+          </TabelaAjustavel>
         )}
       </div>
 

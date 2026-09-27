@@ -313,6 +313,11 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    fórmula de cada indicador. A matriz **Base de cobrança — cluster × faixa** tem as abas
    Clientes, SPC, Valor em aberto e Valor em atraso (só parcelas vencidas, original ou com multa
    e juros conforme o filtro "Valor considerado").
+   As tabelas do Dashboard (Por faixa, Efetividade, gasto por número e a matriz) começam com no
+   máximo 70% da altura da tela e têm uma barra embaixo para ajustar a altura (arrastar, ou ↑/↓
+   com o foco nela; duplo clique volta ao padrão), guardada no navegador por tabela
+   (`components/TabelaAjustavel.tsx`). Na rolagem, cabeçalho, linha de total e primeira coluna
+   ficam fixos.
    **Pagamentos**: "Pagaram em até 7 dias", Efetividade e "Quem pagou" leem a tabela local
    `pagamentos_seta` (baixas do SETA de quem já foi cobrado), não o SETA direto. O worker relê as
    baixas só enquanto alguém usa o CRM (requisição de usuário nos últimos 15 min, sem contar a

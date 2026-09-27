@@ -1690,3 +1690,76 @@ button.dica-botao:active:not(:disabled) {
   border-top: 1px solid rgba(255, 255, 255, 0.2);
   padding-top: 6px;
 }
+
+/* --- Tabela de altura ajustável do Dashboard (TabelaAjustavel) --- */
+/* Rola nos dois sentidos; o padrão cabe na tela e a barra de baixo ajusta */
+.table-wrap.tabela-ajustavel {
+  overflow: auto;
+  max-height: 70vh;
+}
+/* Cabeçalho, linha de total e primeira coluna ficam fixos na rolagem. Com
+   border-collapse a borda não acompanha a célula fixa: vai em box-shadow */
+.tabela-ajustavel thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-surface);
+  box-shadow: inset 0 -1px var(--color-border);
+}
+.tabela-ajustavel tfoot td,
+.tabela-ajustavel tr.linha-total td,
+.tabela-ajustavel tr.matriz-row-total td {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: var(--color-surface);
+  border-top: none;
+  box-shadow: inset 0 2px var(--color-border-strong);
+}
+.tabela-ajustavel th:first-child,
+.tabela-ajustavel td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--color-surface);
+}
+.tabela-ajustavel tbody tr:hover td:first-child {
+  background: #fafbff;
+}
+.tabela-ajustavel tr.linha-clicavel:hover td:first-child {
+  background: var(--color-primary-light);
+}
+.tabela-ajustavel thead th:first-child,
+.tabela-ajustavel tfoot td:first-child,
+.tabela-ajustavel tr.linha-total td:first-child,
+.tabela-ajustavel tr.matriz-row-total td:first-child {
+  z-index: 3;
+}
+/* Barra de arrastar embaixo da tabela */
+.alca-altura {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  margin-top: 4px;
+  cursor: ns-resize;
+  touch-action: none;
+  border-radius: var(--radius-sm);
+}
+.alca-altura::before {
+  content: "";
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border-strong);
+  transition: background var(--transition);
+}
+.alca-altura:hover::before,
+.alca-altura:focus-visible::before {
+  background: var(--color-primary);
+}
+@media (pointer: coarse) {
+  .alca-altura {
+    height: 28px;
+  }
+}
