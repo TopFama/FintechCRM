@@ -8,7 +8,7 @@ from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from ..fila_automatica import sem_cobrados_hoje
+from ..elegibilidade import sem_cobrados_hoje
 from ..services import compras_seta
 from ..timezone import hoje_br
 from ..utils.spc import parse_spc

@@ -41,7 +41,7 @@ import httpx  # noqa: E402
 import openpyxl  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import dispatch_service, fila_automatica, models, worker  # noqa: E402
+from app import dispatch_service, elegibilidade, fila_automatica, models, worker  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
@@ -262,7 +262,7 @@ assert r.status_code == 200 and r.json()["qtd"] == 1, r.text
 ciclo()
 assert status(it) == models.QueueStatus.cancelled and it.error_message.startswith("Envio parado por ")
 assert enviados == []
-assert "00000008" not in fila_automatica.clientes_bloqueados_hoje(db)
+assert "00000008" not in elegibilidade.clientes_bloqueados_hoje(db)
 
 # =============================================================================
 print("=== 6. Erro da Meta libera o cliente; falha incerta ocupa ===")
@@ -273,14 +273,14 @@ ciclo()
 assert status(it) == models.QueueStatus.error and it.sent_at is None
 assert "número não tem WhatsApp" in it.error_message
 assert db.query(models.ErrorLog).filter_by(queue_item_id=it.id).count() == 1
-assert "00000009" not in fila_automatica.clientes_bloqueados_hoje(db)
+assert "00000009" not in elegibilidade.clientes_bloqueados_hoje(db)
 
 modo_meta["resposta"] = "queda"
 it2 = item(faixa_a, "00000010", "5511911110010")
 ciclo()
 assert status(it2) == models.QueueStatus.error and it2.sent_at is not None
 assert it2.error_message.startswith("Falha inesperada ao enviar")
-assert "00000010" in fila_automatica.clientes_bloqueados_hoje(db)
+assert "00000010" in elegibilidade.clientes_bloqueados_hoje(db)
 # e segura um segundo item do mesmo cliente no mesmo dia
 modo_meta["resposta"] = "ok"
 it3 = item(faixa_b, "00000010", "5511911110010")
@@ -305,14 +305,14 @@ casos = {
 }
 for codigo, extra in casos.items():
     item(faixa_a, codigo, "5511911119999", **extra)
-assert fila_automatica.clientes_bloqueados_hoje(db) == {"00000011", "00000012", "00000013", "00000014"}
-assert fila_automatica.cobrados_hoje(db) == {"00000013", "00000014"}
+assert elegibilidade.clientes_bloqueados_hoje(db) == {"00000011", "00000012", "00000013", "00000014"}
+assert elegibilidade.cobrados_hoje(db) == {"00000013", "00000014"}
 
 # =============================================================================
 print("=== 8. enfileirar_clientes: bloqueio, telefone, variáveis e formato ===")
 limpar()
 item(faixa_b, "00000020", "5511911110020")  # já pendente em outra faixa
-bloqueados = fila_automatica.clientes_bloqueados_hoje(db)
+bloqueados = elegibilidade.clientes_bloqueados_hoje(db)
 enfileirados: list[dict] = []
 clientes = [
     cliente("00000020"),  # bloqueado

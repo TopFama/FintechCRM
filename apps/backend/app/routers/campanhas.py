@@ -323,18 +323,10 @@ def pausar(
     ou até `ate`. É a mesma pausa por faixa da tela de Pendentes."""
 
     c = _get(db, campanha_id)
-    if payload.ate and payload.ate < hoje_br():
+    if pausas.data_final_passou(payload.ate):
         raise _erro("A data final da pausa já passou")
-    if c.faixa_id not in _pausas_por_faixa(db):
-        db.add(
-            models.PausaEnvio(
-                escopo="faixa",
-                valor=c.faixa_id,
-                motivo=payload.motivo.strip() or "Campanha pausada",
-                ate=payload.ate,
-                created_by=user.email,
-            )
-        )
+    if pausas.ativa_do_escopo(db, "faixa", c.faixa_id) is None:
+        pausas.pausar(db, "faixa", c.faixa_id, payload.motivo.strip() or "Campanha pausada", payload.ate, user.email)
         db.commit()
     return ver(campanha_id, db, user)
 
@@ -342,10 +334,7 @@ def pausar(
 @router.post("/{campanha_id}/retomar")
 def retomar(campanha_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     c = _get(db, campanha_id)
-    for p in pausas.ativas(db):
-        if p.escopo == "faixa" and p.valor == c.faixa_id:
-            p.encerrada_em = datetime.utcnow()
-            p.encerrada_por = user.email
+    pausas.retomar_escopo(db, "faixa", c.faixa_id, user.email)
     db.commit()
     return ver(campanha_id, db, user)
 
@@ -358,10 +347,7 @@ def parar(campanha_id: str, db: Session = Depends(get_db), user: models.User = D
     c = _get(db, campanha_id)
     c.ativa = False
     c.parada_em = datetime.utcnow()
-    for p in pausas.ativas(db):
-        if p.escopo == "faixa" and p.valor == c.faixa_id:
-            p.encerrada_em = datetime.utcnow()
-            p.encerrada_por = user.email
+    pausas.retomar_escopo(db, "faixa", c.faixa_id, user.email)
     db.commit()
     cancelados = pausas.parar(db, "faixa", c.faixa_id, user.email)
     return {**ver(campanha_id, db, user), "cancelados": cancelados}

@@ -40,6 +40,35 @@ def ativas(db: Session) -> list[models.PausaEnvio]:
     )
 
 
+def ativa_do_escopo(db: Session, escopo: str, valor: str) -> models.PausaEnvio | None:
+    return next((p for p in ativas(db) if p.escopo == escopo and p.valor == valor), None)
+
+
+def data_final_passou(ate) -> bool:
+    return bool(ate) and ate < hoje_br()
+
+
+def pausar(db: Session, escopo: str, valor: str, motivo: str, ate, usuario: str) -> models.PausaEnvio:
+    """Cria a pausa (sem commit: quem chama decide, para pausar em lote numa transação só)."""
+    pausa = models.PausaEnvio(escopo=escopo, valor=valor, motivo=motivo, ate=ate, created_by=usuario)
+    db.add(pausa)
+    return pausa
+
+
+def retomar(pausa: models.PausaEnvio, usuario: str) -> None:
+    """Encerra a pausa, se ainda estiver aberta (sem commit)."""
+    if pausa.encerrada_em is None:
+        pausa.encerrada_em = datetime.utcnow()
+        pausa.encerrada_por = usuario
+
+
+def retomar_escopo(db: Session, escopo: str, valor: str, usuario: str) -> None:
+    """Encerra toda pausa ativa do escopo (sem commit)."""
+    for p in ativas(db):
+        if p.escopo == escopo and p.valor == valor:
+            retomar(p, usuario)
+
+
 def _lojas_do_item(lojas: str | None) -> set[str]:
     return {l for l in (lojas or "").split(",") if l}
 

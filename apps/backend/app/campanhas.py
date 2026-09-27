@@ -29,17 +29,14 @@ from openpyxl import load_workbook
 from sqlalchemy.orm import Session, selectinload
 
 from . import cobranca_base, lojas as lojas_base, models, pausas, seta_client
+from .elegibilidade import STATUS_OCUPA_CLIENTE, clientes_bloqueados_hoje, ocupa_cliente
 from .fila_automatica import (
-    STATUS_OCUPA_CLIENTE,
-    clientes_bloqueados_hoje,
     enfileirar_clientes,
     enfileirar_leads,
-    inicio_hoje_utc,
-    ocupa_cliente,
 )
 from .leads_service import gerar_leads_de_clientes
 from .regras_db import carregar_regras
-from .timezone import hoje_br
+from .timezone import hoje_br, inicio_hoje_utc
 from .utils.phone import is_valid_phone
 
 logger = logging.getLogger("campanhas")
