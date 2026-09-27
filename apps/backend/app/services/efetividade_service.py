@@ -147,11 +147,10 @@ def obter_dados_efetividade(
     valores_pagos: dict[tuple[str, date], dict] = {}
     if pares_cobranca:
         try:
-            pagamentos = pagamentos_seta.pagamentos_pos_cobranca(db, sorted(pares_cobranca), dias_janela)
             # Recebimento = o que entrou de fato no SETA na janela (mesma soma do
             # relatório Quem pagou e do card do Dashboard), não o valor cobrado.
-            valores_pagos = pagamentos_seta.valores_pagos_pos_cobranca(
-                db, sorted(pares_cobranca), dias_janela=dias_janela
+            pagamentos, valores_pagos = pagamentos_seta.analisar_pos_cobranca(
+                db, sorted(pares_cobranca), dias_janela
             )
         except seta_client.SetaIndisponivel as exc:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc

@@ -22,13 +22,13 @@ CREATE TABLE financeiro_titulos (
     codigo char(10) PRIMARY KEY, pessoa char(8), valor numeric(14,2), vencimento date,
     empresa char(2), portador char(3), rp char(1), status char(1), tipo char(1),
     auxiliar char(10), descricao char(40), pagamento date, valorpago numeric(14,2),
-    documento char(10), lote char(10)
+    documento char(10), lote char(10), emissao date
 );
 CREATE INDEX ON financeiro_titulos (pessoa);
 -- lote do caixa: horário da baixa feita na loja (títulos daqui ficam sem lote)
 CREATE TABLE caixa_lotes (codigo char(10) PRIMARY KEY, datahora timestamp);
 CREATE TABLE condicoes (codigo char(3) PRIMARY KEY, tipo char(1));
-CREATE TABLE vendas (codigo char(8) PRIMARY KEY, cliente char(8), data date, status char(1), condicoes char(3));
+CREATE TABLE vendas (codigo char(8) PRIMARY KEY, cliente char(8), data date, status char(1), condicoes char(3), obs text);
 """
 
 NOMES = [

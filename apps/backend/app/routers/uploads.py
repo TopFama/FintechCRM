@@ -4,7 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session, selectinload
 
-from .. import models, schemas
+from .. import models, schemas, seta_client
 from ..pausas import lojas_formatadas
 from ..database import get_db
 from ..regras_db import carregar_regras
@@ -12,7 +12,7 @@ from ..blacklist import Blacklist
 from ..elegibilidade import clientes_bloqueados_hoje
 from ..deps import get_current_user
 from ..utils.document import extract_first_name, format_cpf, normalize_seta_code
-from ..utils.phone import eh_fixo, is_valid_phone, normalize_phone
+from ..utils.phone import eh_fixo, escolher_telefone, is_valid_phone, normalize_phone
 from ..timezone import hoje_br
 from ..utils.spreadsheet import parse_uploaded_spreadsheet, read_spreadsheet_preview
 from .comum import ler_planilha_limitada
@@ -167,6 +167,21 @@ async def upload_planilha(
     clientes_bloqueados = clientes_bloqueados_hoje(db)
     blacklist = Blacklist(db)
 
+    # Celular da planilha inválido: tenta telefone2, telefone1 e telefone3 do
+    # cadastro no SETA (mesma ordem da base de cobrança). Uma consulta só.
+    codigos_sem_celular = sorted(
+        {
+            c
+            for row in rows
+            if not is_valid_phone((row.get(field_mapping.celular) or "").strip())
+            and (c := normalize_seta_code((row.get(field_mapping.codigo_cliente) or "").strip()))
+        }
+    )
+    try:
+        telefones_seta = seta_client.telefones_por_codigo(codigos_sem_celular)
+    except seta_client.SetaIndisponivel:
+        telefones_seta = {}  # SETA fora: segue como antes, telefone inválido vai pro relatório
+
     # Base de leads (Cobrança → Leads) desta faixa, pra resolver variáveis com
     # fonte_tipo="campo_cliente" direto do cadastro, sem depender da planilha
     # subida. Quando o mesmo código aparece em mais de um lead da faixa (datas
@@ -221,6 +236,13 @@ async def upload_planilha(
             reasons.append(f"Linha {i}: CPF inválido ({cpf_raw or 'vazio'}) — use até 11 dígitos numéricos")
             continue
 
+        if not is_valid_phone(celular_original):
+            cadastro = telefones_seta.get(codigo_cliente) or {}
+            alternativo, _campo = escolher_telefone(
+                telefone2=cadastro.get("telefone2"), telefone1=cadastro.get("telefone1"), telefone3=cadastro.get("telefone3")
+            )
+            if alternativo:
+                celular_original = alternativo
         if not is_valid_phone(celular_original):
             db.add(
                 models.InvalidPhoneRecord(

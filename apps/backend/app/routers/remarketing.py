@@ -139,6 +139,8 @@ def _linha_previa(c: dict) -> dict:
         "valor_cobrar": c["valor_cobrar"],
         "cluster": c["cluster"],
         "evento_em": c["evento_em"],
+        # número da proposta gerado pelo Renegocie; existe mesmo quando o acordo não foi lançado no SETA
+        "proposta": c["proposta"],
         # código do acordo no SETA (ft.auxiliar, "RE" + reparcelamento); só existe se chegou a ser lançado
         "referencia_seta": c["referencia_seta"],
         "entrada_vencimento": c["entrada_vencimento"],
