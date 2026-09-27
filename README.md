@@ -376,8 +376,9 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
 A cada evento no GitHub (PR aberto/atualizado, push, horário agendado), o GitHub liga uma máquina
 Linux temporária, baixa o código, roda os passos de um arquivo de `.github/workflows/` e mostra o
 resultado como ✅/❌ no commit e no PR. Os workflows **só leem e conferem o código**: não alteram
-arquivo, não fazem commit e **não fazem deploy** (produção continua sendo `docker compose up
---build` no servidor, manual).
+arquivo nem fazem commit. A única exceção é o `deploy.yml`, que publica na VPS depois do CI verde
+na `main`; para isso, o usuário `deploy` da VPS lê o repositório com uma deploy key **somente
+leitura** (remote `git@github.com:TopFama/FintechCRM.git` em `/opt/FintechCRM`).
 
 | Workflow | Quando roda | Jobs (cada um numa máquina própria, em paralelo) |
 |---|---|---|
