@@ -706,7 +706,7 @@ function TabelaPagamentos({
         <div className="stat">
           <div>
             <div className="value">{formatBRL(dados.valor_cobrado)}</div>
-            <div className="label">Valor cobrado deles</div>
+            <div className="label">Valor cobrado</div>
           </div>
         </div>
         <div className="stat">

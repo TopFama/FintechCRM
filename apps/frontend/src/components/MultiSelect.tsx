@@ -13,6 +13,8 @@ interface MultiSelectProps {
   disabled?: boolean;
   placeholder?: string;
   id?: string;
+  // chamado toda vez que a lista abre (ex.: atualizar dados antes de filtrar)
+  onOpen?: () => void;
 }
 
 export default function MultiSelect({
@@ -23,9 +25,16 @@ export default function MultiSelect({
   disabled,
   placeholder = "Todos",
   id,
+  onOpen,
 }: MultiSelectProps) {
   const [aberto, setAberto] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (aberto) onOpen?.();
+    // só na abertura: onOpen muda a cada render do pai
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberto]);
 
   // Fecha ao clicar fora
   useEffect(() => {

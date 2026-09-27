@@ -25,7 +25,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, seta_client
-from ..timezone import dia_br, hoje_br, hora_br
+from ..timezone import dia_br, hoje_br, hora_br, inicio_do_dia_utc
 
 logger = logging.getLogger(__name__)
 
@@ -90,15 +90,30 @@ def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
     copiados; se todos já foram, não toca o SETA. Devolve quantos títulos
     vieram do SETA. Levanta seta_client.SetaIndisponivel."""
 
+    if codigos is not None:
+        # Tela aberta: só importa quem ainda não foi copiado. Cobrança anterior à
+        # cópia de quem já foi copiado fica pra rodada completa (a cada 30 min).
+        # Lista inteira numa leitura: IN com mil códigos já varre a tabela
+        # (pequena) de qualquer jeito, uma vez por lote
+        ja_copiados = {c for (c,) in db.query(models.PagamentoSetaCliente.codigo_cliente)}
+        codigos = set(codigos) - ja_copiados
+        if not codigos:
+            return 0
+
     with _trava:
         hoje = hoje_br()
         cobrancas = _cobrancas(db, codigos)
         cobrados = {c: primeira for c, (primeira, _) in cobrancas.items()}
-        copiados = {
-            c.codigo_cliente: c
-            for lote in _em_lotes(sorted(cobrados))
-            for c in db.query(models.PagamentoSetaCliente).filter(models.PagamentoSetaCliente.codigo_cliente.in_(lote))
-        }
+        if codigos is None:
+            copiados = {c.codigo_cliente: c for c in db.query(models.PagamentoSetaCliente) if c.codigo_cliente in cobrados}
+        else:
+            copiados = {
+                c.codigo_cliente: c
+                for lote in _em_lotes(sorted(cobrados))
+                for c in db.query(models.PagamentoSetaCliente).filter(
+                    models.PagamentoSetaCliente.codigo_cliente.in_(lote)
+                )
+            }
         # Cliente novo (ou com cobrança anterior ao que já foi copiado): lê tudo desde a primeira cobrança
         leituras = {c: d for c, d in cobrados.items() if c not in copiados or d < copiados[c].desde}
         if codigos is None:
@@ -167,29 +182,52 @@ def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
 def _horarios_envio(db: Session, pares: list[tuple[str, date]]) -> dict[tuple[str, date], datetime]:
     """(codigo_cliente, data_cobranca) → primeiro envio naquele dia, na hora de
     Brasília (mesma referência do horário do caixa do SETA)."""
-    codigos = sorted({c for c, _ in pares})
+    if not pares:
+        return {}
+    codigos = {c for c, _ in pares}
+    dias = [d for _, d in pares]
     horarios: dict[tuple[str, date], datetime] = {}
-    for lote in _em_lotes(codigos):
-        for codigo, cobrado_em in db.query(models.Lead.codigo_cliente, models.Lead.cobrado_em).filter(
-            models.Lead.codigo_cliente.in_(lote), models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None)
-        ):
-            local = hora_br(cobrado_em)
-            chave = (codigo, local.date())
-            if chave not in horarios or local < horarios[chave]:
-                horarios[chave] = local
+    # Só os dias das cobranças pedidas (índice de cobrado_em); filtra os clientes aqui
+    for codigo, cobrado_em in db.query(models.Lead.codigo_cliente, models.Lead.cobrado_em).filter(
+        models.Lead.status == "cobrado",
+        models.Lead.cobrado_em >= inicio_do_dia_utc(min(dias)),
+        models.Lead.cobrado_em < inicio_do_dia_utc(max(dias) + timedelta(days=1)),
+    ):
+        if codigo not in codigos:
+            continue
+        local = hora_br(cobrado_em)
+        chave = (codigo, local.date())
+        if chave not in horarios or local < horarios[chave]:
+            horarios[chave] = local
     return horarios
 
 
 def _baixas_por_cliente(
-    db: Session, pares: list[tuple[str, date]], buscar_novos: bool
-) -> dict[str, list[models.PagamentoSeta]]:
+    db: Session, pares: list[tuple[str, date]], buscar_novos: bool, ate: date | None = None
+) -> dict[str, list]:
+    """Baixas copiadas dos clientes, só a partir da cobrança mais antiga pedida
+    (e até `ate`): antes disso nenhuma conta, e o histórico inteiro pesa."""
     codigos = {c for c, _ in pares}
     # Quem foi cobrado depois da última rodada ainda não está copiado: busca só esses
     if buscar_novos:
         sincronizar(db, codigos)
-    baixas: dict[str, list[models.PagamentoSeta]] = defaultdict(list)
-    for lote in _em_lotes(sorted(codigos)):
-        for b in db.query(models.PagamentoSeta).filter(models.PagamentoSeta.codigo_cliente.in_(lote)):
+    inicio = min(d for _, d in pares)
+    colunas = (
+        models.PagamentoSeta.codigo_cliente,
+        models.PagamentoSeta.pagamento,
+        models.PagamentoSeta.valor,
+        models.PagamentoSeta.rp,
+        models.PagamentoSeta.pago_em,
+    )
+    # Uma leitura só pelo intervalo de datas, filtrando os clientes aqui: a cópia
+    # é pequena, e cliente IN (...) + data em lotes fazia o Postgres escolher o
+    # índice de data e varrer o período inteiro a cada lote.
+    q = db.query(*colunas).filter(models.PagamentoSeta.pagamento >= inicio)
+    if ate is not None:
+        q = q.filter(models.PagamentoSeta.pagamento <= ate)
+    baixas: dict[str, list] = defaultdict(list)
+    for b in q:
+        if b.codigo_cliente in codigos:
             baixas[b.codigo_cliente].append(b)
     return baixas
 
@@ -206,25 +244,58 @@ def _na_janela(
     return dias_janela is None or b.pagamento <= data_cobranca + timedelta(days=dias_janela)
 
 
-def pagamentos_pos_cobranca(
-    db: Session, pares: list[tuple[str, date]], dias_janela: int | None = None, buscar_novos: bool = True
-) -> dict[tuple[str, date], date]:
-    """Pra cada (codigo_cliente, data_cobranca), a primeira data em que o
+def analisar_pos_cobranca(
+    db: Session,
+    pares: list[tuple[str, date]],
+    dias_janela: int | None = None,
+    pago_de: date | None = None,
+    pago_ate: date | None = None,
+    buscar_novos: bool = True,
+) -> tuple[dict[tuple[str, date], date], dict[tuple[str, date], dict]]:
+    """Pra cada (codigo_cliente, data_cobranca): (1) a primeira data em que o
     cliente quitou QUALQUER título (status 'B') a partir da cobrança (e até
-    data_cobranca + dias_janela, se informado). Só entra quem pagou.
+    data_cobranca + dias_janela, se informado) — só entra quem pagou; (2) quanto
+    pagou: soma dos títulos a receber (rp 'R', valor > 0) quitados na mesma
+    janela e dentro de [pago_de, pago_ate]. Lê baixas e horários uma vez só.
     `buscar_novos=False` não vai ao SETA nem para cliente ainda não copiado."""
 
     if not pares:
-        return {}
-    baixas = _baixas_por_cliente(db, pares, buscar_novos)
+        return {}, {}
+    # Com janela, nada depois da última cobrança + janela conta
+    ate = max(d for _, d in pares) + timedelta(days=dias_janela) if dias_janela is not None else None
+    baixas = _baixas_por_cliente(db, pares, buscar_novos, ate)
     envios = _horarios_envio(db, pares)
-    resultado: dict[tuple[str, date], date] = {}
+    pagou: dict[tuple[str, date], date] = {}
+    valores: dict[tuple[str, date], dict] = {}
     for codigo, data_cobranca in pares:
         envio = envios.get((codigo, data_cobranca))
-        datas = [b.pagamento for b in baixas.get(codigo, []) if _na_janela(b, data_cobranca, dias_janela, envio)]
-        if datas:
-            resultado[(codigo, data_cobranca)] = min(datas)
-    return resultado
+        na_janela = [b for b in baixas.get(codigo, []) if _na_janela(b, data_cobranca, dias_janela, envio)]
+        if not na_janela:
+            continue
+        pagou[(codigo, data_cobranca)] = min(b.pagamento for b in na_janela)
+        titulos = [
+            b
+            for b in na_janela
+            if b.rp == "R"
+            and b.valor > 0
+            and (pago_de is None or b.pagamento >= pago_de)
+            and (pago_ate is None or b.pagamento <= pago_ate)
+        ]
+        if titulos:
+            valores[(codigo, data_cobranca)] = {
+                "valor_pago": sum((Decimal(str(b.valor)) for b in titulos), Decimal("0")),
+                "qtd_titulos": len(titulos),
+                "primeiro_pagamento": min(b.pagamento for b in titulos),
+                "ultimo_pagamento": max(b.pagamento for b in titulos),
+            }
+    return pagou, valores
+
+
+def pagamentos_pos_cobranca(
+    db: Session, pares: list[tuple[str, date]], dias_janela: int | None = None, buscar_novos: bool = True
+) -> dict[tuple[str, date], date]:
+    """Só a primeira parte de analisar_pos_cobranca (quem pagou e quando)."""
+    return analisar_pos_cobranca(db, pares, dias_janela, buscar_novos=buscar_novos)[0]
 
 
 def valores_pagos_pos_cobranca(
@@ -235,31 +306,5 @@ def valores_pagos_pos_cobranca(
     dias_janela: int | None = None,
     buscar_novos: bool = True,
 ) -> dict[tuple[str, date], dict]:
-    """Quanto cada cliente pagou depois de cobrado: soma dos títulos a receber
-    (rp 'R', valor > 0) quitados a partir da cobrança, dentro de
-    [pago_de, pago_ate] e da janela quando informados."""
-
-    if not pares:
-        return {}
-    baixas = _baixas_por_cliente(db, pares, buscar_novos)
-    envios = _horarios_envio(db, pares)
-    resultado: dict[tuple[str, date], dict] = {}
-    for codigo, data_cobranca in pares:
-        envio = envios.get((codigo, data_cobranca))
-        titulos = [
-            b
-            for b in baixas.get(codigo, [])
-            if b.rp == "R"
-            and b.valor > 0
-            and _na_janela(b, data_cobranca, dias_janela, envio)
-            and (pago_de is None or b.pagamento >= pago_de)
-            and (pago_ate is None or b.pagamento <= pago_ate)
-        ]
-        if titulos:
-            resultado[(codigo, data_cobranca)] = {
-                "valor_pago": sum((Decimal(str(b.valor)) for b in titulos), Decimal("0")),
-                "qtd_titulos": len(titulos),
-                "primeiro_pagamento": min(b.pagamento for b in titulos),
-                "ultimo_pagamento": max(b.pagamento for b in titulos),
-            }
-    return resultado
+    """Só a segunda parte de analisar_pos_cobranca (quanto pagou)."""
+    return analisar_pos_cobranca(db, pares, dias_janela, pago_de, pago_ate, buscar_novos)[1]
