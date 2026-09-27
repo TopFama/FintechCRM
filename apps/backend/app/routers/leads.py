@@ -1,7 +1,6 @@
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 import re
 from typing import Literal
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import case, false, or_
@@ -14,10 +13,11 @@ from ..deps import get_current_user
 from ..leads_service import _em_lotes, gerar_leads_de_clientes
 from ..regras_db import carregar_regras
 from ..services.efetividade_service import filtrar_campanha
-from ..timezone import BUSINESS_TZ, hoje_br
+from ..timezone import hoje_br, inicio_do_dia_utc
 from ..utils.leads_xlsx import gerar_xlsx_leads
-from .blacklist import codigos_bloqueados
-from .cobranca import buscar_base_ou_erro, filtros_base, sem_cobrados_hoje
+from ..blacklist import codigos_bloqueados
+from ..elegibilidade import sem_cobrados_hoje
+from .comum import buscar_base_ou_erro, filtros_base
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -55,8 +55,6 @@ def gerar_leads(
     )
 
 
-def _inicio_utc(dia: date) -> datetime:
-    return datetime.combine(dia, time.min, BUSINESS_TZ).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
 
 def filtrar_leads(
@@ -101,13 +99,13 @@ def filtrar_leads(
         query = query.filter(models.Lead.celular.is_(None))
     # Datas do filtro são dias em GMT-3; o banco guarda UTC
     if criado_de:
-        query = query.filter(models.Lead.created_at >= _inicio_utc(criado_de))
+        query = query.filter(models.Lead.created_at >= inicio_do_dia_utc(criado_de))
     if criado_ate:
-        query = query.filter(models.Lead.created_at < _inicio_utc(criado_ate + timedelta(days=1)))
+        query = query.filter(models.Lead.created_at < inicio_do_dia_utc(criado_ate + timedelta(days=1)))
     if enviado_de:
-        query = query.filter(models.Lead.cobrado_em >= _inicio_utc(enviado_de))
+        query = query.filter(models.Lead.cobrado_em >= inicio_do_dia_utc(enviado_de))
     if enviado_ate:
-        query = query.filter(models.Lead.cobrado_em < _inicio_utc(enviado_ate + timedelta(days=1)))
+        query = query.filter(models.Lead.cobrado_em < inicio_do_dia_utc(enviado_ate + timedelta(days=1)))
 
     query = filtrar_campanha(query, campanha)
 
@@ -323,7 +321,7 @@ def enfileirar_pendentes_de_hoje(
 
     leads_hoje = (
         db.query(models.Lead.codigo_cliente, models.Lead.faixa, models.Lead.vencimento_mais_antigo)
-        .filter(models.Lead.status == "novo", models.Lead.created_at >= _inicio_utc(hoje_br()))
+        .filter(models.Lead.status == "novo", models.Lead.created_at >= inicio_do_dia_utc(hoje_br()))
         .all()
     )
     clientes = [{"codigo": c, "faixa": f, "vencimento_mais_antigo": v} for c, f, v in leads_hoje]

@@ -11,14 +11,6 @@ router = APIRouter(prefix="/blacklist", tags=["blacklist"])
 MSG_DOCUMENTO_INVALIDO = "Informe o código do cliente (8 dígitos) ou um CPF válido"
 
 
-def codigos_bloqueados(db: Session) -> tuple[list[str], list[str]]:
-    """(códigos SETA, CPFs) bloqueados — a extração do SETA exclui esses
-    clientes direto na consulta."""
-
-    rows = db.query(models.ClienteBloqueado.tipo, models.ClienteBloqueado.valor).all()
-    return [v for t, v in rows if t == "seta"], [v for t, v in rows if t == "cpf"]
-
-
 @router.get("", response_model=list[schemas.BlacklistOut])
 def list_blacklist(
     busca: str | None = Query(None, description="Trecho do código/CPF"),

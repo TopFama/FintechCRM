@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 
 from app import models
 from app.database import SessionLocal
-from app.fila_automatica import clientes_bloqueados_hoje
+from app.elegibilidade import clientes_bloqueados_hoje
 from app.main import app
 
 CODIGO = "00000777"

@@ -1,19 +1,19 @@
-from datetime import date
-from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
-from .. import cache, cobranca_base, cobranca_relatorio, google_client, lojas as lojas_base, models, schemas, seta_client
+from .. import cobranca_relatorio, models, schemas, seta_client
 from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from ..fila_automatica import cobrados_hoje
+from ..elegibilidade import sem_cobrados_hoje
+from ..services import compras_seta
 from ..timezone import hoje_br
 from ..utils.spc import parse_spc
-from .reports import _XLSX_MEDIA_TYPE, _build_xlsx, _formula_safe
+from .comum import ClienteSortColumn, buscar_base_ou_erro, filtros_base, ordenar_clientes
+from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx, formula_safe
 
 router = APIRouter(prefix="/cobranca", tags=["cobranca"])
 
@@ -51,105 +51,15 @@ def _rotulos_cluster(clusters) -> dict[str, str]:
     return rotulos
 
 
-def filtros_base(
-    apenas_primeiro_dia: bool = Query(True, description="Só clientes no primeiro dia da faixa (ex.: 21 dias na faixa 21 A 30)"),
-    somente_regra_whatsapp: bool = Query(True, description="Aplica a matriz cluster × faixa do WhatsApp"),
-    faixa: list[str] | None = Query(None),
-    cluster: list[str] | None = Query(None),
-    faixa_compra: list[str] | None = Query(None, description="Quantidade de compras no crediário: 1 a 9 ou 10+"),
-    loja: list[str] | None = Query(None, description="Código de 2 caracteres da loja do título (ft.empresa)"),
-    regional: list[str] | None = Query(None, description="Regional da loja (planilha de lojas)"),
-    estado: list[str] | None = Query(None, description="Estado da loja: TO, PA, MA ou GO"),
-    cluster_inad: list[str] | None = Query(None, description="Cluster de inadimplência da loja"),
-    cluster_populacao: list[str] | None = Query(None, description="Cluster de população da loja"),
-    cobradora: list[str] | None = Query(None, description='Cluster de cobradora da loja (planilha de lojas) ou "Sem cobradora"'),
-    status_cliente: list[str] | None = Query(None, description="E, A ou B"),
-    restricao_spc: list[str] | None = Query(None, description="sim, nao e/ou indeterminado"),
-    vencimento_de: date | None = Query(None, description="Vencimento da parcela mais antiga, a partir de"),
-    vencimento_ate: date | None = Query(None, description="Vencimento da parcela mais antiga, até"),
-    valor_atraso_min: Decimal | None = Query(None, ge=0, description="Total das parcelas vencidas, a partir de"),
-    valor_atraso_max: Decimal | None = Query(None, ge=0, description="Total das parcelas vencidas, até"),
-    valor_atraso_com_juros: bool = Query(False, description="O valor em atraso conta multa e juros"),
-    db: Session = Depends(get_db),
-) -> dict:
-    """Filtros comuns à listagem e aos relatórios: os dois enxergam os mesmos clientes."""
+@router.post("/compras/atualizar")
+def atualizar_compras(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+    """Ao abrir o filtro de faixa de compra: relê no SETA as compras de quem teve
+    venda hoje (no máximo uma vez por minuto; ver services/compras_seta.py)."""
 
     try:
-        codigos_loja = lojas_base.combinar_lojas(
-            db, loja, regional=regional, estado=estado, cluster_inad=cluster_inad, cluster_populacao=cluster_populacao,
-            cobradora=cobradora,
-        )
-    except google_client.GoogleIndisponivel as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-
-    return dict(
-        apenas_primeiro_dia=apenas_primeiro_dia,
-        somente_regra_whatsapp=somente_regra_whatsapp,
-        faixas=faixa,
-        clusters=cluster,
-        faixas_compra=faixa_compra,
-        lojas=codigos_loja,
-        status_cliente=status_cliente,
-        restricoes_spc=restricao_spc,
-        vencimento_de=vencimento_de,
-        vencimento_ate=vencimento_ate,
-        valor_atraso_min=valor_atraso_min,
-        valor_atraso_max=valor_atraso_max,
-        valor_atraso_com_juros=valor_atraso_com_juros,
-    )
-
-
-def buscar_base_ou_erro(db: Session, filtros: dict) -> dict:
-    """{"status": "ready", "data": [...]} ou {"status": "processing", "data":
-    None} — ver `cobranca_base.buscar_base`."""
-
-    try:
-        return cobranca_base.buscar_base(db, **filtros)
-    except cobranca_base.FiltroInvalido as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        return {"clientes_atualizados": compras_seta.atualizar_incremental(db, forcar=False)}
     except seta_client.SetaIndisponivel as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-    except cache.CacheIndisponivel as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-
-
-ClienteSortColumn = Literal[
-    "codigo",
-    "cpfcnpj",
-    "nome",
-    "vencimento_mais_antigo",
-    "valor_cobrar",
-    "qtd_parcelas_cobranca",
-    "dias_atraso",
-    "faixa",
-    "cluster",
-]
-
-
-def _ordenar_clientes(clientes: list[dict], sort_by: str, sort_dir: str, db: Session) -> list[dict]:
-    """Ordena uma cópia da lista já carregada em memória (vinda do cache de
-    `cobranca_base.buscar_base`) — não refaz a consulta ao SETA. `faixa`
-    ordena pela progressão do atraso, mesmo critério da tela."""
-
-    if sort_by == "faixa":
-        nomes_faixa = carregar_regras(db).nomes_faixa
-        ordem_faixa = {nome: i for i, nome in enumerate(nomes_faixa)}
-        valor_fn = lambda c: ordem_faixa.get(c["faixa"], len(ordem_faixa))
-    else:
-        valor_fn = lambda c: c.get(sort_by)
-
-    ordenados = sorted(clientes, key=lambda c: (valor_fn(c) is None, valor_fn(c) if valor_fn(c) is not None else 0))
-    if sort_dir == "desc":
-        ordenados.reverse()
-    return ordenados
-
-
-def sem_cobrados_hoje(db: Session, clientes: list[dict]) -> list[dict]:
-    """Tira da lista quem já recebeu cobrança hoje (GMT-3, qualquer faixa).
-    Cobrado em dia anterior aparece normalmente."""
-
-    bloqueados = cobrados_hoje(db)
-    return [c for c in clientes if c["codigo"] not in bloqueados]
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "SETA indisponível") from exc
 
 
 @router.get("/clientes", response_model=schemas.ClientesCobrancaAsyncOut)
@@ -168,7 +78,7 @@ def listar_clientes(
 
     clientes = sem_cobrados_hoje(db, job["data"])
     if sort_by:
-        clientes = _ordenar_clientes(clientes, sort_by, sort_dir, db)
+        clientes = ordenar_clientes(clientes, sort_by, sort_dir, db)
     pagina = clientes[offset : offset + limit]
 
     # o texto do SPC é pesado: só se busca (para a data da consulta) de quem aparece na página
@@ -211,7 +121,7 @@ def exportar_clientes(
         )
     clientes = sem_cobrados_hoje(db, job["data"])
     if sort_by:
-        clientes = _ordenar_clientes(clientes, sort_by, sort_dir, db)
+        clientes = ordenar_clientes(clientes, sort_by, sort_dir, db)
 
     def celula(c: dict, campo: str):
         v = c.get(campo)
@@ -220,13 +130,13 @@ def exportar_clientes(
         if isinstance(v, bool):
             return "Sim" if v else "Não"
         if isinstance(v, str):
-            return _formula_safe(v)
+            return formula_safe(v)
         return v
 
     rows = [[celula(c, campo) for _, campo in _COLUNAS_EXPORTACAO] for c in clientes]
     return Response(
-        content=_build_xlsx([t for t, _ in _COLUNAS_EXPORTACAO], rows),
-        media_type=_XLSX_MEDIA_TYPE,
+        content=build_xlsx([t for t, _ in _COLUNAS_EXPORTACAO], rows),
+        media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="clientes_cobranca_{hoje_br():%Y%m%d}.xlsx"'},
     )
 

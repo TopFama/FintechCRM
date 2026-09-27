@@ -11,20 +11,21 @@ responsabilidade de dispatch_service.py.
 import asyncio
 import logging
 from datetime import datetime, time as dt_time, timedelta
-from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session, selectinload
 
 from . import models, seta_client
-from .services import pagamentos_seta
+from .services import compras_seta, pagamentos_seta
 from .pausas import Retencao
 from .config import settings
 from .database import SessionLocal
 from .dispatch_service import enviar_item
-from .fila_automatica import Blacklist, enfileirar_leads, expirar_nao_enviados, ja_cobrado_hoje
+from .blacklist import Blacklist
+from . import elegibilidade
+from .fila_automatica import enfileirar_leads, expirar_nao_enviados
 from .leads_service import gerar_leads_de_clientes
-from .timezone import BUSINESS_TZ
+from .timezone import BUSINESS_TZ, para_br
 
 logger = logging.getLogger("dispatch_worker")
 
@@ -33,18 +34,8 @@ _WEEKDAY_MAP = {  # Python Monday=0 .. Sunday=6  ->  1..7 como usado em schedule
 }
 
 
-def _local_now(now_utc: datetime):
-    """`now_utc` é UTC (relógio do servidor); a janela configurada
-    (schedule_start/end, dias da semana) é pensada no horário de quem opera
-    o sistema (BUSINESS_TIMEZONE), então a comparação precisa ser feita
-    depois de converter — comparar direto em UTC faz a janela "fechar" 3h
-    mais cedo (ou mais tarde) do horário real de Brasília, deixando cliente
-    na fila sem disparar mesmo "dentro do horário configurado"."""
-    return now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ)
-
-
 def _within_schedule_window(global_config: models.GlobalDispatchConfig, now_utc: datetime) -> bool:
-    local_now = _local_now(now_utc)
+    local_now = para_br(now_utc)
     if _WEEKDAY_MAP[local_now.weekday()] not in global_config.schedule_days.split(","):
         return False
     start = dt_time.fromisoformat(global_config.schedule_start)
@@ -74,7 +65,7 @@ def _deve_extrair_leads(global_config: models.GlobalDispatchConfig, now_utc: dat
 
     if not global_config.leads_auto_extract:
         return False
-    local_now = _local_now(now_utc)
+    local_now = para_br(now_utc)
     if _WEEKDAY_MAP[local_now.weekday()] not in global_config.schedule_days.split(","):
         return False
     if global_config.leads_auto_extract_last_run == local_now.date():
@@ -118,7 +109,7 @@ def _deve_rodar_remarketing(global_config: models.GlobalDispatchConfig, now_utc:
     mesmo momento da extração de leads (N min antes do início) até o fim da
     janela — se o backend subir no meio do dia, ainda roda naquele dia."""
 
-    if global_config.remarketing_last_run == _local_now(now_utc).date():
+    if global_config.remarketing_last_run == para_br(now_utc).date():
         return False
     return _na_janela_diaria(global_config, now_utc)
 
@@ -127,7 +118,7 @@ def _na_janela_diaria(global_config: models.GlobalDispatchConfig, now_utc: datet
     """Dia de disparo, de N min antes do início (extração de leads) até o fim
     da janela: quando rodam remarketing e campanhas."""
 
-    local_now = _local_now(now_utc)
+    local_now = para_br(now_utc)
     if _WEEKDAY_MAP[local_now.weekday()] not in global_config.schedule_days.split(","):
         return False
     return _inicio_antecipado(global_config) <= local_now.time() < dt_time.fromisoformat(global_config.schedule_end)
@@ -184,7 +175,7 @@ def _rotinas_do_dia(now: datetime) -> None:
                 # Base ainda calculando (cache frio): não marca o dia como feito,
                 # senão a extração nunca roda de verdade.
                 if concluiu:
-                    global_config.leads_auto_extract_last_run = _local_now(now).date()
+                    global_config.leads_auto_extract_last_run = para_br(now).date()
                     db.commit()
 
         if _deve_rodar_remarketing(global_config, now) and _pode_tentar("remarketing", now):
@@ -201,7 +192,7 @@ def _rotinas_do_dia(now: datetime) -> None:
                     _falhou("remarketing", now)
                 else:
                     _ok("remarketing")
-                    global_config.remarketing_last_run = _local_now(now).date()
+                    global_config.remarketing_last_run = para_br(now).date()
                     db.commit()
 
         if _na_janela_diaria(global_config, now):
@@ -234,7 +225,7 @@ def _rotinas_do_dia(now: datetime) -> None:
                 _ok(chave)
                 # Base ainda calculando no SETA: tenta de novo no próximo ciclo.
                 if resultado.get("status") == "ready":
-                    campanha.ultima_execucao_dia = _local_now(now).date()
+                    campanha.ultima_execucao_dia = para_br(now).date()
                     db.commit()
 
         try:
@@ -313,20 +304,14 @@ async def run_dispatch_cycle() -> None:
                     db.refresh(item)
                     if item.status != models.QueueStatus.reserved:
                         continue
-                    if Retencao.carregar(db).retido(item):
+                    motivo = elegibilidade.conferir_saida(db, item, blacklist)
+                    if motivo == elegibilidade.RETIDO:
                         item.status = models.QueueStatus.pending
                         db.commit()
                         continue
-                    # Entrou na blacklist depois de estar na fila (ou veio de planilha antiga)
-                    if blacklist.contem(item.codigo_cliente, item.cpf):
+                    if motivo:
                         item.status = models.QueueStatus.error
-                        item.error_message = "Cliente na blacklist; não enviado"
-                        db.commit()
-                        continue
-                    # Última barreira: o mesmo cliente pode ter entrado em duas filas antes de sair em uma.
-                    if ja_cobrado_hoje(db, item):
-                        item.status = models.QueueStatus.error
-                        item.error_message = "Cliente já cobrado hoje em outra faixa ou envio; não reenviado"
+                        item.error_message = motivo
                         db.commit()
                         continue
                     await enviar_item(envio, item, db)
@@ -361,8 +346,36 @@ def sincronizar_pagamentos() -> None:
         db.close()
 
 
+def atualizar_compras_madrugada() -> None:
+    """Cópia local das compras (faixa de compra): incremental todo dia,
+    completa aos domingos (ver services/compras_seta.py)."""
+    if not seta_client.is_configured():
+        return
+    db = SessionLocal()
+    try:
+        compras_seta.rodada_da_madrugada(db)
+    except seta_client.SetaIndisponivel as exc:
+        logger.warning("Atualização de compras adiada: %s", exc)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        logger.exception("Falha ao atualizar compras do SETA")
+    finally:
+        db.close()
+
+
 def start_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        atualizar_compras_madrugada,
+        "cron",
+        hour=3,
+        minute=0,
+        timezone=BUSINESS_TZ,
+        id="compras_seta",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
     scheduler.add_job(
         sincronizar_pagamentos,
         "interval",

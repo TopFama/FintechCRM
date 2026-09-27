@@ -12,10 +12,8 @@ from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from ..services.pagamentos_service import _inicio_utc
-from ..timezone import hoje_br
-from .cobranca import ClienteSortColumn, _ordenar_clientes
-from .uploads import _ler_planilha_limitada
+from ..timezone import hoje_br, inicio_do_dia_utc
+from .comum import ClienteSortColumn, ler_planilha_limitada, ordenar_clientes
 
 router = APIRouter(prefix="/campanhas", tags=["campanhas"])
 
@@ -181,9 +179,9 @@ def _enviadas_no_periodo(db: Session, de: date | None, ate: date | None) -> set[
         models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None), models.Lead.campanha_id != ""
     )
     if de:
-        q = q.filter(models.Lead.cobrado_em >= _inicio_utc(de))
+        q = q.filter(models.Lead.cobrado_em >= inicio_do_dia_utc(de))
     if ate:
-        q = q.filter(models.Lead.cobrado_em < _inicio_utc(ate + timedelta(days=1)))
+        q = q.filter(models.Lead.cobrado_em < inicio_do_dia_utc(ate + timedelta(days=1)))
     return {cid for (cid,) in q.distinct()}
 
 
@@ -209,9 +207,9 @@ def listar(
             q = q.filter(models.Campanha.id.in_(_enviadas_no_periodo(db, de, ate)))
         else:
             if de:
-                q = q.filter(models.Campanha.created_at >= _inicio_utc(de))
+                q = q.filter(models.Campanha.created_at >= inicio_do_dia_utc(de))
             if ate:
-                q = q.filter(models.Campanha.created_at < _inicio_utc(ate + timedelta(days=1)))
+                q = q.filter(models.Campanha.created_at < inicio_do_dia_utc(ate + timedelta(days=1)))
     campanhas = q.order_by(models.Campanha.created_at.desc()).all()
     contagens = _contagens(db, [c.faixa_id for c in campanhas])
     pausadas = _pausas_por_faixa(db)
@@ -325,18 +323,10 @@ def pausar(
     ou até `ate`. É a mesma pausa por faixa da tela de Pendentes."""
 
     c = _get(db, campanha_id)
-    if payload.ate and payload.ate < hoje_br():
+    if pausas.data_final_passou(payload.ate):
         raise _erro("A data final da pausa já passou")
-    if c.faixa_id not in _pausas_por_faixa(db):
-        db.add(
-            models.PausaEnvio(
-                escopo="faixa",
-                valor=c.faixa_id,
-                motivo=payload.motivo.strip() or "Campanha pausada",
-                ate=payload.ate,
-                created_by=user.email,
-            )
-        )
+    if pausas.ativa_do_escopo(db, "faixa", c.faixa_id) is None:
+        pausas.pausar(db, "faixa", c.faixa_id, payload.motivo.strip() or "Campanha pausada", payload.ate, user.email)
         db.commit()
     return ver(campanha_id, db, user)
 
@@ -344,10 +334,7 @@ def pausar(
 @router.post("/{campanha_id}/retomar")
 def retomar(campanha_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     c = _get(db, campanha_id)
-    for p in pausas.ativas(db):
-        if p.escopo == "faixa" and p.valor == c.faixa_id:
-            p.encerrada_em = datetime.utcnow()
-            p.encerrada_por = user.email
+    pausas.retomar_escopo(db, "faixa", c.faixa_id, user.email)
     db.commit()
     return ver(campanha_id, db, user)
 
@@ -360,10 +347,7 @@ def parar(campanha_id: str, db: Session = Depends(get_db), user: models.User = D
     c = _get(db, campanha_id)
     c.ativa = False
     c.parada_em = datetime.utcnow()
-    for p in pausas.ativas(db):
-        if p.escopo == "faixa" and p.valor == c.faixa_id:
-            p.encerrada_em = datetime.utcnow()
-            p.encerrada_por = user.email
+    pausas.retomar_escopo(db, "faixa", c.faixa_id, user.email)
     db.commit()
     cancelados = pausas.parar(db, "faixa", c.faixa_id, user.email)
     return {**ver(campanha_id, db, user), "cancelados": cancelados}
@@ -399,7 +383,7 @@ async def subir_clientes(
     para quando a campanha usa os valores da planilha."""
 
     c = _get(db, campanha_id)
-    content = await _ler_planilha_limitada(file)
+    content = await ler_planilha_limitada(file)
     try:
         lido = camp.ler_clientes(file.filename or "", content)
     except ValueError as exc:
@@ -473,7 +457,7 @@ def previa(
     if c.fonte_valores == "planilha":
         clientes = [camp.com_valores_da_planilha(x, c) for x in clientes]
     if sort_by:
-        clientes = _ordenar_clientes(clientes, sort_by, sort_dir, db)
+        clientes = ordenar_clientes(clientes, sort_by, sort_dir, db)
     campos = ("codigo", "nome", "celular", "cpfcnpj", "cluster", "faixa", "dias_atraso", "valor_cobrar",
               "valor_atraso_original", "valor_atraso_juros", "vencimento_mais_antigo", "lojas")
     return {

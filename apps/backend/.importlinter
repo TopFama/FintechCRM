@@ -1,0 +1,152 @@
+# Regras de dependência entre camadas (docs/architecture/dominios-e-camadas.md),
+# conferidas no CI em todo PR: cd apps/backend && lint-imports
+# Módulo novo em app/ entra na lista do primeiro contrato (e, se for serviço,
+# nas listas dos contratos de deps e de integração externa).
+# Exceção nova em ignore_imports só com o item do backlog que a remove.
+
+[importlinter]
+root_package = app
+include_external_packages = True
+
+[importlinter:contract:routers-so-no-main]
+name = Nenhum módulo importa um router, exceto app.main (regra 1)
+type = forbidden
+source_modules =
+    app.blacklist
+    app.cache
+    app.cambio
+    app.campanhas
+    app.campanhas_fixas
+    app.chatwoot_client
+    app.cobranca_base
+    app.cobranca_regras
+    app.cobranca_relatorio
+    app.config
+    app.consultas_fila
+    app.crypto
+    app.database
+    app.deps
+    app.dispatch_service
+    app.elegibilidade
+    app.fila_automatica
+    app.google_client
+    app.itens_fila
+    app.leads_service
+    app.lojas
+    app.lojas_iniciais
+    app.meta_client
+    app.models
+    app.pausas
+    app.rate_limit
+    app.regras_db
+    app.relatorio_efetividade
+    app.remarketing
+    app.schemas
+    app.security
+    app.segredos
+    app.services
+    app.seta_client
+    app.timezone
+    app.upload_service
+    app.utils
+    app.variaveis_template
+    app.worker
+forbidden_modules =
+    app.routers
+allow_indirect_imports = True
+
+[importlinter:contract:router-nao-importa-router]
+name = Router não importa outro router, exceto routers.comum (regra 1)
+type = independence
+modules =
+    app.routers.auth
+    app.routers.blacklist
+    app.routers.campanhas
+    app.routers.chatwoot
+    app.routers.cobranca
+    app.routers.config_cobranca
+    app.routers.dashboard
+    app.routers.faixas
+    app.routers.google
+    app.routers.leads
+    app.routers.lojas
+    app.routers.meta_tokens
+    app.routers.numbers
+    app.routers.pausas
+    app.routers.remarketing
+    app.routers.reports
+    app.routers.seta
+    app.routers.templates
+    app.routers.uploads
+    app.routers.users
+
+[importlinter:contract:regras-puras]
+name = Regras puras não importam infraestrutura (regra 5)
+type = forbidden
+source_modules =
+    app.cobranca_regras
+    app.relatorio_efetividade
+    app.utils
+forbidden_modules =
+    app.models
+    app.database
+    app.seta_client
+    fastapi
+allow_indirect_imports = True
+
+[importlinter:contract:deps-so-autentica]
+name = deps.py só autentica (regra 6)
+type = forbidden
+source_modules =
+    app.deps
+forbidden_modules =
+    app.blacklist
+    app.campanhas
+    app.cobranca_base
+    app.consultas_fila
+    app.dispatch_service
+    app.elegibilidade
+    app.fila_automatica
+    app.itens_fila
+    app.leads_service
+    app.pausas
+    app.remarketing
+    app.services
+    app.seta_client
+    app.upload_service
+    app.worker
+ignore_imports =
+    # registro de atividade para a leitura do SETA; sai no backlog #16 (middleware)
+    app.deps -> app.services.pagamentos_seta
+allow_indirect_imports = True
+
+[importlinter:contract:http-so-nos-clientes]
+name = Integração externa só pelo cliente dela (regra 4)
+type = forbidden
+source_modules =
+    app.routers
+    app.services
+    app.blacklist
+    app.campanhas
+    app.cobranca_base
+    app.consultas_fila
+    app.dispatch_service
+    app.elegibilidade
+    app.fila_automatica
+    app.itens_fila
+    app.leads_service
+    app.pausas
+    app.remarketing
+    app.upload_service
+    app.worker
+forbidden_modules =
+    httpx
+    requests
+ignore_imports =
+    # busca no Renegocie com httpx solto; sai no backlog #12 (renegocie_client)
+    app.remarketing -> httpx
+    app.routers.remarketing -> httpx
+    # só captura httpx.HTTPError que o meta_client deixa passar; sai quando o
+    # meta_client tiver erro próprio (nota no backlog #7)
+    app.routers.meta_tokens -> httpx
+allow_indirect_imports = True

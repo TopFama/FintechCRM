@@ -20,11 +20,13 @@ from . import campanhas_fixas, crypto, models, seta_client
 from . import lojas as lojas_base
 from .cobranca_base import _montar_cliente, _restaurar_linha_seta
 from .cobranca_regras import faixa_de_compra
-from .fila_automatica import clientes_bloqueados_hoje, enfileirar_clientes, ocupa_cliente
+from .elegibilidade import clientes_bloqueados_hoje, ocupa_cliente
+from .fila_automatica import enfileirar_clientes
 from .leads_service import gerar_leads_de_clientes
 from .regras_db import carregar_regras
 from .timezone import BUSINESS_TZ
-from .routers.blacklist import codigos_bloqueados
+from .blacklist import codigos_bloqueados
+from .services import compras_seta
 from .utils.phone import is_valid_phone
 
 logger = logging.getLogger("remarketing")
@@ -182,9 +184,11 @@ def selecionar(
         bloqueados_cpfs=bl_cpfs,
         juros=regras.juros,
     )
+    compras = compras_seta.obter(db, [linha["codigo"] for linha in linhas])
     por_codigo: dict[str, dict] = {}
     for bruta in linhas:
         r = _restaurar_linha_seta(bruta)
+        r["qtd_compras"], r["ultima_compra"] = compras.get(r["codigo"], (0, None))
         faixa = regras.faixa_por_dias(r["dias_atraso"])
         cluster = regras.cluster_por_valor_pago(r["valor_pago"])
         cliente = _montar_cliente(

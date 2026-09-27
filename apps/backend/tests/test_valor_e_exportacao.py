@@ -178,7 +178,7 @@ with TestClient(app) as client:
         },
     ]
 
-    with patch("app.routers.cobranca.cobranca_base.buscar_base", return_value={"status": "ready", "data": fake_clientes_relatorio}):
+    with patch("app.cobranca_base.buscar_base", return_value={"status": "ready", "data": fake_clientes_relatorio}):
         res_rel = client.get("/cobranca/relatorio", headers=auth_headers)
         assert res_rel.status_code == 200, res_rel.text
         rel_data = res_rel.json()["data"]  # resposta assíncrona: {"status", "data"}

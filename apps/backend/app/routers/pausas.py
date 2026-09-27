@@ -1,8 +1,6 @@
 """Pausar, retomar e parar o envio dos pendentes (Relatórios → Pendentes).
 Liberado para qualquer usuário logado: quem e quando ficam registrados."""
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
@@ -11,7 +9,6 @@ from .. import fila_automatica, models, pausas, schemas
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from ..timezone import hoje_br
 
 router = APIRouter(prefix="/pausas", tags=["pausas"])
 
@@ -107,7 +104,7 @@ def pausar_lote(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe o motivo da pausa")
     if not payload.valores:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Escolha ao menos uma faixa ou loja")
-    if payload.ate and payload.ate < hoje_br():
+    if pausas.data_final_passou(payload.ate):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A data final da pausa já passou")
     ja_pausados = {p.valor for p in pausas.ativas(db) if p.escopo == payload.escopo}
     criadas = []
@@ -115,11 +112,7 @@ def pausar_lote(
         valor = _validar(db, payload.escopo, bruto)
         if valor in ja_pausados:
             continue
-        pausa = models.PausaEnvio(
-            escopo=payload.escopo, valor=valor, motivo=motivo, ate=payload.ate, created_by=user.email
-        )
-        db.add(pausa)
-        criadas.append(pausa)
+        criadas.append(pausas.pausar(db, payload.escopo, valor, motivo, payload.ate, user.email))
         ja_pausados.add(valor)
     db.commit()
     return [_out(db, p) for p in criadas]
@@ -135,15 +128,11 @@ def pausar(
     motivo = payload.motivo.strip()
     if not motivo:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe o motivo da pausa")
-    if payload.ate and payload.ate < hoje_br():
+    if pausas.data_final_passou(payload.ate):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A data final da pausa já passou")
-    existente = next((p for p in pausas.ativas(db) if p.escopo == payload.escopo and p.valor == valor), None)
-    if existente:
+    if pausas.ativa_do_escopo(db, payload.escopo, valor):
         raise HTTPException(status.HTTP_409_CONFLICT, "Já existe uma pausa ativa para esse item")
-    pausa = models.PausaEnvio(
-        escopo=payload.escopo, valor=valor, motivo=motivo, ate=payload.ate, created_by=user.email
-    )
-    db.add(pausa)
+    pausa = pausas.pausar(db, payload.escopo, valor, motivo, payload.ate, user.email)
     db.commit()
     db.refresh(pausa)
     return _out(db, pausa)
@@ -155,8 +144,7 @@ def retomar(pausa_id: str, db: Session = Depends(get_db), user: models.User = De
     if pausa is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pausa não encontrada")
     if pausa.encerrada_em is None:
-        pausa.encerrada_em = datetime.utcnow()
-        pausa.encerrada_por = user.email
+        pausas.retomar(pausa, user.email)
         db.commit()
     return _out(db, pausa)
 

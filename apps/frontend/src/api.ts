@@ -334,6 +334,8 @@ export const api = {
   exportarClientesCobranca: (params: FiltrosCobranca & OrdenacaoParams) =>
     downloadFile(`/cobranca/clientes/exportar.xlsx?${montarQuery(params)}`, "clientes_cobranca.xlsx"),
   regrasCobranca: () => request<RegrasCobranca>("/cobranca/regras"),
+  atualizarComprasSeta: () =>
+    request<{ clientes_atualizados: number }>("/cobranca/compras/atualizar", { method: "POST" }),
   listarClientesCobranca: (params: FiltrosCobranca & { limit: number; offset: number } & OrdenacaoParams) =>
     pollAsync<{ total: number; itens: ClienteCobranca[] }>(() =>
       request(`/cobranca/clientes?${montarQuery(params)}`)
