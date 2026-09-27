@@ -201,6 +201,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  testarEnvioTemplate: (
+    templateId: string,
+    payload: { whatsapp_number_id: string; celular: string; variables: Record<string, string> }
+  ) =>
+    request<ChatwootTestResult>(`/templates/${templateId}/testar-envio`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   uploadTemplateImage: (id: string, file: File) => {
     const form = new FormData();
     form.append("file", file);

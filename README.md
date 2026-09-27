@@ -99,7 +99,8 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 | `CORS_ALLOWED_ORIGINS` | backend | não | `*` | Origens liberadas no CORS, separadas por vírgula (ex: `https://crm.topfama.com.br`). O padrão `*` mantém o comportamento anterior; em produção, restrinja ao(s) domínio(s) real(is) do frontend. |
 | `COOKIE_SECURE` | backend | não | `true` | Atributo `Secure` do cookie httpOnly de sessão (ver "Limitações conhecidas / próximos passos" abaixo). Exige `https`; em desenvolvimento local sobre `http` puro, defina como `false`, senão o navegador descarta o cookie. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | backend | não | `720` | Validade do JWT de login (12 h). |
-| `PUBLIC_BASE_URL` | backend | não | *(vazio)* | Endereço público deste backend (sem barra final). Só o envio pelo **Chatwoot** precisa dele, para montar o link da imagem de cabeçalho do template; pela Meta a imagem vai como `media_id`. Ver "Limitações conhecidas". |
+| `PUBLIC_BASE_URL` | backend | não | *(vazio)* | Endereço público deste backend (sem barra final). Usado pelo envio via **Chatwoot** para montar o link da imagem de cabeçalho do template e no registro de webhooks (`/chatwoot/webhook`); pela Meta a imagem vai como `media_id`. |
+| `CHATWOOT_WEBHOOK_SECRET` | backend | não | *(vazio)* | Segredo HMAC configurado para validação de assinatura (`X-Chatwoot-Signature`) dos webhooks recebidos do Chatwoot (`POST /chatwoot/webhook`). Quando vazio, a validação de assinatura é ignorada. |
 | `MEDIA_DIR` | backend | não | `/app/media` | Pasta onde ficam as imagens de cabeçalho subidas em Templates (volume `media-data` no Docker; servida em `/media`). Precisa existir. |
 | `DISPATCH_WORKER_INTERVAL_SECONDS` | backend | não | `5` | De quanto em quanto tempo o worker roda o ciclo de disparo. O ritmo real (intervalo entre rodadas e quantidade por rodada) é configurado na tela, em **Configurações → Horário**. |
 | `PAGAMENTOS_SYNC_INTERVAL_SECONDS` | backend | não | `1800` | Intervalo mínimo entre as releituras das baixas do SETA para `pagamentos_seta` (ver "Fluxo do sistema" → Dashboard). |
@@ -295,9 +296,12 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    reserva um lote de pendentes da fila da faixa, confere de novo pausa/blacklist/uma-por-dia antes
    de cada item e envia (`app/dispatch_service.py`) pela Graph API da Meta ou pela inbox do
    Chatwoot, conforme o número, atualizando o status (enviado/erro), com log de erro consultável.
-   Número desativado em Configurações não envia (os itens ficam pendentes). Recusa 4xx da Meta ou
-   do Chatwoot libera o cliente para outra base no dia; 5xx, timeout ou queda de rede ocupam o
-   cliente no dia, porque a mensagem pode ter saído. Item com variável sem valor para o template
+   Mensagens de erro (Meta ou Chatwoot) são traduzidas para português claro (`app/utils/erros.py`).
+   No Chatwoot, respostas assíncronas de rejeição da Meta/WhatsApp chegam via webhook
+   (`POST /chatwoot/webhook`), revertendo o item para status de erro, registrando o motivo traduzido
+   no log de erros e liberando o lead para nova cobrança. Número desativado em Configurações não
+   envia (os itens ficam pendentes). Recusa 4xx da Meta ou do Chatwoot libera o cliente para outra
+   base no dia; 5xx, timeout ou queda de rede ocupam o cliente no dia, porque a mensagem pode ter saído. Item com variável sem valor para o template
    do envio vira erro sem chamar a Meta. Falha no meio de um lote devolve a pendente os itens que
    nem foram tentados.
    O mesmo worker roda as rotinas do dia (extração automática de leads a partir de N min antes da

@@ -150,6 +150,39 @@ class ChatwootClient:
         }
         return await self._request("POST", f"conversations/{conversation_id}/messages", json=payload)
 
+    async def buscar_status_mensagem(self, conversation_id: int, message_id: int) -> tuple[str, str | None]:
+        """Consulta as mensagens da conversa e retorna (status, external_error|None) da mensagem informada."""
+        conversas = await self._request("GET", f"conversations/{conversation_id}/messages")
+        for msg in conversas.get("payload", []):
+            if msg.get("id") == message_id:
+                status = msg.get("status", "sent")
+                error = (msg.get("content_attributes") or {}).get("external_error")
+                return status, error
+        return "sent", None
+
+    async def listar_webhooks(self) -> list[dict]:
+        """Lista os webhooks configurados na conta do Chatwoot."""
+        res = await self._request("GET", "webhooks")
+        return res.get("payload", {}).get("webhooks", [])
+
+    async def criar_webhook(self, url: str, subscriptions: list[str] | None = None) -> dict:
+        """Cria um webhook na conta do Chatwoot com os eventos especificados."""
+        subs = subscriptions or ["message_created", "message_updated"]
+        res = await self._request("POST", "webhooks", json={
+            "webhook": {
+                "url": url,
+                "subscriptions": subs,
+            }
+        })
+        return res.get("payload", {}).get("webhook", {})
+
+    async def garantir_webhook(self, url: str, subscriptions: list[str] | None = None) -> dict:
+        """Garante que o webhook para a URL informada esteja cadastrado no Chatwoot."""
+        for wh in await self.listar_webhooks():
+            if wh.get("url") == url:
+                return wh
+        return await self.criar_webhook(url, subscriptions)
+
 
 def is_configured(db: Session) -> bool:
     return db.query(models.ConfiguracaoChatwoot).first() is not None

@@ -54,6 +54,8 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
   "1 500,00", "10,00 reais", "US$ 50"); usado no upload da faixa e na planilha de campanha.
 - `utils/imagem.py` — confere e, se preciso, comprime a imagem de cabeçalho de template para o
   limite da Meta (5 MB, .jpg/.png), com a menor perda possível. Usa Pillow.
+- `utils/erros.py` — tradução e padronização de códigos/mensagens técnicas de erro da Meta e
+  Chatwoot (#132001, 131026, 131047, etc.) em descrições claras em português para logs e telas.
 - `alembic/` — migrations. Ver seção própria abaixo.
 
 **Frontend** (`apps/frontend/src/`):

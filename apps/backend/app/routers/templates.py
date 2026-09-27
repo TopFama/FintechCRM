@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import re
@@ -14,9 +15,10 @@ from .. import chatwoot_client, models, schemas
 from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user
-from ..dispatch_service import montar_parametros_envio
-from ..meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_da_waba
+from ..dispatch_service import arquivo_imagem, media_id_da_imagem, montar_parametros_envio
+from ..meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_da_waba, token_do_numero
 from ..utils import imagem
+from ..utils.erros import descrever_erro_envio
 from ..utils.phone import is_valid_phone, normalize_phone
 from ..variaveis_template import CAMPOS_CLIENTE, contexto_cliente
 
@@ -132,35 +134,82 @@ async def sync_from_meta(
             continue
 
         for remote in remote_templates:
-            existing = (
-                db.query(models.Template)
-                .filter(
-                    models.Template.meta_template_name == remote["name"],
-                    models.Template.language == remote["language"],
+            language = remote.get("language")
+            if not language:
+                falhas.append(
+                    f"Template '{remote.get('name')}' na WABA {waba_id} não informou o idioma — cadastre o idioma manualmente"
                 )
-                .first()
-            )
+                logger.warning("Template %s na WABA %s sem idioma retornado pela Meta", remote.get("name"), waba_id)
+                continue
+
+            remote_id = remote.get("id")
+            existing = None
+            if remote_id:
+                existing = (
+                    db.query(models.Template)
+                    .filter(models.Template.meta_template_id == remote_id)
+                    .first()
+                )
+            if not existing:
+                existing = (
+                    db.query(models.Template)
+                    .filter(
+                        models.Template.waba_id == waba_id,
+                        models.Template.meta_template_name == remote["name"],
+                        models.Template.language == language,
+                    )
+                    .first()
+                )
+            if not existing:
+                existing = (
+                    db.query(models.Template)
+                    .filter(
+                        models.Template.waba_id == waba_id,
+                        models.Template.meta_template_name == remote["name"],
+                    )
+                    .first()
+                )
+
             status_value = _map_meta_status(remote.get("status"))
             header_type = _extract_header_type(remote)
+            body_text = _extract_body_text(remote)
+
             if existing:
                 existing.status = status_value
                 existing.meta_status_raw = remote.get("status")
-                existing.meta_template_id = remote.get("id")
+                existing.meta_template_id = remote_id
                 existing.category = remote.get("category", existing.category)
                 existing.waba_id = waba_id
                 existing.header_type = header_type
+                existing.language = language
+                existing.body_text = body_text
+
+                # Sincroniza variáveis com o texto atualizado do template
+                posicoes_remotas = set()
+                for i, name in enumerate(_extract_variable_count(remote), start=1):
+                    posicoes_remotas.add(i)
+                    var_existente = next((v for v in existing.variables if v.position == i), None)
+                    if not var_existente:
+                        db.add(
+                            models.TemplateVariable(
+                                template_id=existing.id, position=i, internal_name=name
+                            )
+                        )
+                for v in list(existing.variables):
+                    if v.position not in posicoes_remotas:
+                        db.delete(v)
             else:
                 template = models.Template(
                     name=remote["name"],
                     meta_template_name=remote["name"],
-                    language=remote.get("language", "pt_BR"),
+                    language=language,
                     category=remote.get("category", "UTILITY"),
                     header_type=header_type,
                     status=status_value,
                     meta_status_raw=remote.get("status"),
-                    meta_template_id=remote.get("id"),
+                    meta_template_id=remote_id,
                     waba_id=waba_id,
-                    body_text=_extract_body_text(remote),
+                    body_text=body_text,
                 )
                 db.add(template)
                 db.flush()
@@ -508,16 +557,18 @@ def descartar_imagem_otimizada(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/{template_id}/testar-envio", response_model=schemas.ChatwootTestResult)
 @router.post("/{template_id}/testar-envio-chatwoot", response_model=schemas.ChatwootTestResult)
-async def testar_envio_chatwoot(
+async def testar_envio_template(
     template_id: str,
     payload: schemas.TestarEnvioChatwootIn,
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    """Dispara agora, via Chatwoot, o template pra um celular específico —
-    fora da fila normal, só pra validar que o envio (config + inbox) está
-    funcionando de verdade antes de ligar uma faixa nele."""
+    """Dispara agora o template pra um celular específico com os valores de variáveis
+    informados — totalmente fora da fila normal, sem gravar em cobranca_fila nem
+    contar nos enviados do dia, servindo para validar o envio e as variáveis antes de ligar
+    uma faixa nele."""
 
     template = _with_variables(db.query(models.Template)).filter(
         models.Template.id == template_id
@@ -528,40 +579,88 @@ async def testar_envio_chatwoot(
     numero = db.get(models.WhatsappNumber, payload.whatsapp_number_id)
     if not numero:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Número não encontrado")
-    if not numero.chatwoot_inbox_id:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Este número não tem inbox do Chatwoot vinculada (Configurações)"
-        )
 
     celular = normalize_phone(payload.celular)
     if not is_valid_phone(payload.celular):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Celular de destino inválido")
 
-    try:
-        client = chatwoot_client.cliente_configurado(db)
-    except chatwoot_client.ChatwootConfigError as exc:
-        return schemas.ChatwootTestResult(ok=False, detalhe=str(exc))
-
     body_params, header_image_link = montar_parametros_envio(template, payload.variables)
 
+    # 1. Envio via Chatwoot (se o número estiver configurado para Chatwoot)
+    if numero.chatwoot_inbox_id:
+        try:
+            client = chatwoot_client.cliente_configurado(db)
+        except chatwoot_client.ChatwootConfigError as exc:
+            return schemas.ChatwootTestResult(ok=False, detalhe=str(exc))
+
+        try:
+            contact_id, source_id = await client.buscar_ou_criar_contato(
+                numero.chatwoot_inbox_id, celular, "Teste de envio"
+            )
+            conversation_id = await client.buscar_ou_criar_conversa(numero.chatwoot_inbox_id, contact_id, source_id)
+            msg = await client.enviar_mensagem_template(
+                conversation_id,
+                template.body_text,
+                template_name=template.meta_template_name,
+                category=template.category,
+                language=template.language,
+                body_params=body_params,
+                header_image_url=header_image_link,
+            )
+            msg_id = msg.get("id") if isinstance(msg, dict) else None
+            if msg_id:
+                # Espera breve para verificar se a Meta aceitou ou rejeitou de imediato (ex: erro #132001)
+                for _ in range(3):
+                    await asyncio.sleep(1)
+                    status_msg, erro_ext = await client.buscar_status_mensagem(conversation_id, msg_id)
+                    if status_msg == "failed":
+                        motivo_pt = descrever_erro_envio(erro_ext or "Mensagem recusada")
+                        return schemas.ChatwootTestResult(
+                            ok=False,
+                            detalhe=f"Erro retornado pelo WhatsApp via Chatwoot: {motivo_pt}",
+                        )
+                    if status_msg in ("delivered", "read"):
+                        break
+            return schemas.ChatwootTestResult(ok=True, detalhe=f"Mensagem de teste enviada para {celular} via Chatwoot")
+        except chatwoot_client.ChatwootAPIError as exc:
+            motivo_pt = descrever_erro_envio(f"{exc.status_code}: {exc.payload}")
+            return schemas.ChatwootTestResult(ok=False, detalhe=f"Erro retornado pelo Chatwoot: {motivo_pt}")
+        except Exception as exc:  # noqa: BLE001
+            motivo_pt = descrever_erro_envio(str(exc))
+            return schemas.ChatwootTestResult(ok=False, detalhe=f"Erro ao enviar: {motivo_pt}")
+
+    # 2. Envio direto via Meta Cloud API
     try:
-        contact_id, source_id = await client.buscar_ou_criar_contato(
-            numero.chatwoot_inbox_id, celular, "Teste de envio"
-        )
-        conversation_id = await client.buscar_ou_criar_conversa(numero.chatwoot_inbox_id, contact_id, source_id)
-        await client.enviar_mensagem_template(
-            conversation_id,
-            template.body_text,
+        token = token_do_numero(db, numero)
+    except MetaTokenConfigError as exc:
+        return schemas.ChatwootTestResult(ok=False, detalhe=str(exc))
+
+    meta_client = MetaClient(access_token=token)
+    header_image_id = None
+    if template.header_type == models.TemplateHeaderType.image:
+        caminho_imagem = arquivo_imagem(template)
+        if caminho_imagem:
+            try:
+                header_image_id = await media_id_da_imagem(meta_client, numero.phone_number_id, caminho_imagem)
+            except Exception as exc:  # noqa: BLE001
+                return schemas.ChatwootTestResult(ok=False, detalhe=f"Falha ao subir imagem do template para a Meta: {exc}")
+        elif not header_image_link:
+            return schemas.ChatwootTestResult(ok=False, detalhe="Template exige cabeçalho de imagem, mas nenhuma imagem foi cadastrada")
+
+    try:
+        await meta_client.send_template_message(
+            phone_number_id=numero.phone_number_id,
+            to=celular,
             template_name=template.meta_template_name,
-            category=template.category,
-            language=template.language,
+            language_code=template.language,
             body_params=body_params,
-            header_image_url=header_image_link,
+            header_image_link=header_image_link,
+            header_image_id=header_image_id,
         )
-        return schemas.ChatwootTestResult(ok=True, detalhe=f"Mensagem de teste enviada para {celular}")
-    except chatwoot_client.ChatwootAPIError as exc:
-        return schemas.ChatwootTestResult(
-            ok=False, detalhe=f"Erro retornado pelo Chatwoot ({exc.status_code}): {exc.payload}"
-        )
-    except Exception as exc:  # noqa: BLE001 - qualquer falha de rede/config vira mensagem pro usuário
-        return schemas.ChatwootTestResult(ok=False, detalhe=f"Erro ao enviar: {exc}")
+        return schemas.ChatwootTestResult(ok=True, detalhe=f"Mensagem de teste enviada para {celular} via Meta")
+    except MetaAPIError as exc:
+        motivo_pt = descrever_erro_envio(str(exc))
+        return schemas.ChatwootTestResult(ok=False, detalhe=f"Erro retornado pela Meta: {motivo_pt}")
+    except Exception as exc:  # noqa: BLE001
+        motivo_pt = descrever_erro_envio(str(exc))
+        return schemas.ChatwootTestResult(ok=False, detalhe=f"Erro ao enviar via Meta: {motivo_pt}")

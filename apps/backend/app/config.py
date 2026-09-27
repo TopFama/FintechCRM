@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # vale o endereço por onde a imagem foi subida (ver templates.py).
     public_base_url: str = ""
 
+    # Segredo do webhook do Chatwoot (opcional): se informado, valida o cabeçalho
+    # X-Chatwoot-Signature (HMAC-SHA256) nos eventos recebidos de message_updated.
+    chatwoot_webhook_secret: str = ""
+
     # Origens liberadas no CORS, separadas por vírgula. "*" (padrão) mantém o
     # comportamento atual para não quebrar quem já está rodando; em produção,
     # configure com o(s) domínio(s) real(is) do frontend.

@@ -151,13 +151,20 @@ class TemplateVariableIn(BaseModel):
 class TemplateCreate(BaseModel):
     name: str
     meta_template_name: str
-    language: str = "pt_BR"
+    language: str
     category: str = "UTILITY"
     header_type: TemplateHeaderType = TemplateHeaderType.none
     body_text: str
     waba_id: str | None = None
     variables: list[TemplateVariableIn] = []
     submit_to_meta: bool = False
+
+    @field_validator("language")
+    @classmethod
+    def validar_idioma(cls, valor: str) -> str:
+        if not valor or not valor.strip():
+            raise ValueError("O idioma do template é obrigatório (ex: pt_BR, en_US)")
+        return valor.strip()
 
 
 class TemplateVariableOut(BaseModel):

@@ -44,6 +44,12 @@ export default function TemplatesCard() {
   const [showCreate, setShowCreate] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [testeTemplateId, setTesteTemplateId] = useState<string | null>(null);
+  const [testeNumeroId, setTesteNumeroId] = useState("");
+  const [testeCelular, setTesteCelular] = useState("");
+  const [testeVariaveis, setTesteVariaveis] = useState<Record<string, string>>({});
+  const [testeEnviando, setTesteEnviando] = useState(false);
+  const [testeResultado, setTesteResultado] = useState<{ ok: boolean; detalhe: string } | null>(null);
   const [form, setForm] = useState({
     name: "",
     meta_template_name: "",
@@ -77,6 +83,54 @@ export default function TemplatesCard() {
         : undefined;
       return campo ? campo.exemplo : `${match} (não mapeado)`;
     });
+  }
+
+  function abrirTesteTemplate(t: Template) {
+    if (testeTemplateId === t.id) {
+      setTesteTemplateId(null);
+      return;
+    }
+    setTesteTemplateId(t.id);
+    setTesteResultado(null);
+    if (!testeNumeroId && numbers.length > 0) {
+      const numMesmaWaba = numbers.find((n) => n.waba_id === t.waba_id);
+      setTesteNumeroId(numMesmaWaba ? numMesmaWaba.id : numbers[0].id);
+    }
+    const vars: Record<string, string> = {};
+    for (const v of t.variables) {
+      const campo = v.campo_sugerido ? campos.find((c) => c.campo === v.campo_sugerido) : undefined;
+      vars[v.internal_name] = campo ? campo.exemplo : "";
+    }
+    setTesteVariaveis(vars);
+  }
+
+  function renderizarPreviewComValores(t: Template, vars: Record<string, string>): string {
+    return t.body_text.replace(/\{\{(\d+)\}\}/g, (match, pos) => {
+      const variavel = t.variables.find((v) => v.position === Number(pos));
+      const valor = variavel ? vars[variavel.internal_name] : undefined;
+      return valor !== undefined && valor !== "" ? valor : match;
+    });
+  }
+
+  async function handleEnviarTeste(t: Template) {
+    if (!testeNumeroId || !testeCelular.trim()) return;
+    setTesteEnviando(true);
+    setTesteResultado(null);
+    try {
+      const res = await api.testarEnvioTemplate(t.id, {
+        whatsapp_number_id: testeNumeroId,
+        celular: testeCelular.trim(),
+        variables: testeVariaveis,
+      });
+      setTesteResultado(res);
+    } catch (err) {
+      setTesteResultado({
+        ok: false,
+        detalhe: err instanceof Error ? err.message : "Erro ao testar envio",
+      });
+    } finally {
+      setTesteEnviando(false);
+    }
   }
 
   async function handleCampoSugerido(templateId: string, variavelId: string, campo: string) {
@@ -444,14 +498,29 @@ export default function TemplatesCard() {
                         )}
                       </td>
                       <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button className="secondary small" onClick={() => handleRefreshStatus(t.id)}>
+                        <button
+                          type="button"
+                          className="secondary small"
+                          style={{ minWidth: 130, justifyContent: "center" }}
+                          onClick={() => handleRefreshStatus(t.id)}
+                        >
                           Atualizar status
                         </button>
                         <button
+                          type="button"
                           className="secondary small"
+                          style={{ minWidth: 130, justifyContent: "center" }}
                           onClick={() => setPreviewId((atual) => (atual === t.id ? null : t.id))}
                         >
                           <IconEye width={14} height={14} /> {previewId === t.id ? "Fechar" : "Pré-visualizar"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary small"
+                          style={{ minWidth: 130, justifyContent: "center" }}
+                          onClick={() => abrirTesteTemplate(t)}
+                        >
+                          <IconTemplate width={14} height={14} /> {testeTemplateId === t.id ? "Fechar teste" : "Testar envio"}
                         </button>
                       </td>
                     </tr>
@@ -481,6 +550,109 @@ export default function TemplatesCard() {
                                   </div>
                                 ))}
                               </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {testeTemplateId === t.id && (
+                      <tr>
+                        <td colSpan={6}>
+                          <div className="card" style={{ margin: "8px 0", background: "var(--color-bg-subtle, #f9fafb)", border: "1px solid var(--color-border)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                              <h4 style={{ margin: 0 }}>Testar template: {t.name} ({t.language})</h4>
+                              <button type="button" className="secondary small" onClick={() => setTesteTemplateId(null)}>
+                                Fechar
+                              </button>
+                            </div>
+                            <p className="card-subtitle" style={{ marginBottom: 12 }}>
+                              Dispara uma mensagem de teste real para o celular informado com os valores das variáveis abaixo.
+                              <strong style={{ display: "block", marginTop: 4 }}>
+                                Atenção: este envio de teste não entra na fila e nem conta nos enviados do dia.
+                              </strong>
+                            </p>
+                            <div className="form-row">
+                              <div className="field">
+                                <label htmlFor={`teste-num-${t.id}`}>Número de origem</label>
+                                <select
+                                  id={`teste-num-${t.id}`}
+                                  value={testeNumeroId}
+                                  onChange={(e) => setTesteNumeroId(e.target.value)}
+                                >
+                                  <option value="">Selecione o número...</option>
+                                  {numbers.map((n) => (
+                                    <option key={n.id} value={n.id}>
+                                      {n.label} ({n.display_phone_number})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="field">
+                                <label htmlFor={`teste-cel-${t.id}`}>Celular de destino</label>
+                                <input
+                                  id={`teste-cel-${t.id}`}
+                                  value={testeCelular}
+                                  onChange={(e) => setTesteCelular(e.target.value)}
+                                  placeholder="55DDDNÚMERO"
+                                />
+                              </div>
+                            </div>
+
+                            {t.variables.length > 0 && (
+                              <div style={{ marginTop: 12 }}>
+                                <label style={{ fontWeight: 600, display: "block", marginBottom: 6 }}>
+                                  Valores das variáveis (preencha para testar):
+                                </label>
+                                <div className="form-row" style={{ flexWrap: "wrap", gap: 12 }}>
+                                  {t.variables.map((v) => (
+                                    <div className="field" key={v.id} style={{ minWidth: 200, flex: "1 1 200px" }}>
+                                      <label htmlFor={`teste-var-${v.id}`}>
+                                        {`{{${v.position}}}`} ({v.internal_name})
+                                      </label>
+                                      <input
+                                        id={`teste-var-${v.id}`}
+                                        value={testeVariaveis[v.internal_name] ?? ""}
+                                        onChange={(e) =>
+                                          setTesteVariaveis((prev) => ({ ...prev, [v.internal_name]: e.target.value }))
+                                        }
+                                        placeholder={`Valor para {{${v.position}}}`}
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="template-preview" style={{ marginTop: 12, marginBottom: 12 }}>
+                              <div className="template-preview-bubble">
+                                {renderizarPreviewComValores(t, testeVariaveis)}
+                              </div>
+                            </div>
+
+                            <div className="actions-row" style={{ marginTop: 16 }}>
+                              <button
+                                type="button"
+                                disabled={testeEnviando || !testeNumeroId || !testeCelular.trim()}
+                                onClick={() => handleEnviarTeste(t)}
+                              >
+                                {testeEnviando ? "Enviando teste..." : "Enviar teste"}
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary"
+                                onClick={() => setTesteTemplateId(null)}
+                              >
+                                Fechar
+                              </button>
+                            </div>
+
+                            {testeResultado && (
+                              <p
+                                className={testeResultado.ok ? "field-success" : "field-error"}
+                                style={{ marginTop: 10, fontWeight: 500 }}
+                              >
+                                {testeResultado.detalhe}
+                              </p>
                             )}
                           </div>
                         </td>

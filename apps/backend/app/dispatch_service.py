@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from . import campanhas_fixas, chatwoot_client, models
 from .config import settings
 from .meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_do_numero
+from .utils.erros import descrever_erro_envio
 
 logger = logging.getLogger("dispatch_worker")
 
@@ -158,6 +159,25 @@ def _marcar_lead_cobrado(db: Session, item: models.QueueItem) -> None:
     ).update({"status": "cobrado", "cobrado_em": item.sent_at}, synchronize_session=False)
 
 
+def desmarcar_lead_cobrado(db: Session, item: models.QueueItem) -> None:
+    """Reverte o status do lead para 'novo' quando a entrega da mensagem falha
+    posteriormente (ex: notificação via webhook do Chatwoot)."""
+    faixa = db.get(models.Faixa, item.faixa_id)
+    if faixa is None:
+        return
+    if faixa.tipo == models.TIPO_CAMPANHA:
+        filtro = [models.Lead.campanha_id == faixa.campanha_id]
+    elif faixa.tipo == models.TIPO_REMARKETING and faixa.remarketing_segmento:
+        filtro = [models.Lead.campanha_id == campanhas_fixas.id_campanha(faixa.remarketing_segmento)]
+    else:
+        filtro = [models.Lead.faixa == faixa.name, models.Lead.campanha_id == ""]
+    db.query(models.Lead).filter(
+        models.Lead.codigo_cliente == item.codigo_cliente,
+        *filtro,
+        models.Lead.status == "cobrado",
+    ).update({"status": "novo", "cobrado_em": None}, synchronize_session=False)
+
+
 def _depois_do_envio(db: Session, item: models.QueueItem) -> None:
     """Fora do try do envio: uma falha aqui não pode transformar em erro uma
     mensagem que já saiu (erro libera o cliente para outra base no mesmo dia)."""
@@ -222,17 +242,17 @@ async def _enviar_via_meta(
             item.whatsapp_message_id = messages[0].get("id")
     except MetaAPIError as exc:
         item.status = models.QueueStatus.error
-        item.error_message = str(exc)
+        item.error_message = descrever_erro_envio(str(exc))
         if _falha_do_servidor(exc.status_code):
             item.sent_at = datetime.utcnow()
-        db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=str(exc)))
-        logger.warning("Falha ao enviar cobrança %s: %s", item.id, exc)
+        db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
+        logger.warning("Falha ao enviar cobrança %s: %s", item.id, item.error_message)
         if header_image_id:
             # mídia expirada ou recusada: o próximo envio sobe a imagem de novo
             _esquecer_midia(number.phone_number_id, caminho_imagem)
     except Exception as exc:  # noqa: BLE001 - qualquer falha de rede/config não pode travar o item em "reserved"
         item.status = models.QueueStatus.error
-        item.error_message = f"Falha inesperada ao enviar: {exc}"
+        item.error_message = descrever_erro_envio(f"Falha inesperada ao enviar: {exc}")
         # Timeout ou queda de rede: a mensagem pode ter chegado. sent_at marca a
         # tentativa e segura o cliente pelo resto do dia (elegibilidade._cobrado_hoje).
         item.sent_at = datetime.utcnow()
@@ -282,7 +302,7 @@ async def _enviar_via_chatwoot(
             number.chatwoot_inbox_id, item.celular, item.nome
         )
         conversation_id = await client.buscar_ou_criar_conversa(number.chatwoot_inbox_id, contact_id, source_id)
-        await client.enviar_mensagem_template(
+        resposta = await client.enviar_mensagem_template(
             conversation_id,
             template.body_text,
             template_name=template.meta_template_name,
@@ -293,16 +313,18 @@ async def _enviar_via_chatwoot(
         )
         item.status = models.QueueStatus.sent
         item.sent_at = datetime.utcnow()
+        if isinstance(resposta, dict) and resposta.get("id"):
+            item.whatsapp_message_id = str(resposta["id"])
     except chatwoot_client.ChatwootAPIError as exc:
         item.status = models.QueueStatus.error
-        item.error_message = str(exc)
+        item.error_message = descrever_erro_envio(str(exc))
         if _falha_do_servidor(exc.status_code):
             item.sent_at = datetime.utcnow()
-        db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=str(exc)))
-        logger.warning("Falha ao enviar cobrança %s via Chatwoot: %s", item.id, exc)
+        db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
+        logger.warning("Falha ao enviar cobrança %s via Chatwoot: %s", item.id, item.error_message)
     except Exception as exc:  # noqa: BLE001 - qualquer falha de rede/config não pode travar o item em "reserved"
         item.status = models.QueueStatus.error
-        item.error_message = f"Falha inesperada ao enviar via Chatwoot: {exc}"
+        item.error_message = descrever_erro_envio(f"Falha inesperada ao enviar via Chatwoot: {exc}")
         # Timeout ou queda de rede: a mensagem pode ter chegado. sent_at marca a
         # tentativa e segura o cliente pelo resto do dia (elegibilidade._cobrado_hoje).
         item.sent_at = datetime.utcnow()
