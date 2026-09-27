@@ -53,12 +53,18 @@ class MetaClient:
         return await self._request("GET", "me", params={"fields": "id,name"})
 
     async def list_templates(self, waba_id: str) -> list[dict]:
-        data = await self._request(
-            "GET",
-            f"{waba_id}/message_templates",
-            params={"limit": 200, "fields": "name,language,category,status,components,id"},
-        )
-        return data.get("data", [])
+        params = {"limit": 200, "fields": "name,language,category,status,components,id"}
+        templates: list[dict] = []
+        # Paginado pelo cursor: WABA com mais de 200 templates vem em várias páginas
+        for _ in range(50):
+            data = await self._request("GET", f"{waba_id}/message_templates", params=params)
+            templates.extend(data.get("data", []))
+            paging = data.get("paging") or {}
+            depois = (paging.get("cursors") or {}).get("after")
+            if not paging.get("next") or not depois:
+                break
+            params = {**params, "after": depois}
+        return templates
 
     async def get_template_status(self, meta_template_id: str) -> dict:
         return await self._request("GET", meta_template_id, params={"fields": "status,name,category"})

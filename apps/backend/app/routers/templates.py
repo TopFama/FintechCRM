@@ -126,7 +126,7 @@ async def sync_from_meta(
         try:
             client = MetaClient(access_token=token_da_waba(db, waba_id))
             remote_templates = await client.list_templates(waba_id)
-        except (MetaTokenConfigError, MetaAPIError) as exc:
+        except Exception as exc:  # noqa: BLE001 - WABA fora do ar (timeout, 5xx em HTML) não impede as outras
             falhas.append(f"WABA {waba_id}: {exc}")
             logger.warning("Sincronização de templates pulou a WABA %s: %s", waba_id, exc)
             continue
