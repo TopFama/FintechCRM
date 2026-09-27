@@ -1,10 +1,10 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
-import { api, CampoCliente, formatarNomeTemplate, ImagemPendente, Template, urlImagemTemplate, WhatsappNumber } from "../../api";
+import { api, CampoCliente, ImagemPendente, Template, urlImagemTemplate, WhatsappNumber } from "../../api";
 import SortableTh from "../SortableTh";
 import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTemplate } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 
-type ColunaTemplate = "name" | "meta_template_name" | "status";
+type ColunaTemplate = "meta_template_name" | "waba_id" | "status";
 
 // Imagem que precisou ser comprimida: o usuário vê a original ao lado da
 // otimizada e decide se usa; só depois de aprovar ela entra no template.
@@ -21,20 +21,52 @@ function formatarTamanho(bytes: number): string {
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+function rotuloStatusTemplate(status: string): string {
+  switch (status.toLowerCase()) {
+    case "approved":
+      return "Aprovado";
+    case "pending":
+      return "Pendente";
+    case "rejected":
+      return "Rejeitado";
+    case "draft":
+      return "Rascunho";
+    default:
+      return status;
+  }
+}
+
 // Templates de WhatsApp aprovados na Meta, usados pelas faixas de cobrança —
 // vive em Configurações porque é infraestrutura compartilhada entre faixas,
 // não uma configuração de uma faixa específica.
 export default function TemplatesCard() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [numbers, setNumbers] = useState<WhatsappNumber[]>([]);
+  const telefonesPorWaba = useMemo(() => {
+    const mapa = new Map<string, string[]>();
+    for (const n of numbers) {
+      if (!n.waba_id) continue;
+      const tel = (n.display_phone_number || n.phone_number_id || "").trim();
+      if (!tel) continue;
+      const list = mapa.get(n.waba_id) || [];
+      if (!list.includes(tel)) {
+        list.push(tel);
+      }
+      mapa.set(n.waba_id, list);
+    }
+    return mapa;
+  }, [numbers]);
+
   const templatesSort = useSort<ColunaTemplate>();
   const templatesOrdenados = ordenarPor(
     templates,
     templatesSort.sortKey
-      ? (t: Template) =>
-          templatesSort.sortKey === "name"
-            ? formatarNomeTemplate(t, numbers)
-            : t[templatesSort.sortKey as ColunaTemplate]
+      ? (t: Template) => {
+          if (templatesSort.sortKey === "waba_id") return t.waba_id || "";
+          if (templatesSort.sortKey === "meta_template_name") return t.meta_template_name;
+          if (templatesSort.sortKey === "status") return t.status;
+          return "";
+        }
       : null,
     templatesSort.sortDir
   );
@@ -466,12 +498,9 @@ export default function TemplatesCard() {
           </div>
         ) : (
           <div className="table-wrap">
-            <table>
+            <table className="tabela-compacta">
               <thead>
                 <tr>
-                  <SortableTh active={templatesSort.sortKey === "name"} dir={templatesSort.sortDir} onSort={() => templatesSort.toggleSort("name")}>
-                    Nome
-                  </SortableTh>
                   <SortableTh
                     active={templatesSort.sortKey === "meta_template_name"}
                     dir={templatesSort.sortDir}
@@ -479,129 +508,144 @@ export default function TemplatesCard() {
                   >
                     Template (Meta)
                   </SortableTh>
+                  <SortableTh
+                    active={templatesSort.sortKey === "waba_id"}
+                    dir={templatesSort.sortDir}
+                    onSort={() => templatesSort.toggleSort("waba_id")}
+                  >
+                    WABA
+                  </SortableTh>
+                  <th>Telefones</th>
                   <SortableTh active={templatesSort.sortKey === "status"} dir={templatesSort.sortDir} onSort={() => templatesSort.toggleSort("status")}>
                     Status
                   </SortableTh>
                   <th>Variáveis</th>
                   <th>Imagem</th>
-                  <th></th>
+                  <th style={{ textAlign: "right" }}></th>
                 </tr>
               </thead>
               <tbody>
-                {templatesOrdenados.map((t) => (
-                  <Fragment key={t.id}>
-                    <tr>
-                      <td className="cell-strong" style={{ wordBreak: "break-word", minWidth: 200 }}>
-                        {formatarNomeTemplate(t, numbers)}
-                      </td>
-                      <td className="text-muted" style={{ wordBreak: "break-word" }}>{t.meta_template_name}</td>
-                      <td>
-                        <span className={`badge ${t.status}`}>{t.status}</span>
-                      </td>
-                      <td className="text-muted" style={{ wordBreak: "break-word", maxWidth: 220 }}>
-                        {t.variables.map((v) => v.internal_name).join(", ") || "—"}
-                      </td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        {t.header_type === "image" ? (
-                          <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-                            {t.image_url && <span className="badge sent">enviada</span>}
-                            {subindoImagem === t.id && <span className="text-muted">Enviando e otimizando…</span>}
-                            {/* trocar: imagem antiga (sem link público) ou arte nova */}
-                            <label style={{ cursor: "pointer", color: "var(--color-primary)", fontWeight: 600 }}>
-                              {t.image_url ? "trocar" : "subir"}
-                              <input
-                                type="file"
-                                accept="image/*"
-                                style={{ display: "none" }}
-                                onChange={(e) => {
-                                  const arquivo = e.target.files?.[0];
-                                  e.target.value = "";
-                                  if (arquivo) handleImageUpload(t, arquivo);
-                                }}
-                              />
-                            </label>
-                            {t.image_url && (
-                              <button
-                                type="button"
-                                className="ghost small"
-                                style={{ color: "var(--color-danger)", padding: "0 4px", fontSize: 12, fontWeight: 600 }}
-                                onClick={() => handleRemoverImagem(t)}
-                                title="Remover imagem deste template"
-                              >
-                                remover
-                              </button>
-                            )}
-                          </span>
-                        ) : (
-                          <span className="text-faint">—</span>
-                        )}
-                      </td>
-                      <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
-                        <div style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
-                          <button
-                            type="button"
-                            className="secondary small"
-                            style={{ whiteSpace: "nowrap" }}
-                            onClick={() => handleRefreshStatus(t.id)}
-                          >
-                            Atualizar status
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary small"
-                            style={{ whiteSpace: "nowrap" }}
-                            onClick={() => setPreviewId((atual) => (atual === t.id ? null : t.id))}
-                          >
-                            <IconEye width={14} height={14} /> {previewId === t.id ? "Fechar" : "Pré-visualizar"}
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary small"
-                            style={{ whiteSpace: "nowrap" }}
-                            onClick={() => abrirTesteTemplate(t)}
-                          >
-                            <IconTemplate width={14} height={14} /> {testeTemplateId === t.id ? "Fechar teste" : "Testar envio"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    {previewId === t.id && (
+                {templatesOrdenados.map((t) => {
+                  const tels = (t.waba_id ? telefonesPorWaba.get(t.waba_id) : null) || [];
+                  return (
+                    <Fragment key={t.id}>
                       <tr>
-                        <td colSpan={6}>
-                          <div className="template-preview">
-                            <div className="template-preview-bubble">{renderizarPreview(t)}</div>
-                            {t.variables.length === 0 ? (
-                              <p className="field-hint">Este template não tem variáveis.</p>
-                            ) : (
-                              <div className="template-preview-vars">
-                                {t.variables.map((v) => (
-                                  <div className="field" key={v.id}>
-                                    <label htmlFor={`tpl-var-${v.id}`}>{`{{${v.position}}}`} ({v.internal_name})</label>
-                                    <select id={`tpl-var-${v.id}`}
-                                      value={v.campo_sugerido || ""}
-                                      onChange={(e) => handleCampoSugerido(t.id, v.id, e.target.value)}
-                                    >
-                                      <option value="">Não mapeado</option>
-                                      {campos.map((c) => (
-                                        <option key={c.campo} value={c.campo}>
-                                          {c.rotulo}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                        <td className="cell-strong" style={{ wordBreak: "break-word" }}>
+                          {t.meta_template_name}
+                        </td>
+                        <td className="text-muted" style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all" }}>
+                          {t.waba_id || "—"}
+                        </td>
+                        <td className="text-muted" style={{ fontSize: 12.5, wordBreak: "break-word" }}>
+                          {tels.length > 0 ? tels.join("; ") : "—"}
+                        </td>
+                        <td>
+                          <span className={`badge ${t.status}`}>{rotuloStatusTemplate(t.status)}</span>
+                        </td>
+                        <td className="text-muted" style={{ wordBreak: "break-word", fontSize: 12 }}>
+                          {t.variables.map((v) => v.internal_name).join(", ") || "—"}
+                        </td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          {t.header_type === "image" ? (
+                            <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+                              {t.image_url && <span className="badge sent">enviada</span>}
+                              {subindoImagem === t.id && <span className="text-muted">Enviando e otimizando…</span>}
+                              {/* trocar: imagem antiga (sem link público) ou arte nova */}
+                              <label style={{ cursor: "pointer", color: "var(--color-primary)", fontWeight: 600 }}>
+                                {t.image_url ? "trocar" : "subir"}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  style={{ display: "none" }}
+                                  onChange={(e) => {
+                                    const arquivo = e.target.files?.[0];
+                                    e.target.value = "";
+                                    if (arquivo) handleImageUpload(t, arquivo);
+                                  }}
+                                />
+                              </label>
+                              {t.image_url && (
+                                <button
+                                  type="button"
+                                  className="ghost small"
+                                  style={{ color: "var(--color-danger)", padding: "0 4px", fontSize: 12, fontWeight: 600 }}
+                                  onClick={() => handleRemoverImagem(t)}
+                                  title="Remover imagem deste template"
+                                >
+                                  remover
+                                </button>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-faint">—</span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: "right" }}>
+                          <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              className="secondary small"
+                              style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap" }}
+                              onClick={() => handleRefreshStatus(t.id)}
+                            >
+                              Atualizar status
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary small"
+                              style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap" }}
+                              onClick={() => setPreviewId((atual) => (atual === t.id ? null : t.id))}
+                            >
+                              <IconEye width={14} height={14} /> {previewId === t.id ? "Fechar" : "Pré-visualizar"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary small"
+                              style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap" }}
+                              onClick={() => abrirTesteTemplate(t)}
+                            >
+                              <IconTemplate width={14} height={14} /> {testeTemplateId === t.id ? "Fechar teste" : "Testar envio"}
+                            </button>
                           </div>
                         </td>
                       </tr>
-                    )}
-                    {testeTemplateId === t.id && (
-                      <tr>
-                        <td colSpan={6}>
-                          <div className="card" style={{ margin: "8px 0", background: "var(--color-bg-subtle, #f9fafb)", border: "1px solid var(--color-border)" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                              <h4 style={{ margin: 0 }}>Testar template: {formatarNomeTemplate(t, numbers)} ({t.language})</h4>
+                      {previewId === t.id && (
+                        <tr>
+                          <td colSpan={7}>
+                            <div className="template-preview">
+                              <div className="template-preview-bubble">{renderizarPreview(t)}</div>
+                              {t.variables.length === 0 ? (
+                                <p className="field-hint">Este template não tem variáveis.</p>
+                              ) : (
+                                <div className="template-preview-vars">
+                                  {t.variables.map((v) => (
+                                    <div className="field" key={v.id}>
+                                      <label htmlFor={`tpl-var-${v.id}`}>{`{{${v.position}}}`} ({v.internal_name})</label>
+                                      <select id={`tpl-var-${v.id}`}
+                                        value={v.campo_sugerido || ""}
+                                        onChange={(e) => handleCampoSugerido(t.id, v.id, e.target.value)}
+                                      >
+                                        <option value="">Não mapeado</option>
+                                        {campos.map((c) => (
+                                          <option key={c.campo} value={c.campo}>
+                                            {c.rotulo}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {testeTemplateId === t.id && (
+                        <tr>
+                          <td colSpan={7}>
+                            <div className="card" style={{ margin: "8px 0", background: "var(--color-bg-subtle, #f9fafb)", border: "1px solid var(--color-border)" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                <h4 style={{ margin: 0 }}>Testar template: {t.meta_template_name} ({t.language})</h4>
                               <button type="button" className="secondary small" onClick={() => setTesteTemplateId(null)}>
                                 Fechar
                               </button>
@@ -707,7 +751,8 @@ export default function TemplatesCard() {
                       </tr>
                     )}
                   </Fragment>
-                ))}
+                );
+              })}
               </tbody>
             </table>
           </div>

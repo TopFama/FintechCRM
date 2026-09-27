@@ -1,6 +1,6 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, urlImagemTemplate, CampoCliente, Faixa, FaixaEnvio, FaixaVariableMappingIn, Template, WhatsappNumber } from "../api";
+import { api, urlImagemTemplate, CampoCliente, Faixa, FaixaEnvio, FaixaVariableMappingIn, Template, TemplateVariable, WhatsappNumber } from "../api";
 import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTrash } from "../icons";
 
 type MapeamentoEdicao = { fonte_tipo: "coluna" | "campo_cliente"; valor: string };
@@ -106,34 +106,46 @@ export default function EnviosFaixa({
   const templateDoForm = templates.find((t) => t.id === formTemplateId) || null;
 
   // Templates que compartilham o mesmo nome (podem ser de WABAs diferentes)
-  const templatesMesmoNome = templateDoForm
-    ? templates.filter(
-        (t) =>
-          t.status === "approved" &&
-          (t.name === templateDoForm.name || t.meta_template_name === templateDoForm.meta_template_name)
-      )
-    : [];
+  const templatesMesmoNome: Template[] = useMemo(() => {
+    if (!templateDoForm) return [];
+    return templates.filter(
+      (t: Template) =>
+        t.status === "approved" &&
+        (t.name === templateDoForm.name || t.meta_template_name === templateDoForm.meta_template_name)
+    );
+  }, [templates, templateDoForm]);
 
-  const wabasCompativeis = new Set(templatesMesmoNome.map((t) => t.waba_id).filter(Boolean));
+  const wabasCompativeis = useMemo(
+    () => new Set(templatesMesmoNome.map((t: Template) => t.waba_id).filter(Boolean)),
+    [templatesMesmoNome]
+  );
+
+  // Template exato para a WABA do número selecionado
+  const templateFinal: Template | null = useMemo(() => {
+    if (!templateDoForm) return null;
+    if (!numeroDoForm || !numeroDoForm.waba_id) return templateDoForm;
+    const tplWaba = templatesMesmoNome.find((t: Template) => t.waba_id === numeroDoForm.waba_id);
+    return tplWaba || templateDoForm;
+  }, [templateDoForm, numeroDoForm, templatesMesmoNome]);
 
   // Templates aprovados para a lista suspensa (únicos por nome)
   const templatesAprovados = templates.filter(
     (t, idx, arr) => t.status === "approved" && arr.findIndex((x) => x.name === t.name) === idx
   );
 
-  // Telefones disponíveis: libera os telefones das WABAs que têm este template aprovado
+  // Telefones disponíveis: libera todos os telefones das WABAs que têm este template aprovado
   const numerosDisponiveis = numbers.filter((n) => {
-    const jaUsado = faixa.envios.some((e) => e.whatsapp_number_id === n.id && e.id !== envioEditandoId);
-    if (n.id !== formNumberId && jaUsado) return false;
     if (!templateDoForm) return true;
-    return wabasCompativeis.size === 0 || wabasCompativeis.has(n.waba_id);
+    return wabasCompativeis.size === 0 || (n.waba_id && wabasCompativeis.has(n.waba_id));
   });
 
   function selecionarTemplateForm(templateId: string) {
     setFormTemplateId(templateId);
-    setFormMappings(mapeamentosParaEdicao(templateId));
     const tpl = templates.find((t) => t.id === templateId);
-    if (!tpl) return;
+    if (!tpl) {
+      setFormMappings({});
+      return;
+    }
     const mesmoNome = templates.filter(
       (t) => t.status === "approved" && (t.name === tpl.name || t.meta_template_name === tpl.meta_template_name)
     );
@@ -142,7 +154,13 @@ export default function EnviosFaixa({
       const num = numbers.find((n) => n.id === formNumberId);
       if (num && wabas.size > 0 && !wabas.has(num.waba_id)) {
         setFormNumberId("");
+        setFormMappings({});
+      } else if (num && num.waba_id) {
+        const tplWaba = mesmoNome.find((t) => t.waba_id === num.waba_id) || tpl;
+        setFormMappings(mapeamentosParaEdicao(tplWaba.id));
       }
+    } else {
+      setFormMappings({});
     }
   }
 
@@ -150,12 +168,9 @@ export default function EnviosFaixa({
     setFormNumberId(numberId);
     if (!numberId || !templateDoForm) return;
     const num = numbers.find((n) => n.id === numberId);
-    if (num && templateDoForm.waba_id !== num.waba_id) {
-      const tplMesmaWaba = templatesMesmoNome.find((t) => t.waba_id === num.waba_id);
-      if (tplMesmaWaba && tplMesmaWaba.id !== formTemplateId) {
-        setFormTemplateId(tplMesmaWaba.id);
-        setFormMappings(mapeamentosParaEdicao(tplMesmaWaba.id));
-      }
+    if (num && num.waba_id) {
+      const tplWaba = templatesMesmoNome.find((t: Template) => t.waba_id === num.waba_id) || templateDoForm;
+      setFormMappings(mapeamentosParaEdicao(tplWaba.id));
     }
   }
 
@@ -179,24 +194,16 @@ export default function EnviosFaixa({
   }
 
   async function salvarEnvio() {
-    if (!formNumberId || !formTemplateId || !templateDoForm) return;
-    const num = numbers.find((n) => n.id === formNumberId);
-    let templateFinal = templateDoForm;
-    if (num && templateDoForm.waba_id && num.waba_id && templateDoForm.waba_id !== num.waba_id) {
-      const tplMesmaWaba = templatesMesmoNome.find((t) => t.waba_id === num.waba_id);
-      if (tplMesmaWaba) {
-        templateFinal = tplMesmaWaba;
-      }
-    }
-    const semOrigem = templateFinal.variables.filter((v) => !formMappings[v.id]);
+    if (!formNumberId || !formTemplateId || !templateFinal) return;
+    const semOrigem = templateFinal.variables.filter((v: TemplateVariable) => !formMappings[v.id]);
     if (semOrigem.length > 0) {
-      setErro(`Selecione a origem de todas as variáveis (faltando: ${semOrigem.map((v) => v.internal_name).join(", ")})`);
+      setErro(`Selecione a origem de todas as variáveis (faltando: ${semOrigem.map((v: TemplateVariable) => v.internal_name).join(", ")})`);
       return;
     }
     setErro(null);
     setSalvandoEnvio(true);
     try {
-      const variable_mappings: FaixaVariableMappingIn[] = templateFinal.variables.map((v) => {
+      const variable_mappings: FaixaVariableMappingIn[] = templateFinal.variables.map((v: TemplateVariable) => {
         const m = formMappings[v.id];
         return { template_variable_id: v.id, fonte_tipo: m.fonte_tipo, column_name: m.valor };
       });
@@ -338,27 +345,15 @@ export default function EnviosFaixa({
             <div className="form-row">
               <div className="field">
                 <label htmlFor="faixa-template">Template</label>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <select id="faixa-template" value={formTemplateId} onChange={(e) => selecionarTemplateForm(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
-                    <option value="">Selecione o template...</option>
-                    {templatesAprovados.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                  {templateDoForm && (
-                    <button
-                      type="button"
-                      className="secondary small"
-                      style={{ flexShrink: 0 }}
-                      onClick={() => setMostrarPreviewEnvio((atual) => !atual)}
-                    >
-                      <IconEye width={14} height={14} /> {mostrarPreviewEnvio ? "Fechar" : "Pré-visualizar"}
-                    </button>
-                  )}
-                </div>
-                {templateDoForm?.header_type === "image" && !templateDoForm.image_url && (
+                <select id="faixa-template" value={formTemplateId} onChange={(e) => selecionarTemplateForm(e.target.value)}>
+                  <option value="">Selecione o template...</option>
+                  {templatesAprovados.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                {templateFinal?.header_type === "image" && !templateFinal.image_url && (
                   <span className="field-hint" role="alert" style={{ color: "var(--color-danger)" }}>
                     Este template tem cabeçalho de imagem e ainda não tem imagem. Suba em Configurações → Templates, senão o envio dá erro.
                   </span>
@@ -366,18 +361,31 @@ export default function EnviosFaixa({
               </div>
               <div className="field">
                 <label htmlFor="faixa-numero-de-envio">Número de envio</label>
-                <select
-                  id="faixa-numero-de-envio"
-                  value={formNumberId}
-                  onChange={(e) => selecionarNumeroForm(e.target.value)}
-                >
-                  <option value="">{formTemplateId ? "Selecione o número..." : "Selecione o template primeiro..."}</option>
-                  {numerosDisponiveis.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.label || n.display_phone_number} ({n.display_phone_number})
-                    </option>
-                  ))}
-                </select>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <select
+                    id="faixa-numero-de-envio"
+                    value={formNumberId}
+                    onChange={(e) => selecionarNumeroForm(e.target.value)}
+                    style={{ flex: 1, minWidth: 0 }}
+                  >
+                    <option value="">{formTemplateId ? "Selecione o número..." : "Selecione o template primeiro..."}</option>
+                    {numerosDisponiveis.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.label || n.display_phone_number} ({n.display_phone_number})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="secondary small"
+                    style={{ flexShrink: 0 }}
+                    disabled={!formNumberId || !templateFinal}
+                    onClick={() => setMostrarPreviewEnvio((atual) => !atual)}
+                    title={!formNumberId ? "Selecione o número para pré-visualizar o template" : ""}
+                  >
+                    <IconEye width={14} height={14} /> {mostrarPreviewEnvio ? "Fechar" : "Pré-visualizar"}
+                  </button>
+                </div>
                 {numbers.length === 0 ? (
                   <p className="field-hint">Nenhum número ainda — importe os números da WABA em Configurações.</p>
                 ) : formTemplateId && numerosDisponiveis.length === 0 ? (
@@ -397,17 +405,23 @@ export default function EnviosFaixa({
               </div>
             )}
 
-            {templateDoForm && mostrarPreviewEnvio && (
+            {formTemplateId && !formNumberId && (
+              <p className="field-hint" style={{ marginTop: 12 }}>
+                Selecione o número de envio para carregar as variáveis e poder pré-visualizar o template desta WABA.
+              </p>
+            )}
+
+            {templateFinal && formNumberId && mostrarPreviewEnvio && (
               <div className="template-preview">
                 <div className="template-preview-bubble">
-                  {templateDoForm.header_type === "image" && templateDoForm.image_url && (
+                  {templateFinal.header_type === "image" && templateFinal.image_url && (
                     <img
-                      src={urlImagemTemplate(templateDoForm.image_url)}
+                      src={urlImagemTemplate(templateFinal.image_url)}
                       alt="Cabeçalho do template"
                       style={{ width: "100%", maxWidth: 280, borderRadius: 8, marginBottom: 10, display: "block" }}
                     />
                   )}
-                  {renderizarPreviewForm(templateDoForm)}
+                  {renderizarPreviewForm(templateFinal)}
                 </div>
                 <p className="field-hint">
                   Valores entre colchetes vêm de "Coluna da planilha" (só o nome sugerido — o valor real é o da
@@ -416,11 +430,11 @@ export default function EnviosFaixa({
               </div>
             )}
 
-            {templateDoForm && templateDoForm.variables.length > 0 && (
+            {templateFinal && formNumberId && templateFinal.variables.length > 0 && (
               <>
                 <label style={{ marginBottom: 8, marginTop: 16, display: "block" }}>Variáveis do template</label>
                 <div className="form-row" style={{ flexWrap: "wrap" }}>
-                  {templateDoForm.variables.map((v) => {
+                  {templateFinal.variables.map((v: TemplateVariable) => {
                     const m = formMappings[v.id];
                     const selectValue = !m
                       ? ""

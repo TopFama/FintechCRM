@@ -571,6 +571,15 @@ td {
   font-size: 13.5px;
 }
 
+.tabela-compacta th {
+  padding: 8px 10px;
+}
+
+.tabela-compacta td {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
 .th-sortable {
   cursor: pointer;
   user-select: none;
