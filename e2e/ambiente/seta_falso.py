@@ -22,7 +22,7 @@ CREATE TABLE financeiro_titulos (
     codigo char(10) PRIMARY KEY, pessoa char(8), valor numeric(14,2), vencimento date,
     empresa char(2), portador char(3), rp char(1), status char(1), tipo char(1),
     auxiliar char(10), descricao char(40), pagamento date, valorpago numeric(14,2),
-    documento char(10), lote char(10)
+    documento char(10), lote char(10), emissao date
 );
 CREATE INDEX ON financeiro_titulos (pessoa);
 -- lote do caixa: horário da baixa feita na loja (títulos daqui ficam sem lote)

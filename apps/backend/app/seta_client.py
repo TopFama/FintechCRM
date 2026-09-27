@@ -108,10 +108,6 @@ PORTADOR_MJ = "216"
 # não conta para o cluster de valor pago.
 DESCRICAO_SEGURO = "SEGURO TOPFAMA"
 
-# Condição de pagamento "A PRAZO ATIVO": crediário (condicoes.tipo = '4'), mas
-# não conta como compra na faixa de compra.
-CONDICAO_IGNORADA = "130"
-
 # Datas de `pessoas` fora da janela 1900..hoje são lixo de cadastro (0001 BC,
 # 9999, futuro) e viram NULL.
 _SQL_BASE_COBRANCA = r"""
@@ -196,42 +192,30 @@ base AS (
        AND regexp_replace(p.cpfcnpj, '\D', '', 'g') <> ALL(CAST(:bl_cpfs AS text[]))
        {filtro_status}
 ),
-pagos AS (
-    SELECT ft.pessoa, sum(ft.valor) AS valor_pago
+-- Valor pago e compras numa leitura só dos títulos do cliente (índice de pessoa).
+-- Compra = venda distinta no crediário: auxiliar "VE" + código da venda.
+historico AS (
+    SELECT ft.pessoa,
+           sum(ft.valor) FILTER (
+               WHERE ft.status = 'B'
+                 AND ft.valor > 0
+                 AND COALESCE(ft.auxiliar, '') NOT LIKE 'RE%'
+                 AND trim(ft.descricao) <> :descricao_seguro
+           )                                                            AS valor_pago,
+           count(DISTINCT ft.auxiliar) FILTER (WHERE ft.auxiliar LIKE 'VE%') AS qtd_compras,
+           max(ft.emissao) FILTER (WHERE ft.auxiliar LIKE 'VE%')        AS ultima_compra
       FROM financeiro_titulos ft
       JOIN base b ON b.pessoa = ft.pessoa
      WHERE ft.rp = 'R'
-       AND ft.status = 'B'
        AND ft.tipo IN ('4', '5')
-       AND ft.valor > 0
-       AND COALESCE(ft.auxiliar, '') NOT LIKE 'RE%'
-       AND trim(ft.descricao) <> :descricao_seguro
      GROUP BY ft.pessoa
-),
-compras AS (
-    SELECT v.cliente AS pessoa, count(*) AS qtd_compras, max(v.data) AS ultima_compra
-      FROM vendas v
-      JOIN condicoes c ON c.codigo = v.condicoes
-      JOIN base b ON b.pessoa = v.cliente
-     WHERE v.status = 'S'
-       AND c.tipo = '4'
-       AND c.codigo <> :condicao_ignorada
-       AND EXISTS (
-           SELECT 1
-             FROM financeiro_titulos ft
-            WHERE ft.auxiliar = CAST('VE' || v.codigo AS char(10))
-              AND ft.rp = 'R'
-              AND ft.tipo IN ('4', '5')
-       )
-     GROUP BY v.cliente
 )
 SELECT b.*,
-       COALESCE(g.valor_pago, 0)  AS valor_pago,
-       COALESCE(k.qtd_compras, 0) AS qtd_compras,
-       k.ultima_compra
+       COALESCE(h.valor_pago, 0)  AS valor_pago,
+       COALESCE(h.qtd_compras, 0) AS qtd_compras,
+       h.ultima_compra
   FROM base b
-  LEFT JOIN pagos g ON g.pessoa = b.pessoa
-  LEFT JOIN compras k ON k.pessoa = b.pessoa
+  LEFT JOIN historico h ON h.pessoa = b.pessoa
 """
 
 
@@ -290,9 +274,9 @@ def buscar_base_cobranca(
       cobrança (`vencimento <= max(hoje, parcela mais antiga)`: as vencidas e,
       no lembrete, a que vence amanhã) e o valor leva multa e juros (`juros`).
     - `valor_pago` soma tudo que o cliente pagou (menos auxiliar `RE…`), sem seguro.
-    - `qtd_compras` conta vendas finalizadas (`status = 'S'`) de condição de
-      crediário (tipo 4, menos a 130), só se a venda tem parcela `VE`+código
-      de tipo 4/5 — é o que confirma que foi crediário de verdade.
+    - `qtd_compras` conta vendas distintas no crediário: `auxiliar` distintos
+      começando com `VE` (VE + código da venda) nos títulos tipo 4/5 do cliente;
+      `ultima_compra` é a maior emissão entre eles. Mesma leitura do valor pago.
     - blacklist e o código ignorado ficam de fora, com ou sem atraso.
     - `codigos` restringe a esses clientes (remarketing), num CTE com VALUES
       em lotes de 1000, nunca uma consulta por cliente."""
@@ -305,7 +289,6 @@ def buscar_base_cobranca(
         "bl_codigos": bloqueados_codigos or [],
         "bl_cpfs": bloqueados_cpfs or [],
         "descricao_seguro": DESCRICAO_SEGURO,
-        "condicao_ignorada": CONDICAO_IGNORADA,
         "dias_min_juros": juros.dias_min,
         "juros_dia": juros.juros_dia,
         "multa": juros.multa,
