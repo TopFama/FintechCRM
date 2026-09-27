@@ -28,7 +28,7 @@ CREATE INDEX ON financeiro_titulos (pessoa);
 -- lote do caixa: horário da baixa feita na loja (títulos daqui ficam sem lote)
 CREATE TABLE caixa_lotes (codigo char(10) PRIMARY KEY, datahora timestamp);
 CREATE TABLE condicoes (codigo char(3) PRIMARY KEY, tipo char(1));
-CREATE TABLE vendas (codigo char(8) PRIMARY KEY, cliente char(8), data date, status char(1), condicoes char(3));
+CREATE TABLE vendas (codigo char(8) PRIMARY KEY, cliente char(8), data date, status char(1), condicoes char(3), obs text);
 """
 
 NOMES = [
