@@ -160,6 +160,8 @@ with TestClient(app) as client:
             "cluster": cluster_1,
             "faixa": faixa_1,
             "valor_em_aberto": Decimal("100.50"),
+            "valor_atraso_original": Decimal("40.00"),
+            "valor_atraso_juros": Decimal("45.10"),
             "spc_restricao": "nao",
         },
         {
@@ -167,6 +169,8 @@ with TestClient(app) as client:
             "cluster": cluster_1,
             "faixa": faixa_2,
             "valor_em_aberto": Decimal("200.25"),
+            "valor_atraso_original": Decimal("200.25"),
+            "valor_atraso_juros": Decimal("230.00"),
             "spc_restricao": "sim",
         },
         {
@@ -174,6 +178,8 @@ with TestClient(app) as client:
             "cluster": cluster_2,
             "faixa": faixa_2,
             "valor_em_aberto": Decimal("300.00"),
+            "valor_atraso_original": Decimal("0"),
+            "valor_atraso_juros": Decimal("0"),
             "spc_restricao": "nao",
         },
     ]
@@ -203,6 +209,25 @@ with TestClient(app) as client:
         assert val["total_por_faixa"][faixa_1] == "100.50"
         assert val["total_por_faixa"][faixa_2] == "500.25"
         assert val["total"] == "600.75"
+
+        # Valor em atraso: só parcelas vencidas, pelo valor original por padrão
+        assert rel_data["valor_em_atraso_com_juros"] is False
+        atraso = rel_data["valor_em_atraso"]
+        assert atraso["celulas"][cluster_1][faixa_1] == "40.00"
+        assert atraso["celulas"][cluster_1][faixa_2] == "200.25"
+        assert atraso["celulas"][cluster_2][faixa_2] == "0"
+        assert atraso["total_por_faixa"][faixa_2] == "200.25"
+        assert atraso["total"] == "240.25"
+
+        # Com o filtro "Corrigido com multa e juros"
+        res_juros = client.get("/cobranca/relatorio?valor_atraso_com_juros=true", headers=auth_headers)
+        assert res_juros.status_code == 200, res_juros.text
+        rel_juros = res_juros.json()["data"]
+        assert rel_juros["valor_em_atraso_com_juros"] is True
+        atraso_juros = rel_juros["valor_em_atraso"]
+        assert atraso_juros["celulas"][cluster_1][faixa_1] == "45.10"
+        assert atraso_juros["total_por_cluster"][cluster_1] == "275.10"
+        assert atraso_juros["total"] == "275.10"
 
 
     # -----------------------------------------------------------------------

@@ -7,11 +7,12 @@ import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../BarraFiltrosCo
 import MatrizTable from "../MatrizTable";
 import { OpcoesCobranca } from "../useOpcoesCobranca";
 
-type Aba = "clientes" | "spc" | "valor";
+type Aba = "clientes" | "spc" | "valor" | "atraso";
 const ROTULOS: Record<Aba, string> = {
   clientes: "Clientes",
   spc: "Clientes com restrição no SPC",
   valor: "Valor em aberto",
+  atraso: "Valor em atraso",
 };
 
 export default function MatrizCobrancaCard({ opcoes }: { opcoes: OpcoesCobranca }) {
@@ -43,7 +44,9 @@ export default function MatrizCobrancaCard({ opcoes }: { opcoes: OpcoesCobranca 
       ? relatorio.quantidade_com_restricao_spc
       : aba === "valor"
         ? relatorio.valor_em_aberto
-        : relatorio.quantidade
+        : aba === "atraso"
+          ? relatorio.valor_em_atraso
+          : relatorio.quantidade
     : null;
 
   return (
@@ -88,11 +91,13 @@ export default function MatrizCobrancaCard({ opcoes }: { opcoes: OpcoesCobranca 
             clusters={relatorio.clusters}
             faixas={relatorio.faixas}
             matriz={matriz}
-            formato={aba === "valor" ? formatBRL : (v) => Number(v).toLocaleString("pt-BR")}
+            formato={aba === "valor" || aba === "atraso" ? formatBRL : (v) => Number(v).toLocaleString("pt-BR")}
             elegivel={(c, f) => (opcoes.regras?.faixas_whatsapp[c] ?? []).includes(f)}
             onCelulaClick={abrirNaCobranca}
           />
           <div className="field-hint">
+            {aba === "atraso" &&
+              `Soma só as parcelas já vencidas, ${relatorio.valor_em_atraso_com_juros ? "com multa e juros" : "pelo valor original"} (filtro "Valor considerado"). `}
             Clique numa célula para ver os clientes na tela Cobrança. Células esmaecidas não recebem WhatsApp pela regra
             atual.
           </div>

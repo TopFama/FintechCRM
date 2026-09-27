@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -40,11 +40,17 @@ def summary(
 
     try:
         dados = cache.obter_ou_calcular(
-            cache.chave("dashboard-resumo", {"de": de, "ate": ate}), calcular, RESUMO_TTL_SEGUNDOS, reaproveitar=auto
+            cache.chave("dashboard-resumo-v2", {"de": de, "ate": ate}), calcular, RESUMO_TTL_SEGUNDOS, reaproveitar=auto
         )
     except cache.CacheIndisponivel:
         dados = calcular()
     return schemas.DashboardSummary(**dados)
+
+
+def _nome_faixa():
+    """Faixa da linha de "Por faixa": a de atraso do cliente (envio de
+    campanha/remarketing), senão a faixa da fila."""
+    return func.coalesce(func.nullif(models.QueueItem.faixa_atraso, ""), models.Faixa.name)
 
 
 def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool = True) -> schemas.DashboardSummary:
@@ -62,10 +68,11 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
     # (QueueItem.faixa_atraso), não na faixa própria da campanha.
     por_faixa_rows = (
         db.query(
-            models.Faixa.id, models.Faixa.name, models.QueueItem.faixa_atraso, models.QueueItem.status,
+            models.Faixa.id, _nome_faixa(), models.QueueItem.faixa_atraso, models.QueueItem.status,
             func.count(models.QueueItem.id),
         )
-        # Só faixas com movimento no período (sem listar faixa zerada ou excluída)
+        # Só faixas com movimento no período (sem listar faixa zerada ou excluída);
+        # faixa só com cliente cobrado entra em _somar_cobrados_por_faixa
         .join(models.QueueItem, and_(models.QueueItem.faixa_id == models.Faixa.id, periodo))
         .group_by(models.Faixa.id, models.Faixa.name, models.QueueItem.faixa_atraso, models.QueueItem.status)
         .all()
@@ -77,8 +84,7 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
         )
     }
     por_faixa: dict[str, dict] = {}
-    for faixa_id, faixa_name, faixa_atraso, status_value, total in por_faixa_rows:
-        nome = faixa_atraso or faixa_name
+    for faixa_id, nome, faixa_atraso, status_value, total in por_faixa_rows:
         entry = por_faixa.setdefault(
             nome, {"faixa": nome, "faixa_id": id_por_nome.get(faixa_atraso, faixa_id) if faixa_atraso else faixa_id}
         )
@@ -86,7 +92,10 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
         chave = "pending" if status_value == models.QueueStatus.reserved else status_value.value
         entry[chave] = entry.get(chave, 0) + total
 
-    _somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos)
+    total_por_faixa = {
+        **_somar_cobrados_por_faixa(db, de, ate, por_faixa),
+        **_somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos),
+    }
 
     total_invalidos = (
         db.query(func.count(models.InvalidPhoneRecord.id))
@@ -102,12 +111,72 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
         total_erros=count(models.QueueStatus.error),
         total_telefones_invalidos=total_invalidos,
         por_faixa=list(por_faixa.values()),
+        total_por_faixa=schemas.DashboardTotalPorFaixa(**total_por_faixa),
     )
 
 
-def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> None:
+def _somar_cobrados_por_faixa(
+    db: Session, de: date | None, ate: date | None, por_faixa: dict[str, dict]
+) -> dict[str, int]:
+    """Clientes distintos cobrados no período (mesma base do "Pagaram após
+    cobrança", base da % Conv.) e, só entre eles, as mensagens enviadas no
+    período e quantos receberam alguma (base da Frequência). A coluna Enviado
+    inteira misturaria mensagens a clientes cobrados antes do período, e o
+    lead marcado como cobrado à mão não recebeu mensagem. Devolve os totais
+    da tabela com cada cliente uma vez, mesmo cobrado em mais de uma faixa."""
+
+    cobrados = pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=de, cobrado_ate=ate)
+    # Faixa cadastrada com cliente cobrado no período e sem fila (lead marcado
+    # como cobrado à mão) também ganha linha. Faixa de lead que não existe em
+    # Faixas fica de fora, como já acontecia com o "Pagaram após cobrança":
+    # sem ela não há relatório para onde a linha levar.
+    faltando = set(cobrados) - set(por_faixa)
+    if faltando:
+        for faixa_id, nome in db.query(models.Faixa.id, models.Faixa.name).filter(models.Faixa.name.in_(faltando)):
+            por_faixa[nome] = {"faixa": nome, "faixa_id": faixa_id}
+    ini, fim = consultas_fila.limites_utc(de, ate)
+    nome_faixa = _nome_faixa()
+    cliente_cobrado = (
+        select(models.Lead.id)
+        .where(
+            models.Lead.codigo_cliente == models.QueueItem.codigo_cliente,
+            models.Lead.faixa == nome_faixa,
+            pagamentos_service.condicao_cobrados(de, ate),
+        )
+        .exists()
+    )
+    enviados = (
+        db.query(nome_faixa, models.QueueItem.codigo_cliente, func.count(models.QueueItem.id))
+        .join(models.Faixa, models.QueueItem.faixa_id == models.Faixa.id)
+        .filter(
+            models.QueueItem.status == models.QueueStatus.sent,
+            consultas_fila.condicao_periodo(models.QueueItem.sent_at, ini, fim),
+            cliente_cobrado,
+        )
+        .group_by(nome_faixa, models.QueueItem.codigo_cliente)
+        .all()
+    )
+    for nome, entry in por_faixa.items():
+        entry["clientes_cobrados"] = len(cobrados.get(nome, ()))
+        entry["enviados_cobrados"] = entry["clientes_com_envio"] = 0
+    com_envio: set[str] = set()
+    for nome, codigo, mensagens in enviados:
+        if nome in por_faixa:
+            por_faixa[nome]["enviados_cobrados"] += mensagens
+            por_faixa[nome]["clientes_com_envio"] += 1
+            com_envio.add(codigo)
+    return {
+        "clientes_cobrados": len(set().union(*(cobrados.get(nome, set()) for nome in por_faixa))),
+        "enviados_cobrados": sum(e["enviados_cobrados"] for e in por_faixa.values()),
+        "clientes_com_envio": len(com_envio),
+    }
+
+
+def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> dict:
     """Clientes cobrados no período que pagaram depois da cobrança (qualquer
-    data), por faixa: mesma lista do relatório Quem pagou filtrado pela faixa."""
+    data), por faixa: mesma lista do relatório Quem pagou filtrado pela faixa.
+    O valor de cada cliente conta uma vez por faixa, e nos totais devolvidos
+    (clientes e valor) uma vez só, mesmo cobrado em mais de uma faixa."""
 
     for entry in por_faixa.values():
         entry["pagaram"] = 0
@@ -119,16 +188,23 @@ def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], bus
     except seta_client.SetaIndisponivel:
         # SETA fora com cliente novo sem cópia: mostra o que já está copiado
         linhas = pagamentos_service.clientes_que_pagaram(db, cobrado_de=de, cobrado_ate=ate, buscar_novos=False)
-    clientes: dict[str, set[str]] = {}
-    valores: dict[str, Decimal] = {}
+    # Uma linha por cliente e data de cobrança: cobrado em dois dias, as duas
+    # linhas trazem o mesmo pagamento (o da primeira já inclui o da segunda).
+    # Vale o maior valor do cliente, senão o pagamento soma duas vezes.
+    por_cliente: dict[str, dict[str, Decimal]] = {}
+    total: dict[str, Decimal] = {}
     for l in linhas:
-        for nome in l["faixa"].split(", "):
-            if nome in por_faixa:
-                clientes.setdefault(nome, set()).add(l["codigo_cliente"])
-                valores[nome] = valores.get(nome, Decimal("0")) + l["valor_pago"]
-    for nome, codigos in clientes.items():
-        por_faixa[nome]["pagaram"] = len(codigos)
-        por_faixa[nome]["valor_pago"] = str(valores[nome].quantize(Decimal("0.01")))
+        faixas = [nome for nome in l["faixa"].split(", ") if nome in por_faixa]
+        codigo = l["codigo_cliente"]
+        if faixas:
+            total[codigo] = max(total.get(codigo, Decimal("0")), l["valor_pago"])
+        for nome in faixas:
+            clientes = por_cliente.setdefault(nome, {})
+            clientes[codigo] = max(clientes.get(codigo, Decimal("0")), l["valor_pago"])
+    for nome, clientes in por_cliente.items():
+        por_faixa[nome]["pagaram"] = len(clientes)
+        por_faixa[nome]["valor_pago"] = str(sum(clientes.values(), Decimal("0")).quantize(Decimal("0.01")))
+    return {"pagaram": len(total), "valor_pago": sum(total.values(), Decimal("0")).quantize(Decimal("0.01"))}
 
 
 @router.get("/orcamento-progressao", response_model=schemas.OrcamentoProgressaoOut)

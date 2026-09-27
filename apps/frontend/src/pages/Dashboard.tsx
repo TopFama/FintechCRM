@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, ApiError, DashboardSummary, PagosJanela } from "../api";
+import { api, ApiError, DashboardPorFaixa, DashboardSummary, DashboardTotalPorFaixa, PagosJanela } from "../api";
 import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
 import OrcamentoProgressaoCard from "../components/dashboard/OrcamentoProgressaoCard";
 import FiltroPeriodo, { OpcaoPeriodo, Periodo, periodoDe } from "../components/FiltroPeriodo";
+import DicaIndicador from "../components/DicaIndicador";
 import SortableTh from "../components/SortableTh";
-import { formatBRL, formatHora, formatNumero } from "../format";
+import { formatBRL, formatDecimal, formatHora, formatNumero, formatPercentual } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../components/useAtualizacaoAutomatica";
 import { IconAlert, IconBolt, IconCheckCircle, IconClock, IconInbox, IconPhone, IconRefresh } from "../icons";
@@ -228,16 +229,28 @@ function ResumoFila({
 }) {
   const navigate = useNavigate();
   const ordemFaixa = ordemFaixaFn(nomesFaixa);
-  type ColunaNumerica = "pending" | "sent" | "error" | "pagaram" | "valor_pago";
-  const porFaixaSort = useSort<"faixa" | ColunaNumerica>("faixa");
+  const linhas = linhasPorFaixa(summary.por_faixa);
+  const total = totalPorFaixa(linhas, summary.total_por_faixa);
+  const porFaixaSort = useSort<"faixa" | ColunaPorFaixa>("faixa");
   const porFaixaOrdenado = ordenarPor(
-    summary.por_faixa,
+    linhas,
     porFaixaSort.sortKey === "faixa"
-      ? (row) => ordemFaixa(String(row.faixa))
+      ? (row) => ordemFaixa(row.faixa)
       : porFaixaSort.sortKey
-      ? (row) => Number(row[porFaixaSort.sortKey as ColunaNumerica] ?? 0)
+      ? (row) => row[porFaixaSort.sortKey as ColunaPorFaixa]
       : null,
     porFaixaSort.sortDir
+  );
+  const th = (chave: "faixa" | ColunaPorFaixa, rotulo: string, dica?: Dica) => (
+    <SortableTh
+      key={chave}
+      active={porFaixaSort.sortKey === chave}
+      dir={porFaixaSort.sortDir}
+      onSort={() => porFaixaSort.toggleSort(chave)}
+    >
+      {rotulo}
+      {dica && <DicaIndicador titulo={rotulo} texto={dica.texto} formula={dica.formula} />}
+    </SortableTh>
   );
 
   return (
@@ -294,86 +307,72 @@ function ResumoFila({
           </div>
         ) : (
           <div className="table-wrap">
-            <table>
+            <table className="tabela-por-faixa">
               <thead>
                 <tr>
-                  <SortableTh
-                    active={porFaixaSort.sortKey === "faixa"}
-                    dir={porFaixaSort.sortDir}
-                    onSort={() => porFaixaSort.toggleSort("faixa")}
-                  >
-                    Faixa
-                  </SortableTh>
-                  <SortableTh
-                    active={porFaixaSort.sortKey === "pending"}
-                    dir={porFaixaSort.sortDir}
-                    onSort={() => porFaixaSort.toggleSort("pending")}
-                  >
-                    Pendente
-                  </SortableTh>
-                  <SortableTh
-                    active={porFaixaSort.sortKey === "sent"}
-                    dir={porFaixaSort.sortDir}
-                    onSort={() => porFaixaSort.toggleSort("sent")}
-                  >
-                    Enviado
-                  </SortableTh>
-                  <SortableTh
-                    active={porFaixaSort.sortKey === "error"}
-                    dir={porFaixaSort.sortDir}
-                    onSort={() => porFaixaSort.toggleSort("error")}
-                  >
-                    Erro
-                  </SortableTh>
-                  <SortableTh
-                    active={porFaixaSort.sortKey === "pagaram"}
-                    dir={porFaixaSort.sortDir}
-                    onSort={() => porFaixaSort.toggleSort("pagaram")}
-                  >
-                    Pagaram após cobrança
-                  </SortableTh>
-                  <SortableTh
-                    active={porFaixaSort.sortKey === "valor_pago"}
-                    dir={porFaixaSort.sortDir}
-                    onSort={() => porFaixaSort.toggleSort("valor_pago")}
-                  >
-                    Valor pago
-                  </SortableTh>
+                  {th("faixa", "Faixa")}
+                  {th("pending", "Pendente")}
+                  {th("error", "Erro")}
+                  {th("sent", "Enviado")}
+                  {th("clientes_cobrados", "Clientes cobrados", DICAS.clientes_cobrados)}
+                  {th("frequencia", "Frequência", DICAS.frequencia)}
+                  {th("pagaram", "Pagaram após cobrança", DICAS.pagaram)}
+                  {th("conversao", "%\u00a0Conv.", DICAS.conversao)}
+                  {th("representatividade", "%\u00a0Rep.", DICAS.representatividade)}
+                  {th("valor_pago", "Valor pago", DICAS.valor_pago)}
                 </tr>
               </thead>
               <tbody>
                 {porFaixaOrdenado.map((row) => {
-                  const faixaId = String(row.faixa_id);
-                  const link = (aba: string) => linkRelatorio(aba, periodo, { faixa_id: faixaId });
-                  const celula = (aba: string, valor: unknown, rotulo: string) => (
+                  const link = (aba: string) => linkRelatorio(aba, periodo, { faixa_id: row.faixa_id });
+                  const celula = (aba: string, valor: number, rotulo: string) => (
                     <td>
                       <Link
                         to={link(aba)}
                         className="link-celula"
-                        aria-label={`Ver ${formatNumero(Number(valor ?? 0))} ${rotulo} da faixa ${String(row.faixa)}`}
+                        aria-label={`Ver ${formatNumero(valor)} ${rotulo} da faixa ${row.faixa}`}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {formatNumero(Number(valor ?? 0))}
+                        {formatNumero(valor)}
                       </Link>
                     </td>
                   );
                   return (
                     // A linha inteira abre os envios da faixa; cada número abre o próprio relatório
-                    <tr key={faixaId} className="linha-clicavel" onClick={() => navigate(link("envios"))}>
+                    <tr key={row.faixa} className="linha-clicavel" onClick={() => navigate(link("envios"))}>
                       <td className="cell-strong">
                         <Link to={link("envios")} className="link-celula" onClick={(e) => e.stopPropagation()}>
-                          {String(row.faixa)}
+                          {row.faixa}
                         </Link>
                       </td>
                       {celula("pendentes", row.pending, "pendentes")}
-                      {celula("envios", row.sent, "enviados")}
                       {celula("erros", row.error, "erros")}
+                      {celula("envios", row.sent, "enviados")}
+                      <td>{formatNumero(row.clientes_cobrados)}</td>
+                      <td>{formatDecimal(row.frequencia)}</td>
                       {celula("pagamentos", row.pagaram, "clientes que pagaram")}
-                      <td>{formatBRL(Number(row.valor_pago ?? 0))}</td>
+                      <td>{formatPercentual(row.conversao)}</td>
+                      <td>{formatPercentual(row.representatividade)}</td>
+                      <td>{formatBRL(row.valor_pago)}</td>
                     </tr>
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="linha-total">
+                  <td className="cell-strong">Total</td>
+                  <td>{formatNumero(total.pending)}</td>
+                  <td>{formatNumero(total.error)}</td>
+                  <td>{formatNumero(total.sent)}</td>
+                  <td>{formatNumero(total.clientes_cobrados)}</td>
+                  <td>{formatDecimal(total.frequencia)}</td>
+                  <td>{formatNumero(total.pagaram)}</td>
+                  <td>{formatPercentual(total.conversao)}</td>
+                  {/* Sempre 100%: não traz nada */}
+                  <td />
+                  <td>{formatBRL(total.valor_pago)}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -382,3 +381,100 @@ function ResumoFila({
     </>
   );
 }
+
+type Dica = { texto: string; formula: string };
+
+const DICAS: Record<
+  "clientes_cobrados" | "frequencia" | "pagaram" | "conversao" | "representatividade" | "valor_pago",
+  Dica
+> = {
+  clientes_cobrados: {
+    texto:
+      "Clientes distintos que receberam cobrança nesta faixa no período. No total, cada cliente conta uma vez, mesmo cobrado em mais de uma faixa.",
+    formula: "Contagem de clientes distintos cobrados na faixa",
+  },
+  frequencia: {
+    texto: "Média de mensagens enviadas no período por cliente cobrado que recebeu mensagem.",
+    formula: "Mensagens enviadas no período aos clientes cobrados ÷ Clientes cobrados que receberam mensagem",
+  },
+  pagaram: {
+    texto:
+      "Clientes cobrados no período que pagaram depois da cobrança. No total, cada cliente conta uma vez, mesmo cobrado em mais de uma faixa.",
+    formula: "Contagem de clientes distintos cobrados que pagaram após a cobrança",
+  },
+  conversao: {
+    texto: "Dos clientes cobrados na faixa, quantos pagaram depois da cobrança.",
+    formula: "Pagaram após cobrança ÷ Clientes cobrados × 100",
+  },
+  representatividade: {
+    texto:
+      "Quanto esta faixa representa do total de clientes que pagaram após cobrança. Soma a coluna das faixas para fechar 100%.",
+    formula: "Pagaram após cobrança da faixa ÷ Σ Pagaram após cobrança de todas as faixas × 100",
+  },
+  valor_pago: {
+    texto:
+      "Valor pago depois da cobrança pelos clientes cobrados no período. Cada pagamento conta uma vez por faixa e, no total, uma vez só, mesmo com o cliente em mais de uma faixa.",
+    formula: "Σ valor pago após a cobrança",
+  },
+};
+
+// Colunas numéricas que vêm do backend em cada linha
+const CAMPOS_NUMERICOS = [
+  "pending",
+  "error",
+  "sent",
+  "clientes_cobrados",
+  "enviados_cobrados",
+  "clientes_com_envio",
+  "pagaram",
+  "valor_pago",
+] as const;
+type CampoNumerico = (typeof CAMPOS_NUMERICOS)[number];
+
+type LinhaPorFaixa = Pick<DashboardPorFaixa, "faixa" | "faixa_id"> &
+  Record<CampoNumerico, number> & {
+    frequencia: number | null;
+    conversao: number | null;
+    representatividade: number | null;
+  };
+type ColunaPorFaixa = Exclude<keyof LinhaPorFaixa, "faixa" | "faixa_id" | "enviados_cobrados" | "clientes_com_envio">;
+
+// Divisão por zero (faixa sem cliente cobrado) vira "—", não 0
+const razao = (a: number, b: number) => (b ? a / b : null);
+
+function linhasPorFaixa(porFaixa: DashboardPorFaixa[]): LinhaPorFaixa[] {
+  const base = porFaixa.map((row) => ({
+    faixa: row.faixa,
+    faixa_id: row.faixa_id,
+    ...(Object.fromEntries(CAMPOS_NUMERICOS.map((c) => [c, Number(row[c] ?? 0)])) as Record<CampoNumerico, number>),
+  }));
+  // % Rep. sobre a soma das faixas (não clientes distintos), para fechar 100%
+  const somaPagaram = base.reduce((s, r) => s + r.pagaram, 0);
+  return base.map((r) => ({
+    ...r,
+    // Frequência só entre quem recebeu mensagem; % Conv. sobre todos os cobrados
+    frequencia: razao(r.enviados_cobrados, r.clientes_com_envio),
+    conversao: razao(r.pagaram, r.clientes_cobrados),
+    representatividade: razao(r.pagaram, somaPagaram),
+  }));
+}
+
+// Pendente, Erro e Enviado somam a coluna; clientes e valor pago vêm do
+// backend contando cada cliente uma vez (somar a coluna contaria em cada faixa)
+function totalPorFaixa(linhas: LinhaPorFaixa[], doBackend: DashboardTotalPorFaixa) {
+  const soma = (c: "pending" | "error" | "sent") => linhas.reduce((s, r) => s + r[c], 0);
+  const t = {
+    pending: soma("pending"),
+    error: soma("error"),
+    sent: soma("sent"),
+    clientes_cobrados: doBackend.clientes_cobrados,
+    pagaram: doBackend.pagaram,
+    valor_pago: Number(doBackend.valor_pago),
+  };
+  return {
+    ...t,
+    frequencia: razao(doBackend.enviados_cobrados, doBackend.clientes_com_envio),
+    conversao: razao(t.pagaram, t.clientes_cobrados),
+  };
+}
+

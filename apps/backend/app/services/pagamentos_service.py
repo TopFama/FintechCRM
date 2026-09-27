@@ -1,18 +1,43 @@
 """Relatório de quem pagou o que foi cobrado, por cliente: leads cobrados no
 período de cobrança cruzados com as baixas do SETA copiadas em pagamentos_seta."""
 
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from .. import google_client, lojas as lojas_base, models
+from .. import consultas_fila, google_client, lojas as lojas_base, models
 from . import pagamentos_seta
-from ..timezone import dia_br, inicio_do_dia_utc
+from ..timezone import dia_br
 
 
+def condicao_cobrados(cobrado_de: date | None, cobrado_ate: date | None):
+    """Lead cobrado no período: a base de clientes_que_pagaram e, por isso,
+    também dos clientes cobrados e da Frequência do Dashboard."""
+
+    ini, fim = consultas_fila.limites_utc(cobrado_de, cobrado_ate)
+    return and_(
+        models.Lead.status == "cobrado",
+        models.Lead.cobrado_em.isnot(None),
+        consultas_fila.condicao_periodo(models.Lead.cobrado_em, ini, fim),
+    )
 
 
+def clientes_cobrados_por_faixa(
+    db: Session, *, cobrado_de: date | None, cobrado_ate: date | None
+) -> dict[str, set[str]]:
+    """Clientes distintos cobrados no período, por faixa do lead: quem pagou
+    numa faixa sempre está aqui."""
+
+    por_faixa: dict[str, set[str]] = {}
+    for faixa, codigo in (
+        db.query(models.Lead.faixa, models.Lead.codigo_cliente)
+        .filter(condicao_cobrados(cobrado_de, cobrado_ate))
+        .distinct()
+    ):
+        por_faixa.setdefault(faixa, set()).add(codigo)
+    return por_faixa
 
 
 def clientes_que_pagaram(
@@ -34,11 +59,7 @@ def clientes_que_pagaram(
     seta_client.SetaIndisponivel se o SETA estiver fora (com `buscar_novos`,
     o padrão, quando algum cliente ainda não foi copiado do SETA)."""
 
-    query = db.query(models.Lead).filter(models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None))
-    if cobrado_de:
-        query = query.filter(models.Lead.cobrado_em >= inicio_do_dia_utc(cobrado_de))
-    if cobrado_ate:
-        query = query.filter(models.Lead.cobrado_em < inicio_do_dia_utc(cobrado_ate + timedelta(days=1)))
+    query = db.query(models.Lead).filter(condicao_cobrados(cobrado_de, cobrado_ate))
     if faixa:
         query = query.filter(models.Lead.faixa.in_(faixa))
     if campanha:

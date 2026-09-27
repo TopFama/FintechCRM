@@ -107,3 +107,9 @@ export function formatPercentual(razao: string | number | null | undefined): str
     Number(razao),
   );
 }
+
+// Número com casas fixas (ex.: frequência 1,8); vazio vira "—"
+export function formatDecimal(v: number | null | undefined, casas = 1): string {
+  if (v === null || v === undefined || isNaN(v)) return "—";
+  return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+}

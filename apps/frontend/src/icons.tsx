@@ -291,3 +291,13 @@ export function IconStop(props: IconProps) {
     </svg>
   );
 }
+
+export function IconInfo(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 11v5.2" />
+      <circle cx="12" cy="7.9" r="1.1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}

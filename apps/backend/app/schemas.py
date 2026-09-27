@@ -597,13 +597,43 @@ class PagosJanelaOut(BaseModel):
     dias_janela: int
 
 
+class DashboardPorFaixa(BaseModel):
+    # Demais status da fila (invalid_phone, cancelled) seguem como chaves extras
+    model_config = ConfigDict(extra="allow")
+
+    faixa: str
+    faixa_id: str
+    pending: int = 0
+    sent: int = 0
+    error: int = 0
+    clientes_cobrados: int = 0
+    # só entre os clientes cobrados no período: mensagens enviadas no período
+    # e quantos receberam alguma (base da Frequência)
+    enviados_cobrados: int = 0
+    clientes_com_envio: int = 0
+    pagaram: int = 0
+    valor_pago: Decimal = Decimal("0.00")
+
+
+class DashboardTotalPorFaixa(BaseModel):
+    """Linha de total de "Por faixa" no que não é soma da coluna: cada
+    cliente (e cada pagamento) uma vez, mesmo cobrado em mais de uma faixa."""
+
+    clientes_cobrados: int = 0
+    enviados_cobrados: int = 0
+    clientes_com_envio: int = 0
+    pagaram: int = 0
+    valor_pago: Decimal = Decimal("0.00")
+
+
 class DashboardSummary(BaseModel):
     total_pendentes: int
     total_pausados: int = 0
     total_enviados: int
     total_erros: int
     total_telefones_invalidos: int
-    por_faixa: list[dict]
+    por_faixa: list[DashboardPorFaixa]
+    total_por_faixa: DashboardTotalPorFaixa
 
 
 class LinhaEfetividadeBase(BaseModel):
@@ -828,6 +858,10 @@ class RelatorioCobrancaOut(BaseModel):
     quantidade: MatrizQuantidadeOut
     quantidade_com_restricao_spc: MatrizQuantidadeOut
     valor_em_aberto: MatrizValorOut
+    # só parcelas já vencidas, pelo valor original ou com multa/juros
+    # conforme o filtro valor_atraso_com_juros
+    valor_em_atraso: MatrizValorOut
+    valor_em_atraso_com_juros: bool
 
 
 class RelatorioCobrancaAsyncOut(BaseModel):

@@ -862,7 +862,33 @@ export interface DashboardSummary {
   total_enviados: number;
   total_erros: number;
   total_telefones_invalidos: number;
-  por_faixa: Record<string, unknown>[];
+  por_faixa: DashboardPorFaixa[];
+  total_por_faixa: DashboardTotalPorFaixa;
+}
+
+// Linha de total de "Por faixa" no que não é soma da coluna: cada cliente (e
+// cada pagamento) uma vez, mesmo cobrado em mais de uma faixa
+export interface DashboardTotalPorFaixa {
+  clientes_cobrados: number;
+  enviados_cobrados: number;
+  clientes_com_envio: number;
+  pagaram: number;
+  valor_pago: string;
+}
+
+export interface DashboardPorFaixa {
+  faixa: string;
+  faixa_id: string;
+  pending: number;
+  sent: number;
+  error: number;
+  clientes_cobrados: number;
+  // só entre os clientes cobrados no período: mensagens enviadas no período
+  // e quantos receberam alguma (base da Frequência)
+  enviados_cobrados: number;
+  clientes_com_envio: number;
+  pagaram: number;
+  valor_pago: string;
 }
 
 // --- Cobrança ---
@@ -983,6 +1009,9 @@ export interface RelatorioCobranca {
   quantidade: MatrizDados<number>;
   quantidade_com_restricao_spc: MatrizDados<number>;
   valor_em_aberto: MatrizDados<string>;
+  // só parcelas já vencidas, original ou com multa/juros conforme o filtro
+  valor_em_atraso: MatrizDados<string>;
+  valor_em_atraso_com_juros: boolean;
 }
 
 export interface FiltrosCobranca {
