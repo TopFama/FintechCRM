@@ -16,7 +16,7 @@ CREATE TABLE pessoas (
     codigo char(8) PRIMARY KEY, nome char(60), telefone1 char(20), telefone2 char(20),
     telefone3 char(20), cpfcnpj char(18), status char(1), empresa char(2),
     faturamento numeric(14,2), credito numeric(14,2), nascimento date, cadastro date,
-    scpcresultado text, cliente boolean DEFAULT true
+    scpcresultado text, cliente boolean DEFAULT true, telefone4 char(20)
 );
 CREATE TABLE financeiro_titulos (
     codigo char(10) PRIMARY KEY, pessoa char(8), valor numeric(14,2), vencimento date,
