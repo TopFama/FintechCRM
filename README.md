@@ -360,8 +360,29 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
 
 ## Testes / validação de mudanças
 
-O CI (`.github/workflows/testes.yml`) roda em todo PR e em todo push na `main` quatro jobs:
-scripts de teste do backend, regras de import (import-linter), build do frontend e a suíte e2e.
+### CI (GitHub Actions)
+
+A cada evento no GitHub (PR aberto/atualizado, push, horário agendado), o GitHub liga uma máquina
+Linux temporária, baixa o código, roda os passos de um arquivo de `.github/workflows/` e mostra o
+resultado como ✅/❌ no commit e no PR. Os workflows **só leem e conferem o código**: não alteram
+arquivo, não fazem commit e **não fazem deploy** (produção continua sendo `docker compose up
+--build` no servidor, manual).
+
+| Workflow | Quando roda | Jobs (cada um numa máquina própria, em paralelo) |
+|---|---|---|
+| `testes.yml` | Todo PR, todo push na `main` e manual ("Run workflow") | **Backend (scripts de teste)**: Postgres descartável + `tests/rodar_todos.sh`. **Arquitetura (import-linter)**: `lint-imports` com `apps/backend/.importlinter`. **Frontend (build)**: `npm run build:frontend`. **E2E (Playwright)**: sobe Postgres, Redis, backend com Meta/Chatwoot/SETA/Google/Renegocie simulados e frontend, e um navegador percorre as telas (relatório do Playwright fica 7 dias como artefato quando falha) |
+| `security-scan.yml` | Push/PR que mexe em `package.json`, `package-lock.json` ou `apps/backend/requirements.txt`; toda segunda às 9h UTC (6h em Brasília, pega falha nova em dependência que não mudou); manual | **npm audit (frontend)**: reprova vulnerabilidade alta ou crítica. **pip-audit (backend)**: reprova qualquer vulnerabilidade conhecida, exceto a exceção documentada no próprio arquivo (`ecdsa`, PYSEC-2026-1325, não afeta o app porque o JWT usa HS256) |
+
+**Merge na `main`**: não há auto-merge do GitHub. Toda mudança entra por PR de uma branch de
+trabalho, e quem decide o merge é o agente de IA designado como maintainer do repositório,
+depois de avaliar os workflows e o diff do commit mais recente do PR; conflito que exige escolher
+entre dois comportamentos, ou mudança sensível, vai para o dono decidir antes. Critérios em
+[`AGENTS.md`](./AGENTS.md) → "Merge na main". O
+merge não publica nada: se entrou dependência nova ou migration, o deploy precisa de
+`docker compose up --build` no servidor.
+
+### Validação local
+
 Para validar localmente antes de subir:
 
 - **Scripts de teste do backend** (`apps/backend/tests/`): `./tests/rodar_todos.sh` dentro de

@@ -143,11 +143,52 @@ continuar 100% condizente com o código — documento que descreve algo que não
    - `apps/backend/.importlinter` — módulo ou router novo entra nas listas dos contratos.
    - `e2e/README.md` e `GEMINI.md` — quando mudar como rodar a suíte e2e ou os comandos de
      validação e convenções que eles repetem.
+   - `.github/workflows/` mudou (job novo, gatilho, exceção de segurança)? Atualize a tabela de
+     `README.md` → "CI (GitHub Actions)" e, se mudar o que conta para o merge, "Merge na main"
+     abaixo.
 2. Procure referências ao que você renomeou/removeu (`grep -rn "nome_antigo" README.md AGENTS.md
    GEMINI.md .env.example docs e2e/README.md`) e corrija todas.
 3. Não documente o que não existe: toda afirmação nova sobre o código (arquivo, rota, tabela,
    variável, default, intervalo) tem que ser conferida no código antes de escrever.
 4. Se a mudança não afeta nenhum documento, diga isso explicitamente no resumo final da task.
+
+## Merge na main
+
+Decisão do dono do repositório (27/09/2026): **não** há auto-merge do GitHub. O agente de IA
+designado por ele como maintainer acompanha os PRs, avalia os workflows e o diff e decide o merge
+(o que cada workflow faz: `README.md` → "CI (GitHub Actions)"). O que exige decisão do dono vai para
+ele **antes** do merge (item 8).
+
+1. **Nunca** faça push direto na `main`. Toda mudança vai por PR de uma branch de trabalho. Se o PR
+   da sua branch já foi mergeado, trabalho novo começa de novo a partir da `main` atual, num PR
+   novo.
+2. Só faça merge quando, **no commit mais recente do PR**:
+   - todos os jobs do `testes.yml` estiverem ✅ (Backend, Arquitetura, Frontend e E2E). Job ainda
+     rodando é espera, não aprovação;
+   - os jobs do `security-scan.yml` estiverem ✅, se ele rodou (PR que mexe em dependência);
+   - o PR estiver sem conflito com a `main` (`mergeable_state` = `clean`). Com conflito, traga a
+     `main` para a branch, resolva, valide de novo e espere o CI do novo commit;
+   - não houver comentário de revisão ou pergunta sem resposta no PR;
+   - nada do item 8 estiver pendente de decisão do dono.
+3. Check ❌ nunca é "instabilidade": leia o log, ache a causa, corrija na branch e espere o CI de
+   novo. Nunca pule, desative ou afrouxe teste (nem exceção nova no `pip-audit`/`import-linter`)
+   para ficar verde sem justificar no PR.
+4. Antes do merge, confira o checklist do PR (`.github/pull_request_template.md`), inclusive a
+   documentação atualizada no mesmo PR. Se algo dele não foi seguido, diga no PR por quê.
+5. Faça o merge com **merge commit** (padrão do histórico: "Merge pull request #N"), passando o
+   SHA do commit avaliado (`expectedHeadSha`), para não mesclar um commit que chegou depois da
+   avaliação.
+6. No resumo para o usuário, diga o que entrou na `main` e o que o deploy vai exigir: dependência
+   nova ou migration pedem `docker compose up --build` no servidor. O merge em si não publica nada.
+7. `security-scan.yml` falhou na rodada agendada de segunda-feira (a `main` não mudou, surgiu uma
+   falha nova numa dependência)? É trabalho: abra um PR atualizando a dependência. Exceção nova no
+   `pip-audit` só com justificativa no comentário do workflow (por que não afeta o app).
+8. **Consulte o dono antes do merge** (com o diff resumido e as opções) quando: o conflito com a
+   `main` exige escolher entre duas lógicas diferentes (resolver perde comportamento de um dos
+   lados); o PR muda regra de negócio de forma não pedida por ele (ex.: regra de uma cobrança por
+   cliente por dia, cálculo de valor, quem entra na fila); mexe em segurança/autenticação,
+   segredos ou exceção de segurança; ou há dúvida real sobre o que ele quer. Conflito mecânico
+   (os dois lados cabem juntos) o maintainer resolve sozinho, valida e segue os itens 2 a 6.
 
 ## Cuidados conhecidos
 
