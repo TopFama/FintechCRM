@@ -124,9 +124,9 @@ def obter_dados_efetividade(
     if cluster:
         parc_query = parc_query.filter(models.Lead.cluster.in_(cluster))
     parc_query = filtrar_campanha(parc_query, campanha)
-    if codigos_loja is not None:
-        parc_query = parc_query.filter(models.LeadParcela.empresa.in_(codigos_loja))
-
+    # Filtro de loja só no fim: o valor pago é do cliente (todas as lojas) e é
+    # repartido entre todas as parcelas da cobrança; filtrar antes jogava o
+    # pagamento inteiro nas parcelas da loja filtrada
     parcelas_db = parc_query.all()
 
     # Regra da Tarefa 5: conta como "pagou" quem quitou QUALQUER título em
@@ -221,6 +221,10 @@ def obter_dados_efetividade(
                 "valor_pago": valor_pago,
             }
         )
+
+    if codigos_loja is not None:
+        lojas_filtro = set(codigos_loja)
+        itens = [i for i in itens if i["empresa"] in lojas_filtro]
 
     relatorio = montar_relatorio(itens, lojas_info=lojas_info, faixas_ordem=regras.nomes_faixa)
     if sort_by:

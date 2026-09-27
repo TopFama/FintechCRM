@@ -56,7 +56,12 @@ def _engine() -> Engine:
         pool_recycle=1800,
         connect_args={
             "connect_timeout": settings.seta_db_connect_timeout_seconds,
-            "options": f"-c default_transaction_read_only=on -c statement_timeout={timeout_ms}",
+            # TimeZone: current_date das consultas (dias de atraso, juros, primeiro
+            # dia da faixa) no fuso de Brasília, seja qual for o do servidor do ERP
+            "options": (
+                f"-c default_transaction_read_only=on -c statement_timeout={timeout_ms}"
+                " -c TimeZone=America/Sao_Paulo"
+            ),
         },
     )
 

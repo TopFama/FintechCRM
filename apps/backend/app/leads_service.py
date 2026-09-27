@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from . import models, seta_client
+from .elegibilidade import travar_entrada_na_fila
 from .regras_db import carregar_regras
 from .utils.spc import parse_spc
 
@@ -34,6 +35,9 @@ def gerar_leads_de_clientes(
     Retorna (criados, ja_existiam, sem_celular). Levanta seta_client.SetaIndisponivel
     se a consulta de SPC/parcelas ao ERP falhar."""
 
+    # Mesma trava da entrada na fila: "Gerar leads" e a extração automática ao
+    # mesmo tempo liam os mesmos "novos" e a segunda caía na constraint única
+    travar_entrada_na_fila(db)
     ja_existem: set[tuple[str, str, date]] = set()
     for lote in _em_lotes([c["codigo"] for c in clientes]):
         rows = db.query(
