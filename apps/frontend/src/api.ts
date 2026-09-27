@@ -810,6 +810,8 @@ export interface DashboardSummary {
   total_erros: number;
   total_telefones_invalidos: number;
   por_faixa: DashboardPorFaixa[];
+  // total da tabela: cada pagamento uma vez, mesmo com o cliente em mais de uma faixa
+  valor_pago_total: string;
 }
 
 export interface DashboardPorFaixa {

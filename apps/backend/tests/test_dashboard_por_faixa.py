@@ -75,7 +75,11 @@ db.add_all([
 ])
 db.commit()
 
-pagaram = [{"codigo_cliente": "1", "faixa": "FA", "valor_pago": Decimal("10")}]
+pagaram = [
+    {"codigo_cliente": "1", "faixa": "FA", "valor_pago": Decimal("10")},
+    # cobrado em duas faixas no mesmo dia: conta nas duas linhas, uma vez no total
+    {"codigo_cliente": "4", "faixa": "FA, FB", "valor_pago": Decimal("25")},
+]
 hoje = hoje_br().isoformat()
 with patch("app.services.pagamentos_service.clientes_que_pagaram", return_value=pagaram):
     res = client.get(f"/dashboard/summary?de={hoje}&ate={hoje}", headers=auth)
@@ -88,12 +92,13 @@ assert f["sent"] == 5 and f["error"] == 1, f
 assert f["clientes_cobrados"] == 3, f  # clientes 1, 2 e 7
 assert f["enviados_cobrados"] == 4, f  # 2 do cliente 1 + 2 do cliente 2 (régua e campanha); o 9 fica fora
 assert f["clientes_com_envio"] == 2, f  # o 7 não recebeu mensagem: fica fora da Frequência
-assert f["pagaram"] == 1 and f["valor_pago"] == "10.00", f
+assert f["pagaram"] == 2 and f["valor_pago"] == "35.00", f
 
 f = por_faixa["FB"]
 assert f["sent"] == 1 and f["pending"] == 1, f
 assert f["clientes_cobrados"] == 1 and f["enviados_cobrados"] == 1 and f["clientes_com_envio"] == 1, f
-assert f["pagaram"] == 0, f
+assert f["pagaram"] == 1 and f["valor_pago"] == "25.00", f
+assert res.json()["valor_pago_total"] == "35.00", res.json()["valor_pago_total"]
 
 # Faixa sem fila no período, só com cliente cobrado: aparece com os cobrados
 f = por_faixa["FC"]

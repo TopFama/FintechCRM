@@ -564,6 +564,9 @@ class DashboardSummary(BaseModel):
     total_erros: int
     total_telefones_invalidos: int
     por_faixa: list[DashboardPorFaixa]
+    # Linha de total da tabela: cada pagamento uma vez, mesmo com o cliente em
+    # mais de uma faixa (a soma da coluna contaria em cada uma)
+    valor_pago_total: Decimal = Decimal("0.00")
 
 
 class LinhaEfetividadeBase(BaseModel):

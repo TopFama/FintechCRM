@@ -230,7 +230,9 @@ function ResumoFila({
   const navigate = useNavigate();
   const ordemFaixa = ordemFaixaFn(nomesFaixa);
   const linhas = linhasPorFaixa(summary.por_faixa);
-  const total = totalPorFaixa(linhas);
+  // Valor pago do total vem do backend: somar a coluna contaria duas vezes o
+  // pagamento de quem foi cobrado em mais de uma faixa
+  const total = { ...totalPorFaixa(linhas), valor_pago: Number(summary.valor_pago_total) };
   const porFaixaSort = useSort<"faixa" | ColunaPorFaixa>("faixa");
   const porFaixaOrdenado = ordenarPor(
     linhas,
@@ -319,7 +321,7 @@ function ResumoFila({
                   {th("pagaram", "Pagaram após cobrança")}
                   {th("conversao", "%\u00a0Conv.", DICAS.conversao)}
                   {th("representatividade", "%\u00a0Rep.", DICAS.representatividade)}
-                  {th("valor_pago", "Valor pago")}
+                  {th("valor_pago", "Valor pago", DICAS.valor_pago)}
                 </tr>
               </thead>
               <tbody>
@@ -384,7 +386,7 @@ function ResumoFila({
 
 type Dica = { texto: string; formula: string };
 
-const DICAS: Record<"clientes_cobrados" | "frequencia" | "conversao" | "representatividade", Dica> = {
+const DICAS: Record<"clientes_cobrados" | "frequencia" | "conversao" | "representatividade" | "valor_pago", Dica> = {
   clientes_cobrados: {
     texto:
       "Clientes distintos que receberam cobrança nesta faixa no período. No total, soma das faixas: quem foi cobrado em mais de uma faixa conta em cada uma.",
@@ -401,6 +403,11 @@ const DICAS: Record<"clientes_cobrados" | "frequencia" | "conversao" | "represen
   representatividade: {
     texto: "Quanto esta faixa representa do total de clientes que pagaram após cobrança.",
     formula: "Pagaram após cobrança da faixa ÷ Σ Pagaram após cobrança de todas as faixas × 100",
+  },
+  valor_pago: {
+    texto:
+      "Valor pago depois da cobrança pelos clientes cobrados no período. No total, cada pagamento conta uma vez, mesmo com o cliente em mais de uma faixa.",
+    formula: "Σ valor pago após a cobrança",
   },
 };
 

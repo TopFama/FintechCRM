@@ -6,7 +6,7 @@ const LARGURA = 260;
 const MARGEM = 8;
 const DISTANCIA = 6;
 
-type Posicao = { top: number; left: number; largura: number };
+type Posicao = { top: number; left: number; largura: number; acima?: boolean };
 
 // Uma dica aberta por vez: abrir outra fecha a anterior
 let aberta: { dono: object; fechar: () => void } | null = null;
@@ -55,9 +55,11 @@ export default function DicaIndicador({ titulo, texto, formula }: { titulo: stri
   useLayoutEffect(() => {
     const balao = balaoRef.current?.getBoundingClientRect();
     const botao = botaoRef.current?.getBoundingClientRect();
-    if (!pos || !balao || !botao) return;
+    // Vira uma vez só por posição calculada (acima): sem isso, com o ícone
+    // fora da tela, o efeito viraria de novo a cada render, sem parar
+    if (!pos || pos.acima || !balao || !botao) return;
     if (balao.bottom > window.innerHeight - MARGEM && botao.top - DISTANCIA - balao.height >= MARGEM) {
-      setPos({ ...pos, top: botao.top - DISTANCIA - balao.height });
+      setPos({ ...pos, top: botao.top - DISTANCIA - balao.height, acima: true });
     }
   }, [pos]);
 

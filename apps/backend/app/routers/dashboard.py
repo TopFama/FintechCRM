@@ -93,7 +93,7 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
         entry[chave] = entry.get(chave, 0) + total
 
     _somar_cobrados_por_faixa(db, de, ate, por_faixa)
-    _somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos)
+    valor_pago_total = _somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos)
 
     total_invalidos = (
         db.query(func.count(models.InvalidPhoneRecord.id))
@@ -109,6 +109,7 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
         total_erros=count(models.QueueStatus.error),
         total_telefones_invalidos=total_invalidos,
         por_faixa=list(por_faixa.values()),
+        valor_pago_total=valor_pago_total,
     )
 
 
@@ -120,8 +121,10 @@ def _somar_cobrados_por_faixa(db: Session, de: date | None, ate: date | None, po
     lead marcado como cobrado à mão não recebeu mensagem."""
 
     cobrados = pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=de, cobrado_ate=ate)
-    # Faixa com cliente cobrado no período e sem fila (lead marcado como
-    # cobrado à mão) também ganha linha, senão sairia dos totais
+    # Faixa cadastrada com cliente cobrado no período e sem fila (lead marcado
+    # como cobrado à mão) também ganha linha. Faixa de lead que não existe em
+    # Faixas fica de fora, como já acontecia com o "Pagaram após cobrança":
+    # sem ela não há relatório para onde a linha levar.
     faltando = set(cobrados) - set(por_faixa)
     if faltando:
         for faixa_id, nome in db.query(models.Faixa.id, models.Faixa.name).filter(models.Faixa.name.in_(faltando)):
@@ -155,9 +158,11 @@ def _somar_cobrados_por_faixa(db: Session, de: date | None, ate: date | None, po
         entry["enviados_cobrados"], entry["clientes_com_envio"] = enviados.get(nome, (0, 0))
 
 
-def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> None:
+def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> Decimal:
     """Clientes cobrados no período que pagaram depois da cobrança (qualquer
-    data), por faixa: mesma lista do relatório Quem pagou filtrado pela faixa."""
+    data), por faixa: mesma lista do relatório Quem pagou filtrado pela faixa.
+    Devolve o valor pago das faixas da tabela contando cada pagamento uma vez
+    (cliente em duas faixas soma o valor nas duas linhas, não no total)."""
 
     for entry in por_faixa.values():
         entry["pagaram"] = 0
@@ -171,14 +176,18 @@ def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], bus
         linhas = pagamentos_service.clientes_que_pagaram(db, cobrado_de=de, cobrado_ate=ate, buscar_novos=False)
     clientes: dict[str, set[str]] = {}
     valores: dict[str, Decimal] = {}
+    total = Decimal("0")
     for l in linhas:
-        for nome in l["faixa"].split(", "):
-            if nome in por_faixa:
-                clientes.setdefault(nome, set()).add(l["codigo_cliente"])
-                valores[nome] = valores.get(nome, Decimal("0")) + l["valor_pago"]
+        faixas = [nome for nome in l["faixa"].split(", ") if nome in por_faixa]
+        if faixas:
+            total += l["valor_pago"]
+        for nome in faixas:
+            clientes.setdefault(nome, set()).add(l["codigo_cliente"])
+            valores[nome] = valores.get(nome, Decimal("0")) + l["valor_pago"]
     for nome, codigos in clientes.items():
         por_faixa[nome]["pagaram"] = len(codigos)
         por_faixa[nome]["valor_pago"] = str(valores[nome].quantize(Decimal("0.01")))
+    return total.quantize(Decimal("0.01"))
 
 
 @router.get("/orcamento-progressao", response_model=schemas.OrcamentoProgressaoOut)
