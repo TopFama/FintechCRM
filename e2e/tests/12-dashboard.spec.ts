@@ -232,6 +232,32 @@ test.describe("Dashboard", () => {
     expect(await col(0)).toEqual(ordemAntes);
   });
 
+  test("por faixa: números e títulos centralizados, inclusive título quebrado em duas linhas", async ({ page }) => {
+    const porFaixa = card(page, "Por faixa");
+    await expect(porFaixa.locator("tbody tr").first()).toBeVisible();
+    // Faixa fica à esquerda; as outras colunas, centralizadas
+    const alinhamento = (sel: string) =>
+      porFaixa.locator(sel).evaluateAll((els) => els.map((el) => getComputedStyle(el).textAlign));
+    expect(await alinhamento("thead th")).toEqual(["left", ...Array(9).fill("center")]);
+    expect(await alinhamento("tbody tr:first-child td")).toEqual(["left", ...Array(9).fill("center")]);
+    expect(await alinhamento("tfoot tr td")).toEqual(["left", ...Array(9).fill("center")]);
+
+    // O bloco do título (texto, dica e seta) fica no meio da célula, mesmo quebrado
+    const desvios = await porFaixa.locator("thead th").evaluateAll((ths) =>
+      ths.slice(1).map((th) => {
+        const c = th.getBoundingClientRect();
+        const cs = getComputedStyle(th);
+        const meio = c.left + parseFloat(cs.paddingLeft) + (c.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / 2;
+        const inner = th.querySelector(".th-sortable-inner")!;
+        const range = document.createRange();
+        range.selectNodeContents(inner);
+        const r = range.getBoundingClientRect();
+        return Math.abs(r.left + r.width / 2 - meio);
+      })
+    );
+    for (const d of desvios) expect(d).toBeLessThan(4);
+  });
+
   test("matriz cluster × faixa: aplicar, abas e clique leva para Cobrança filtrada", async ({ page }) => {
     const m = card(page, "Base de cobrança — cluster × faixa");
     await expect(m).toContainText("Aplique os filtros para ver a matriz cluster × faixa.");
