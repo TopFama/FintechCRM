@@ -133,8 +133,11 @@ export default function EnviosFaixa({
     (t, idx, arr) => t.status === "approved" && arr.findIndex((x) => x.name === t.name) === idx
   );
 
-  // Telefones disponíveis: libera todos os telefones das WABAs que têm este template aprovado
+  // Telefones disponíveis: libera telefones das WABAs que têm este template aprovado,
+  // exceto números que já estão configurados nesta faixa (exceto o que está sendo editado).
   const numerosDisponiveis = numbers.filter((n) => {
+    const jaUsado = (faixa.envios || []).some((e: FaixaEnvio) => e.whatsapp_number_id === n.id && e.id !== envioEditandoId);
+    if (jaUsado) return false;
     if (!templateDoForm) return true;
     return wabasCompativeis.size === 0 || (n.waba_id && wabasCompativeis.has(n.waba_id));
   });

@@ -28,7 +28,7 @@ function rotuloStatusTemplate(status: string): string {
     case "pending":
       return "Pendente";
     case "rejected":
-      return "Rejeitado";
+      return "Reprovado";
     case "draft":
       return "Rascunho";
     default:
@@ -505,6 +505,7 @@ export default function TemplatesCard() {
                     active={templatesSort.sortKey === "meta_template_name"}
                     dir={templatesSort.sortDir}
                     onSort={() => templatesSort.toggleSort("meta_template_name")}
+                    aria-label="Nome / Template (Meta)"
                   >
                     Template (Meta)
                   </SortableTh>
@@ -531,7 +532,12 @@ export default function TemplatesCard() {
                     <Fragment key={t.id}>
                       <tr>
                         <td className="cell-strong" style={{ wordBreak: "break-word" }}>
-                          {t.meta_template_name}
+                          <div>{t.meta_template_name}</div>
+                          {t.name && t.name !== t.meta_template_name && (
+                            <div className="text-muted" style={{ fontSize: 12, fontWeight: "normal" }}>
+                              {t.name}
+                            </div>
+                          )}
                         </td>
                         <td className="text-muted" style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all" }}>
                           {t.waba_id || "—"}
