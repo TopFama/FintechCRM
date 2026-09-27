@@ -381,7 +381,7 @@ arquivo, não fazem commit e **não fazem deploy** (produção continua sendo `d
 
 | Workflow | Quando roda | Jobs (cada um numa máquina própria, em paralelo) |
 |---|---|---|
-| `testes.yml` | Todo PR, todo push na `main` e manual ("Run workflow") | **Backend (scripts de teste)**: Postgres descartável + `tests/rodar_todos.sh`. **Arquitetura (import-linter)**: `lint-imports` com `apps/backend/.importlinter`. **Frontend (build)**: `npm run build:frontend`. **E2E (Playwright)**: sobe Postgres, Redis, backend com Meta/Chatwoot/SETA/Google/Renegocie simulados e frontend, e um navegador percorre as telas (relatório do Playwright fica 7 dias como artefato quando falha) |
+| `testes.yml` | Todo PR e todo push na `main` (menos quando só mudam arquivos `.md`) e manual ("Run workflow") | **Backend (scripts de teste)**: Postgres descartável + `tests/rodar_todos.sh`. **Arquitetura (import-linter)**: `lint-imports` com `apps/backend/.importlinter`. **Frontend (build)**: `npm run build:frontend`. **E2E (Playwright)**: sobe Postgres, Redis, backend com Meta/Chatwoot/SETA/Google/Renegocie simulados e frontend, e um navegador percorre as telas (relatório do Playwright fica 7 dias como artefato quando falha) |
 | `security-scan.yml` | Push/PR que mexe em `package.json`, `package-lock.json` ou `apps/backend/requirements.txt`; toda segunda às 9h UTC (6h em Brasília, pega falha nova em dependência que não mudou); manual | **npm audit (frontend)**: reprova vulnerabilidade alta ou crítica. **pip-audit (backend)**: reprova qualquer vulnerabilidade conhecida, exceto a exceção documentada no próprio arquivo (`ecdsa`, PYSEC-2026-1325, não afeta o app porque o JWT usa HS256) |
 
 **Merge na `main`**: não há auto-merge do GitHub. Toda mudança entra por PR de uma branch de

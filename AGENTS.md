@@ -171,7 +171,11 @@ ele **antes** do merge (item 8).
      outro arquivo. Qualquer arquivo que não seja `.md` no mesmo commit (código, testes,
      `.github/workflows/`, `.env.example`, `docker-compose.yml`, scripts de `docs/`) faz o commit
      inteiro ir por PR. Mudança **nesta seção "Merge na main"** também vai por PR, mesmo sendo
-     `.md`: ela define o que os agentes podem fazer sozinhos.
+     `.md`: ela define o que os agentes podem fazer sozinhos. O `testes.yml` ignora mudança só em
+     `.md` (`paths-ignore`), então esse push não dispara nem cancela rodada de CI; PR só de `.md`
+     também fica sem checks, e o merge dele não espera CI.
+   - **Validação é o CI** (decisão do dono, 27/09/2026): o maintainer não roda testes em ambiente
+     local para decidir merge; avalia os checks do PR e o diff.
 2. Só faça merge quando, **no commit mais recente do PR**:
    - todos os jobs do `testes.yml` estiverem ✅ (Backend, Arquitetura, Frontend e E2E). Job ainda
      rodando é espera, não aprovação;

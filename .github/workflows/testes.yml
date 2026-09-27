@@ -3,10 +3,15 @@ name: Testes
 # Roda em todo PR e em todo push na main: scripts de teste do backend
 # (inclui a caracterização do fluxo de envio), regras de import entre camadas
 # (import-linter), build do frontend e a suíte e2e.
+# Mudança só em .md não roda: documentação vai direto para a main sem CI
+# (AGENTS.md → Merge na main), e um push desses cancelaria a rodada do código
+# que acabou de entrar (ver concurrency abaixo).
 on:
   pull_request:
+    paths-ignore: ["**/*.md"]
   push:
     branches: [main]
+    paths-ignore: ["**/*.md"]
   workflow_dispatch: {}
 
 concurrency:
