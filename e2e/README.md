@@ -20,7 +20,18 @@ npx playwright show-report   # relatório HTML com screenshots e traces das falh
 ```
 
 Os cenários dependem uns dos outros (cadastram token, números, faixas, fila e envios em sequência),
-então rode sempre a suíte inteira depois de um `./ambiente/subir.sh` novo. Se o Chromium do
+então rode a suíte inteira, ou um spec junto com os pré-requisitos dele, sempre depois de um
+`./ambiente/subir.sh` novo: `npx playwright test $(node selecionar-telas.mjs --spec 12-dashboard)`.
+
+**No CI, em PR, só rodam as telas afetadas.** `selecionar-telas.mjs` tem o mapa de cada tela (spec):
+os arquivos do app que ela testa e os cenários de que ela depende. Com os arquivos alterados no
+PR, o job `e2e` roda as telas afetadas e os pré-requisitos delas. Arquivo usado por todas as telas
+(`api.ts`, `App.tsx`, `styles.css`, `models.py`, `schemas.py`, `main.py`, `worker.py`, o ambiente de
+teste etc., lista `GLOBAIS`) ou arquivo de app que nenhuma tela declara roda a suíte inteira. PR que
+não mexe em nada testado pelo e2e pula o job. Push na `main` roda sempre a suíte inteira.
+**Spec novo ou tela nova:** acrescente no mapa (`TELAS`), com os arquivos e os pré-requisitos. O
+workflow `e2e-mapa.yml` roda cada tela sozinha com os pré-requisitos declarados; se uma falha lá,
+falta pré-requisito no mapa. Se o Chromium do
 Playwright não estiver baixado, a configuração usa o que estiver em `$CHROMIUM_PATH` ou em
 `$PLAYWRIGHT_BROWSERS_PATH` (padrão `/opt/pw-browsers`; não precisa de `playwright install` nesse caso).
 
@@ -28,6 +39,7 @@ Playwright não estiver baixado, a configuração usa o que estiver em `$CHROMIU
 
 | Caminho | O que é |
 |---|---|
+| `selecionar-telas.mjs` | Mapa tela → arquivos do app e pré-requisitos; escolhe as telas do e2e em PR |
 | `ambiente/subir.sh` | Recria `crm_app` e `seta_fake`, popula o SETA falso e sobe backend + frontend |
 | `ambiente/env.teste.sh` | Variáveis só de teste (nunca usa o `.env` do projeto) |
 | `ambiente/seta_falso.py` | Tabelas do SETA que o backend lê (`pessoas`, `financeiro_titulos`, `vendas`, `condicoes`, `caixa_lotes`) com 36 clientes fictícios cobrindo todas as faixas de atraso |
