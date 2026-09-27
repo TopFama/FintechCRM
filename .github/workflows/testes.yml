@@ -93,26 +93,60 @@ jobs:
       PGPASSWORD: postgres
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # Em PR roda só as telas afetadas pelos arquivos alterados, com os cenários
+      # de que elas dependem (e2e/selecionar-telas.mjs); push na main e execução
+      # manual rodam a suíte inteira, como rede de segurança depois do merge.
+      - name: Escolher as telas
+        id: telas
+        env:
+          EVENTO: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENTO" = "pull_request" ]; then
+            git diff --name-only "origin/$BASE...HEAD" > alterados.txt
+            echo "Arquivos alterados:"; cat alterados.txt
+            selecao=$(node e2e/selecionar-telas.mjs alterados.txt)
+          else
+            selecao=todos
+          fi
+          echo "Telas: $selecao"
+          echo "selecao=$selecao" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
+        if: steps.telas.outputs.selecao != 'nenhum'
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: apps/backend/requirements.txt
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
       - name: Instalar dependências
+        if: steps.telas.outputs.selecao != 'nenhum'
         run: |
           sudo apt-get install -y -q redis-tools >/dev/null
           python -m venv apps/backend/.venv
           apps/backend/.venv/bin/pip install -q -r apps/backend/requirements.txt
           cd e2e && npm ci && npx playwright install --with-deps chromium
       - name: Subir o ambiente de teste
+        if: steps.telas.outputs.selecao != 'nenhum'
         working-directory: e2e
         run: ./ambiente/subir.sh
       - name: Rodar a suíte
+        if: steps.telas.outputs.selecao != 'nenhum'
         working-directory: e2e
-        run: npx playwright test --reporter=line
+        env:
+          SELECAO: ${{ steps.telas.outputs.selecao }}
+        run: |
+          if [ "$SELECAO" = "todos" ]; then
+            npx playwright test --reporter=line
+          else
+            npx playwright test --reporter=line $SELECAO
+          fi
+      - name: Nenhuma tela afetada
+        if: steps.telas.outputs.selecao == 'nenhum'
+        run: echo "Nenhum arquivo alterado é testado pelo e2e; suíte pulada."
       - name: Logs do ambiente
         if: failure()
         run: tail -100 e2e/.ambiente-logs/backend.log || true
