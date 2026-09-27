@@ -64,7 +64,8 @@ decidir:
   usa o valor em atraso com juros do Lead da faixa. O Lead que o próprio upload cria (cliente só
   na planilha) não tem parcelas, então num upload seguinte do mesmo cliente nessa faixa o valor
   ia "0,00" em vez do valor da planilha. Resolvido em 2026-09-27: cadastro zerado cai no valor
-  da planilha, e linha com valor zerado vai para os erros ("Valor zerado").
+  da planilha; linha com valor zerado volta para o usuário escolher um valor do sistema ou
+  descartar.
 
 ## Estado
 
@@ -80,7 +81,7 @@ decidir:
 | 3 | Camada de leitura da fila (`consultas_fila.py`) | PR #8, mergeado |
 | — | Fase 7: import-linter no CI | PR #9, mergeado |
 | — | Trava de entrada na fila (`elegibilidade.travar_entrada_na_fila`, muda comportamento) | PR #10, mergeado |
-| — | Valor zerado na planilha da faixa vai para os erros (comportamento, ver acima) | commit `28ab550` em main |
+| — | Valor zerado na planilha da faixa: usuário escolhe o valor ou descarta (comportamento, ver acima) | commits `28ab550` e seguinte em main |
 
 Os PRs #1 a #9 foram empilhados (cada um sobre o anterior, para o CI e o teste de caracterização
 valerem em todos) e já estão todos em main. Próximos itens abertos: #5, #6, #7, #9, #11 a #16.

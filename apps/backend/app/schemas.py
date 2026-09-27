@@ -426,6 +426,22 @@ class UploadFieldMapping(BaseModel):
     expressoes: dict[str, str] = {}  # template_variable_id -> expressao usando cabecalhos da planilha
 
 
+class OpcaoValor(BaseModel):
+    campo: str  # valor_atraso / valor_em_aberto / valor_cobrar
+    rotulo: str
+    valor: str  # "1.234,56"
+
+
+class UploadValorZerado(BaseModel):
+    """Linha com valor zerado: espera o usuário escolher um valor ou descartar."""
+
+    linha: int
+    codigo_cliente: str
+    nome: str
+    dados: dict[str, str]  # a linha da planilha, reenviada com a escolha
+    opcoes: list[OpcaoValor] = []
+
+
 class UploadResult(BaseModel):
     filename: str
     row_count: int
@@ -433,6 +449,21 @@ class UploadResult(BaseModel):
     rejected_count: int
     invalid_phone_count: int = 0
     rejected_reasons: list[str] = []
+    valores_zerados: list[UploadValorZerado] = []
+
+
+class UploadValorEscolhido(BaseModel):
+    linha: int
+    dados: dict[str, str]
+    valor: str
+
+
+class UploadValoresZeradosIn(BaseModel):
+    """Valores escolhidos para as linhas zeradas (as descartadas não vêm)."""
+
+    filename: str
+    mapping: UploadFieldMapping
+    linhas: list[UploadValorEscolhido] = Field(min_length=1, max_length=5000)
 
 
 # --- Relatórios ---

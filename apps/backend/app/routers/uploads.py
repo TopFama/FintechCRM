@@ -54,15 +54,10 @@ async def read_upload_columns(
     return schemas.UploadColumnsOut(columns=columns, sample_row=sample_row)
 
 
-@router.post("/{faixa_id}/uploads", response_model=schemas.UploadResult)
-async def upload_planilha(
-    faixa_id: str,
-    file: UploadFile,
-    mapping: str = Form(..., description="JSON de UploadFieldMapping"),
-    db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
-):
-    faixa = _load_faixa(db, faixa_id)
+def _validar_importacao(faixa: models.Faixa, field_mapping: schemas.UploadFieldMapping, headers: list[str]) -> None:
+    """Faixa de régua com envio ativo e todas as variáveis mapeadas para colunas
+    que existem na planilha."""
+
     if faixa.tipo != models.TIPO_REGUA:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
@@ -73,11 +68,6 @@ async def upload_planilha(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Atribua ao menos um número e template à faixa antes de subir a planilha"
         )
-
-    try:
-        field_mapping = schemas.UploadFieldMapping.model_validate_json(mapping)
-    except ValueError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Mapeamento inválido: {exc}") from exc
 
     # União das variáveis de todos os templates ativos: a planilha só precisa
     # ser subida uma vez, mesmo com mais de um número/template na faixa.
@@ -101,14 +91,6 @@ async def upload_planilha(
             status.HTTP_400_BAD_REQUEST, f"Faltando coluna mapeada para a(s) variável(is): {names}"
         )
 
-    content = await ler_planilha_limitada(file)
-    filename = file.filename or "planilha.xlsx"
-    try:
-        headers, _ = read_spreadsheet_preview(filename, content)
-        rows = parse_uploaded_spreadsheet(filename, content)
-    except Exception as exc:  # noqa: BLE001 - erro de parsing vira 400 explícito
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Não foi possível ler a planilha: {exc}") from exc
-
     norm_headers = {normalizar_chave(h) for h in headers if h}
     for vid, expr in field_mapping.expressoes.items():
         var = variable_by_id.get(vid)
@@ -119,16 +101,69 @@ async def upload_planilha(
                 status.HTTP_400_BAD_REQUEST,
                 f"Expressão inválida para a variável '{var_name}': {erro_sintaxe}",
             )
-        placeholders = extrair_placeholders(expr)
-        for p in placeholders:
+        for p in extrair_placeholders(expr):
             if normalizar_chave(p) not in norm_headers:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
                     f"Variável '{var_name}': coluna '{p}' não encontrada na planilha",
                 )
 
+
+@router.post("/{faixa_id}/uploads", response_model=schemas.UploadResult)
+async def upload_planilha(
+    faixa_id: str,
+    file: UploadFile,
+    mapping: str = Form(..., description="JSON de UploadFieldMapping"),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    faixa = _load_faixa(db, faixa_id)
+    try:
+        field_mapping = schemas.UploadFieldMapping.model_validate_json(mapping)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Mapeamento inválido: {exc}") from exc
+
+    content = await ler_planilha_limitada(file)
+    filename = file.filename or "planilha.xlsx"
+    try:
+        headers, _ = read_spreadsheet_preview(filename, content)
+        rows = parse_uploaded_spreadsheet(filename, content)
+    except Exception as exc:  # noqa: BLE001 - erro de parsing vira 400 explícito
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Não foi possível ler a planilha: {exc}") from exc
+
+    _validar_importacao(faixa, field_mapping, headers)
     return upload_service.importar_planilha(
-        db, faixa, rows, field_mapping, filename=file.filename or "planilha.xlsx", usuario_id=user.id
+        db, faixa, rows, field_mapping, filename=filename, usuario_id=user.id
+    )
+
+
+@router.post("/{faixa_id}/uploads/valores-zerados", response_model=schemas.UploadResult)
+def importar_valores_zerados(
+    faixa_id: str,
+    payload: schemas.UploadValoresZeradosIn,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Segunda etapa do upload: importa as linhas de valor zerado com o valor
+    que o usuário escolheu. Passam pelas mesmas checagens do upload (bloqueio
+    do dia, blacklist, telefone)."""
+
+    faixa = _load_faixa(db, faixa_id)
+    for linha in payload.linhas:
+        valor = upload_service.ler_valor(linha.valor)
+        if valor is None or valor <= 0:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Linha {linha.linha}: informe um valor maior que zero")
+    headers = list({h: None for linha in payload.linhas for h in linha.dados})
+    _validar_importacao(faixa, payload.mapping, headers)
+    return upload_service.importar_planilha(
+        db,
+        faixa,
+        [linha.dados for linha in payload.linhas],
+        payload.mapping,
+        filename=f"{payload.filename} (valores zerados)",
+        usuario_id=user.id,
+        linhas=[linha.linha for linha in payload.linhas],
+        valores_escolhidos=[linha.valor for linha in payload.linhas],
     )
 
 

@@ -3,6 +3,7 @@
 aqui cada linha vira item da fila, com o mesmo bloqueio de uma cobrança por
 cliente por dia e a mesma blacklist dos outros caminhos."""
 
+import re
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session, selectinload
@@ -15,24 +16,88 @@ from .regras_db import carregar_regras
 from .timezone import hoje_br
 from .utils.document import extract_first_name, format_cpf, normalize_seta_code
 from .utils.phone import eh_fixo, escolher_telefone, is_valid_phone, normalize_phone
-from .variaveis_template import normalizar_chave, normalizar_para_meta, renderizar_expressao
+from .variaveis_template import (
+    extrair_placeholders,
+    formatar_moeda,
+    normalizar_chave,
+    normalizar_para_meta,
+    renderizar_expressao,
+)
 
 
-def _valor_decimal(valor: str | None) -> Decimal:
-    """Aceita "1.234,56", "1234.56" ou "R$ 10" — o que vier na planilha."""
-    texto = (valor or "").replace("R$", "").strip()
-    if "," in texto:
-        texto = texto.replace(".", "").replace(",", ".")
+# Primeiro número do texto: "1.234,56", "1234.56", "1 500,00", "R$ 10",
+# "10,00 reais", "US$ 50". Espaço só conta como separador de milhar.
+_NUMERO = re.compile(r"-?\d{1,3}(?:[ \u00a0]\d{3})+(?:[.,]\d+)?|-?\d[\d.,]*")
+
+
+def ler_valor(texto: str | None) -> Decimal | None:
+    """Valor em reais escrito na planilha, ou None se não tem número."""
+    achado = _NUMERO.search(texto or "")
+    if not achado:
+        return None
+    num = re.sub(r"[ \u00a0]", "", achado.group()).rstrip(".,")
+    if "," in num and "." in num:
+        # O último separador é o decimal
+        decimal, milhar = (",", ".") if num.rfind(",") > num.rfind(".") else (".", ",")
+        num = num.replace(milhar, "").replace(decimal, ".")
+    elif "," in num:
+        num = num.replace(",", ".") if num.count(",") == 1 else num.replace(",", "")
+    elif num.count(".") > 1 or re.fullmatch(r"-?\d{1,3}\.\d{3}", num):
+        num = num.replace(".", "")  # "1.500" é mil e quinhentos
     try:
-        return Decimal(texto)
-    except (InvalidOperation, ValueError):
-        return Decimal(0)
+        return Decimal(num)
+    except InvalidOperation:
+        return None
 
 
 def _zerado(valor: str | None) -> bool:
     """Valor com número e igual a zero ("0", "0,00", "R$ 0,00"). Vazio não conta."""
-    texto = (valor or "").strip()
-    return any(c.isdigit() for c in texto) and _valor_decimal(texto) == 0
+    return ler_valor(valor) == 0
+
+
+# Campos do cadastro que são o valor da dívida (ver variaveis_template.contexto_cliente)
+_CAMPOS_VALOR = {normalizar_chave("valor_atraso"), normalizar_chave("valor_em_aberto")}
+
+
+def _expressao_de_valor(expressao: str, coluna_valor: str | None) -> bool:
+    """Expressão que é só o valor da dívida (ex.: "{valor_atraso}" ou a coluna de valor)."""
+    placeholders = extrair_placeholders(expressao)
+    alvo = _CAMPOS_VALOR | ({normalizar_chave(coluna_valor)} if coluna_valor else set())
+    return (
+        len(placeholders) == 1
+        and re.fullmatch(r"\s*\{+[^{}]*\}+\s*", expressao) is not None
+        and normalizar_chave(placeholders[0]) in alvo
+    )
+
+
+def _opcoes_valor(db: Session, codigos: set[str], leads_da_faixa: dict[str, models.Lead], juros) -> dict[str, list]:
+    """Valores que o sistema tem para cada cliente (cadastro desta faixa, senão o
+    mais recente de qualquer faixa ou campanha), para o usuário escolher."""
+
+    leads = {c: leads_da_faixa[c] for c in codigos if c in leads_da_faixa}
+    faltam = codigos - set(leads)
+    if faltam:
+        for lead in (
+            db.query(models.Lead)
+            .options(selectinload(models.Lead.parcelas))
+            .filter(models.Lead.codigo_cliente.in_(faltam))
+            .order_by(models.Lead.created_at.asc())
+        ):
+            leads[lead.codigo_cliente] = lead
+
+    opcoes: dict[str, list] = {}
+    for codigo, lead in leads.items():
+        candidatos = [
+            ("valor_atraso", "Valor em atraso com juros", itens_fila.contexto_do_lead(lead, juros)["valor_atraso"]),
+            ("valor_em_aberto", "Valor em aberto", formatar_moeda(lead.valor_em_aberto)),
+            ("valor_cobrar", "Valor a cobrar", formatar_moeda(lead.valor_cobrar)),
+        ]
+        opcoes[codigo] = [
+            schemas.OpcaoValor(campo=campo, rotulo=rotulo, valor=valor)
+            for campo, rotulo, valor in candidatos
+            if valor and not _zerado(valor)
+        ]
+    return opcoes
 
 
 def importar_planilha(
@@ -43,9 +108,17 @@ def importar_planilha(
     *,
     filename: str,
     usuario_id: str,
+    linhas: list[int] | None = None,
+    valores_escolhidos: list[str] | None = None,
 ) -> schemas.UploadResult:
     """Põe na fila as linhas aceitas, registra telefone inválido e o log do
-    upload, e comita. Devolve o resumo mostrado na tela."""
+    upload, e comita. Devolve o resumo mostrado na tela.
+
+    Linha com valor zerado (na planilha ou no valor da dívida resolvido nas
+    variáveis) não entra: volta em `valores_zerados`, com os valores que o
+    sistema tem do cliente, para o usuário escolher um ou descartar. A escolha
+    chega de volta aqui com `valores_escolhidos` (um por linha, junto do número
+    da linha na planilha em `linhas`) e vale no lugar do valor da planilha."""
 
     templates_ativos = itens_fila.templates_ativos(faixa)
     variable_by_id = {v.id: v for tpl in templates_ativos.values() for v in tpl.variables}
@@ -55,6 +128,7 @@ def importar_planilha(
     rejected = 0
     invalid_phone_count = 0
     reasons: list[str] = []
+    zerados: dict[str, schemas.UploadValorZerado] = {}
 
     # Celular da planilha inválido: tenta os telefones do cadastro no SETA na
     # ORDEM_TELEFONES (mesma da base de cobrança). Uma consulta só.
@@ -94,12 +168,20 @@ def importar_planilha(
         if atual is None or lead.created_at > atual.created_at:
             leads_por_codigo[lead.codigo_cliente] = lead
 
-    for i, row in enumerate(rows, start=2):  # linha 1 = cabeçalho
+    numeros = linhas or range(2, len(rows) + 2)  # linha 1 = cabeçalho
+    escolhidos = valores_escolhidos or [None] * len(rows)
+    for i, row, escolhido in zip(numeros, rows, escolhidos):
         codigo_raw = (row.get(field_mapping.codigo_cliente) or "").strip()
         celular_original = (row.get(field_mapping.celular) or "").strip()
         nome_raw = (row.get(field_mapping.nome) or "").strip()
         cpf_raw = (row.get(field_mapping.cpf) or "").strip()
         valor = (row.get(field_mapping.valor) or "").strip() if field_mapping.valor else None
+        if escolhido is not None:
+            valor = escolhido
+        valor_num = ler_valor(valor)
+        # Valor da planilha como a mensagem mostra ("1.500,00"), mesmo vindo
+        # como "1500.0" (célula numérica) ou "10,00 reais"
+        valor_fmt = formatar_moeda(valor_num) if valor_num is not None else normalizar_para_meta(valor)
 
         codigo_cliente = normalize_seta_code(codigo_raw)
         if not codigo_cliente:
@@ -167,7 +249,7 @@ def importar_planilha(
             contexto.update(itens_fila.contexto_do_lead(lead, juros))
 
         missing_var_cols = []
-        valor_zerado = bool(valor) and _zerado(valor)
+        valor_zerado = escolhido is None and _zerado(valor)
         # Chaveado por template_variable_id (não por internal_name) — dois
         # templates distintos podem usar o mesmo internal_name pra coisas
         # diferentes, então resolver por nome colidiria entre eles.
@@ -175,17 +257,30 @@ def importar_planilha(
         for vid, v in variable_by_id.items():
             mapping = mapping_by_vid.get(vid)
             fonte_tipo = mapping.fonte_tipo if mapping else "coluna"
+            expressao = field_mapping.expressoes.get(vid) or (
+                mapping.expressao if fonte_tipo == "expressao" and mapping else None
+            )
 
             coluna_valor = bool(
                 vid in field_mapping.variables
                 and field_mapping.valor
                 and field_mapping.variables[vid] == field_mapping.valor
             )
-            if coluna_valor and contexto.get("valor_atraso") and not _zerado(contexto["valor_atraso"]):
+            de_valor = coluna_valor or (
+                vid not in field_mapping.variables
+                and bool(expressao)
+                and _expressao_de_valor(expressao, field_mapping.valor)
+            )
+            if de_valor and escolhido is not None:
+                # Valor escolhido pelo usuário para a linha zerada
+                val = valor_fmt
+            elif coluna_valor and contexto.get("valor_atraso") and not _zerado(contexto["valor_atraso"]):
                 # Variável ligada à coluna de valor da planilha passa a usar o
                 # valor em atraso com juros do cliente (mesma conta da fila).
                 # Cadastro sem parcelas dá zero: aí vale o da planilha.
                 val = contexto["valor_atraso"]
+            elif coluna_valor:
+                val = valor_fmt
             elif vid in field_mapping.variables:
                 coluna = field_mapping.variables[vid]
                 raw_val = (row.get(coluna) or "").strip()
@@ -193,19 +288,16 @@ def importar_planilha(
                 if normalizar_chave(coluna) == "nome":
                     raw_val = extract_first_name(raw_val)
                 val = normalizar_para_meta(raw_val)
-            elif vid in field_mapping.expressoes:
-                val = renderizar_expressao(field_mapping.expressoes[vid], contexto)
-            elif fonte_tipo == "expressao" and mapping and mapping.expressao:
-                val = renderizar_expressao(mapping.expressao, contexto)
+            elif expressao:
+                val = renderizar_expressao(expressao, contexto)
             else:
-                raw_val = (row.get(field_mapping.variables.get(vid, "")) or "").strip()
-                val = normalizar_para_meta(raw_val)
+                val = ""
 
             if not val:
                 missing_var_cols.append(v.internal_name)
             else:
                 resolved_by_vid[vid] = val
-                if coluna_valor and _zerado(val):
+                if de_valor and _zerado(val):
                     valor_zerado = True
 
         variables_json = itens_fila.formato_variaveis(
@@ -215,55 +307,37 @@ def importar_planilha(
             }
         )
 
+        # Valor zerado não é cobrado: o usuário escolhe outro valor ou descarta
+        # (ver _opcoes_valor). A mesma planilha pode repetir o cliente: vale a
+        # primeira linha.
+        if valor_zerado and not missing_var_cols:
+            zerados.setdefault(
+                codigo_cliente,
+                schemas.UploadValorZerado(linha=i, codigo_cliente=codigo_cliente, nome=nome_raw, dados=row),
+            )
+            continue
+
         # Campo essencial do template em branco: mantém o cliente na fila,
         # mas já como erro de envio (não silenciosamente descartado do
         # upload), pra aparecer na fila/relatórios com o motivo.
-        if missing_var_cols:
-            itens_fila.novo_item(
-                db,
-                erro=f"Faltando coluna(s) {', '.join(missing_var_cols)}",
-                faixa_id=faixa.id,
-                codigo_cliente=codigo_cliente,
-                nome=nome,
-                cpf=cpf,
-                valor=valor or None,
-                celular=celular,
-                celular_original=celular_original,
-                variables_json=variables_json,
-            )
-            rejected += 1
-            reasons.append(f"Linha {i}: faltando coluna(s) {', '.join(missing_var_cols)}")
-            continue
-
-        # Valor zerado não é cobrado: vai para os erros com o motivo.
-        if valor_zerado:
-            itens_fila.novo_item(
-                db,
-                erro="Valor zerado",
-                faixa_id=faixa.id,
-                codigo_cliente=codigo_cliente,
-                nome=nome,
-                cpf=cpf,
-                valor=valor or None,
-                celular=celular,
-                celular_original=celular_original,
-                variables_json=variables_json,
-            )
-            rejected += 1
-            reasons.append(f"Linha {i}: valor zerado — enviado aos erros")
-            continue
-
+        erro = f"Faltando coluna(s) {', '.join(missing_var_cols)}" if missing_var_cols else None
         itens_fila.novo_item(
             db,
+            erro=erro,
             faixa_id=faixa.id,
             codigo_cliente=codigo_cliente,
             nome=nome,
             cpf=cpf,
-            valor=valor or None,
+            valor=valor_fmt or None,
             celular=celular,
             celular_original=celular_original,
             variables_json=variables_json,
         )
+        if erro:
+            rejected += 1
+            reasons.append(f"Linha {i}: {erro[0].lower()}{erro[1:]}")
+            continue
+
         # A mesma planilha pode repetir o cliente: só a primeira linha entra
         clientes_bloqueados.add(codigo_cliente)
         if lead is None:
@@ -277,16 +351,21 @@ def importar_planilha(
                 cluster="Planilha",
                 faixa=faixa.name,
                 dias_atraso=0,
-                valor_cobrar=_valor_decimal(valor),
-                valor_em_aberto=_valor_decimal(valor),
+                valor_cobrar=valor_num or Decimal(0),
+                valor_em_aberto=valor_num or Decimal(0),
                 vencimento_mais_antigo=hoje_br(),
                 status="novo",
                 created_by=usuario_id,
             )
             db.add(lead)
             leads_por_codigo[codigo_cliente] = lead
-        clientes_bloqueados.add(codigo_cliente)
         accepted += 1
+
+    # Cliente que entrou por outra linha da planilha não precisa de escolha
+    pendentes = [z for c, z in zerados.items() if c not in clientes_bloqueados]
+    opcoes = _opcoes_valor(db, {z.codigo_cliente for z in pendentes}, leads_por_codigo, juros) if pendentes else {}
+    for z in pendentes:
+        z.opcoes = opcoes.get(z.codigo_cliente, [])
 
     faixa.upload_field_mapping = field_mapping.model_dump()
 
@@ -324,4 +403,5 @@ def importar_planilha(
         rejected_count=rejected,
         invalid_phone_count=invalid_phone_count,
         rejected_reasons=reasons[:50],
+        valores_zerados=pendentes,
     )

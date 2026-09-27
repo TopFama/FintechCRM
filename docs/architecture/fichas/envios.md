@@ -40,7 +40,7 @@ saída estavam escritas dentro do laço do worker. O backlog #4 (PR #6) juntou t
 - **Violações encontradas:**
   - [x] Mais de uma responsabilidade: `importar_planilha` ainda é uma função longa (normaliza, valida, cria `QueueItem`, `Lead` e `InvalidPhoneRecord`), mas a montagem do item já vem de `itens_fila`.
 - **Linhas:** 332
-- **Nota de comportamento:** o valor em atraso zerado do cadastro cai no valor da planilha; se ainda assim o valor é zero, a linha vira item de erro "Valor zerado" (commit `28ab550`, 27/09/2026).
+- **Nota de comportamento:** o valor em atraso zerado do cadastro cai no valor da planilha; linha com valor zerado (na planilha ou na variável de valor) não entra: volta no resultado do upload para o usuário escolher um valor do sistema ou descartar, e a escolha entra por `POST /faixas/{id}/uploads/valores-zerados` (27/09/2026).
 
 ### `apps/backend/app/itens_fila.py`
 - **Domínio:** Envios

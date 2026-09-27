@@ -68,17 +68,27 @@ test.describe("Cobrança → Importar planilha para a fila", () => {
     await page.getByRole("button", { name: "Confirmar e importar" }).click();
     const resumo = importar(page).locator(".upload-summary");
     await expect(resumo).toContainText("8linhas na planilha");
-    await expect(resumo).toContainText("5rejeitados"); // sem código, telefone "123", fixo, variável em branco e valor zerado
+    await expect(resumo).toContainText("4rejeitados"); // sem código, telefone "123", fixo e variável em branco
     await expect(resumo).toContainText("telefone(s) inválido(s)");
     await expect(importar(page).getByRole("link", { name: /relatório de telefones inválidos/ })).toBeVisible();
     await expect(importar(page).locator("ul li").first()).toBeVisible(); // motivos de rejeição listados
+
+    // Valor zerado não entra direto: o usuário escolhe um valor ou descarta
+    const aceitos = Number((await resumo.locator(".item").first().locator(".num").textContent()) || 0);
+    await expect(importar(page).getByRole("heading", { name: "Valor zerado na planilha (1)" })).toBeVisible();
+    await expect(importar(page).locator("tbody tr", { hasText: "00000107" })).toBeVisible();
+    await importar(page).getByLabel("Valor a usar na linha 9").selectOption({ label: "Outro valor" });
+    await importar(page).getByLabel("Outro valor para a linha 9").fill("75,00");
+    await page.getByRole("button", { name: "Confirmar valores" }).click();
+    await expect(importar(page).getByRole("heading", { name: /Valor zerado na planilha/ })).toHaveCount(0);
+    await expect(resumo.locator(".item").first()).toContainText(`${aceitos + 1}aceitos`);
   });
 
-  test("valor zerado não é cobrado: vai para os erros", async ({ page }) => {
+  test("valor zerado entra com o valor escolhido", async ({ page }) => {
     const f = (await apiGet(page, "/faixas")).find((x: any) => x.name === "11 A 20");
     const fila = await apiGet(page, `/faixas/${f.id}/queue?limit=100&offset=0`);
     const zerado = fila.itens.filter((i: any) => i.codigo_cliente === "00000107");
-    expect(zerado.map((i: any) => [i.status, i.error_message])).toEqual([["error", "Valor zerado"]]);
+    expect(zerado.map((i: any) => [i.status, i.valor])).toEqual([["pending", "75,00"]]);
   });
 
   test("telefone fixo não vira celular inventado", async ({ page }) => {

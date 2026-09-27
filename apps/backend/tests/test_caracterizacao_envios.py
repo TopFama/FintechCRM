@@ -23,6 +23,7 @@ Imprime 'OK' ao final se tudo passar.
 import asyncio
 import io
 import json
+from decimal import Decimal
 import os
 import tempfile
 from datetime import date, datetime, timedelta
@@ -448,6 +449,66 @@ assert itens["00000044"].lojas == ","
 assert itens["00000044"].status == models.QueueStatus.error
 assert itens["00000044"].error_message.startswith("Faltando coluna(s)")
 assert db.query(models.InvalidPhoneRecord).filter_by(codigo_cliente="00000042").count() == 1
+
+# Valor zerado não entra: volta para o usuário escolher um valor do sistema
+# ou descartar. Texto com número vira número ("1 500,00", "10,00 reais").
+limpar()
+le = lead("00000060")  # cadastro com valor em aberto e parcela vencida
+db.add(models.LeadParcela(lead_id=le.id, titulo_codigo="T1", empresa="01", vencimento=date(2026, 9, 1),
+                          valor=Decimal("150.00"), valor_cobrar=Decimal("150.00")))
+db.commit()
+conteudo = planilha([
+    ["60", "Gil Dias", "11122233360", "11911110060", "0,00"],  # zerado com cadastro
+    ["61", "Hana Sá", "11122233361", "11911110061", "R$ 0,00"],  # zerado sem cadastro
+    ["62", "Ivo Paz", "11122233362", "11911110062", "1 500,00"],
+    ["63", "Jó Reis", "11122233363", "11911110063", "10,00 reais"],
+    ["64", "Kai Luz", "11122233364", "11911110064", "US$ 50"],
+    ["61", "Hana Sá", "11122233361", "11911110061", "0"],  # repetida
+])
+r = client.post(
+    f"/faixas/{faixa_a.id}/uploads",
+    files={"file": ("zerados.xlsx", conteudo, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    data={"mapping": json.dumps(mapeamento)},
+)
+assert r.status_code == 200, r.text
+res = r.json()
+assert res["accepted_count"] == 3 and res["rejected_count"] == 0, res
+zerados = {z["codigo_cliente"]: z for z in res["valores_zerados"]}
+assert set(zerados) == {"00000060", "00000061"}, zerados
+assert zerados["00000060"]["linha"] == 2 and zerados["00000060"]["dados"]["Valor"] == "0,00"
+opcoes = {o["campo"]: o["valor"] for o in zerados["00000060"]["opcoes"]}
+assert opcoes["valor_em_aberto"] == "300,00" and opcoes["valor_atraso"] not in ("", "0,00"), opcoes
+assert zerados["00000061"]["opcoes"] == []
+itens = {i.codigo_cliente: i for i in db.query(models.QueueItem).filter_by(faixa_id=faixa_a.id)}
+assert set(itens) == {"00000062", "00000063", "00000064"}, set(itens)
+assert [itens[c].variables_json["valor"] for c in ("00000062", "00000063", "00000064")] == ["1.500,00", "10,00", "50,00"]
+assert itens["00000062"].valor == "1.500,00"
+
+# Valor escolhido para o 60; o 61 foi descartado (não vem)
+url = f"/faixas/{faixa_a.id}/uploads/valores-zerados"
+escolha = {"linha": 2, "dados": zerados["00000060"]["dados"], "valor": opcoes["valor_atraso"]}
+r = client.post(url, json={"filename": "zerados.xlsx", "mapping": mapeamento, "linhas": [{**escolha, "valor": "0"}]})
+assert r.status_code == 400, r.text
+r = client.post(url, json={"filename": "zerados.xlsx", "mapping": mapeamento, "linhas": [escolha]})
+assert r.status_code == 200, r.text
+assert r.json()["accepted_count"] == 1 and r.json()["valores_zerados"] == [], r.json()
+it = db.query(models.QueueItem).filter_by(codigo_cliente="00000060").one()
+assert it.status == models.QueueStatus.pending and it.variables_json["valor"] == opcoes["valor_atraso"]
+assert db.query(models.QueueItem).filter_by(codigo_cliente="00000061").count() == 0
+# De novo: já está na fila hoje
+r = client.post(url, json={"filename": "zerados.xlsx", "mapping": mapeamento, "linhas": [escolha]})
+assert r.json()["accepted_count"] == 0 and "Linha 2: cliente já está na fila" in r.json()["rejected_reasons"][0]
+
+# Leitura de valor escrito de vários jeitos
+from app.upload_service import ler_valor
+
+for texto, esperado in [
+    ("1.234,56", "1234.56"), ("1234.56", "1234.56"), ("R$ 10", "10"), ("1 500,00", "1500.00"),
+    ("10,00 reais", "10.00"), ("US$ 50", "50"), ("1.500", "1500"), ("1500.0", "1500.0"),
+    ("1,234.56", "1234.56"), ("0,00", "0.00"), ("R$\u00a01\u00a0500,50", "1500.50"),
+]:
+    assert ler_valor(texto) == Decimal(esperado), (texto, ler_valor(texto))
+assert ler_valor("") is None and ler_valor("sem valor") is None
 
 # =============================================================================
 print("=== 11. expirar_nao_enviados ===")

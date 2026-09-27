@@ -271,6 +271,18 @@ export const api = {
     form.append("mapping", JSON.stringify(mapping));
     return request<UploadResult>(`/faixas/${faixaId}/uploads`, { method: "POST", body: form });
   },
+  importarValoresZerados: (
+    faixaId: string,
+    payload: {
+      filename: string;
+      mapping: UploadFieldMapping;
+      linhas: { linha: number; dados: Record<string, string>; valor: string }[];
+    }
+  ) =>
+    request<UploadResult>(`/faixas/${faixaId}/uploads/valores-zerados`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   listQueue: (faixaId: string, params: { limit: number; offset: number } & OrdenacaoParams) =>
     request<{ total: number; itens: QueueItem[] }>(`/faixas/${faixaId}/queue?${montarQuery(params)}`),
 
@@ -747,6 +759,22 @@ export interface UploadResult {
   rejected_count: number;
   invalid_phone_count: number;
   rejected_reasons: string[];
+  valores_zerados: UploadValorZerado[];
+}
+
+export interface OpcaoValor {
+  campo: string;
+  rotulo: string;
+  valor: string;
+}
+
+/** Linha com valor zerado: o usuário escolhe um valor do sistema ou descarta. */
+export interface UploadValorZerado {
+  linha: number;
+  codigo_cliente: string;
+  nome: string;
+  dados: Record<string, string>;
+  opcoes: OpcaoValor[];
 }
 
 export interface InvalidPhoneRecord {

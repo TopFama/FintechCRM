@@ -278,8 +278,11 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    **blacklist**. Também é rejeitado quem já está pendente/reservado na fila de **qualquer** faixa
    ou já foi cobrado **hoje** (horário de Brasília) em qualquer caminho — a regra fixa é no máximo
    uma cobrança por cliente por dia (`app/elegibilidade.py`); em outro dia o cliente pode voltar.
-   Linha com valor zerado (depois de tentar o valor em atraso com juros do cadastro) não é cobrada:
-   vira item de erro "Valor zerado" na fila.
+   O valor pode vir escrito de vários jeitos ("1.500,00", "1 500,00", "10,00 reais", "US$ 50"):
+   vale o primeiro número. Linha com valor zerado não entra direto: o resultado do upload lista
+   essas linhas com os valores que o sistema tem do cliente (valor em atraso com juros, em aberto,
+   a cobrar), e o usuário escolhe um deles, digita outro ou descarta
+   (`POST /faixas/{id}/uploads/valores-zerados`).
 6. O ritmo e a janela de disparo são **globais** (**Configurações → Horário**,
    `global_dispatch_config`): **intervalo entre rodadas**, **quantidade de cobranças por rodada** e
    **janela de agendamento** (dias/horário, em horário de Brasília), valendo para todas as faixas e

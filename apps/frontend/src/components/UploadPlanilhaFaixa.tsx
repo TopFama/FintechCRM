@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, Faixa, Template, UploadFieldMapping, UploadResult } from "../api";
+import { api, Faixa, Template, UploadFieldMapping, UploadResult, UploadValorZerado } from "../api";
+import { formatNumero } from "../format";
 import { IconAlert, IconDownload, IconUpload } from "../icons";
 
 const NO_COLUMN = "";
+const DESCARTAR = "descartar";
+const OUTRO = "outro";
+
+/** Escolha padrão para a linha zerada: o primeiro valor do sistema, senão descartar. */
+function escolhaPadrao(z: UploadValorZerado): string {
+  return z.opcoes[0]?.campo ?? DESCARTAR;
+}
 
 function pickDefault(columns: string[], previous: string | null | undefined): string {
   if (previous && columns.includes(previous)) return previous;
@@ -34,6 +42,10 @@ export default function UploadPlanilhaFaixa({ faixaId }: { faixaId: string }) {
     variables: {},
   });
   const [importing, setImporting] = useState(false);
+  // Linhas de valor zerado: por número da linha, o campo escolhido, "outro" ou "descartar"
+  const [escolhas, setEscolhas] = useState<Record<number, string>>({});
+  const [outrosValores, setOutrosValores] = useState<Record<number, string>>({});
+  const [importandoZerados, setImportandoZerados] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,12 +127,59 @@ export default function UploadPlanilhaFaixa({ faixaId }: { faixaId: string }) {
     try {
       const result = await api.uploadPlanilha(id, pendingFile, fieldMap);
       setUploadResult(result);
+      setEscolhas(Object.fromEntries(result.valores_zerados.map((z) => [z.linha, escolhaPadrao(z)])));
+      setOutrosValores({});
       cancelMapping();
       loadFaixa();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao subir planilha");
     } finally {
       setImporting(false);
+    }
+  }
+
+  function valorEscolhido(z: UploadValorZerado): string | null {
+    const escolha = escolhas[z.linha] ?? escolhaPadrao(z);
+    if (escolha === DESCARTAR) return null;
+    if (escolha === OUTRO) return (outrosValores[z.linha] || "").trim();
+    return z.opcoes.find((o) => o.campo === escolha)?.valor ?? null;
+  }
+
+  async function confirmarZerados(descartarTodos = false) {
+    if (!uploadResult) return;
+    const zerados = uploadResult.valores_zerados;
+    const linhas = descartarTodos
+      ? []
+      : zerados.flatMap((z) => {
+          const valor = valorEscolhido(z);
+          return valor === null ? [] : [{ linha: z.linha, dados: z.dados, valor }];
+        });
+    if (linhas.some((l) => !l.valor)) {
+      setError("Informe o valor de cada linha marcada como \"Outro valor\"");
+      return;
+    }
+    const descartadas = zerados.length - linhas.length;
+    const descarte = descartadas ? [`${descartadas} linha(s) com valor zerado descartada(s)`] : [];
+    setError(null);
+    if (linhas.length === 0) {
+      setUploadResult({ ...uploadResult, valores_zerados: [], rejected_reasons: [...uploadResult.rejected_reasons, ...descarte] });
+      return;
+    }
+    setImportandoZerados(true);
+    try {
+      const r = await api.importarValoresZerados(id, { filename: uploadResult.filename, mapping: fieldMap, linhas });
+      setUploadResult({
+        ...uploadResult,
+        accepted_count: uploadResult.accepted_count + r.accepted_count,
+        rejected_count: uploadResult.rejected_count + r.rejected_count,
+        invalid_phone_count: uploadResult.invalid_phone_count + r.invalid_phone_count,
+        rejected_reasons: [...uploadResult.rejected_reasons, ...r.rejected_reasons, ...descarte],
+        valores_zerados: [],
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao importar os valores escolhidos");
+    } finally {
+      setImportandoZerados(false);
     }
   }
 
@@ -342,6 +401,70 @@ export default function UploadPlanilhaFaixa({ faixaId }: { faixaId: string }) {
                   linhas na planilha
                 </div>
               </div>
+              {uploadResult.valores_zerados.length > 0 && (
+                <div className="sub-card" style={{ marginTop: 16 }}>
+                  <h3>Valor zerado na planilha ({formatNumero(uploadResult.valores_zerados.length)})</h3>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Linha</th>
+                          <th>Cliente</th>
+                          <th>Valor a usar</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {uploadResult.valores_zerados.map((z) => {
+                          const escolha = escolhas[z.linha] ?? escolhaPadrao(z);
+                          return (
+                            <tr key={z.linha}>
+                              <td>{z.linha}</td>
+                              <td>
+                                {z.codigo_cliente} · {z.nome}
+                              </td>
+                              <td>
+                                <div className="form-row" style={{ margin: 0, flexWrap: "wrap" }}>
+                                  <select
+                                    aria-label={`Valor a usar na linha ${z.linha}`}
+                                    value={escolha}
+                                    onChange={(e) => setEscolhas({ ...escolhas, [z.linha]: e.target.value })}
+                                  >
+                                    {z.opcoes.map((o) => (
+                                      <option key={o.campo} value={o.campo}>
+                                        {o.rotulo}: R$ {o.valor}
+                                      </option>
+                                    ))}
+                                    <option value={OUTRO}>Outro valor</option>
+                                    <option value={DESCARTAR}>Descartar</option>
+                                  </select>
+                                  {escolha === OUTRO && (
+                                    <input
+                                      aria-label={`Outro valor para a linha ${z.linha}`}
+                                      inputMode="decimal"
+                                      placeholder="0,00"
+                                      value={outrosValores[z.linha] || ""}
+                                      onChange={(e) => setOutrosValores({ ...outrosValores, [z.linha]: e.target.value })}
+                                      style={{ maxWidth: 140 }}
+                                    />
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="actions-row">
+                    <button className="secondary" onClick={() => confirmarZerados(true)} disabled={importandoZerados}>
+                      Descartar todos
+                    </button>
+                    <button onClick={() => confirmarZerados()} disabled={importandoZerados}>
+                      {importandoZerados ? "Importando..." : "Confirmar valores"}
+                    </button>
+                  </div>
+                </div>
+              )}
               {uploadResult.invalid_phone_count > 0 && (
                 <p className="field-hint">
                   <Link to="/relatorios">Ver no relatório de telefones inválidos →</Link>
