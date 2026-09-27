@@ -199,6 +199,7 @@ a {
 
 .content {
   flex: 1;
+  min-width: 0;
   padding: 36px 40px 60px;
   max-width: 1080px;
   width: 100%;
@@ -252,6 +253,8 @@ a {
   padding: 22px 24px;
   box-shadow: var(--shadow-sm);
   margin-bottom: 20px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .card-header {
@@ -537,6 +540,8 @@ tr.linha-clicavel:hover td {
 
 .table-wrap {
   overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
   /* Segura o .sr-only (absolute) dos cabeçalhos dentro da rolagem da tabela;
      sem isso ele escapava e a página inteira rolava para o lado no celular */
   position: relative;

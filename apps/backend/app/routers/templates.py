@@ -606,11 +606,30 @@ async def testar_envio_template(
     if not numero:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Número não encontrado")
 
+    template_envio = template
+    if template.waba_id and numero.waba_id and template.waba_id != numero.waba_id:
+        template_correto = (
+            db.query(models.Template)
+            .filter(
+                models.Template.waba_id == numero.waba_id,
+                models.Template.meta_template_name == template.meta_template_name,
+                models.Template.status == models.TemplateStatus.approved,
+            )
+            .first()
+        )
+        if template_correto:
+            template_envio = _with_variables(db.query(models.Template)).filter(models.Template.id == template_correto.id).first()
+        else:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"O número {numero.display_phone_number} pertence à WABA {numero.waba_id}, mas o template '{template.name}' pertence à WABA {template.waba_id}. Selecione um número da mesma WABA.",
+            )
+
     celular = normalize_phone(payload.celular)
     if not is_valid_phone(payload.celular):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Celular de destino inválido")
 
-    body_params, header_image_link = montar_parametros_envio(template, payload.variables)
+    body_params, header_image_link = montar_parametros_envio(template_envio, payload.variables)
 
     # 1. Envio via Chatwoot (se o número estiver configurado para Chatwoot)
     if numero.chatwoot_inbox_id:
@@ -626,10 +645,10 @@ async def testar_envio_template(
             conversation_id = await client.buscar_ou_criar_conversa(numero.chatwoot_inbox_id, contact_id, source_id)
             msg = await client.enviar_mensagem_template(
                 conversation_id,
-                template.body_text,
-                template_name=template.meta_template_name,
-                category=template.category,
-                language=template.language,
+                template_envio.body_text,
+                template_name=template_envio.meta_template_name,
+                category=template_envio.category,
+                language=template_envio.language,
                 body_params=body_params,
                 header_image_url=header_image_link,
             )
@@ -663,8 +682,8 @@ async def testar_envio_template(
 
     meta_client = MetaClient(access_token=token)
     header_image_id = None
-    if template.header_type == models.TemplateHeaderType.image:
-        caminho_imagem = arquivo_imagem(template)
+    if template_envio.header_type == models.TemplateHeaderType.image:
+        caminho_imagem = arquivo_imagem(template_envio)
         if caminho_imagem:
             try:
                 header_image_id = await media_id_da_imagem(meta_client, numero.phone_number_id, caminho_imagem)
@@ -677,8 +696,8 @@ async def testar_envio_template(
         await meta_client.send_template_message(
             phone_number_id=numero.phone_number_id,
             to=celular,
-            template_name=template.meta_template_name,
-            language_code=template.language,
+            template_name=template_envio.meta_template_name,
+            language_code=template_envio.language,
             body_params=body_params,
             header_image_link=header_image_link,
             header_image_id=header_image_id,

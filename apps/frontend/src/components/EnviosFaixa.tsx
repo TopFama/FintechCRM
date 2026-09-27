@@ -102,22 +102,67 @@ export default function EnviosFaixa({
     setMostrarFormEnvio(true);
   }
 
+  const numeroDoForm = numbers.find((n) => n.id === formNumberId) || null;
+  const templateDoForm = templates.find((t) => t.id === formTemplateId) || null;
+
+  // Templates que compartilham o mesmo nome (podem ser de WABAs diferentes)
+  const templatesMesmoNome = templateDoForm
+    ? templates.filter(
+        (t) =>
+          t.status === "approved" &&
+          (t.name === templateDoForm.name || t.meta_template_name === templateDoForm.meta_template_name)
+      )
+    : [];
+
+  const wabasCompativeis = new Set(templatesMesmoNome.map((t) => t.waba_id).filter(Boolean));
+
+  // Templates aprovados para a lista suspensa (únicos por nome)
+  const templatesAprovados = templates.filter(
+    (t, idx, arr) => t.status === "approved" && arr.findIndex((x) => x.name === t.name) === idx
+  );
+
+  // Telefones disponíveis: libera os telefones das WABAs que têm este template aprovado
+  const numerosDisponiveis = numbers.filter((n) => {
+    const jaUsado = faixa.envios.some((e) => e.whatsapp_number_id === n.id && e.id !== envioEditandoId);
+    if (n.id !== formNumberId && jaUsado) return false;
+    if (!templateDoForm) return true;
+    return wabasCompativeis.size === 0 || wabasCompativeis.has(n.waba_id);
+  });
+
   function selecionarTemplateForm(templateId: string) {
     setFormTemplateId(templateId);
     setFormMappings(mapeamentosParaEdicao(templateId));
+    const tpl = templates.find((t) => t.id === templateId);
+    if (!tpl) return;
+    const mesmoNome = templates.filter(
+      (t) => t.status === "approved" && (t.name === tpl.name || t.meta_template_name === tpl.meta_template_name)
+    );
+    const wabas = new Set(mesmoNome.map((t) => t.waba_id).filter(Boolean));
+    if (formNumberId) {
+      const num = numbers.find((n) => n.id === formNumberId);
+      if (num && wabas.size > 0 && !wabas.has(num.waba_id)) {
+        setFormNumberId("");
+      }
+    }
+  }
+
+  function selecionarNumeroForm(numberId: string) {
+    setFormNumberId(numberId);
+    if (!numberId || !templateDoForm) return;
+    const num = numbers.find((n) => n.id === numberId);
+    if (num && templateDoForm.waba_id !== num.waba_id) {
+      const tplMesmaWaba = templatesMesmoNome.find((t) => t.waba_id === num.waba_id);
+      if (tplMesmaWaba && tplMesmaWaba.id !== formTemplateId) {
+        setFormTemplateId(tplMesmaWaba.id);
+        setFormMappings(mapeamentosParaEdicao(tplMesmaWaba.id));
+      }
+    }
   }
 
   function cancelarFormEnvio() {
     setMostrarFormEnvio(false);
     setEnvioEditandoId(null);
   }
-
-  const templateDoForm = templates.find((t) => t.id === formTemplateId) || null;
-  const templatesAprovados = templates.filter((t) => t.status === "approved");
-
-  const numerosDisponiveis = numbers.filter(
-    (n) => n.id === formNumberId || !faixa.envios.some((e) => e.whatsapp_number_id === n.id && e.id !== envioEditandoId)
-  );
 
   function renderizarPreviewForm(t: Template): string {
     return t.body_text.replace(/\{\{(\d+)\}\}/g, (match, pos) => {
@@ -135,7 +180,15 @@ export default function EnviosFaixa({
 
   async function salvarEnvio() {
     if (!formNumberId || !formTemplateId || !templateDoForm) return;
-    const semOrigem = templateDoForm.variables.filter((v) => !formMappings[v.id]);
+    const num = numbers.find((n) => n.id === formNumberId);
+    let templateFinal = templateDoForm;
+    if (num && templateDoForm.waba_id && num.waba_id && templateDoForm.waba_id !== num.waba_id) {
+      const tplMesmaWaba = templatesMesmoNome.find((t) => t.waba_id === num.waba_id);
+      if (tplMesmaWaba) {
+        templateFinal = tplMesmaWaba;
+      }
+    }
+    const semOrigem = templateFinal.variables.filter((v) => !formMappings[v.id]);
     if (semOrigem.length > 0) {
       setErro(`Selecione a origem de todas as variáveis (faltando: ${semOrigem.map((v) => v.internal_name).join(", ")})`);
       return;
@@ -143,21 +196,21 @@ export default function EnviosFaixa({
     setErro(null);
     setSalvandoEnvio(true);
     try {
-      const variable_mappings: FaixaVariableMappingIn[] = templateDoForm.variables.map((v) => {
+      const variable_mappings: FaixaVariableMappingIn[] = templateFinal.variables.map((v) => {
         const m = formMappings[v.id];
         return { template_variable_id: v.id, fonte_tipo: m.fonte_tipo, column_name: m.valor };
       });
       if (envioEditandoId) {
         await api.atualizarEnvio(faixa.id, envioEditandoId, {
           whatsapp_number_id: formNumberId,
-          template_id: formTemplateId,
+          template_id: templateFinal.id,
           active: formAtivo,
           variable_mappings,
         });
       } else {
         await api.adicionarEnvio(faixa.id, {
           whatsapp_number_id: formNumberId,
-          template_id: formTemplateId,
+          template_id: templateFinal.id,
           variable_mappings,
         });
       }
@@ -284,24 +337,10 @@ export default function EnviosFaixa({
             <h4>{envioEditandoId ? "Editar envio" : "Novo envio"}</h4>
             <div className="form-row">
               <div className="field">
-                <label htmlFor="faixa-numero-de-envio">Número de envio</label>
-                <select id="faixa-numero-de-envio" value={formNumberId} onChange={(e) => setFormNumberId(e.target.value)}>
-                  <option value="">Selecione...</option>
-                  {numerosDisponiveis.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.label || n.display_phone_number} ({n.display_phone_number})
-                    </option>
-                  ))}
-                </select>
-                {numbers.length === 0 && (
-                  <p className="field-hint">Nenhum número ainda — importe os números da WABA em Configurações.</p>
-                )}
-              </div>
-              <div className="field">
                 <label htmlFor="faixa-template">Template</label>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <select id="faixa-template" value={formTemplateId} onChange={(e) => selecionarTemplateForm(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
-                    <option value="">Selecione...</option>
+                    <option value="">Selecione o template...</option>
                     {templatesAprovados.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.name}
@@ -324,6 +363,28 @@ export default function EnviosFaixa({
                     Este template tem cabeçalho de imagem e ainda não tem imagem. Suba em Configurações → Templates, senão o envio dá erro.
                   </span>
                 )}
+              </div>
+              <div className="field">
+                <label htmlFor="faixa-numero-de-envio">Número de envio</label>
+                <select
+                  id="faixa-numero-de-envio"
+                  value={formNumberId}
+                  onChange={(e) => selecionarNumeroForm(e.target.value)}
+                >
+                  <option value="">{formTemplateId ? "Selecione o número..." : "Selecione o template primeiro..."}</option>
+                  {numerosDisponiveis.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.label || n.display_phone_number} ({n.display_phone_number})
+                    </option>
+                  ))}
+                </select>
+                {numbers.length === 0 ? (
+                  <p className="field-hint">Nenhum número ainda — importe os números da WABA em Configurações.</p>
+                ) : formTemplateId && numerosDisponiveis.length === 0 ? (
+                  <p className="field-hint" style={{ color: "var(--color-danger)" }}>
+                    Nenhum número cadastrado para a WABA deste template.
+                  </p>
+                ) : null}
               </div>
             </div>
 

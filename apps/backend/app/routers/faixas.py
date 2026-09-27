@@ -132,7 +132,28 @@ def create_faixa(
             number = db.query(models.WhatsappNumber).filter(models.WhatsappNumber.id == number_id).first()
             if not number:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, f"Número {number_id} não encontrado")
-            envio = models.FaixaEnvio(faixa_id=faixa.id, whatsapp_number_id=number_id, template_id=template.id)
+
+            template_envio = template
+            if template.waba_id and number.waba_id and template.waba_id != number.waba_id:
+                template_correto = (
+                    db.query(models.Template)
+                    .filter(
+                        models.Template.waba_id == number.waba_id,
+                        models.Template.meta_template_name == template.meta_template_name,
+                        models.Template.status == models.TemplateStatus.approved,
+                    )
+                    .first()
+                )
+                if template_correto:
+                    template_envio = template_correto
+                    _salvar_mapeamento(db, faixa.id, template_envio, payload.variable_mappings)
+                else:
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        f"O número {number.display_phone_number} pertence à WABA {number.waba_id}, mas não existe template '{template.name}' aprovado nessa WABA.",
+                    )
+
+            envio = models.FaixaEnvio(faixa_id=faixa.id, whatsapp_number_id=number_id, template_id=template_envio.id)
             db.add(envio)
             db.flush()
             db.add(models.DispatchConfig(faixa_envio_id=envio.id, active=False))
@@ -187,6 +208,25 @@ def add_envio(
     if not number:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Número não encontrado")
 
+    template_envio = template
+    if template.waba_id and number.waba_id and template.waba_id != number.waba_id:
+        template_correto = (
+            db.query(models.Template)
+            .filter(
+                models.Template.waba_id == number.waba_id,
+                models.Template.meta_template_name == template.meta_template_name,
+                models.Template.status == models.TemplateStatus.approved,
+            )
+            .first()
+        )
+        if template_correto:
+            template_envio = template_correto
+        else:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"O número {number.display_phone_number} pertence à WABA {number.waba_id}, mas o template '{template.name}' pertence à WABA {template.waba_id}. Não há template com mesmo nome nessa WABA.",
+            )
+
     ja_existe = (
         db.query(models.FaixaEnvio)
         .filter(
@@ -199,14 +239,14 @@ def add_envio(
         raise HTTPException(status.HTTP_409_CONFLICT, "Este número já está atribuído a esta faixa")
 
     if payload.variable_mappings:
-        _salvar_mapeamento(db, faixa_id, template, payload.variable_mappings)
-    elif template.variables and not _tem_mapeamento(db, faixa_id, template.id):
+        _salvar_mapeamento(db, faixa_id, template_envio, payload.variable_mappings)
+    elif template_envio.variables and not _tem_mapeamento(db, faixa_id, template_envio.id):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "Mapeie as variáveis deste template antes de usá-lo nesta faixa",
         )
 
-    envio = models.FaixaEnvio(faixa_id=faixa_id, whatsapp_number_id=payload.whatsapp_number_id, template_id=template.id)
+    envio = models.FaixaEnvio(faixa_id=faixa_id, whatsapp_number_id=payload.whatsapp_number_id, template_id=template_envio.id)
     db.add(envio)
     db.flush()
     # Numa campanha ou segmento de remarketing, quem decide se roda é a
@@ -252,6 +292,25 @@ def update_envio(
     if not number:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Número não encontrado")
 
+    template_envio = template
+    if template.waba_id and number.waba_id and template.waba_id != number.waba_id:
+        template_correto = (
+            db.query(models.Template)
+            .filter(
+                models.Template.waba_id == number.waba_id,
+                models.Template.meta_template_name == template.meta_template_name,
+                models.Template.status == models.TemplateStatus.approved,
+            )
+            .first()
+        )
+        if template_correto:
+            template_envio = template_correto
+        else:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"O número {number.display_phone_number} pertence à WABA {number.waba_id}, mas o template '{template.name}' pertence à WABA {template.waba_id}. Não há template com mesmo nome nessa WABA.",
+            )
+
     conflito = (
         db.query(models.FaixaEnvio)
         .filter(
@@ -265,15 +324,15 @@ def update_envio(
         raise HTTPException(status.HTTP_409_CONFLICT, "Este número já está atribuído a esta faixa")
 
     if payload.variable_mappings:
-        _salvar_mapeamento(db, faixa_id, template, payload.variable_mappings)
-    elif template.variables and not _tem_mapeamento(db, faixa_id, template.id):
+        _salvar_mapeamento(db, faixa_id, template_envio, payload.variable_mappings)
+    elif template_envio.variables and not _tem_mapeamento(db, faixa_id, template_envio.id):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "Mapeie as variáveis deste template antes de usá-lo nesta faixa",
         )
 
     envio.whatsapp_number_id = payload.whatsapp_number_id
-    envio.template_id = payload.template_id
+    envio.template_id = template_envio.id
     envio.active = payload.active
     if not payload.active and envio.dispatch_config:
         envio.dispatch_config.active = False

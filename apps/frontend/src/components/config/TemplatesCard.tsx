@@ -1,5 +1,5 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
-import { api, CampoCliente, ImagemPendente, Template, urlImagemTemplate, WhatsappNumber } from "../../api";
+import { api, CampoCliente, formatarNomeTemplate, ImagemPendente, Template, urlImagemTemplate, WhatsappNumber } from "../../api";
 import SortableTh from "../SortableTh";
 import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTemplate } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
@@ -26,13 +26,18 @@ function formatarTamanho(bytes: number): string {
 // não uma configuração de uma faixa específica.
 export default function TemplatesCard() {
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [numbers, setNumbers] = useState<WhatsappNumber[]>([]);
   const templatesSort = useSort<ColunaTemplate>();
   const templatesOrdenados = ordenarPor(
     templates,
-    templatesSort.sortKey ? (t: Template) => t[templatesSort.sortKey as ColunaTemplate] : null,
+    templatesSort.sortKey
+      ? (t: Template) =>
+          templatesSort.sortKey === "name"
+            ? formatarNomeTemplate(t, numbers)
+            : t[templatesSort.sortKey as ColunaTemplate]
+      : null,
     templatesSort.sortDir
   );
-  const [numbers, setNumbers] = useState<WhatsappNumber[]>([]);
   const [campos, setCampos] = useState<CampoCliente[]>([]);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [selectedWabaId, setSelectedWabaId] = useState("");
@@ -92,9 +97,9 @@ export default function TemplatesCard() {
     }
     setTesteTemplateId(t.id);
     setTesteResultado(null);
-    if (!testeNumeroId && numbers.length > 0) {
-      const numMesmaWaba = numbers.find((n) => n.waba_id === t.waba_id);
-      setTesteNumeroId(numMesmaWaba ? numMesmaWaba.id : numbers[0].id);
+    const numsWaba = numbers.filter((n) => !t.waba_id || n.waba_id === t.waba_id);
+    if (!testeNumeroId || !numsWaba.some((n) => n.id === testeNumeroId)) {
+      setTesteNumeroId(numsWaba[0]?.id || "");
     }
     const vars: Record<string, string> = {};
     for (const v of t.variables) {
@@ -114,6 +119,14 @@ export default function TemplatesCard() {
 
   async function handleEnviarTeste(t: Template) {
     if (!testeNumeroId || !testeCelular.trim()) return;
+    const numEscolhido = numbers.find((n) => n.id === testeNumeroId);
+    if (t.waba_id && numEscolhido?.waba_id && t.waba_id !== numEscolhido.waba_id) {
+      setTesteResultado({
+        ok: false,
+        detalhe: "O número selecionado não pertence à mesma WABA deste template.",
+      });
+      return;
+    }
     setTesteEnviando(true);
     setTesteResultado(null);
     try {
@@ -478,13 +491,17 @@ export default function TemplatesCard() {
                 {templatesOrdenados.map((t) => (
                   <Fragment key={t.id}>
                     <tr>
-                      <td className="cell-strong">{t.name}</td>
-                      <td className="text-muted">{t.meta_template_name}</td>
+                      <td className="cell-strong" style={{ wordBreak: "break-word", minWidth: 200 }}>
+                        {formatarNomeTemplate(t, numbers)}
+                      </td>
+                      <td className="text-muted" style={{ wordBreak: "break-word" }}>{t.meta_template_name}</td>
                       <td>
                         <span className={`badge ${t.status}`}>{t.status}</span>
                       </td>
-                      <td className="text-muted">{t.variables.map((v) => v.internal_name).join(", ") || "—"}</td>
-                      <td>
+                      <td className="text-muted" style={{ wordBreak: "break-word", maxWidth: 220 }}>
+                        {t.variables.map((v) => v.internal_name).join(", ") || "—"}
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
                         {t.header_type === "image" ? (
                           <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
                             {t.image_url && <span className="badge sent">enviada</span>}
@@ -519,12 +536,12 @@ export default function TemplatesCard() {
                           <span className="text-faint">—</span>
                         )}
                       </td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
+                        <div style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
                           <button
                             type="button"
                             className="secondary small"
-                            style={{ flex: "1 1 130px", minWidth: 130, justifyContent: "center", whiteSpace: "nowrap" }}
+                            style={{ whiteSpace: "nowrap" }}
                             onClick={() => handleRefreshStatus(t.id)}
                           >
                             Atualizar status
@@ -532,7 +549,7 @@ export default function TemplatesCard() {
                           <button
                             type="button"
                             className="secondary small"
-                            style={{ flex: "1 1 130px", minWidth: 130, justifyContent: "center", whiteSpace: "nowrap" }}
+                            style={{ whiteSpace: "nowrap" }}
                             onClick={() => setPreviewId((atual) => (atual === t.id ? null : t.id))}
                           >
                             <IconEye width={14} height={14} /> {previewId === t.id ? "Fechar" : "Pré-visualizar"}
@@ -540,7 +557,7 @@ export default function TemplatesCard() {
                           <button
                             type="button"
                             className="secondary small"
-                            style={{ flex: "1 1 130px", minWidth: 130, justifyContent: "center", whiteSpace: "nowrap" }}
+                            style={{ whiteSpace: "nowrap" }}
                             onClick={() => abrirTesteTemplate(t)}
                           >
                             <IconTemplate width={14} height={14} /> {testeTemplateId === t.id ? "Fechar teste" : "Testar envio"}
@@ -584,7 +601,7 @@ export default function TemplatesCard() {
                         <td colSpan={6}>
                           <div className="card" style={{ margin: "8px 0", background: "var(--color-bg-subtle, #f9fafb)", border: "1px solid var(--color-border)" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                              <h4 style={{ margin: 0 }}>Testar template: {t.name} ({t.language})</h4>
+                              <h4 style={{ margin: 0 }}>Testar template: {formatarNomeTemplate(t, numbers)} ({t.language})</h4>
                               <button type="button" className="secondary small" onClick={() => setTesteTemplateId(null)}>
                                 Fechar
                               </button>
@@ -604,12 +621,19 @@ export default function TemplatesCard() {
                                   onChange={(e) => setTesteNumeroId(e.target.value)}
                                 >
                                   <option value="">Selecione o número...</option>
-                                  {numbers.map((n) => (
-                                    <option key={n.id} value={n.id}>
-                                      {n.label} ({n.display_phone_number})
-                                    </option>
-                                  ))}
+                                  {numbers
+                                    .filter((n) => !t.waba_id || n.waba_id === t.waba_id)
+                                    .map((n) => (
+                                      <option key={n.id} value={n.id}>
+                                        {n.label} ({n.display_phone_number})
+                                      </option>
+                                    ))}
                                 </select>
+                                {numbers.filter((n) => !t.waba_id || n.waba_id === t.waba_id).length === 0 && (
+                                  <p className="field-hint" style={{ color: "var(--color-danger)" }}>
+                                    Nenhum número cadastrado para a WABA deste template ({t.waba_id || "sem WABA"}).
+                                  </p>
+                                )}
                               </div>
                               <div className="field">
                                 <label htmlFor={`teste-cel-${t.id}`}>Celular de destino</label>

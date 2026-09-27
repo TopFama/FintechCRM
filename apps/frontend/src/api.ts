@@ -641,6 +641,22 @@ export interface Template {
   variables: TemplateVariable[];
 }
 
+export function formatarNomeTemplate(
+  t: { name: string; waba_id?: string | null },
+  numbers: WhatsappNumber[]
+): string {
+  if (!t.waba_id) return t.name;
+  const tels = Array.from(
+    new Set(
+      numbers
+        .filter((n) => n.waba_id === t.waba_id)
+        .map((n) => (n.display_phone_number || n.phone_number_id || "").trim())
+        .filter(Boolean)
+    )
+  );
+  return `${t.name} ● ${t.waba_id} (${tels.join("; ")})`;
+}
+
 export interface FaixaVariableMapping {
   id: string;
   template_id: string;

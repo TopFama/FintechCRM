@@ -44,6 +44,20 @@ export default function FaixaWizard() {
   const navigate = useNavigate();
   const selectedTemplate = templates.find((t) => t.id === templateId);
 
+  const templatesMesmoNome = selectedTemplate
+    ? templates.filter(
+        (t) =>
+          t.status === "approved" &&
+          (t.name === selectedTemplate.name || t.meta_template_name === selectedTemplate.meta_template_name)
+      )
+    : [];
+
+  const wabasCompativeis = new Set(templatesMesmoNome.map((t) => t.waba_id).filter(Boolean));
+
+  const numerosDisponiveis = numbers.filter(
+    (n) => wabasCompativeis.size === 0 || wabasCompativeis.has(n.waba_id)
+  );
+
   function toggleNumber(id: string) {
     setNumberIds((prev) => (prev.includes(id) ? prev.filter((n) => n !== id) : [...prev, id]));
   }
@@ -127,14 +141,14 @@ export default function FaixaWizard() {
               Selecione um ou mais números. Quando mais de um for escolhido, os disparos alternam entre eles.
             </p>
             <div className="option-list">
-              {numbers.map((n) => (
+              {numerosDisponiveis.map((n) => (
                 <label key={n.id} className={`option-item${numberIds.includes(n.id) ? " checked" : ""}`}>
                   <input type="checkbox" checked={numberIds.includes(n.id)} onChange={() => toggleNumber(n.id)} />
                   {n.label || n.display_phone_number} ({n.display_phone_number})
                 </label>
               ))}
-              {numbers.length === 0 && (
-                <p className="text-muted">Nenhum número ainda — importe os números da WABA em Configurações → Tokens da Meta.</p>
+              {numerosDisponiveis.length === 0 && (
+                <p className="text-muted">Nenhum número cadastrado para a WABA deste template.</p>
               )}
             </div>
             <div className="actions-row">
