@@ -5,6 +5,7 @@ import { formatBRL, formatData, hojeBR } from "../../format";
 import { IconAlert, IconDownload } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 import SortableTh from "../SortableTh";
+import TabelaAjustavel from "../TabelaAjustavel";
 
 type ColunaNumero = "numero" | "gasto_brl" | "qtd_mensagens";
 
@@ -205,7 +206,7 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
           </div>
           <GraficoGasto dados={dados} />
           {dados.gasto_por_numero.length > 0 && (
-            <div className="table-wrap" style={{ marginTop: 16 }}>
+            <TabelaAjustavel id="orcamento-por-numero" rotulo="Gasto por número" style={{ marginTop: 16 }}>
               <table>
                 <thead>
                   <tr>
@@ -250,7 +251,7 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
                   </tr>
                 </tbody>
               </table>
-            </div>
+            </TabelaAjustavel>
           )}
         </>
       )}

@@ -232,6 +232,78 @@ test.describe("Dashboard", () => {
     expect(await col(0)).toEqual(ordemAntes);
   });
 
+  test("por faixa: números e títulos centralizados, inclusive título quebrado em duas linhas", async ({ page }) => {
+    const porFaixa = card(page, "Por faixa");
+    await expect(porFaixa.locator("tbody tr").first()).toBeVisible();
+    // Faixa fica à esquerda; as outras colunas, centralizadas
+    const alinhamento = (sel: string) =>
+      porFaixa.locator(sel).evaluateAll((els) => els.map((el) => getComputedStyle(el).textAlign));
+    expect(await alinhamento("thead th")).toEqual(["left", ...Array(9).fill("center")]);
+    expect(await alinhamento("tbody tr:first-child td")).toEqual(["left", ...Array(9).fill("center")]);
+    expect(await alinhamento("tfoot tr td")).toEqual(["left", ...Array(9).fill("center")]);
+
+    // O bloco do título (texto, dica e seta) fica no meio da célula, mesmo quebrado
+    const desvios = await porFaixa.locator("thead th").evaluateAll((ths) =>
+      ths.slice(1).map((th) => {
+        const c = th.getBoundingClientRect();
+        const cs = getComputedStyle(th);
+        const meio = c.left + parseFloat(cs.paddingLeft) + (c.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / 2;
+        const inner = th.querySelector(".th-sortable-inner")!;
+        const range = document.createRange();
+        range.selectNodeContents(inner);
+        const r = range.getBoundingClientRect();
+        return Math.abs(r.left + r.width / 2 - meio);
+      })
+    );
+    for (const d of desvios) expect(d).toBeLessThan(4);
+  });
+
+  test("por faixa: altura ajustável na barra, com cabeçalho, total e faixa fixos na rolagem", async ({ page }) => {
+    const porFaixa = card(page, "Por faixa");
+    const wrap = porFaixa.locator(".tabela-ajustavel");
+    const alca = porFaixa.getByRole("separator", { name: "Ajustar altura da tabela Por faixa" });
+    await expect(porFaixa.locator("tbody tr").first()).toBeVisible();
+    const alturaInicial = (await wrap.boundingBox())!.height;
+    expect(alturaInicial).toBeGreaterThan(130);
+
+    // Arrastar a barra para cima diminui a área visível (mínimo 120 px)
+    const b = (await alca.boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2 - (alturaInicial - 125), { steps: 5 });
+    await page.mouse.up();
+    await expect.poll(async () => Math.round((await wrap.boundingBox())!.height)).toBeLessThanOrEqual(126);
+    expect(await wrap.evaluate((w) => w.scrollHeight > w.clientHeight)).toBe(true);
+
+    // Rolando, o cabeçalho fica no topo, o total embaixo e a faixa à esquerda
+    await wrap.evaluate((w) => {
+      w.scrollTop = 40;
+      w.scrollLeft = 200;
+    });
+    const caixa = (await wrap.boundingBox())!;
+    const th = (await porFaixa.locator("thead th").first().boundingBox())!;
+    const total = (await porFaixa.locator("tr.linha-total td").first().boundingBox())!;
+    const faixa = (await porFaixa.locator("tbody tr").nth(1).locator("td").first().boundingBox())!;
+    expect(Math.abs(th.y - caixa.y)).toBeLessThan(2);
+    expect(total.y + total.height).toBeLessThanOrEqual(caixa.y + caixa.height + 1);
+    expect(total.y).toBeGreaterThan(caixa.y);
+    expect(Math.abs(faixa.x - caixa.x)).toBeLessThan(2);
+
+    // ↓ no teclado aumenta; a altura escolhida volta depois de recarregar
+    await alca.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(async () => Math.round((await wrap.boundingBox())!.height)).toBeGreaterThan(150);
+    const escolhida = Math.round((await wrap.boundingBox())!.height);
+    await page.reload();
+    await expect(porFaixa.locator("tbody tr").first()).toBeVisible();
+    await expect.poll(async () => Math.round((await wrap.boundingBox())!.height)).toBe(escolhida);
+
+    // Duplo clique volta ao tamanho padrão
+    await alca.dblclick();
+    await expect.poll(async () => Math.round((await wrap.boundingBox())!.height)).toBe(Math.round(alturaInicial));
+  });
+
+
   test("matriz cluster × faixa: aplicar, abas e clique leva para Cobrança filtrada", async ({ page }) => {
     const m = card(page, "Base de cobrança — cluster × faixa");
     await expect(m).toContainText("Aplique os filtros para ver a matriz cluster × faixa.");

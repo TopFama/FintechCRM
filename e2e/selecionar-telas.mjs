@@ -110,7 +110,7 @@ const TELAS = {
   "12-dashboard": {
     depende: ["11-disparo"],
     arquivos: [
-      `${F}pages/Dashboard.tsx`, `${F}components/dashboard/**`, `${F}components/DicaIndicador.tsx`,
+      `${F}pages/Dashboard.tsx`, `${F}components/dashboard/**`, `${F}components/DicaIndicador.tsx`, `${F}components/TabelaAjustavel.tsx`,
       `${F}components/useAtualizacaoAutomatica.ts`, `${F}components/FiltroPeriodo.tsx`, `${F}components/SelectCampanha.tsx`,
       `${F}components/MatrizTable.tsx`, `${B}routers/dashboard.py`, `${B}routers/leads.py`, `${B}routers/cobranca.py`,
       `${B}consultas_fila.py`, `${B}services/**`, `${B}cambio.py`, `${B}relatorio_efetividade.py`, `${B}cobranca_relatorio.py`,

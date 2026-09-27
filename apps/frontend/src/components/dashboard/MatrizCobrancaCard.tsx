@@ -94,6 +94,7 @@ export default function MatrizCobrancaCard({ opcoes }: { opcoes: OpcoesCobranca 
             formato={aba === "valor" || aba === "atraso" ? formatBRL : (v) => Number(v).toLocaleString("pt-BR")}
             elegivel={(c, f) => (opcoes.regras?.faixas_whatsapp[c] ?? []).includes(f)}
             onCelulaClick={abrirNaCobranca}
+            alturaAjustavel={{ id: "matriz-cobranca", rotulo: "Base de cobrança" }}
           />
           <div className="field-hint">
             {aba === "atraso" &&
