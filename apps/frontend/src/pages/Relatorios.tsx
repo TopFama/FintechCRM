@@ -88,6 +88,8 @@ export default function Relatorios() {
   const setCobradoDe = (v: string) => mudarUrl({ de: v });
   const setCobradoAte = (v: string) => mudarUrl({ ate: v });
   const [faixas, setFaixas] = useState<Faixa[]>([]);
+  // Só "Quem pagou" com faixa escolhida depende da lista de faixas (ver load)
+  const faixasProntas = faixas.length > 0 || !faixaId || tab !== "pagamentos";
   const [fila, setFila] = useState<FilaReportItem[]>([]);
   const [filaTotal, setFilaTotal] = useState(0);
   const [filaInfo, setFilaInfo] = useState<Pick<FilaReportPage, "total_pausados" | "total_sem_loja">>({
@@ -178,6 +180,9 @@ export default function Relatorios() {
     setLoading(true);
     setError(null);
     const seq = ++reqRef.current;
+    // "Quem pagou" filtra a faixa pelo nome: espera a lista de faixas chegar,
+    // senão a primeira consulta sai sem o filtro (ex.: link vindo do Dashboard)
+    if (tab === "pagamentos" && faixaId && faixas.length === 0) return;
     const atual = () => seq === reqRef.current;
     const params = {
       faixa_id: faixaId || undefined,
@@ -229,7 +234,7 @@ export default function Relatorios() {
     setOffset(0);
     load(0, limit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, faixaId, campanha, loja, cobradoDe, cobradoAte, pagoDe, pagoAte, diasJanela]);
+  }, [tab, faixaId, campanha, loja, cobradoDe, cobradoAte, pagoDe, pagoAte, diasJanela, faixasProntas]);
 
   function filtrosPagamentos() {
     const nome = faixas.find((f) => f.id === faixaId)?.name;

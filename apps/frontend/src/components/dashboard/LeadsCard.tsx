@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../api";
 import { IconAlert } from "../../icons";
-import FiltroPeriodo, { Periodo } from "../FiltroPeriodo";
+import FiltroPeriodo, { OpcaoPeriodo, Periodo, periodoDe } from "../FiltroPeriodo";
 import MultiSelect from "../MultiSelect";
 import SelectCampanha from "../SelectCampanha";
 import { useAtualizacaoAutomatica } from "../useAtualizacaoAutomatica";
@@ -16,10 +16,20 @@ export default function LeadsCard({ opcoes, recarregar }: { opcoes: OpcoesCobran
   const [exportando, setExportando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState<Periodo>({});
+  const [opcaoPeriodo, setOpcaoPeriodo] = useState<OpcaoPeriodo | null>(null);
   // Novos contam pela data em que viraram lead; enviados, pela data do envio.
   const filtroNovos = { criado_de: periodo.de, criado_ate: periodo.ate };
   const filtroEnviados = { enviado_de: periodo.de, enviado_ate: periodo.ate };
   const ciclo = useAtualizacaoAutomatica(60_000);
+
+  // "Hoje" é recalculado a cada atualização automática: com a tela aberta
+  // depois da meia-noite, continuava contando o dia anterior
+  useEffect(() => {
+    if (opcaoPeriodo !== "hoje") return;
+    const novo = periodoDe("hoje");
+    if (novo.de !== periodo.de || novo.ate !== periodo.ate) setPeriodo(novo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ciclo]);
 
   useEffect(() => {
     if (Boolean(periodo.de) !== Boolean(periodo.ate)) return;
@@ -58,7 +68,12 @@ export default function LeadsCard({ opcoes, recarregar }: { opcoes: OpcoesCobran
         <h3>Leads</h3>
       </div>
 
-      <FiltroPeriodo opcoes={["hoje", "personalizado"]} inicial={null} permiteLimpar onChange={setPeriodo} />
+      <FiltroPeriodo opcoes={["hoje", "personalizado"]} inicial={null} permiteLimpar
+        onChange={(p, opcao) => {
+          setPeriodo(p);
+          setOpcaoPeriodo(opcao);
+        }}
+      />
 
       <div className="stat-grid">
         <div className="stat">

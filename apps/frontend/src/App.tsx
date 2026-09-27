@@ -54,9 +54,10 @@ function Layout({ children }: { children: JSX.Element }) {
         <div className="sidebar-footer">
           <button
             className="logout-btn"
-            onClick={() => {
+            onClick={async () => {
               limparAutenticado();
-              api.logout().catch(() => {});
+              // Espera o backend apagar o cookie da sessão antes de sair da página
+              await api.logout().catch(() => {});
               window.location.href = "/login";
             }}
           >
