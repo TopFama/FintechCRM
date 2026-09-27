@@ -20,13 +20,12 @@ import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, seta_client
-from ..timezone import BUSINESS_TZ, hoje_br
+from ..timezone import dia_br, hoje_br, hora_br, inicio_do_dia_utc
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +59,6 @@ def rodada_devida(intervalo_segundos: int) -> bool:
     return _ultima_rodada is None or agora - _ultima_rodada >= intervalo_segundos
 
 
-def _dia_br(dt: datetime) -> date:
-    return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).date()
-
-
 def _cobrancas(db: Session, codigos: set[str] | None = None) -> dict[str, tuple[date, date]]:
     """codigo_cliente → (primeira, última) data de cobrança, no fuso de negócio."""
     query = db.query(
@@ -80,7 +75,7 @@ def _cobrancas(db: Session, codigos: set[str] | None = None) -> dict[str, tuple[
     for lote in lotes:
         q = query if lote is None else query.filter(models.Lead.codigo_cliente.in_(lote))
         for codigo, primeira, ultima in q.group_by(models.Lead.codigo_cliente):
-            resultado[codigo] = (_dia_br(primeira), _dia_br(ultima))
+            resultado[codigo] = (dia_br(primeira), dia_br(ultima))
     return resultado
 
 
@@ -184,11 +179,6 @@ def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
         return len(por_titulo)
 
 
-def _inicio_dia_utc(dia: date) -> datetime:
-    """Meia-noite de Brasília do dia, em UTC ingênuo (como `cobrado_em` é gravado)."""
-    return datetime.combine(dia, datetime.min.time(), BUSINESS_TZ).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
-
-
 def _horarios_envio(db: Session, pares: list[tuple[str, date]]) -> dict[tuple[str, date], datetime]:
     """(codigo_cliente, data_cobranca) → primeiro envio naquele dia, na hora de
     Brasília (mesma referência do horário do caixa do SETA)."""
@@ -200,12 +190,12 @@ def _horarios_envio(db: Session, pares: list[tuple[str, date]]) -> dict[tuple[st
     # Só os dias das cobranças pedidas (índice de cobrado_em); filtra os clientes aqui
     for codigo, cobrado_em in db.query(models.Lead.codigo_cliente, models.Lead.cobrado_em).filter(
         models.Lead.status == "cobrado",
-        models.Lead.cobrado_em >= _inicio_dia_utc(min(dias)),
-        models.Lead.cobrado_em < _inicio_dia_utc(max(dias) + timedelta(days=1)),
+        models.Lead.cobrado_em >= inicio_do_dia_utc(min(dias)),
+        models.Lead.cobrado_em < inicio_do_dia_utc(max(dias) + timedelta(days=1)),
     ):
         if codigo not in codigos:
             continue
-        local = cobrado_em.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).replace(tzinfo=None)
+        local = hora_br(cobrado_em)
         chave = (codigo, local.date())
         if chave not in horarios or local < horarios[chave]:
             horarios[chave] = local

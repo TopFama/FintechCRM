@@ -11,15 +11,14 @@ no router, então não muda comportamento nenhum, só a localização do código
 
 import logging
 import re
-from datetime import date, datetime, time, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from .. import campanhas_fixas, google_client, lojas as lojas_base, models, seta_client
-from ..timezone import BUSINESS_TZ, hoje_br
+from ..timezone import dia_br, hoje_br, inicio_do_dia_utc
 from . import custo_whatsapp, pagamentos_seta
 from ..regras_db import carregar_regras
 from ..relatorio_efetividade import montar_relatorio
@@ -27,14 +26,8 @@ from ..relatorio_efetividade import montar_relatorio
 logger = logging.getLogger(__name__)
 
 
-def _inicio_dia_utc(dia: date) -> datetime:
-    """Meia-noite de Brasília do dia, em UTC ingênuo (como `cobrado_em` é gravado)."""
-    return datetime.combine(dia, time.min, BUSINESS_TZ).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
 
-def _dia_br(dt: datetime) -> date:
-    """Data em Brasília de um timestamp UTC ingênuo."""
-    return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(BUSINESS_TZ).date()
 
 
 def filtrar_campanha(query, campanha: str | None):
@@ -88,11 +81,11 @@ def obter_dados_efetividade(
     leads_query = db.query(models.Lead).filter(models.Lead.status == "cobrado")
     if cobrado_de:
         leads_query = leads_query.filter(
-            models.Lead.cobrado_em >= _inicio_dia_utc(cobrado_de)
+            models.Lead.cobrado_em >= inicio_do_dia_utc(cobrado_de)
         )
     if cobrado_ate:
         leads_query = leads_query.filter(
-            models.Lead.cobrado_em < _inicio_dia_utc(cobrado_ate + timedelta(days=1))
+            models.Lead.cobrado_em < inicio_do_dia_utc(cobrado_ate + timedelta(days=1))
         )
     if faixa:
         leads_query = leads_query.filter(models.Lead.faixa.in_(faixa))
@@ -120,11 +113,11 @@ def obter_dados_efetividade(
     )
     if cobrado_de:
         parc_query = parc_query.filter(
-            models.Lead.cobrado_em >= _inicio_dia_utc(cobrado_de)
+            models.Lead.cobrado_em >= inicio_do_dia_utc(cobrado_de)
         )
     if cobrado_ate:
         parc_query = parc_query.filter(
-            models.Lead.cobrado_em < _inicio_dia_utc(cobrado_ate + timedelta(days=1))
+            models.Lead.cobrado_em < inicio_do_dia_utc(cobrado_ate + timedelta(days=1))
         )
     if faixa:
         parc_query = parc_query.filter(models.Lead.faixa.in_(faixa))
@@ -148,7 +141,7 @@ def obter_dados_efetividade(
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
     pares_cobranca = {
-        (p.codigo_cliente, _dia_br(p.cobrado_em)) for p in parcelas_db if p.cobrado_em is not None
+        (p.codigo_cliente, dia_br(p.cobrado_em)) for p in parcelas_db if p.cobrado_em is not None
     }
     pagamentos: dict[tuple[str, date], date] = {}
     valores_pagos: dict[tuple[str, date], dict] = {}
@@ -168,12 +161,12 @@ def obter_dados_efetividade(
     cobrado_por_par: dict[tuple[str, date], Decimal] = {}
     for p in parcelas_db:
         if p.cobrado_em is not None:
-            par = (p.codigo_cliente, _dia_br(p.cobrado_em))
+            par = (p.codigo_cliente, dia_br(p.cobrado_em))
             cobrado_por_par[par] = cobrado_por_par.get(par, Decimal("0")) + Decimal(str(p.valor_cobrar or 0))
     qtd_por_par: dict[tuple[str, date], int] = {}
     for p in parcelas_db:
         if p.cobrado_em is not None:
-            par = (p.codigo_cliente, _dia_br(p.cobrado_em))
+            par = (p.codigo_cliente, dia_br(p.cobrado_em))
             qtd_por_par[par] = qtd_por_par.get(par, 0) + 1
     ja_repartido: dict[tuple[str, date], Decimal] = {}
     vistos: dict[tuple[str, date], int] = {}
@@ -200,7 +193,7 @@ def obter_dados_efetividade(
     itens = []
     for p in parcelas_db:
         sit = situacoes.get(p.titulo_codigo)
-        data_cobranca = _dia_br(p.cobrado_em) if p.cobrado_em else None
+        data_cobranca = dia_br(p.cobrado_em) if p.cobrado_em else None
         pago = False
         renegociada = False
         valor_pago = Decimal("0.00")
