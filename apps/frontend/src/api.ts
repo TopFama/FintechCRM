@@ -809,7 +809,20 @@ export interface DashboardSummary {
   total_enviados: number;
   total_erros: number;
   total_telefones_invalidos: number;
-  por_faixa: Record<string, unknown>[];
+  por_faixa: DashboardPorFaixa[];
+}
+
+export interface DashboardPorFaixa {
+  faixa: string;
+  faixa_id: string;
+  pending: number;
+  sent: number;
+  error: number;
+  clientes_cobrados: number;
+  // mensagens do período só aos clientes cobrados no período (base da Frequência)
+  enviados_cobrados: number;
+  pagaram: number;
+  valor_pago: string;
 }
 
 // --- Cobrança ---

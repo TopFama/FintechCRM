@@ -4,33 +4,36 @@ período de cobrança cruzados com as baixas do SETA copiadas em pagamentos_seta
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy.orm import Query, Session
+from sqlalchemy import and_, func
+from sqlalchemy.orm import Session
 
 from .. import google_client, lojas as lojas_base, models
 from . import pagamentos_seta
 from ..timezone import dia_br, inicio_do_dia_utc
 
 
-def _filtrar_cobrados(query: Query, cobrado_de: date | None, cobrado_ate: date | None) -> Query:
-    query = query.filter(models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None))
+def condicao_cobrados(cobrado_de: date | None, cobrado_ate: date | None):
+    """Lead cobrado no período: a base de clientes_que_pagaram e, por isso,
+    também dos clientes cobrados e da Frequência do Dashboard."""
+
+    conds = [models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None)]
     if cobrado_de:
-        query = query.filter(models.Lead.cobrado_em >= inicio_do_dia_utc(cobrado_de))
+        conds.append(models.Lead.cobrado_em >= inicio_do_dia_utc(cobrado_de))
     if cobrado_ate:
-        query = query.filter(models.Lead.cobrado_em < inicio_do_dia_utc(cobrado_ate + timedelta(days=1)))
-    return query
+        conds.append(models.Lead.cobrado_em < inicio_do_dia_utc(cobrado_ate + timedelta(days=1)))
+    return and_(*conds)
 
 
-def clientes_cobrados_por_faixa(
-    db: Session, *, cobrado_de: date | None, cobrado_ate: date | None
-) -> dict[str, set[str]]:
-    """Clientes distintos cobrados no período, por faixa do lead: a mesma base
-    de clientes_que_pagaram, então quem pagou numa faixa sempre está aqui."""
+def clientes_cobrados_por_faixa(db: Session, *, cobrado_de: date | None, cobrado_ate: date | None) -> dict[str, int]:
+    """Clientes distintos cobrados no período, por faixa do lead: quem pagou
+    numa faixa sempre está aqui."""
 
-    query = db.query(models.Lead.faixa, models.Lead.codigo_cliente).distinct()
-    por_faixa: dict[str, set[str]] = {}
-    for faixa, codigo in _filtrar_cobrados(query, cobrado_de, cobrado_ate):
-        por_faixa.setdefault(faixa, set()).add(codigo)
-    return por_faixa
+    return dict(
+        db.query(models.Lead.faixa, func.count(func.distinct(models.Lead.codigo_cliente)))
+        .filter(condicao_cobrados(cobrado_de, cobrado_ate))
+        .group_by(models.Lead.faixa)
+        .all()
+    )
 
 
 def clientes_que_pagaram(
@@ -52,7 +55,7 @@ def clientes_que_pagaram(
     seta_client.SetaIndisponivel se o SETA estiver fora (com `buscar_novos`,
     o padrão, quando algum cliente ainda não foi copiado do SETA)."""
 
-    query = _filtrar_cobrados(db.query(models.Lead), cobrado_de, cobrado_ate)
+    query = db.query(models.Lead).filter(condicao_cobrados(cobrado_de, cobrado_ate))
     if faixa:
         query = query.filter(models.Lead.faixa.in_(faixa))
     if campanha:

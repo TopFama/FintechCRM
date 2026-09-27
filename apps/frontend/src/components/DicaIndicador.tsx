@@ -47,7 +47,8 @@ export default function DicaIndicador({ titulo, texto, formula }: { titulo: stri
         aria-label={`O que é ${titulo}`}
         aria-describedby={pos ? id : undefined}
         onMouseEnter={abrir}
-        onMouseLeave={() => setPos(null)}
+        // Aberta pelo foco (teclado ou clique) continua até o blur
+        onMouseLeave={(e) => document.activeElement !== e.currentTarget && setPos(null)}
         onFocus={abrir}
         onBlur={() => setPos(null)}
         // Dentro de cabeçalho ordenável: o clique no 🛈 não reordena a tabela.
@@ -61,7 +62,18 @@ export default function DicaIndicador({ titulo, texto, formula }: { titulo: stri
         <IconInfo width={14} height={14} />
       </button>
       {pos && (
-        <span id={id} role="tooltip" className="dica-balao" style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.largura }}>
+        <span
+          id={id}
+          role="tooltip"
+          className="dica-balao"
+          style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.largura }}
+          // O balão fica dentro do cabeçalho e por cima das linhas: tocar nele
+          // só fecha, sem reordenar a tabela nem abrir o relatório da linha
+          onClick={(e) => {
+            e.stopPropagation();
+            setPos(null);
+          }}
+        >
           <span className="dica-texto">{texto}</span>
           <span className="dica-formula">{formula}</span>
         </span>

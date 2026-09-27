@@ -539,13 +539,29 @@ class PagosJanelaOut(BaseModel):
     dias_janela: int
 
 
+class DashboardPorFaixa(BaseModel):
+    # Demais status da fila (invalid_phone, cancelled) seguem como chaves extras
+    model_config = ConfigDict(extra="allow")
+
+    faixa: str
+    faixa_id: str
+    pending: int = 0
+    sent: int = 0
+    error: int = 0
+    clientes_cobrados: int = 0
+    # mensagens do período só aos clientes cobrados no período (base da Frequência)
+    enviados_cobrados: int = 0
+    pagaram: int = 0
+    valor_pago: Decimal = Decimal("0.00")
+
+
 class DashboardSummary(BaseModel):
     total_pendentes: int
     total_pausados: int = 0
     total_enviados: int
     total_erros: int
     total_telefones_invalidos: int
-    por_faixa: list[dict]
+    por_faixa: list[DashboardPorFaixa]
 
 
 class LinhaEfetividadeBase(BaseModel):

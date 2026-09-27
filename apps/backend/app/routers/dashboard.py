@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -86,7 +86,7 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
         chave = "pending" if status_value == models.QueueStatus.reserved else status_value.value
         entry[chave] = entry.get(chave, 0) + total
 
-    _somar_cobrados_por_faixa(db, de, ate, por_faixa)
+    _somar_cobrados_por_faixa(db, de, ate, ini, fim, por_faixa)
     _somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos)
 
     total_invalidos = (
@@ -106,31 +106,38 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
     )
 
 
-def _somar_cobrados_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict]) -> None:
+def _somar_cobrados_por_faixa(db: Session, de, ate, ini, fim, por_faixa: dict[str, dict]) -> None:
     """Clientes distintos cobrados no período (mesma base do "Pagaram após
     cobrança") e as mensagens enviadas no período a esses clientes, por faixa:
     a Frequência divide uma pela outra. Usar a coluna Enviado inteira
     misturaria mensagens a clientes cobrados antes do período."""
 
     cobrados = pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=de, cobrado_ate=ate)
-    ini, fim = consultas_fila.limites_utc(de, ate)
-    enviados = (
-        db.query(models.Faixa.name, models.QueueItem.faixa_atraso, models.QueueItem.codigo_cliente, func.count())
-        .join(models.QueueItem, models.QueueItem.faixa_id == models.Faixa.id)
+    # Mesma faixa da linha da tabela: a de atraso do cliente, senão a da fila
+    nome_faixa = func.coalesce(func.nullif(models.QueueItem.faixa_atraso, ""), models.Faixa.name)
+    cliente_cobrado = (
+        select(models.Lead.id)
+        .where(
+            models.Lead.codigo_cliente == models.QueueItem.codigo_cliente,
+            models.Lead.faixa == nome_faixa,
+            pagamentos_service.condicao_cobrados(de, ate),
+        )
+        .exists()
+    )
+    enviados = dict(
+        db.query(nome_faixa, func.count(models.QueueItem.id))
+        .join(models.Faixa, models.QueueItem.faixa_id == models.Faixa.id)
         .filter(
             models.QueueItem.status == models.QueueStatus.sent,
             consultas_fila.condicao_periodo(models.QueueItem.sent_at, ini, fim),
+            cliente_cobrado,
         )
-        .group_by(models.Faixa.name, models.QueueItem.faixa_atraso, models.QueueItem.codigo_cliente)
+        .group_by(nome_faixa)
         .all()
     )
-    for entry in por_faixa.values():
-        entry["clientes_cobrados"] = len(cobrados.get(entry["faixa"], ()))
-        entry["enviados_cobrados"] = 0
-    for faixa_name, faixa_atraso, codigo, total in enviados:
-        nome = faixa_atraso or faixa_name
-        if nome in por_faixa and codigo in cobrados.get(nome, ()):
-            por_faixa[nome]["enviados_cobrados"] += total
+    for nome, entry in por_faixa.items():
+        entry["clientes_cobrados"] = cobrados.get(nome, 0)
+        entry["enviados_cobrados"] = enviados.get(nome, 0)
 
 
 def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> None:

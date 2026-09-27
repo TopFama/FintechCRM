@@ -386,7 +386,8 @@ type Dica = { texto: string; formula: string };
 
 const DICAS: Record<"clientes_cobrados" | "frequencia" | "conversao" | "representatividade", Dica> = {
   clientes_cobrados: {
-    texto: "Clientes distintos que receberam cobrança nesta faixa no período.",
+    texto:
+      "Clientes distintos que receberam cobrança nesta faixa no período. No total, soma das faixas: quem foi cobrado em mais de uma faixa conta em cada uma.",
     formula: "Contagem de clientes distintos cobrados na faixa",
   },
   frequencia: {
@@ -425,15 +426,15 @@ const razao = (a: number, b: number) => (b ? a / b : null);
 
 function linhasPorFaixa(porFaixa: DashboardSummary["por_faixa"]): LinhaPorFaixa[] {
   const base = porFaixa.map((row) => ({
-    faixa: String(row.faixa),
-    faixa_id: String(row.faixa_id),
-    pending: Number(row.pending ?? 0),
-    error: Number(row.error ?? 0),
-    sent: Number(row.sent ?? 0),
-    clientes_cobrados: Number(row.clientes_cobrados ?? 0),
-    enviados_cobrados: Number(row.enviados_cobrados ?? 0),
-    pagaram: Number(row.pagaram ?? 0),
-    valor_pago: Number(row.valor_pago ?? 0),
+    faixa: row.faixa,
+    faixa_id: row.faixa_id,
+    pending: row.pending,
+    error: row.error,
+    sent: row.sent,
+    clientes_cobrados: row.clientes_cobrados,
+    enviados_cobrados: row.enviados_cobrados,
+    pagaram: row.pagaram,
+    valor_pago: Number(row.valor_pago),
   }));
   // % Rep. sobre a soma das faixas (não clientes distintos), para fechar 100%
   const somaPagaram = base.reduce((s, r) => s + r.pagaram, 0);
