@@ -24,7 +24,7 @@ from .dispatch_service import enviar_item
 from .blacklist import Blacklist
 from .fila_automatica import enfileirar_leads, expirar_nao_enviados, ja_cobrado_hoje
 from .leads_service import gerar_leads_de_clientes
-from .timezone import para_br
+from .timezone import BUSINESS_TZ, para_br
 
 logger = logging.getLogger("dispatch_worker")
 
