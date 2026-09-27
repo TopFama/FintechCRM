@@ -59,6 +59,7 @@ FintechCRM/
         icons.tsx               # ícones inline SVG, sem lib externa
       public/topfama-logo.png   # logo oficial da marca
       Dockerfile / nginx.conf
+  .github/workflows/            # CI (testes, e2e-mapa, security-scan) e deploy automático na VPS
   e2e/                          # suíte Playwright ponta a ponta (ver e2e/README.md)
   docs/architecture/            # mapa de domínios/camadas, fichas por área e backlog de refatoração
   docker-compose.yml
@@ -396,7 +397,8 @@ deploy é automático: quando o CI da `main` passa inteiro depois do merge, o wo
 publica na VPS exatamente o commit testado (`docker compose up -d --build`, que já cobre
 dependência nova e migration, rodada na subida do backend) e confere a saúde do backend em
 produção. CI vermelho na `main` não publica nada. Para refazer um deploy à mão: Actions →
-"Deploy (VPS)" → Run workflow na `main`, ação `deploy`.
+"Deploy (VPS)" → Run workflow na `main`, ação `deploy`. Passo a passo, infraestrutura e erros
+comuns: [Deploy em produção (VPS)](#deploy-em-produção-vps).
 
 ### Validação local
 
@@ -420,6 +422,82 @@ Para validar localmente antes de subir:
   real antes de commitar — ver seção Migrations acima.
 - **Frontend**: `npm run build` (roda `tsc -b && vite build`) já pega a maioria dos erros de tipo
   e import quebrado.
+
+## Deploy em produção (VPS)
+
+Produção roda na VPS com o mesmo `docker-compose.yml` do desenvolvimento, em `/opt/FintechCRM`,
+atrás de `https://fintech.lojastopfama.com.br` (a saúde do backend fica em `/api/health`). Ninguém
+publica à mão: o workflow `.github/workflows/deploy.yml` faz o deploy sozinho.
+
+### Do merge até produção
+
+1. O PR é mesclado na `main` (critérios em [`AGENTS.md`](./AGENTS.md) → "Merge na main").
+2. O push na `main` roda o `testes.yml` com a suíte inteira (backend, import-linter, build do
+   frontend e e2e completo).
+3. Se **todos** os jobs passarem, o `deploy.yml` dispara (gatilho `workflow_run`) e publica
+   **exatamente o commit testado**. CI vermelho não publica nada; commit só de `.md` não roda o
+   `testes.yml` e, portanto, também não publica.
+4. O job entra na rede Tailscale, conecta por SSH na VPS como `deploy` e, em `/opt/FintechCRM`:
+   `git fetch origin main` → `git merge --ff-only <commit>` → `docker compose up -d --build`. A
+   migration roda sozinha na subida do backend, e dependência nova entra no rebuild da imagem.
+5. Termina chamando `/api/health` até 30 vezes, a cada 5 s. Um 502 logo depois do rebuild é
+   normal (o backend ainda está subindo); o job só falha se não responder em 150 s.
+
+Um deploy por vez (concorrência `deploy-vps`) e nunca cancelado no meio do `docker compose`. O log
+de cada deploy mostra `Código: <antes> -> <depois>` e o estado dos containers (Actions → "Deploy
+(VPS)"). O `.env` da VPS fica fora do git e o deploy não mexe nele: variável nova vai à mão nesse
+arquivo **antes** do merge que passa a exigi-la.
+
+### Ações manuais
+
+Actions → "Deploy (VPS)" → **Run workflow** na `main`:
+
+- **testar**: só lê (usuário, commit atual, alterações locais, containers, acesso da VPS ao GitHub)
+  e confere a saúde. Não muda nada. Serve para diagnosticar a conexão.
+- **deploy**: publica a `main` atual (para refazer um deploy que falhou por algo fora do código).
+  Recusado fora da `main`.
+
+**Voltar uma versão**: o `--ff-only` nunca anda para trás. Para desfazer uma mudança em produção,
+reverta o commit na `main` (`git revert`, por PR); o commit de revert passa pelo CI e é publicado
+como qualquer outro.
+
+### Como a infraestrutura está montada
+
+Só é preciso refazer isto se a VPS, as chaves ou a conta do Tailscale mudarem.
+
+- **VPS**: usuário `deploy` no grupo `docker`, dono de `/opt/FintechCRM`. O SSH (porta 22) só aceita
+  conexão pela interface do Tailscale (`tailscale0`); da internet, a porta fica fechada no `ufw`.
+- **Chave de acesso à VPS**: par de chaves do usuário `deploy` (a pública em
+  `~deploy/.ssh/authorized_keys`, a privada **só** no segredo `VPS_SSH_KEY`; não fica cópia na VPS).
+- **Leitura do GitHub pela VPS**: deploy key **somente leitura** do repositório (GitHub → Settings →
+  Deploy keys, sem "Allow write access"), com a privada em `~deploy/.ssh/github_leitura` e um
+  `Host github.com` no `~deploy/.ssh/config` apontando para ela. O remote de `/opt/FintechCRM` é
+  `git@github.com:TopFama/FintechCRM.git`.
+- **Tailscale**: a tag `tag:ci` (dona `autogroup:admin` em `tagOwners`), um grant `tag:ci` → IP do
+  Tailscale da VPS na porta `tcp:22`, e um OAuth client (Settings → Trust credentials) com
+  permissão de escrita em Auth Keys e a tag `tag:ci`. Cada job entra como dispositivo efêmero e sai
+  ao terminar.
+- **Segredos do repositório** (GitHub → Settings → Secrets and variables → Actions):
+
+  | Segredo | O que é |
+  |---|---|
+  | `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` | OAuth client do Tailscale |
+  | `VPS_HOST` | IP do Tailscale da VPS (`tailscale ip -4` na VPS), não o IP público |
+  | `VPS_USER` | `deploy` |
+  | `VPS_SSH_KEY` | chave privada do usuário `deploy` |
+  | `VPS_KNOWN_HOSTS` | saída de `ssh-keyscan -p 22 <VPS_HOST>`; o job só conecta se a VPS apresentar essa chave |
+  | `VPS_PORT` | opcional; padrão 22 |
+
+### Quando o deploy falha
+
+| Passo / erro | Causa provável |
+|---|---|
+| "Conferir os segredos" → `Segredos faltando: ...` | Segredo não cadastrado no repositório |
+| "Testar a conexão" → `Connection timed out` | Job fora do Tailscale ou grant `tag:ci` → VPS:22 ausente; `VPS_HOST` com o IP público |
+| `Host key verification failed` | `VPS_KNOWN_HOSTS` desatualizado (VPS reinstalada ou IP trocado) |
+| `could not read Username for 'https://github.com'` | Remote da VPS em HTTPS: trocar para o SSH da deploy key (acima) |
+| `git merge --ff-only` → `Not possible to fast-forward` | Alguém alterou ou comitou código direto na VPS; resolver lá (`git status`) antes de publicar de novo |
+| "Saúde do backend" → não respondeu em 150 s | Backend não subiu: `docker compose logs backend` na VPS (migration, `.env`, dependência) |
 
 ## Limitações conhecidas / próximos passos
 
