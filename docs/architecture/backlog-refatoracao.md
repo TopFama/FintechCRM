@@ -61,8 +61,8 @@ decidir:
 - **Upload de planilha na faixa com Lead sem parcelas**: a variável ligada à coluna de valor
   usa o valor em atraso com juros do Lead da faixa. O Lead que o próprio upload cria (cliente só
   na planilha) não tem parcelas, então num upload seguinte do mesmo cliente nessa faixa o valor
-  vai "0,00" em vez do valor da planilha. Fotografado no cenário 10 de
-  `tests/test_caracterizacao_envios.py`.
+  ia "0,00" em vez do valor da planilha. Resolvido em 2026-09-27: cadastro zerado cai no valor
+  da planilha, e linha com valor zerado vai para os erros ("Valor zerado").
 
 ## Estado
 

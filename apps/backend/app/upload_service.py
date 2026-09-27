@@ -29,6 +29,12 @@ def _valor_decimal(valor: str | None) -> Decimal:
         return Decimal(0)
 
 
+def _zerado(valor: str | None) -> bool:
+    """Valor com número e igual a zero ("0", "0,00", "R$ 0,00"). Vazio não conta."""
+    texto = (valor or "").strip()
+    return any(c.isdigit() for c in texto) and _valor_decimal(texto) == 0
+
+
 def importar_planilha(
     db: Session,
     faixa: models.Faixa,
@@ -166,6 +172,7 @@ def importar_planilha(
             contexto.update(itens_fila.contexto_do_lead(lead, juros))
 
         missing_var_cols = []
+        valor_zerado = bool(valor) and _zerado(valor)
         # Chaveado por template_variable_id (não por internal_name) — dois
         # templates distintos podem usar o mesmo internal_name pra coisas
         # diferentes, então resolver por nome colidiria entre eles.
@@ -174,14 +181,15 @@ def importar_planilha(
             mapping = mapping_by_vid.get(vid)
             fonte_tipo = mapping.fonte_tipo if mapping else "coluna"
 
-            if (
+            coluna_valor = bool(
                 vid in field_mapping.variables
                 and field_mapping.valor
                 and field_mapping.variables[vid] == field_mapping.valor
-                and contexto.get("valor_atraso")
-            ):
+            )
+            if coluna_valor and contexto.get("valor_atraso") and not _zerado(contexto["valor_atraso"]):
                 # Variável ligada à coluna de valor da planilha passa a usar o
                 # valor em atraso com juros do cliente (mesma conta da fila).
+                # Cadastro sem parcelas dá zero: aí vale o da planilha.
                 val = contexto["valor_atraso"]
             elif vid in field_mapping.variables:
                 coluna = field_mapping.variables[vid]
@@ -202,6 +210,8 @@ def importar_planilha(
                 missing_var_cols.append(v.internal_name)
             else:
                 resolved_by_vid[vid] = val
+                if coluna_valor and _zerado(val):
+                    valor_zerado = True
 
         variables_json = itens_fila.formato_variaveis(
             {
@@ -228,6 +238,24 @@ def importar_planilha(
             )
             rejected += 1
             reasons.append(f"Linha {i}: faltando coluna(s) {', '.join(missing_var_cols)}")
+            continue
+
+        # Valor zerado não é cobrado: vai para os erros com o motivo.
+        if valor_zerado:
+            itens_fila.novo_item(
+                db,
+                erro="Valor zerado",
+                faixa_id=faixa.id,
+                codigo_cliente=codigo_cliente,
+                nome=nome,
+                cpf=cpf,
+                valor=valor or None,
+                celular=celular,
+                celular_original=celular_original,
+                variables_json=variables_json,
+            )
+            rejected += 1
+            reasons.append(f"Linha {i}: valor zerado — enviado aos erros")
             continue
 
         itens_fila.novo_item(

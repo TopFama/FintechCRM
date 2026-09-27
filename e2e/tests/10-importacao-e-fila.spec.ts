@@ -67,11 +67,18 @@ test.describe("Cobrança → Importar planilha para a fila", () => {
     for (let i = 0; i < (await variaveis.count()); i++) await variaveis.nth(i).selectOption(alvo[i % alvo.length]);
     await page.getByRole("button", { name: "Confirmar e importar" }).click();
     const resumo = importar(page).locator(".upload-summary");
-    await expect(resumo).toContainText("7linhas na planilha");
-    await expect(resumo).toContainText("4rejeitados"); // sem código, telefone "123", fixo e variável em branco
+    await expect(resumo).toContainText("8linhas na planilha");
+    await expect(resumo).toContainText("5rejeitados"); // sem código, telefone "123", fixo, variável em branco e valor zerado
     await expect(resumo).toContainText("telefone(s) inválido(s)");
     await expect(importar(page).getByRole("link", { name: /relatório de telefones inválidos/ })).toBeVisible();
     await expect(importar(page).locator("ul li").first()).toBeVisible(); // motivos de rejeição listados
+  });
+
+  test("valor zerado não é cobrado: vai para os erros", async ({ page }) => {
+    const f = (await apiGet(page, "/faixas")).find((x: any) => x.name === "11 A 20");
+    const fila = await apiGet(page, `/faixas/${f.id}/queue?limit=100&offset=0`);
+    const zerado = fila.itens.filter((i: any) => i.codigo_cliente === "00000107");
+    expect(zerado.map((i: any) => [i.status, i.error_message])).toEqual([["error", "Valor zerado"]]);
   });
 
   test("telefone fixo não vira celular inventado", async ({ page }) => {

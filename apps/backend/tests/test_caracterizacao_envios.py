@@ -440,9 +440,8 @@ itens = {i.codigo_cliente: i for i in db.query(models.QueueItem).filter_by(faixa
 assert set(itens) == {"00000043", "00000044"}, set(itens)
 assert itens["00000043"].status == models.QueueStatus.pending
 # Coluna de valor ligada a uma variável usa o valor em atraso com juros do
-# Lead da faixa, não a planilha. Comportamento atual: Lead sem parcelas dá
-# "0,00" (ver backlog, "Fora do escopo").
-assert itens["00000043"].variables_json == {"nome": "Edu", "valor": "0,00"}, itens["00000043"].variables_json
+# Lead da faixa; Lead sem parcelas (valor zerado) cai no valor da planilha.
+assert itens["00000043"].variables_json == {"nome": "Edu", "valor": "40,00"}, itens["00000043"].variables_json
 # Lojas vêm do Lead do cliente; sem Lead ficam "," (pausa por loja não pega)
 assert itens["00000043"].lojas == ",05,"
 assert itens["00000044"].lojas == ","
