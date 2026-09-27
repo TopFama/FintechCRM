@@ -8,11 +8,11 @@ from datetime import datetime, time, timedelta
 
 from sqlalchemy.orm import Session, selectinload
 
-from . import itens_fila, models
+from . import itens_fila, models, seta_client
 from .elegibilidade import clientes_bloqueados_hoje
 from .pausas import lojas_formatadas
 from .regras_db import carregar_regras
-from .timezone import BUSINESS_TZ, para_br, utc_ingenuo
+from .timezone import BUSINESS_TZ, inicio_hoje_utc, para_br, utc_ingenuo
 from .utils.leads_xlsx import formatar_cpf, primeiro_nome
 from .utils.phone import is_valid_phone, normalize_phone
 from .variaveis_template import contexto_cliente, resolver_variaveis
@@ -128,6 +128,18 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
             )
         }
 
+        # Lead de outro dia (mesma faixa e vencimento): os dados dele são os do
+        # dia em que foi criado. A mensagem usa os da base de hoje e as parcelas
+        # atuais, sem mexer no Lead (as parcelas dele são o retrato da cobrança
+        # daquele dia, usado na efetividade).
+        cliente_por_chave = {(c["codigo"], c["vencimento_mais_antigo"]): c for c in lista}
+        antigos = [
+            l.codigo_cliente
+            for k, l in leads.items()
+            if k in chaves and l.created_at < inicio_hoje_utc() and "dias_atraso" in cliente_por_chave[k]
+        ]
+        parcelas_atuais = seta_client.buscar_parcelas_cobranca(antigos, juros=juros) if antigos else {}
+
         for chave in chaves:
             lead = leads.get(chave)
             if lead is None or lead.codigo_cliente in bloqueados:
@@ -135,6 +147,13 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
             if not lead.celular or not is_valid_phone(lead.celular):
                 continue  # sem telefone válido: fica só em Leads
             contexto = itens_fila.contexto_lead_exportado(lead, juros)
+            valor = lead.valor_cobrar
+            if lead.codigo_cliente in parcelas_atuais:
+                atual = cliente_por_chave[chave]
+                contexto.update(
+                    contexto_cliente({**atual, "parcelas": parcelas_atuais[lead.codigo_cliente], "juros": juros})
+                )
+                valor = atual["valor_cobrar"]
             variables_json, faltando = itens_fila.resolver_por_template(fontes_por_template, contexto)
             itens_fila.novo_item(
                 db,
@@ -147,7 +166,7 @@ def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
                 codigo_cliente=lead.codigo_cliente,
                 nome=primeiro_nome(lead.nome),
                 cpf=formatar_cpf(lead.cpf),
-                valor=str(lead.valor_cobrar),
+                valor=str(valor),
                 celular=normalize_phone(lead.celular),
                 celular_original=lead.celular_original or lead.celular,
                 variables_json=variables_json,

@@ -295,7 +295,13 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    reserva um lote de pendentes da fila da faixa, confere de novo pausa/blacklist/uma-por-dia antes
    de cada item e envia (`app/dispatch_service.py`) pela Graph API da Meta ou pela inbox do
    Chatwoot, conforme o número, atualizando o status (enviado/erro), com log de erro consultável.
-   O mesmo worker roda as rotinas do dia (extração automática de leads antes da janela,
+   Número desativado em Configurações não envia (os itens ficam pendentes). Recusa 4xx da Meta ou
+   do Chatwoot libera o cliente para outra base no dia; 5xx, timeout ou queda de rede ocupam o
+   cliente no dia, porque a mensagem pode ter saído. Item com variável sem valor para o template
+   do envio vira erro sem chamar a Meta. Falha no meio de um lote devolve a pendente os itens que
+   nem foram tentados.
+   O mesmo worker roda as rotinas do dia (extração automática de leads a partir de N min antes da
+   janela, ou mais tarde no mesmo dia se o backend estava fora,
    remarketing, régua de quem recebeu campanha, campanhas e expiração da fila no fim do dia), a
    cópia das baixas do SETA e, às 3h, a cópia das compras do SETA.
 8. **Dashboard** — pendentes (e quantos estão pausados), enviados, erros, telefones inválidos,
