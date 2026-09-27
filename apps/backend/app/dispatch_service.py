@@ -252,7 +252,7 @@ async def _enviar_via_meta(
             _esquecer_midia(number.phone_number_id, caminho_imagem)
     except Exception as exc:  # noqa: BLE001 - qualquer falha de rede/config não pode travar o item em "reserved"
         item.status = models.QueueStatus.error
-        item.error_message = descrever_erro_envio(f"Falha inesperada ao enviar: {exc}")
+        item.error_message = f"Falha inesperada ao enviar: {exc}"
         # Timeout ou queda de rede: a mensagem pode ter chegado. sent_at marca a
         # tentativa e segura o cliente pelo resto do dia (elegibilidade._cobrado_hoje).
         item.sent_at = datetime.utcnow()
@@ -324,7 +324,7 @@ async def _enviar_via_chatwoot(
         logger.warning("Falha ao enviar cobrança %s via Chatwoot: %s", item.id, item.error_message)
     except Exception as exc:  # noqa: BLE001 - qualquer falha de rede/config não pode travar o item em "reserved"
         item.status = models.QueueStatus.error
-        item.error_message = descrever_erro_envio(f"Falha inesperada ao enviar via Chatwoot: {exc}")
+        item.error_message = f"Falha inesperada ao enviar via Chatwoot: {exc}"
         # Timeout ou queda de rede: a mensagem pode ter chegado. sent_at marca a
         # tentativa e segura o cliente pelo resto do dia (elegibilidade._cobrado_hoje).
         item.sent_at = datetime.utcnow()

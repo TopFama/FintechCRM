@@ -14,12 +14,15 @@ from fastapi.testclient import TestClient
 # Adiciona o diretório do backend ao sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import tempfile
+
 # Configura ambiente antes de importar a app
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["JWT_SECRET"] = "segredo-de-teste-muito-seguro-12345"
 os.environ["ADMIN_PASSWORD"] = "senha-admin-teste-12345"
 os.environ["ENCRYPTION_KEY"] = "ZXhlbXBsb19jaGF2ZV9mZXJuZXRfMzJfYnl0ZXNfX18="
 os.environ["CHATWOOT_WEBHOOK_SECRET"] = "segredo-webhook-teste"
+os.environ["MEDIA_DIR"] = tempfile.mkdtemp()
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

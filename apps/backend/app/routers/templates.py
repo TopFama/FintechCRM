@@ -557,6 +557,32 @@ def descartar_imagem_otimizada(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.delete("/{template_id}/image", response_model=schemas.TemplateOut)
+def remover_imagem_do_template(
+    template_id: str,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Remove a imagem atribuída ao template, excluindo o arquivo em disco se existir
+    e limpando o campo image_url."""
+    template = db.get(models.Template, template_id)
+    if not template:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
+
+    if template.image_url:
+        caminho = arquivo_imagem(template)
+        if caminho and os.path.isfile(caminho):
+            try:
+                os.remove(caminho)
+            except OSError:
+                pass
+        template.image_url = None
+        db.commit()
+        db.refresh(template)
+
+    return template
+
+
 @router.post("/{template_id}/testar-envio", response_model=schemas.ChatwootTestResult)
 @router.post("/{template_id}/testar-envio-chatwoot", response_model=schemas.ChatwootTestResult)
 async def testar_envio_template(

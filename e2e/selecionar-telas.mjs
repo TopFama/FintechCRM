@@ -14,19 +14,29 @@ import fs from "node:fs";
 const F = "apps/frontend/src/";
 const B = "apps/backend/app/";
 
-// Mudou algum destes: roda tudo.
-const GLOBAIS = [
-  `${F}api.ts`, `${F}App.tsx`, `${F}main.tsx`, `${F}styles.css`, `${F}format.ts`, `${F}sort.ts`,
-  `${F}icons.tsx`, `${F}vite-env.d.ts`, "apps/frontend/index.html", "apps/frontend/vite.config.*",
-  "apps/frontend/tsconfig*.json", "apps/frontend/package*.json", "apps/frontend/public/**",
-  `${B}main.py`, `${B}models.py`, `${B}schemas.py`, `${B}config.py`, `${B}database.py`, `${B}deps.py`,
+// Mudou algum destes: mudanças estruturais fundamentais que exigem testar tudo.
+const ESTRUTURAIS = [
+  `${F}App.tsx`, `${F}main.tsx`, "apps/frontend/index.html", "apps/frontend/vite.config.*",
+  "apps/frontend/tsconfig*.json", "apps/frontend/package*.json",
+  `${B}main.py`, `${B}config.py`, `${B}database.py`, `${B}deps.py`,
   `${B}security.py`, `${B}rate_limit.py`, `${B}crypto.py`, `${B}segredos.py`, `${B}cache.py`,
-  `${B}timezone.py`, `${B}worker.py`, `${B}cobranca_regras.py`, `${B}regras_db.py`, `${B}routers/auth.py`,
-  `${B}__init__.py`, `${B}routers/__init__.py`, `${B}utils/__init__.py`, `${B}services/__init__.py`,
+  `${B}timezone.py`, `${B}worker.py`, `${B}routers/auth.py`,
   "apps/backend/requirements.txt", "apps/backend/alembic/**", "apps/backend/alembic.ini",
   "e2e/ambiente/**", "e2e/tests/fixtures.ts", "e2e/tests/ambiente.ts", "e2e/tests/auth.setup.ts",
   "e2e/tests/dados/**", "e2e/playwright.config.ts", "e2e/package*.json", "e2e/selecionar-telas.mjs",
-  "package.json", "package-lock.json", ".github/workflows/testes.yml",
+  "package.json", "package-lock.json",
+];
+
+// Arquivos compartilhados de apoio (tipos, estilos, ícones, helpers, utils):
+// Se houver telas específicas identificadas no diff, roda APENAS as telas alteradas.
+// Só roda tudo se APENAS arquivos compartilhados foram alterados sem telas identificáveis.
+const COMPARTILHADOS = [
+  `${F}api.ts`, `${F}styles.css`, `${F}format.ts`, `${F}sort.ts`, `${F}icons.tsx`,
+  `${F}vite-env.d.ts`, `${F}public/**`,
+  `${B}schemas.py`, `${B}models.py`, `${B}cobranca_regras.py`, `${B}regras_db.py`,
+  `${B}__init__.py`, `${B}routers/__init__.py`, `${B}utils/__init__.py`, `${B}services/__init__.py`,
+  `${B}utils/erros.py`,
+  ".github/workflows/testes.yml",
 ];
 
 // Tela → pré-requisitos (diretos) e arquivos que ela testa. Conferido no CI pelo
@@ -197,8 +207,18 @@ function comPreRequisitos(specs) {
 
 export function selecionar(alterados) {
   const specs = new Set();
+  let temEstrutural = false;
+  let temCompartilhado = false;
+
   for (const arquivo of alterados.map((a) => a.trim()).filter(Boolean)) {
-    if (bate(arquivo, GLOBAIS)) return "todos";
+    if (bate(arquivo, ESTRUTURAIS)) {
+      temEstrutural = true;
+      continue;
+    }
+    if (bate(arquivo, COMPARTILHADOS)) {
+      temCompartilhado = true;
+      continue;
+    }
     const spec = /^e2e\/tests\/(\d\d-[^/]+)\.spec\.ts$/.exec(arquivo);
     if (spec) {
       if (!TELAS[spec[1]]) return "todos"; // spec novo ainda fora do mapa
@@ -208,14 +228,27 @@ export function selecionar(alterados) {
     if (!bate(arquivo, AFETA_TELA)) continue;
     const telas = Object.entries(TELAS).filter(([, t]) => bate(arquivo, t.arquivos)).map(([s]) => s);
     if (telas.length === 0) {
-      // arquivo de código do app que nenhuma tela declara: na dúvida, tudo
-      if (arquivo.startsWith(F) || arquivo.startsWith(B)) return "todos";
+      // arquivo de código do app que nenhuma tela declara:
+      if (arquivo.startsWith(F) || arquivo.startsWith(B)) {
+        temCompartilhado = true;
+      }
       continue;
     }
     telas.forEach((s) => specs.add(s));
   }
-  if (specs.size === 0) return "nenhum";
-  return comPreRequisitos([...specs]).map((s) => `tests/${s}.spec.ts`).join(" ");
+
+  // Se houve alteração estritamente estrutural (App.tsx, setup de ambiente, etc.), roda tudo
+  if (temEstrutural) return "todos";
+
+  // Se identificamos telas específicas afetadas, roda apenas elas (e seus pré-requisitos)
+  if (specs.size > 0) {
+    return comPreRequisitos([...specs]).map((s) => `tests/${s}.spec.ts`).join(" ");
+  }
+
+  // Se apenas arquivos compartilhados mudaram e nenhuma tela específica foi identificada:
+  if (temCompartilhado) return "todos";
+
+  return "nenhum";
 }
 
 if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {

@@ -218,6 +218,8 @@ export const api = {
     request<Template>(`/templates/${id}/image/confirmar`, { method: "POST", body: JSON.stringify({ token }) }),
   descartarImagemOtimizada: (id: string, token: string) =>
     request<void>(`/templates/${id}/image/pendente?token=${encodeURIComponent(token)}`, { method: "DELETE" }),
+  removerImagemTemplate: (id: string) =>
+    request<Template>(`/templates/${id}/image`, { method: "DELETE" }),
 
   listFaixas: () => request<Faixa[]>("/faixas"),
   getFaixa: (id: string) => request<Faixa>(`/faixas/${id}`),

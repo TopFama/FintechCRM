@@ -98,22 +98,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      # Em PR roda só as telas afetadas pelos arquivos alterados, com os cenários
-      # de que elas dependem (e2e/selecionar-telas.mjs); push na main e execução
-      # manual rodam a suíte inteira, como rede de segurança depois do merge.
+      # Escolhe apenas as telas afetadas pelos arquivos alterados, com os cenários
+      # de que elas dependem (e2e/selecionar-telas.mjs), tanto em PR quanto em push.
       - name: Escolher as telas
         id: telas
         env:
           EVENTO: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
         run: |
           if [ "$EVENTO" = "pull_request" ]; then
             git diff --name-only "origin/$BASE...HEAD" > alterados.txt
-            echo "Arquivos alterados:"; cat alterados.txt
-            selecao=$(node e2e/selecionar-telas.mjs alterados.txt)
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            git diff --name-only "$BEFORE...HEAD" > alterados.txt
           else
-            selecao=todos
+            git diff --name-only "HEAD~1...HEAD" > alterados.txt
           fi
+          echo "Arquivos alterados:"
+          cat alterados.txt
+          selecao=$(node e2e/selecionar-telas.mjs alterados.txt)
           echo "Telas: $selecao"
           echo "selecao=$selecao" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5

@@ -181,9 +181,9 @@ ele **antes** do merge (item 8).
      `.md` (`paths-ignore`), então esse push não dispara nem cancela rodada de CI; PR só de `.md`
      também fica sem checks, e o merge dele não espera CI.
    - **Validação é o CI** (decisão do dono, 27/09/2026): o maintainer não roda testes em ambiente
-     local para decidir merge; avalia os checks do PR e o diff. Em PR, o e2e roda só as telas
-     afetadas (`e2e/selecionar-telas.mjs`, decisão do dono, 27/09/2026); a `main` roda a suíte
-     inteira depois do merge, e um ❌ nela é trabalho imediato (item 3).
+     local para decidir merge; avalia os checks do PR e o diff. Em PR e em push na `main`, o e2e roda só as
+     telas afetadas (`e2e/selecionar-telas.mjs`, decisão do dono, 27/09/2026); e um ❌ nela é trabalho
+     imediato (item 3).
 2. Só faça merge quando, **no commit mais recente do PR**:
    - todos os jobs do `testes.yml` estiverem ✅ (Backend, Arquitetura, Frontend e E2E). Job ainda
      rodando é espera, não aprovação;

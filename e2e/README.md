@@ -23,12 +23,13 @@ Os cenários dependem uns dos outros (cadastram token, números, faixas, fila e 
 então rode a suíte inteira, ou um spec junto com os pré-requisitos dele, sempre depois de um
 `./ambiente/subir.sh` novo: `npx playwright test $(node selecionar-telas.mjs --spec 12-dashboard)`.
 
-**No CI, em PR, só rodam as telas afetadas.** `selecionar-telas.mjs` tem o mapa de cada tela (spec):
-os arquivos do app que ela testa e os cenários de que ela depende. Com os arquivos alterados no
-PR, o job `e2e` roda as telas afetadas e os pré-requisitos delas. Arquivo usado por todas as telas
-(`api.ts`, `App.tsx`, `styles.css`, `models.py`, `schemas.py`, `main.py`, `worker.py`, o ambiente de
-teste etc., lista `GLOBAIS`) ou arquivo de app que nenhuma tela declara roda a suíte inteira. PR que
-não mexe em nada testado pelo e2e pula o job. Push na `main` roda sempre a suíte inteira.
+**No CI, rodam apenas as telas afetadas (em PR e em push).** `selecionar-telas.mjs` tem o mapa de cada tela (spec):
+os arquivos do app que ela testa e os cenários de que ela depende. Com os arquivos alterados,
+o job `e2e` roda as telas afetadas e os pré-requisitos delas. Arquivos estruturais fundamentais
+(`App.tsx`, `main.tsx`, `main.py`, `config.py`, o ambiente de teste etc., lista `ESTRUTURAIS`)
+rodam a suíte inteira. Arquivos compartilhados de apoio (`api.ts`, `styles.css`, `schemas.py`, etc.)
+não forçam todas as telas se telas específicas foram identificadas no diff. Mudança que
+não mexe em nada testado pelo e2e pula o job.
 **Spec novo ou tela nova:** acrescente no mapa (`TELAS`), com os arquivos e os pré-requisitos. O
 workflow `e2e-mapa.yml` roda cada tela sozinha com os pré-requisitos declarados; se uma falha lá,
 falta pré-requisito no mapa. Se o Chromium do

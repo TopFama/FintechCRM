@@ -262,6 +262,17 @@ export default function TemplatesCard() {
     }
   }
 
+  async function handleRemoverImagem(t: Template) {
+    if (!window.confirm(`Deseja realmente remover a imagem do template "${t.name}"?`)) return;
+    try {
+      const atualizado = await api.removerImagemTemplate(t.id);
+      setTemplates((prev) => prev.map((item) => (item.id === t.id ? atualizado : item)));
+      setAviso(`Imagem do template "${t.name}" removida com sucesso.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao remover imagem do template");
+    }
+  }
+
   return (
     <>
       {error && (
@@ -492,36 +503,49 @@ export default function TemplatesCard() {
                                 }}
                               />
                             </label>
+                            {t.image_url && (
+                              <button
+                                type="button"
+                                className="ghost small"
+                                style={{ color: "var(--color-danger)", padding: "0 4px", fontSize: 12, fontWeight: 600 }}
+                                onClick={() => handleRemoverImagem(t)}
+                                title="Remover imagem deste template"
+                              >
+                                remover
+                              </button>
+                            )}
                           </span>
                         ) : (
                           <span className="text-faint">—</span>
                         )}
                       </td>
-                      <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          className="secondary small"
-                          style={{ minWidth: 130, justifyContent: "center" }}
-                          onClick={() => handleRefreshStatus(t.id)}
-                        >
-                          Atualizar status
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary small"
-                          style={{ minWidth: 130, justifyContent: "center" }}
-                          onClick={() => setPreviewId((atual) => (atual === t.id ? null : t.id))}
-                        >
-                          <IconEye width={14} height={14} /> {previewId === t.id ? "Fechar" : "Pré-visualizar"}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary small"
-                          style={{ minWidth: 130, justifyContent: "center" }}
-                          onClick={() => abrirTesteTemplate(t)}
-                        >
-                          <IconTemplate width={14} height={14} /> {testeTemplateId === t.id ? "Fechar teste" : "Testar envio"}
-                        </button>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            className="secondary small"
+                            style={{ flex: "1 1 130px", minWidth: 130, justifyContent: "center", whiteSpace: "nowrap" }}
+                            onClick={() => handleRefreshStatus(t.id)}
+                          >
+                            Atualizar status
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary small"
+                            style={{ flex: "1 1 130px", minWidth: 130, justifyContent: "center", whiteSpace: "nowrap" }}
+                            onClick={() => setPreviewId((atual) => (atual === t.id ? null : t.id))}
+                          >
+                            <IconEye width={14} height={14} /> {previewId === t.id ? "Fechar" : "Pré-visualizar"}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary small"
+                            style={{ flex: "1 1 130px", minWidth: 130, justifyContent: "center", whiteSpace: "nowrap" }}
+                            onClick={() => abrirTesteTemplate(t)}
+                          >
+                            <IconTemplate width={14} height={14} /> {testeTemplateId === t.id ? "Fechar teste" : "Testar envio"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     {previewId === t.id && (
