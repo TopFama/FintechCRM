@@ -17,7 +17,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session, selectinload
 
 from . import models, seta_client
-from .services import pagamentos_seta
+from .services import compras_seta, pagamentos_seta
 from .pausas import Retencao
 from .config import settings
 from .database import SessionLocal
@@ -362,8 +362,36 @@ def sincronizar_pagamentos() -> None:
         db.close()
 
 
+def atualizar_compras_madrugada() -> None:
+    """Cópia local das compras (faixa de compra): incremental todo dia,
+    completa aos domingos (ver services/compras_seta.py)."""
+    if not seta_client.is_configured():
+        return
+    db = SessionLocal()
+    try:
+        compras_seta.rodada_da_madrugada(db)
+    except seta_client.SetaIndisponivel as exc:
+        logger.warning("Atualização de compras adiada: %s", exc)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        logger.exception("Falha ao atualizar compras do SETA")
+    finally:
+        db.close()
+
+
 def start_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        atualizar_compras_madrugada,
+        "cron",
+        hour=3,
+        minute=0,
+        timezone=BUSINESS_TZ,
+        id="compras_seta",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
     scheduler.add_job(
         sincronizar_pagamentos,
         "interval",

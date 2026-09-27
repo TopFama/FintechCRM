@@ -1,4 +1,4 @@
-import { FiltrosCobranca } from "../api";
+import { api, FiltrosCobranca } from "../api";
 import CamposLoja from "./CamposLoja";
 import MultiSelect from "./MultiSelect";
 import CampoValorMaximo from "./CampoValorMaximo";
@@ -90,6 +90,8 @@ export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, opcoe
           options={paraOpcoes(opcoes.regras?.faixas_compra)}
           value={valor.faixa_compra ?? []}
           onChange={(v) => set({ faixa_compra: v })}
+          // Faixa de compra vem da cópia local do SETA: ao abrir, relê as vendas do dia
+          onOpen={() => void api.atualizarComprasSeta().catch(() => undefined)}
         />
       </div>
 
