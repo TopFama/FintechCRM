@@ -205,6 +205,7 @@ def importar_planilha(
                 models.InvalidPhoneRecord(
                     faixa_id=faixa.id,
                     codigo_cliente=codigo_cliente,
+                    cpf=cpf,
                     celular_original=celular_original,
                     celular_normalizado=normalize_phone(celular_original) or None,
                     motivo=(

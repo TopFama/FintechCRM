@@ -482,6 +482,7 @@ class InvalidPhoneOut(BaseModel):
     id: str
     faixa_id: str
     codigo_cliente: str
+    cpf: str
     celular_original: str
     celular_normalizado: str | None
     motivo: str

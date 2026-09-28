@@ -47,6 +47,7 @@ source_modules =
     app.services
     app.seta_client
     app.timezone
+    app.telefones_invalidos
     app.upload_service
     app.utils
     app.variaveis_template
@@ -113,6 +114,7 @@ forbidden_modules =
     app.remarketing
     app.services
     app.seta_client
+    app.telefones_invalidos
     app.upload_service
     app.worker
 ignore_imports =
@@ -137,6 +139,7 @@ source_modules =
     app.leads_service
     app.pausas
     app.remarketing
+    app.telefones_invalidos
     app.upload_service
     app.worker
 forbidden_modules =

@@ -308,6 +308,13 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    janela, ou mais tarde no mesmo dia se o backend estava fora,
    remarketing, régua de quem recebeu campanha, campanhas e expiração da fila no fim do dia), a
    cópia das baixas do SETA e, às 3h, a cópia das compras do SETA.
+   O erro `131026: Message undeliverable` tenta outro telefone do SETA, na ordem
+   `telefone2`, `telefone4`, `telefone3`, `telefone1`, sem repetir números recusados.
+   Reaproveita o mesmo item da fila e respeita pausas, blacklist e o limite por cliente/dia.
+   Havendo alternativa, volta à fila sem log de erro; só entra em **Telefones inválidos**
+   quando as opções se esgotam. Retornos são recebidos pelo webhook e consultados pelo ID
+   exato da mensagem. Erros 131026 já gravados no CRM são reprocessados após a atualização.
+   O relatório e o Excel de telefones inválidos incluem CPF após o código do cliente.
 8. **Dashboard** — pendentes (e quantos estão pausados), enviados, erros, telefones inválidos,
    "Pagaram em até 7 dias" (via SETA) e por faixa. Cada card abre o
    relatório dele com o mesmo período (`/relatorios?aba=…&de=…&ate=…`). A tela se atualiza
@@ -539,8 +546,8 @@ Só é preciso refazer isto se a VPS, as chaves ou a conta do Tailscale mudarem.
   componentes variam por categoria — revise o payload em `app/routers/templates.py` contra a
   documentação oficial antes de depender disso em produção.
 - **Retry de envio**: hoje, uma falha de envio marca o item como `error` e fica visível no
-  dashboard; reprocessamento automático (retry com backoff) ainda não está implementado — é o
-  próximo incremento natural do worker (`app/worker.py`).
+  dashboard; o único reprocessamento automático é o erro `131026` do Chatwoot, que tenta o próximo
+  telefone do cadastro. Retry geral com backoff para os demais erros ainda não está implementado.
 - **Fila em "tempo real"**: o acompanhamento da fila no portal usa polling (nova consulta a cada
   poucos segundos), não WebSocket — simples e suficiente para o volume atual, mas vale revisar se
   o volume de faixas abertas simultaneamente crescer muito.

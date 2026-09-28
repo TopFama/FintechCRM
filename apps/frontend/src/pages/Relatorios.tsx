@@ -18,7 +18,7 @@ import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import { AcaoPendentes, PainelAcao, PainelDescartar, PainelPausaLote, PausasAtivas } from "../components/PausasPendentes";
 import SelectCampanha from "../components/SelectCampanha";
 import SortableTh from "../components/SortableTh";
-import { formatBRL, formatData, formatDataHora, formatNumero, formatValorFila } from "../format";
+import { formatBRL, formatCpf, formatData, formatDataHora, formatNumero, formatValorFila } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
 import { SortDirection, useSort } from "../sort";
 
@@ -41,7 +41,7 @@ type ColunaFila =
   | "entrou_em"
   | "quando"
   | "mensagem";
-type ColunaInvalido = "codigo_cliente" | "celular_original" | "celular_normalizado" | "motivo" | "created_at";
+type ColunaInvalido = "codigo_cliente" | "cpf" | "celular_original" | "celular_normalizado" | "motivo" | "created_at";
 type ColunaPagamento =
   | "codigo_cliente"
   | "nome"
@@ -561,7 +561,7 @@ export default function Relatorios() {
             <div className="empty-state">
               <IconCheckCircle width={28} height={28} />
               <div className="title">Nenhum telefone inválido</div>
-              <p>Todos os telefones enviados nas planilhas passaram na validação.</p>
+              <p>Nenhum telefone foi rejeitado na validação ou pelo WhatsApp.</p>
             </div>
           ) : (
             <div className="table-wrap">
@@ -571,6 +571,7 @@ export default function Relatorios() {
                     {(
                       [
                         ["codigo_cliente", "Código do cliente"],
+                        ["cpf", "CPF"],
                         ["celular_original", "Telefone informado"],
                         ["celular_normalizado", "Normalizado"],
                         ["motivo", "Motivo"],
@@ -592,6 +593,7 @@ export default function Relatorios() {
                   {invalidPhones.map((r) => (
                     <tr key={r.id}>
                       <td className="cell-strong">{r.codigo_cliente}</td>
+                      <td>{formatCpf(r.cpf)}</td>
                       <td>{r.celular_original}</td>
                       <td className="text-muted">{r.celular_normalizado || "—"}</td>
                       <td className="text-muted">{r.motivo}</td>

@@ -183,6 +183,25 @@ class ChatwootClient:
                 return wh
         return await self.criar_webhook(url, subscriptions)
 
+    async def obter_mensagem(self, conversation_id: int, message_id: int) -> dict | None:
+        """Pagina até o ID exato, sem confundir com mensagens do atendente."""
+        antes = None
+        while True:
+            resposta = await self._request(
+                "GET", f"conversations/{conversation_id}/messages",
+                params={"before": antes} if antes is not None else {},
+            )
+            mensagens = resposta.get("payload", [])
+            if not isinstance(mensagens, list) or not mensagens:
+                return None
+            for mensagem in mensagens:
+                if str(mensagem.get("id")) == str(message_id):
+                    return mensagem
+            ids = [int(m["id"]) for m in mensagens if str(m.get("id", "")).isdigit()]
+            if not ids or min(ids) < message_id or (antes is not None and min(ids) >= antes):
+                return None
+            antes = min(ids)
+
 
 def is_configured(db: Session) -> bool:
     return db.query(models.ConfiguracaoChatwoot).first() is not None
