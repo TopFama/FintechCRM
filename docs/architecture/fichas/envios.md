@@ -88,6 +88,15 @@ saída estavam escritas dentro do laço do worker. O backlog #4 (PR #6) juntou t
 - **Violações encontradas:** as de 26/09 (serviço importando `routers.blacklist`, montagem do item repetida, helpers de fuso e de bloqueio do dia aqui dentro) foram resolvidas pelos backlogs #1, #4, #8 e #10. Restam `enfileirar_clientes`, `enfileirar_leads`, `reaplicar_variaveis`, `ultimo_fim_de_janela`, `expirar_nao_enviados` e `descartar_pendentes`.
 - **Churn:** 13 | **Linhas:** 287 | **Cobertura:** 37% (medida em 26/09)
 
+### `apps/backend/app/telefones_invalidos.py`
+
+- **Responsabilidade:** reconhecer 131026 no webhook/envio/consulta do Chatwoot, desfazer a
+  marcação do lead correspondente e recolocar o mesmo item na fila com outro telefone do SETA.
+- **Dependências:** `models`, `elegibilidade`, `campanhas_fixas`, `chatwoot_client`, `seta_client`
+  e normalização de telefone. O worker reprocessa também erros históricos migrados.
+- **Persistência:** `QueueItem.telefones_tentados` impede ciclos. Só registra em
+  `InvalidPhoneRecord` depois de esgotar alternativas; CPF acompanha o relatório e o Excel.
+
 ### `apps/backend/app/dispatch_service.py`
 - **Domínio:** Envios
 - **Camada:** aplicação + infraestrutura (mídia)

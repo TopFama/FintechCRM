@@ -37,6 +37,9 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
 - `worker.py` — agendamento do disparo e das rotinas diárias, roda com APScheduler **dentro do
   mesmo processo** do backend (não é um serviço/container separado); o envio de cada item em si
   fica em `dispatch_service.py`.
+- `telefones_invalidos.py` — retentativas do erro 131026 do Chatwoot no mesmo item da fila,
+  histórico de números tentados e consulta do retorno pelo ID exato. Compartilhado pelo
+  webhook, worker e envio; só registra telefone inválido após esgotar as alternativas.
 - `utils/phone.py` — normalização/validação de telefone (formato final `55DD9XXXXXXXX`) e a ordem
   em que os telefones do cadastro do SETA são tentados (`ORDEM_TELEFONES`: telefone2, telefone4,
   telefone3, telefone1), usada pela base de cobrança, pelo relatório de telefone inválido e pelo

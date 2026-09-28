@@ -286,6 +286,7 @@ class QueueItem(Base):
     celular: Mapped[str] = mapped_column(String, index=True)
     celular_original: Mapped[str] = mapped_column(String)
     variables_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    telefones_tentados: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
     status: Mapped[QueueStatus] = mapped_column(Enum(QueueStatus), default=QueueStatus.pending, index=True)
     # SET NULL: excluir o número não apaga o histórico de envio, só perde a
     # referência de qual número específico mandou.
@@ -347,14 +348,14 @@ class UploadLog(Base):
 
 
 class InvalidPhoneRecord(Base):
-    """Relatório de clientes cuja planilha trouxe telefone fora do padrão
-    55DD9XXXXXXXX (ou com menos dígitos que o mínimo esperado)."""
+    """Telefone inválido na entrada ou recusado pelo WhatsApp."""
 
     __tablename__ = "telefones_invalidos"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     faixa_id: Mapped[str] = mapped_column(ForeignKey("faixas.id"), index=True)
     codigo_cliente: Mapped[str] = mapped_column(String, index=True)
+    cpf: Mapped[str] = mapped_column(String, default="")
     celular_original: Mapped[str] = mapped_column(String)
     celular_normalizado: Mapped[str | None] = mapped_column(String, nullable=True)
     motivo: Mapped[str] = mapped_column(String)

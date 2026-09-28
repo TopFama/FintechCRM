@@ -15,7 +15,7 @@ from datetime import datetime, time as dt_time, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session, selectinload
 
-from . import models, seta_client
+from . import models, seta_client, telefones_invalidos
 from .services import compras_seta, pagamentos_seta
 from .pausas import Retencao
 from .config import settings
@@ -159,6 +159,20 @@ def _rotinas_do_dia(now: datetime) -> None:
 
     db: Session = SessionLocal()
     try:
+        if _pode_tentar("telefones_chatwoot", now):
+            try:
+                telefones_invalidos.reprocessar_erros_chatwoot(db)
+            except seta_client.SetaIndisponivel as exc:
+                db.rollback()
+                logger.warning("Retentativa dos telefones recusados pelo Chatwoot adiada: %s", exc)
+                _falhou("telefones_chatwoot", now)
+            except Exception:  # noqa: BLE001 - a migração não pode interromper o disparo normal
+                db.rollback()
+                logger.exception("Falha ao migrar telefones recusados pelo Chatwoot")
+                _falhou("telefones_chatwoot", now)
+            else:
+                _ok("telefones_chatwoot")
+
         global_config = _global_config(db)
 
         if _deve_extrair_leads(global_config, now) and _pode_tentar("extracao", now):
@@ -251,6 +265,12 @@ async def run_dispatch_cycle() -> None:
     db: Session = SessionLocal()
     try:
         global_config = _global_config(db)
+
+        try:
+            await telefones_invalidos.sincronizar_retornos_chatwoot(db)
+        except Exception:  # noqa: BLE001 - retorno do Chatwoot não pode travar os novos envios
+            db.rollback()
+            logger.exception("Falha ao sincronizar retornos de entrega do Chatwoot")
 
         dentro_da_janela = _within_schedule_window(global_config, now)
         # Pausas ativas lidas uma vez por ciclo; conferidas de novo antes de cada envio

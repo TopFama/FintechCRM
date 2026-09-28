@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
-from . import campanhas_fixas, chatwoot_client, models
+from . import campanhas_fixas, chatwoot_client, models, telefones_invalidos
 from .config import settings
 from .meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_do_numero
 from .utils.erros import descrever_erro_envio
@@ -319,7 +319,7 @@ async def _enviar_via_chatwoot(
             number.chatwoot_inbox_id, item.celular, item.nome
         )
         conversation_id = await client.buscar_ou_criar_conversa(number.chatwoot_inbox_id, contact_id, source_id)
-        resposta = await client.enviar_mensagem_template(
+        result = await client.enviar_mensagem_template(
             conversation_id,
             template.body_text,
             template_name=template.meta_template_name,
@@ -328,17 +328,28 @@ async def _enviar_via_chatwoot(
             body_params=body_params,
             header_image_url=header_image_link,
         )
-        item.status = models.QueueStatus.sent
-        item.sent_at = datetime.utcnow()
-        if isinstance(resposta, dict) and resposta.get("id"):
-            item.whatsapp_message_id = str(resposta["id"])
+        result = result or {}
+        if result.get("id") is not None:
+            item.whatsapp_message_id = telefones_invalidos.identificador_chatwoot(conversation_id, result["id"])
+        detalhe = telefones_invalidos.detalhe_telefone_invalido(result)
+        if detalhe:
+            telefones_invalidos.registrar_falha(db, item, detalhe)
+        else:
+            item.status = models.QueueStatus.sent
+            item.sent_at = datetime.utcnow()
     except chatwoot_client.ChatwootAPIError as exc:
         item.status = models.QueueStatus.error
-        item.error_message = descrever_erro_envio(str(exc))
-        if _falha_do_servidor(exc.status_code):
-            item.sent_at = datetime.utcnow()
-        db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
-        logger.warning("Falha ao enviar cobrança %s via Chatwoot: %s", item.id, item.error_message)
+        detalhe = telefones_invalidos.detalhe_telefone_invalido(exc.payload)
+        item.error_message = (
+            telefones_invalidos.mensagem_telefone_invalido(detalhe) if detalhe else descrever_erro_envio(str(exc))
+        )
+        if detalhe:
+            telefones_invalidos.registrar_falha(db, item, detalhe)
+        else:
+            if _falha_do_servidor(exc.status_code):
+                item.sent_at = datetime.utcnow()
+            db.add(models.ErrorLog(faixa_id=envio.faixa_id, queue_item_id=item.id, message=item.error_message))
+        logger.warning("Falha ao enviar cobrança %s via Chatwoot: %s", item.id, exc)
     except Exception as exc:  # noqa: BLE001 - qualquer falha de rede/config não pode travar o item em "reserved"
         item.status = models.QueueStatus.error
         item.error_message = f"Falha inesperada ao enviar via Chatwoot: {exc}"

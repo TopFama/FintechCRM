@@ -4,8 +4,9 @@ import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
-from .. import chatwoot_client, crypto, models, schemas
+from .. import chatwoot_client, crypto, models, schemas, telefones_invalidos
 from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user
@@ -141,25 +142,36 @@ async def webhook_chatwoot(
     msg_id = payload.get("id")
     if not msg_id:
         return {"status": "ok", "action": "missing_id"}
+    if not str(msg_id).isdigit():
+        return {"status": "ok", "action": "invalid_id"}
 
     msg_status = payload.get("status")
     content_attributes = payload.get("content_attributes") or {}
     external_error = content_attributes.get("external_error")
 
     # Só processamos se o status for failed ou se houver erro externo registrado
-    if msg_status != "failed" and not external_error:
+    if msg_status in ("delivered", "read", 1, 2) or (msg_status != "failed" and not external_error):
         return {"status": "ok", "action": "status_not_failed"}
 
     item = (
         db.query(models.QueueItem)
         .filter(
-            models.QueueItem.whatsapp_message_id == str(msg_id),
+            or_(
+                models.QueueItem.whatsapp_message_id == str(msg_id),
+                models.QueueItem.whatsapp_message_id.like(f"chatwoot:%:{msg_id}"),
+            ),
             models.QueueItem.status == models.QueueStatus.sent,
         )
         .first()
     )
     if not item:
         return {"status": "ok", "action": "item_not_found"}
+
+    detalhe = telefones_invalidos.detalhe_telefone_invalido(payload)
+    if detalhe:
+        telefones_invalidos.registrar_falha(db, item, detalhe)
+        db.commit()
+        return {"status": "ok", "action": "marked_error", "item_id": item.id}
 
     motivo = descrever_erro_envio(external_error or msg_status or "Falha no envio via Chatwoot")
     item.status = models.QueueStatus.error

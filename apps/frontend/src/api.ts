@@ -807,6 +807,7 @@ export interface InvalidPhoneRecord {
   id: string;
   faixa_id: string;
   codigo_cliente: string;
+  cpf: string;
   celular_original: string;
   celular_normalizado: string | null;
   motivo: string;
