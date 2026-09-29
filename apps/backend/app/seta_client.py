@@ -213,7 +213,7 @@ pagos AS (
        AND ft.status = 'B'
        AND ft.tipo IN ('4', '5')
        AND ft.valor > 0
-       --AND COALESCE(ft.auxiliar, '') NOT LIKE 'RE%'
+       --AND COALESCE(ft.auxiliar, '') NOT LIKE 'RE%' /*Valores de renegociação deve contar como valor pago*/
        AND trim(ft.descricao) <> :descricao_seguro
      GROUP BY ft.pessoa
 )
