@@ -283,20 +283,20 @@ it2 = item(faixa_a, "00000010", "5511911110010")
 ciclo()
 assert status(it2) == models.QueueStatus.error and it2.sent_at is not None
 assert it2.error_message.startswith("Falha inesperada ao enviar")
-assert "00000010" in elegibilidade.clientes_bloqueados_hoje(db)
-# 5xx da Meta: a mensagem pode ter saído, ocupa o cliente como a queda
+assert "00000010" not in elegibilidade.clientes_bloqueados_hoje(db)
+# 5xx da Meta: não bloqueia mais o cliente
 modo_meta["resposta"] = "servidor"
 it5 = item(faixa_a, "00000015", "5511911110015")
 ciclo()
 assert status(it5) == models.QueueStatus.error and it5.sent_at is not None
-assert "00000015" in elegibilidade.clientes_bloqueados_hoje(db)
-# e segura um segundo item do mesmo cliente no mesmo dia
+assert "00000015" not in elegibilidade.clientes_bloqueados_hoje(db)
+# como não foi cobrado (apenas deu erro incerto), permite um segundo envio no mesmo dia (ex: outro telefone)
 modo_meta["resposta"] = "ok"
 it3 = item(faixa_b, "00000010", "5511911110010")
 ciclo()
-assert status(it3) == models.QueueStatus.error
-assert it3.error_message == "Cliente já cobrado hoje em outra faixa ou envio; não reenviado"
-assert enviados == []
+assert status(it3) == models.QueueStatus.sent
+assert [msg["to"] for msg in enviados] == ["5511911110010"]
+enviados.clear()
 
 # =============================================================================
 print("=== 7. clientes_bloqueados_hoje: quem ocupa o cliente ===")
@@ -314,8 +314,8 @@ casos = {
 }
 for codigo, extra in casos.items():
     item(faixa_a, codigo, "5511911119999", **extra)
-assert elegibilidade.clientes_bloqueados_hoje(db) == {"00000011", "00000012", "00000013", "00000014"}
-assert elegibilidade.cobrados_hoje(db) == {"00000013", "00000014"}
+assert elegibilidade.clientes_bloqueados_hoje(db) == {"00000011", "00000012", "00000013"}
+assert elegibilidade.cobrados_hoje(db) == {"00000013"}
 
 # =============================================================================
 print("=== 8. enfileirar_clientes: bloqueio, telefone, variáveis e formato ===")

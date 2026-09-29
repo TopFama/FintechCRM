@@ -22,20 +22,16 @@ STATUS_OCUPA_CLIENTE = (models.QueueStatus.pending, models.QueueStatus.reserved,
 
 
 def ocupa_cliente():
-    """Filtro de STATUS_OCUPA_CLIENTE mais o erro incerto (timeout no envio),
-    que pode ter chegado ao cliente."""
-    return or_(
-        models.QueueItem.status.in_(STATUS_OCUPA_CLIENTE),
-        and_(models.QueueItem.status == models.QueueStatus.error, models.QueueItem.sent_at.isnot(None)),
-    )
+    """Filtro de STATUS_OCUPA_CLIENTE. Erro incerto ou falha na Meta
+    agora liberam o cliente para nova tentativa ou fluxo."""
+    return models.QueueItem.status.in_(STATUS_OCUPA_CLIENTE)
 
 
 def _cobrado_hoje():
-    """Enviado hoje (GMT-3), ou erro incerto de hoje: timeout/queda de rede no
-    envio grava `sent_at` mesmo com erro, porque a mensagem pode ter chegado
-    (dispatch_service). Erro devolvido pela Meta não grava e libera o cliente."""
+    """Enviado hoje (GMT-3). Falhas de envio (qualquer erro)
+    não bloqueiam o cliente."""
     return and_(
-        models.QueueItem.status.in_((models.QueueStatus.sent, models.QueueStatus.error)),
+        models.QueueItem.status == models.QueueStatus.sent,
         models.QueueItem.sent_at >= inicio_hoje_utc(),
     )
 
