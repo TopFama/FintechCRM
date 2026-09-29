@@ -116,21 +116,40 @@ jobs:
       - name: Deploy
         if: github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.acao == 'deploy')
         env:
-          # automático: o commit que passou no CI; manual: a main atual
+          # Automatic deploy: commit that passed CI.
+          # Manual deploy: current main.
           ALVO: ${{ github.event.workflow_run.head_sha || 'origin/main' }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "::error::Deploy manual só a partir da main (rodando em $GITHUB_REF)"; exit 1
+            echo "::error::Deploy manual só a partir da main (rodando em $GITHUB_REF)"
+            exit 1
           fi
+
           ssh vps "PASTA='$PASTA' ALVO='$ALVO' bash -s" <<'REMOTO'
           set -euo pipefail
+
           cd "$PASTA"
-          antes=$(git rev-parse --short HEAD)
-          git fetch origin main
-          # só avança: alteração local ou histórico divergente param aqui; commit já
-          # publicado (rodada de CI atrasada) não volta a versão
-          git merge --ff-only "$ALVO"
-          echo "Código: $antes -> $(git rev-parse --short HEAD)"
+          antes=$(git rev-parse HEAD)
+
+          git fetch --prune origin main
+
+          # Resolve origin/main for manual deployments and validate automatic targets.
+          alvo=$(git rev-parse "$ALVO^{commit}")
+
+          if git merge-base --is-ancestor "$alvo" HEAD; then
+            # The VPS already contains the requested commit or a newer commit.
+            echo "Nada a fazer: VPS já contém $alvo"
+          elif git merge-base --is-ancestor HEAD "$alvo"; then
+            # The requested commit is a descendant of the current VPS commit.
+            git merge --ff-only "$alvo"
+            echo "Código: $(git rev-parse --short "$antes") -> $(git rev-parse --short HEAD)"
+          else
+            echo "::error::Histórico divergente entre a VPS e o alvo $alvo"
+            echo "VPS:   $(git rev-parse --short HEAD)"
+            echo "Alvo:  $(git rev-parse --short "$alvo")"
+            exit 1
+          fi
+
           docker compose up -d --build
           docker compose ps --format '{{.Name}}: {{.State}}'
           REMOTO
