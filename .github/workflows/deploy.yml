@@ -129,6 +129,10 @@ jobs:
           set -euo pipefail
 
           cd "$PASTA"
+
+          test -w .git
+          test -w .git/refs/heads
+          
           antes=$(git rev-parse HEAD)
 
           git fetch --prune origin main
