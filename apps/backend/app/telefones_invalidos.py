@@ -158,7 +158,8 @@ def reprocessar_erros_chatwoot(db: Session, limite: int = 200) -> int:
 
 
 async def sincronizar_retornos_chatwoot(db: Session, limite: int = 100) -> int:
-    """Percorre os IDs em rodízio para mensagens sem retorno não bloquearem as novas."""
+    """Percorre os IDs em rodízio para mensagens sem retorno não bloquearem as novas.
+    Garante que nenhuma transação de banco permaneça aberta durante chamadas HTTP."""
     global _proxima_sincronizacao, _ultimo_id
     agora = datetime.utcnow()
     if agora < _proxima_sincronizacao:
@@ -173,30 +174,44 @@ async def sincronizar_retornos_chatwoot(db: Session, limite: int = 100) -> int:
     itens = consulta.filter(models.QueueItem.id > _ultimo_id).order_by(models.QueueItem.id).limit(limite).all()
     if not itens:
         _ultimo_id = ""
+        db.rollback()
         return 0
-    _ultimo_id = itens[-1].id
+    alvos = [(item.id, item.whatsapp_message_id) for item in itens]
+    _ultimo_id = alvos[-1][0]
     client = chatwoot_client.cliente_configurado(db)
+    # Encerra qualquer transação de leitura antes de iniciar chamadas externas
+    db.rollback()
+
     alterados = 0
-    for item in itens:
-        identificador = item.whatsapp_message_id
+    for item_id, identificador in alvos:
         partes = identificador.split(":")
         if len(partes) != 3 or not partes[1].isdigit() or not partes[2].isdigit():
             continue
         try:
             mensagem = await client.obter_mensagem(int(partes[1]), int(partes[2]))
         except Exception:  # noqa: BLE001 - falha de consulta não autoriza outro envio
-            logger.exception("Falha ao consultar retorno do envio %s", item.id)
+            logger.exception("Falha ao consultar retorno do envio %s", item_id)
             continue
         if not mensagem:
             continue
-        db.refresh(item)
-        if item.status != models.QueueStatus.sent or item.whatsapp_message_id != identificador:
-            continue
-        if mensagem.get("status") in ("delivered", "read", 1, 2):
-            item.whatsapp_message_id = identificador.replace("chatwoot:", "chatwoot-ok:", 1)
-            alterados += 1
-        elif (detalhe := detalhe_telefone_invalido(mensagem)):
-            registrar_falha(db, item, detalhe)
-            alterados += 1
-    db.commit()
+
+        # Transação curta e imediata após o retorno HTTP: atualiza e comita antes do próximo await
+        try:
+            item = db.get(models.QueueItem, item_id)
+            if not item or item.status != models.QueueStatus.sent or item.whatsapp_message_id != identificador:
+                db.rollback()
+                continue
+            if mensagem.get("status") in ("delivered", "read", 1, 2):
+                item.whatsapp_message_id = identificador.replace("chatwoot:", "chatwoot-ok:", 1)
+                db.commit()
+                alterados += 1
+            elif (detalhe := detalhe_telefone_invalido(mensagem)):
+                registrar_falha(db, item, detalhe)
+                db.commit()
+                alterados += 1
+            else:
+                db.rollback()
+        except Exception:
+            db.rollback()
+            logger.exception("Falha ao atualizar retorno do envio %s no banco", item_id)
     return alterados

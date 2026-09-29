@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import json
@@ -8,7 +9,7 @@ from sqlalchemy import or_
 
 from .. import chatwoot_client, crypto, models, schemas, telefones_invalidos
 from ..config import settings
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from ..deps import get_current_user
 from ..dispatch_service import desmarcar_lead_cobrado
 from ..utils.erros import descrever_erro_envio
@@ -106,11 +107,71 @@ async def sincronizar_webhook(
         return schemas.ChatwootTestResult(ok=False, detalhe=f"Falha ao registrar webhook: {exc}")
 
 
+def _processar_webhook_chatwoot(payload: dict) -> dict:
+    """Executa o processamento de banco do webhook em thread síncrona dedicada,
+    com SessionLocal própria fechada ao final, sem bloquear o event loop."""
+    msg_id = payload.get("id")
+    msg_status = payload.get("status")
+    content_attributes = payload.get("content_attributes") or {}
+    external_error = content_attributes.get("external_error")
+
+    db = SessionLocal()
+    item_id = None
+    codigo_cliente = None
+    try:
+        item = (
+            db.query(models.QueueItem)
+            .filter(
+                or_(
+                    models.QueueItem.whatsapp_message_id == str(msg_id),
+                    models.QueueItem.whatsapp_message_id.like(f"chatwoot:%:{msg_id}"),
+                ),
+                models.QueueItem.status == models.QueueStatus.sent,
+            )
+            .first()
+        )
+        if not item:
+            return {"status": "ok", "action": "item_not_found"}
+
+        item_id = item.id
+        codigo_cliente = item.codigo_cliente
+
+        detalhe = telefones_invalidos.detalhe_telefone_invalido(payload)
+        if detalhe:
+            telefones_invalidos.registrar_falha(db, item, detalhe)
+            db.commit()
+            return {"status": "ok", "action": "marked_error", "item_id": item.id}
+
+        motivo = descrever_erro_envio(external_error or msg_status or "Falha no envio via Chatwoot")
+        item.status = models.QueueStatus.error
+        item.error_message = f"Chatwoot: {motivo}"
+        item.sent_at = None
+
+        desmarcar_lead_cobrado(db, item)
+
+        db.add(
+            models.ErrorLog(
+                faixa_id=item.faixa_id,
+                queue_item_id=item.id,
+                message=item.error_message,
+            )
+        )
+        db.commit()
+        
+        return {"status": "ok", "action": "marked_error", "item_id": item.id, "codigo_cliente": item.codigo_cliente}
+    except Exception as exc:
+        db.rollback()
+        logger.exception(
+            "Falha ao processar webhook do Chatwoot no banco: msg_id=%s, queue_item_id=%s, codigo_cliente=%s, erro=%s",
+            msg_id, item_id, codigo_cliente, exc,
+        )
+        raise
+    finally:
+        db.close()
+
+
 @router.post("/webhook")
-async def webhook_chatwoot(
-    request: Request,
-    db: Session = Depends(get_db),
-):
+async def webhook_chatwoot(request: Request):
     """Endpoint receptor de eventos do Chatwoot (message_updated e message_created).
     Recebe atualizações de status da mensagem e, em caso de erro da Meta/WhatsApp,
     atualiza o item da fila correspondente e registra no log de erros."""
@@ -153,40 +214,20 @@ async def webhook_chatwoot(
     if msg_status in ("delivered", "read", 1, 2) or (msg_status != "failed" and not external_error):
         return {"status": "ok", "action": "status_not_failed"}
 
-    item = (
-        db.query(models.QueueItem)
-        .filter(
-            or_(
-                models.QueueItem.whatsapp_message_id == str(msg_id),
-                models.QueueItem.whatsapp_message_id.like(f"chatwoot:%:{msg_id}"),
-            ),
-            models.QueueItem.status == models.QueueStatus.sent,
-        )
-        .first()
+    import time
+    t0 = time.perf_counter()
+    resultado = await asyncio.to_thread(_processar_webhook_chatwoot, payload)
+    t1 = time.perf_counter()
+    
+    logger.info(
+        "Webhook processado: msg_id=%s, queue_item_id=%s, codigo_cliente=%s, "
+        "action=%s, tempo=%.3fs, erro=%s",
+        msg_id,
+        resultado.get("item_id"),
+        resultado.get("codigo_cliente"),
+        resultado.get("action"),
+        t1 - t0,
+        external_error,
     )
-    if not item:
-        return {"status": "ok", "action": "item_not_found"}
-
-    detalhe = telefones_invalidos.detalhe_telefone_invalido(payload)
-    if detalhe:
-        telefones_invalidos.registrar_falha(db, item, detalhe)
-        db.commit()
-        return {"status": "ok", "action": "marked_error", "item_id": item.id}
-
-    motivo = descrever_erro_envio(external_error or msg_status or "Falha no envio via Chatwoot")
-    item.status = models.QueueStatus.error
-    item.error_message = f"Chatwoot: {motivo}"
-    item.sent_at = None
-
-    desmarcar_lead_cobrado(db, item)
-
-    db.add(
-        models.ErrorLog(
-            faixa_id=item.faixa_id,
-            queue_item_id=item.id,
-            message=item.error_message,
-        )
-    )
-    db.commit()
-    logger.warning("Mensagem %s (item %s) falhou no Chatwoot: %s", msg_id, item.id, motivo)
-    return {"status": "ok", "action": "marked_error", "item_id": item.id}
+    
+    return resultado
