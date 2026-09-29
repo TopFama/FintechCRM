@@ -265,6 +265,8 @@ async def run_dispatch_cycle() -> None:
     db: Session = SessionLocal()
     try:
         global_config = _global_config(db)
+        # Encerra qualquer transação iniciada pela leitura de configuração antes do await
+        db.rollback()
 
         try:
             await telefones_invalidos.sincronizar_retornos_chatwoot(db)
