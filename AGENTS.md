@@ -166,11 +166,11 @@ continuar 100% condizente com o código — documento que descreve algo que não
 
 ## Merge na main
 
-Decisão do dono do repositório (30/09/2026): PRs cujos testes do CI passarem são mesclados
-automaticamente via workflow `auto-merge.yml`. Após o deploy na VPS ser concluído com sucesso, o
-workflow `limpar-branches-deploy.yml` exclui a branch remota correspondente. O maintainer e o dono
-podem intervir manualmente a qualquer momento caso surjam conflitos ou decisões necessárias (o que
-cada workflow faz: `README.md` → "CI (GitHub Actions)").
+Decisão do dono do repositório (27/09/2026): **não** há auto-merge do GitHub. O agente de IA
+designado por ele como maintainer acompanha os PRs, avalia os workflows e o diff e decide o merge
+(o que cada workflow faz: `README.md` → "CI (GitHub Actions)"). Após o deploy na VPS ser concluído com sucesso, o
+workflow `limpar-branches-deploy.yml` exclui a branch remota correspondente. O que exige decisão do dono vai para
+ele **antes** do merge (item 8).
 
 1. Toda mudança vai por PR de uma branch de trabalho, com a **única exceção** abaixo. Se o PR da
    sua branch já foi mergeado, trabalho novo começa de novo a partir da `main` atual, num PR novo.
