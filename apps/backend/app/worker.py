@@ -10,7 +10,7 @@ responsabilidade de dispatch_service.py.
 
 import asyncio
 import logging
-from datetime import datetime, time as dt_time, timedelta
+from datetime import date, datetime, time as dt_time, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session, selectinload
@@ -126,6 +126,7 @@ def _na_janela_diaria(global_config: models.GlobalDispatchConfig, now_utc: datet
 # isso a rotina era refeita a cada ciclo do worker (5 s) o dia inteiro.
 ESPERA_APOS_FALHA = timedelta(minutes=5)
 _proxima_tentativa: dict[str, datetime] = {}
+_regua_campanha_last_run: date | None = None
 
 
 def _pode_tentar(chave: str, now: datetime) -> bool:
@@ -213,15 +214,25 @@ def _rotinas_do_dia(now: datetime) -> None:
 
             # Antes das campanhas do dia: quem recebeu campanha em dia anterior
             # entra na régua da faixa de atraso (base calculando = próximo ciclo).
-            if _pode_tentar("regua", now):
+            # Só quando a extração automática está ligada: a régua pós-campanha
+            # gera leads e insere na fila da régua, igual à extração automática.
+            global _regua_campanha_last_run
+            hoje = para_br(now).date()
+            if (
+                global_config.leads_auto_extract
+                and _regua_campanha_last_run != hoje
+                and _pode_tentar("regua", now)
+            ):
                 try:
-                    campanhas.enfileirar_na_regua(db)
+                    resultado = campanhas.enfileirar_na_regua(db)
                 except Exception:  # noqa: BLE001 - SETA fora não pode travar o disparo
                     db.rollback()
                     logger.exception("Falha ao levar à régua quem recebeu campanha")
                     _falhou("regua", now)
                 else:
                     _ok("regua")
+                    if resultado.get("status") == "ready":
+                        _regua_campanha_last_run = hoje
 
             for campanha in campanhas.campanhas_para_hoje(db):
                 chave = f"campanha:{campanha.id}"
