@@ -33,6 +33,7 @@ os.environ["JWT_SECRET"] = "segredo-de-teste-longo-e-seguro-caracterizacao"
 os.environ["ADMIN_PASSWORD"] = "senha-admin-teste"
 os.environ["MEDIA_DIR"] = tempfile.mkdtemp()
 os.environ["COOKIE_SECURE"] = "false"
+os.environ["DISPATCH_WORKER_INTERVAL_SECONDS"] = "3600"
 
 from cryptography.fernet import Fernet  # noqa: E402
 

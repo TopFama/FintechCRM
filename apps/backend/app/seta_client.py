@@ -199,6 +199,7 @@ base AS (
       FROM candidatos c
       JOIN pessoas p ON p.codigo = c.pessoa
      WHERE p.cliente
+       AND p.funcionario = false
        AND p.status IN ('E', 'A', 'B')
        AND p.codigo <> :codigo_ignorado
        AND trim(p.codigo) <> ALL(CAST(:bl_codigos AS text[]))
@@ -374,7 +375,7 @@ def buscar_spc(codigos: list[str]) -> dict[str, str]:
     engine = engine_ou_erro()
     # Compara a coluna bruta para usar o índice PK (bpchar ignora espaços à direita no =)
     stmt = text(
-        "SELECT trim(codigo) AS codigo, scpcresultado FROM pessoas WHERE codigo IN :codigos"
+        "SELECT trim(codigo) AS codigo, scpcresultado FROM pessoas WHERE codigo IN :codigos AND funcionario = false"
     ).bindparams(bindparam("codigos", expanding=True))
     try:
         with engine.connect() as conn:
@@ -468,7 +469,7 @@ def telefones_por_codigo(codigos: list[str]) -> dict[str, dict[str, str | None]]
         return resultado
     engine = engine_ou_erro()
     stmt = text(
-        "SELECT trim(codigo) AS codigo, telefone1, telefone2, telefone3, telefone4 FROM pessoas WHERE codigo IN :codigos"
+        "SELECT trim(codigo) AS codigo, telefone1, telefone2, telefone3, telefone4 FROM pessoas WHERE codigo IN :codigos AND funcionario = false"
     ).bindparams(bindparam("codigos", expanding=True))
     try:
         with engine.connect() as conn:
@@ -496,7 +497,7 @@ def codigos_por_cpf(cpfs: list[str]) -> dict[str, str]:
         # Mesma expressão do índice de CPF só com dígitos que já existe em pessoas;
         # com regexp_replace o SETA varria as ~930 mil pessoas a cada consulta
         "  FROM pessoas p JOIN alvo a ON translate(p.cpfcnpj::text, ' +-.,/\\*', '')::char(16) = CAST(a.cpf AS char(16)) "
-        " WHERE p.cliente"
+        " WHERE p.cliente AND p.funcionario = false"
     )
     try:
         with engine.connect() as conn:
