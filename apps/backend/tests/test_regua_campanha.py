@@ -215,7 +215,7 @@ with (
     mock_lead.valor_cobrar = "100.00"
     mock_lead.lojas = "01"
     mock_lead.celular_original = "5511999998888"
-    mock_lead.created_at = datetime.utcnow()
+    mock_lead.created_at = datetime.now(timezone.utc).replace(tzinfo=None)
     mock_lead.parcelas = []
 
     def query_mock(model):
@@ -334,4 +334,4 @@ with (
 print("  OK")
 
 
-print("\nTODOS OS TESTES PASSARAM COM SUCESSO!")
+print("OK")
