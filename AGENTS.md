@@ -166,10 +166,11 @@ continuar 100% condizente com o código — documento que descreve algo que não
 
 ## Merge na main
 
-Decisão do dono do repositório (27/09/2026): **não** há auto-merge do GitHub. O agente de IA
-designado por ele como maintainer acompanha os PRs, avalia os workflows e o diff e decide o merge
-(o que cada workflow faz: `README.md` → "CI (GitHub Actions)"). O que exige decisão do dono vai para
-ele **antes** do merge (item 8).
+Decisão do dono do repositório (30/09/2026): PRs cujos testes do CI passarem são mesclados
+automaticamente via workflow `auto-merge.yml`. Após o deploy na VPS ser concluído com sucesso, o
+workflow `limpar-branches-deploy.yml` exclui a branch remota correspondente. O maintainer e o dono
+podem intervir manualmente a qualquer momento caso surjam conflitos ou decisões necessárias (o que
+cada workflow faz: `README.md` → "CI (GitHub Actions)").
 
 1. Toda mudança vai por PR de uma branch de trabalho, com a **única exceção** abaixo. Se o PR da
    sua branch já foi mergeado, trabalho novo começa de novo a partir da `main` atual, num PR novo.
@@ -208,6 +209,7 @@ ele **antes** do merge (item 8).
    subida do backend); variável nova no `.env` da VPS, não (o dono põe à mão **antes** do merge).
    O deploy é automático (decisão do dono, 27/09/2026): o workflow `deploy.yml` publica o commit
    quando o `testes.yml` da `main` passa inteiro, e termina conferindo `/api/health` de produção.
+   Em seguida, `limpar-branches-deploy.yml` exclui a branch remota que foi integrada e publicada.
    Depois do merge, acompanhe o CI da `main` e o "Deploy (VPS)" e reporte o resultado; deploy ❌ é
    trabalho imediato (leia o log e corrija, ou consulte o dono se for problema na VPS; erros
    comuns em `README.md` → "Deploy em produção (VPS)"). A ação manual `testar` só confere a

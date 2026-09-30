@@ -1,0 +1,51 @@
+name: Excluir branches mergeadas após deploy
+
+on:
+  workflow_run:
+    workflows: ["Deploy (VPS)"]
+    types: [completed]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  limpar-branches:
+    name: Excluir branches mergeadas
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success')
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Identificar e excluir branches remotas mergeadas
+        run: |
+          git fetch --prune origin
+
+          # Lista todas as branches remotas que já foram integradas à origin/main
+          merged_branches=$(git branch -r --merged origin/main \
+            | sed 's/^[ *]*origin\///' \
+            | grep -v -- '->' \
+            | grep -v -E '^(HEAD|main|master)$' || true)
+
+          if [ -z "$merged_branches" ]; then
+            echo "Nenhuma branch mergeada para excluir."
+            exit 0
+          fi
+
+          echo "Branches mergeadas na origin/main encontradas:"
+          echo "$merged_branches"
+
+          for branch in $merged_branches; do
+            # Proteção estrita: jamais excluir branches principais
+            if [ "$branch" = "main" ] || [ "$branch" = "master" ] || [ "$branch" = "HEAD" ]; then
+              continue
+            fi
+
+            echo "Excluindo branch remota: $branch"
+            git push origin --delete "$branch" || echo "Aviso: Não foi possível excluir branch $branch (pode já ter sido removida)"
+          done
+
+          echo "Limpeza de branches concluída com sucesso."

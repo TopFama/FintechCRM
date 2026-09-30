@@ -409,18 +409,10 @@ leitura** (remote `git@github.com:TopFama/FintechCRM.git` em `/opt/FintechCRM`).
 | `e2e-mapa.yml` | PR que mexe em `e2e/selecionar-telas.mjs`, `e2e/tests/**` ou no próprio workflow; manual | Um job por tela: roda o spec só com os pré-requisitos declarados no mapa, para provar que a seleção do e2e em PR não depende de cenário fora do mapa |
 | `security-scan.yml` | Push/PR que mexe em `package.json`, `package-lock.json` ou `apps/backend/requirements.txt`; toda segunda às 9h UTC (6h em Brasília, pega falha nova em dependência que não mudou); manual | **npm audit (frontend)**: reprova vulnerabilidade alta ou crítica. **pip-audit (backend)**: reprova qualquer vulnerabilidade conhecida, exceto a exceção documentada no próprio arquivo (`ecdsa`, PYSEC-2026-1325, não afeta o app porque o JWT usa HS256) |
 | `deploy.yml` | **Automático** depois que o `testes.yml` passa inteiro num push na `main` (publica exatamente o commit testado; CI vermelho não publica). Manual ("Run workflow", `testar` ou `deploy`). PR que mexe no próprio arquivo roda o `testar` | Entra na rede Tailscale só durante o job (dispositivo efêmero `tag:ci`, segredos `TS_OAUTH_CLIENT_ID`/`TS_OAUTH_SECRET`; o SSH da VPS não aceita conexão da internet) e na VPS por SSH como o usuário `deploy` (`VPS_HOST` = IP do Tailscale da VPS, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, opcional `VPS_PORT`). **testar**: só lê (usuário, commit atual, alterações locais, containers, acesso da VPS ao GitHub). **deploy** (automático ou manual na `main`): `git merge --ff-only` do commit em `/opt/FintechCRM` e `docker compose up -d --build`. Os dois terminam conferindo `https://fintech.lojastopfama.com.br/api/health` |
+| `auto-merge.yml` | **Automático** quando o workflow `Testes` conclui com sucesso num PR (`pull_request`) | Identifica o PR aberto da branch correspondente, valida se está apto (`MERGEABLE`) e executa o merge commit (`gh pr merge`). Em seguida, despacha `testes.yml` na `main` para dar início ao ciclo de deploy |
+| `limpar-branches-deploy.yml` | **Automático** após conclusão bem-sucedida de `Deploy (VPS)` na `main`; manual ("Run workflow") | Lista todas as branches remotas já integradas na `origin/main` (ignorando `main`, `master` e `HEAD`) e as exclui do repositório remoto (`git push origin --delete`) |
 
-**Merge na `main`**: não há auto-merge do GitHub. Toda mudança entra por PR de uma branch de
-trabalho (exceto commit só de documentação `.md`, que vai direto para a `main`), e quem decide o merge é o agente de IA designado como maintainer do repositório,
-depois de avaliar os workflows e o diff do commit mais recente do PR; conflito que exige escolher
-entre dois comportamentos, ou mudança sensível, vai para o dono decidir antes. Critérios em
-[`AGENTS.md`](./AGENTS.md) → "Merge na main". O
-deploy é automático: quando o CI da `main` passa inteiro depois do merge, o workflow `deploy.yml`
-publica na VPS exatamente o commit testado (`docker compose up -d --build`, que já cobre
-dependência nova e migration, rodada na subida do backend) e confere a saúde do backend em
-produção. CI vermelho na `main` não publica nada. Para refazer um deploy à mão: Actions →
-"Deploy (VPS)" → Run workflow na `main`, ação `deploy`. Passo a passo, infraestrutura e erros
-comuns: [Deploy em produção (VPS)](#deploy-em-produção-vps).
+**Merge na `main` e ciclo de deploy**: automatizado via workflow `auto-merge.yml` assim que todos os testes do CI passam no PR (ou manualmente pelo maintainer/dono quando necessário). Toda mudança entra por PR de uma branch de trabalho (exceto commit só de documentação `.md`, que pode ir direto para a `main`). O deploy é automático: quando o CI da `main` passa inteiro depois do merge, o workflow `deploy.yml` publica na VPS exatamente o commit testado (`docker compose up -d --build`, que já cobre dependência nova e migration, rodada na subida do backend) e confere a saúde do backend em produção. Após o deploy com sucesso, `limpar-branches-deploy.yml` remove as branches já integradas do repositório remoto. Para refazer um deploy à mão: Actions → "Deploy (VPS)" → Run workflow na `main`, ação `deploy`. Passo a passo, infraestrutura e erros comuns: [Deploy em produção (VPS)](#deploy-em-produção-vps).
 
 ### Validação local
 
