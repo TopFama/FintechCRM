@@ -260,6 +260,9 @@ def enfileirar(db: Session, selecionados: dict[str, list[dict]]) -> dict[str, in
             .selectinload(models.Faixa.envios)
             .selectinload(models.FaixaEnvio.template)
             .selectinload(models.Template.variables),
+            selectinload(models.RemarketingSegmento.faixa)
+            .selectinload(models.Faixa.envios)
+            .selectinload(models.FaixaEnvio.dispatch_config),
             selectinload(models.RemarketingSegmento.faixa).selectinload(models.Faixa.variable_mappings),
         )
     }
@@ -286,6 +289,7 @@ def enfileirar(db: Session, selecionados: dict[str, list[dict]]) -> dict[str, in
             parcelas=parcelas,
             origem="no remarketing",
             enfileirados=enfileirados,
+            apenas_disparo_ativo=True,
         )
         db.flush()
         # Como numa campanha (o remarketing é uma campanha fixa): lead da faixa

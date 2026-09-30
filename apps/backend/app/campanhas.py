@@ -196,6 +196,7 @@ def _carregar_faixa(db: Session, campanha: models.Campanha) -> models.Faixa:
             selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.template).selectinload(
                 models.Template.variables
             ),
+            selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.dispatch_config),
             selectinload(models.Faixa.variable_mappings),
         )
         .filter(models.Faixa.id == campanha.faixa_id)
@@ -231,6 +232,7 @@ def executar(db: Session, campanha: models.Campanha, *, created_by: str | None =
             origem="na campanha",
             colunas_extras=extras,
             enfileirados=enfileirados,
+            apenas_disparo_ativo=created_by is None,
         )
         db.flush()
         # Lead na faixa de atraso do cliente, marcado com a campanha: o envio
@@ -274,7 +276,7 @@ def enfileirar_na_regua(db: Session) -> dict:
     na_fila = 0
     if base:
         gerar_leads_de_clientes(db, base, created_by=None)
-        na_fila = enfileirar_leads(db, base)
+        na_fila = enfileirar_leads(db, base, apenas_disparo_ativo=True)
 
     faixa_por_id = {f.id: f.name for f in db.query(models.Faixa.id, models.Faixa.name)}
     na_regua_hoje = {
@@ -289,8 +291,10 @@ def enfileirar_na_regua(db: Session) -> dict:
     }
     com_envio = {
         f.name
-        for f in db.query(models.Faixa).filter(models.Faixa.active.is_(True), models.Faixa.tipo == models.TIPO_REGUA)
-        if any(e.active and e.template_id for e in f.envios)
+        for f in db.query(models.Faixa)
+        .options(selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.dispatch_config))
+        .filter(models.Faixa.active.is_(True), models.Faixa.tipo == models.TIPO_REGUA)
+        if any(e.active and e.template_id and (e.dispatch_config and e.dispatch_config.active) for e in f.envios)
     }
     faixa_hoje = {c["codigo"]: c["faixa"] for c in base}
     agora = datetime.utcnow()
@@ -308,20 +312,29 @@ def enfileirar_na_regua(db: Session) -> dict:
 
 def campanhas_para_hoje(db: Session) -> list[models.Campanha]:
     """Com envio automático, não arquivadas nem pausadas, dentro do período,
-    ainda não rodadas hoje e com algum número + template ativo (ligar antes de
-    atribuir não perde o dia)."""
+    ainda não rodadas hoje e com algum número + template com agendamento ativo
+    (dispatch_config.active=True)."""
 
     hoje = hoje_br()
     pausadas = {p.valor for p in pausas.ativas(db) if p.escopo == "faixa"}
     return [
         c
-        for c in db.query(models.Campanha).filter(
+        for c in db.query(models.Campanha)
+        .options(
+            selectinload(models.Campanha.faixa)
+            .selectinload(models.Faixa.envios)
+            .selectinload(models.FaixaEnvio.dispatch_config)
+        )
+        .filter(
             models.Campanha.ativa.is_(True), models.Campanha.arquivada_em.is_(None)
         )
         if em_periodo(c, hoje)
         and c.ultima_execucao_dia != hoje
         and c.faixa_id not in pausadas
-        and any(e.active for e in c.faixa.envios)
+        and any(
+            e.active and e.template_id and (e.dispatch_config and e.dispatch_config.active)
+            for e in c.faixa.envios
+        )
     ]
 
 
