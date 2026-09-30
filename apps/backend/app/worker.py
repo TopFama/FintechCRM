@@ -94,7 +94,7 @@ def _extrair_leads_automatico(db: Session) -> bool:
         logger.info("Extração automática de leads: base de cobrança ainda processando, tenta no próximo ciclo")
         return False
     criados, ja_existiam, sem_celular = gerar_leads_de_clientes(db, job["data"], created_by=None)
-    na_fila = enfileirar_leads(db, job["data"], apenas_disparo_ativo=True)
+    na_fila = enfileirar_leads(db, job["data"])
     logger.info(
         "Extração automática de leads: %s criados, %s já existiam, %s sem celular, %s na fila de disparo",
         criados, ja_existiam, sem_celular, na_fila,
@@ -195,15 +195,8 @@ def _rotinas_do_dia(now: datetime) -> None:
             from . import remarketing  # import local: evita ciclo de import com worker
 
             # Só conta o dia como feito quando algum segmento ligado já tem
-            # número + template com agendamento ativo: ligar antes de atribuir não perde o dia.
-            if any(
-                r.ativo
-                and any(
-                    e.active and e.template_id and (e.dispatch_config and e.dispatch_config.active)
-                    for e in r.faixa.envios
-                )
-                for r in remarketing.garantir_segmentos(db)
-            ):
+            # número + template: ligar antes de atribuir não perde o dia.
+            if any(r.ativo and any(e.active for e in r.faixa.envios) for r in remarketing.garantir_segmentos(db)):
                 try:
                     remarketing.executar(db)
                 except Exception:  # noqa: BLE001 - Renegocie/SETA fora não pode travar o disparo

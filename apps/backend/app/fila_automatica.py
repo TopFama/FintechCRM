@@ -31,34 +31,16 @@ def enfileirar_clientes(
     origem: str,
     colunas_extras: dict[str, dict[str, str]] | None = None,
     enfileirados: list[dict] | None = None,
-    apenas_disparo_ativo: bool = False,
 ) -> int:
     """Coloca na fila de `faixa` clientes vindos direto do SETA (formato de
     `cobranca_base._montar_cliente`), resolvendo as variáveis de cada template
     ativo. Pula quem está em `bloqueados` (e o acrescenta ali) ou não tem
     telefone válido; variável sem valor vira item com erro.
     `colunas_extras` (por código) entram no contexto das variáveis como
-    colunas de planilha, valendo mais que os campos do cliente. Com apenas_disparo_ativo=True,
-    só enfileira se a faixa tiver ao menos um envio com agendamento/disparo ativo. Não comita.
+    colunas de planilha, valendo mais que os campos do cliente. Não comita.
     Devolve quantos entraram como pendentes (e os acrescenta a `enfileirados`)."""
 
-    if apenas_disparo_ativo:
-        envios_disparo = [
-            e
-            for e in faixa.envios
-            if e.active and e.template_id and (e.dispatch_config and e.dispatch_config.active)
-        ]
-        if not envios_disparo:
-            logger.info(
-                "%s: faixa '%s' sem envio automático ativo (disparo desativado); %s cliente(s) ignorado(s)",
-                origem,
-                faixa.name,
-                len(clientes),
-            )
-            return 0
-        templates = {e.template_id: e.template for e in envios_disparo}
-    else:
-        templates = itens_fila.templates_ativos(faixa)
+    templates = itens_fila.templates_ativos(faixa)
     if not templates:
         logger.warning("%s: faixa '%s' sem número/template ativo; %s cliente(s) ignorado(s)", origem, faixa.name, len(clientes))
         return 0
@@ -93,14 +75,12 @@ def enfileirar_clientes(
     return total
 
 
-def enfileirar_leads(db: Session, clientes: list[dict], *, apenas_disparo_ativo: bool = False) -> int:
+def enfileirar_leads(db: Session, clientes: list[dict]) -> int:
     """Coloca na fila da faixa correspondente os clientes da base do dia
     (já filtrada por primeiro dia da faixa + matriz do WhatsApp). Usa o Lead
     salvo de cada cliente pra resolver as variáveis do template. Mesmo
     bloqueio do upload: não duplica quem está pendente/reservado nem quem já
-    foi cobrado hoje em qualquer faixa. Com apenas_disparo_ativo=True (rotinas
-    automáticas), só enfileira em faixas cujo envio automático está ativo
-    (dispatch_config.active). Devolve quantos entraram na fila."""
+    foi cobrado hoje em qualquer faixa. Devolve quantos entraram na fila."""
 
     if not clientes:
         return 0
@@ -112,7 +92,6 @@ def enfileirar_leads(db: Session, clientes: list[dict], *, apenas_disparo_ativo:
             selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.template).selectinload(
                 models.Template.variables
             ),
-            selectinload(models.Faixa.envios).selectinload(models.FaixaEnvio.dispatch_config),
             selectinload(models.Faixa.variable_mappings),
         )
         .filter(models.Faixa.active.is_(True), models.Faixa.tipo == models.TIPO_REGUA)
@@ -131,22 +110,7 @@ def enfileirar_leads(db: Session, clientes: list[dict], *, apenas_disparo_ativo:
         if faixa is None:
             logger.warning("Fila automática: faixa '%s' não existe ou está inativa; %s cliente(s) ignorado(s)", nome_faixa, len(lista))
             continue
-        if apenas_disparo_ativo:
-            envios_disparo = [
-                e
-                for e in faixa.envios
-                if e.active and e.template_id and (e.dispatch_config and e.dispatch_config.active)
-            ]
-            if not envios_disparo:
-                logger.info(
-                    "Fila automática: faixa '%s' sem envio automático ativo (disparo desativado); %s cliente(s) ignorado(s)",
-                    nome_faixa,
-                    len(lista),
-                )
-                continue
-            templates = {e.template_id: e.template for e in envios_disparo}
-        else:
-            templates = itens_fila.templates_ativos(faixa)
+        templates = itens_fila.templates_ativos(faixa)
         if not templates:
             logger.warning("Fila automática: faixa '%s' sem número/template ativo; %s cliente(s) ignorado(s)", nome_faixa, len(lista))
             continue
