@@ -31,7 +31,7 @@ WhatsApp, juros) e leads. Ordenado do arquivo com mais violações para o com me
 ### `apps/backend/app/seta_client.py`
 - **Domínio:** Integrações (é o único acesso ao SETA; listado aqui porque todo SQL de cobrança mora nele)
 - **Camada:** infraestrutura
-- **Responsabilidade:** consultar o SETA em modo só leitura.
+- **Responsabilidade:** consultar o SETA em modo só leitura. Na base de cobrança (`_SQL_BASE_COBRANCA`, CTE `candidatos`) já filtra quem entra: cliente cuja dívida aberta é só `DESCRICAO_SEGURO` não volta, e cliente com atraso real só volta se o principal vencido (`valor_atraso_original`, sem multa/juros) for >= `VALOR_MINIMO_ATRASO` (R$ 30,00); lembrete (sem atraso ainda) não passa por esse corte. Teste: `tests/test_seta_base_cobranca.py`.
 - **Motivos para mudar:** regra de parcela em aberto, juros/multa, SPC, baixas, performance da consulta.
 - **Depende de:** `cobranca_regras` (tipos), `config`, `timezone`.
 - **É usado por:** os routers `campanhas`, `cobranca`, `comum`, `dashboard`, `leads`, `remarketing`, `reports` e `seta`; os módulos `worker`, `campanhas`, `cobranca_base`, `leads_service`, `remarketing` e `upload_service`; e os serviços `compras_seta`, `efetividade_service`, `pagamentos_seta`, `pagamentos_service` e `pagos_janela_service`.
