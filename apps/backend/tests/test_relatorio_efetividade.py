@@ -31,6 +31,7 @@ _os.environ.setdefault("ENCRYPTION_KEY", _Fernet.generate_key().decode())  # o b
 from app import cobranca_base, database, google_client, models, seta_client
 from app.main import app
 from app.relatorio_efetividade import montar_relatorio
+from app.timezone import hoje_br
 
 
 # ============================================================================
@@ -443,7 +444,7 @@ with TestClient(app) as client:
     assert marcar_res.json()["atualizados"] == 2
 
     # 3. Simula situação dos títulos no SETA
-    hoje = datetime.now(timezone.utc).date()
+    hoje = hoje_br()
 
     def mock_situacao_titulos(codigos):
         res = {}

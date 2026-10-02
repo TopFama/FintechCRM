@@ -6,7 +6,8 @@ Uso: python seta_falso.py postgresql://crm:crm@localhost:5432/seta_fake
 
 import random
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import psycopg
 
@@ -16,7 +17,8 @@ CREATE TABLE pessoas (
     codigo char(8) PRIMARY KEY, nome char(60), telefone1 char(20), telefone2 char(20),
     telefone3 char(20), cpfcnpj char(18), status char(1), empresa char(2),
     faturamento numeric(14,2), credito numeric(14,2), nascimento date, cadastro date,
-    scpcresultado text, cliente boolean DEFAULT true, telefone4 char(20)
+    scpcresultado text, cliente boolean DEFAULT true, telefone4 char(20),
+    funcionario boolean DEFAULT false
 );
 CREATE TABLE financeiro_titulos (
     codigo char(10) PRIMARY KEY, pessoa char(8), valor numeric(14,2), vencimento date,
@@ -51,7 +53,9 @@ PORTADORES = ["001", "114", "216"]
 
 def main(url: str) -> None:
     rnd = random.Random(42)
-    hoje = date.today()
+    # "hoje" de Brasília, como o app (o relógio do runner é UTC: de 00h às 03h UTC
+    # o dia é outro e todos os atrasos mudariam em 1 dia)
+    hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
     with psycopg.connect(url, autocommit=True) as conn:
         conn.execute(DDL)
         conn.execute("INSERT INTO condicoes VALUES ('004','4'), ('130','4'), ('001','1')")

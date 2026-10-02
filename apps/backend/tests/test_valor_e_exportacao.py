@@ -29,6 +29,7 @@ from app.cobranca_relatorio import montar_matriz, montar_matriz_valor
 from app.database import SessionLocal
 from app.main import app
 from app.regras_db import carregar_regras
+from app.timezone import hoje_br
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +242,7 @@ with TestClient(app) as client:
 
     f_antiga = faixa_1  # anterior na ordem configurada
     f_recente = faixa_2  # posterior na ordem configurada
-    hoje = date.today().isoformat()
+    hoje = hoje_br().isoformat()
 
     # Lead 1: cobrado, faixa f_recente
     lead1 = models.Lead(

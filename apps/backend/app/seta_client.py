@@ -16,6 +16,7 @@ Convenções do schema do SETA que o restante do código precisa conhecer:
 import logging
 import time
 from datetime import date, timedelta
+from decimal import Decimal
 from functools import lru_cache
 
 from sqlalchemy import bindparam, create_engine, text
@@ -113,6 +114,10 @@ PORTADOR_MJ = "216"
 # não conta para o cluster de valor pago.
 DESCRICAO_SEGURO = "SEGURO TOPFAMA"
 
+# Cliente em atraso só entra na base se o principal vencido (sem multa nem
+# juros, `valor_atraso_original`) for de pelo menos este valor (inclusive).
+VALOR_MINIMO_ATRASO = Decimal("30.00")
+
 # Condição de pagamento "A PRAZO ATIVO": crediário (condicoes.tipo = '4'), mas
 # não conta como compra na faixa de compra.
 CONDICAO_IGNORADA = "130"
@@ -129,6 +134,8 @@ WITH {cte_alvo}parcelas AS (
            ft.vencimento,
            trim(ft.empresa)  AS empresa,
            trim(ft.portador) AS portador,
+           -- COALESCE: descrição nula não é seguro (senão sumiria do filtro)
+           COALESCE(trim(ft.descricao) = :descricao_seguro, false) AS eh_seguro,
            min(ft.vencimento) OVER (PARTITION BY ft.pessoa) AS vencimento_min
       FROM financeiro_titulos ft
      WHERE ft.rp = 'R'
@@ -142,6 +149,9 @@ WITH {cte_alvo}parcelas AS (
 abertos AS (
     SELECT pessoa,
            count(*)                       AS qtd_titulos,
+           -- cliente que só deve seguro não entra (ver `candidatos`)
+           count(*) FILTER (WHERE NOT eh_seguro)
+                                          AS qtd_titulos_nao_seguro,
            sum(valor)                     AS valor_em_aberto,
            min(vencimento)                AS vencimento_mais_antigo,
            string_agg(DISTINCT empresa, ',')  AS lojas,
@@ -174,6 +184,10 @@ candidatos AS (
     SELECT a.*, current_date - a.vencimento_mais_antigo AS dias_atraso
       FROM abertos a
      WHERE {filtro_dias}
+       AND a.qtd_titulos_nao_seguro > 0
+       -- sem atraso real (lembrete) passa; com atraso, vale o principal vencido
+       AND (a.vencimento_mais_antigo >= current_date
+            OR a.valor_atraso_original >= :valor_minimo_atraso)
        {filtro_vencimento}
 ),
 base AS (
@@ -279,7 +293,11 @@ def buscar_base_cobranca(
     cluster/faixa e aplicar a matriz WhatsApp é com `cobranca_regras`.
 
     - `dias_atraso` = hoje − vencimento da parcela aberta mais antiga (ela
-      define a faixa do cliente). A parcela de seguro entra normalmente.
+      define a faixa do cliente). A parcela de seguro entra normalmente nos
+      valores, mas cliente cuja dívida aberta é só seguro não volta.
+    - cliente com atraso real (parcela vencida antes de hoje) só volta se o
+      principal vencido (`valor_atraso_original`, sem multa/juros) for >=
+      `VALOR_MINIMO_ATRASO`; lembrete (ainda sem atraso) não passa por esse corte.
     - `faixas` (intervalos de dias) e `dias_exatos` (só o primeiro dia de cada
       faixa) restringem quem volta; `dias_exatos` tem precedência.
     - `vencimento_de` / `vencimento_ate` filtram pelo vencimento da parcela mais
@@ -306,6 +324,7 @@ def buscar_base_cobranca(
         "bl_codigos": bloqueados_codigos or [],
         "bl_cpfs": bloqueados_cpfs or [],
         "descricao_seguro": DESCRICAO_SEGURO,
+        "valor_minimo_atraso": VALOR_MINIMO_ATRASO,
         "dias_min_juros": juros.dias_min,
         "juros_dia": juros.juros_dia,
         "multa": juros.multa,

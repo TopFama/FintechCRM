@@ -14,6 +14,7 @@ teste (ver e2e/README.md). Uso: python servidor_teste.py [porta]
 
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -73,11 +74,18 @@ def _meta(request: httpx.Request) -> httpx.Response:
         ENVIOS.append({"canal": "meta", "phone_number_id": path.split("/")[0], **body})
         return httpx.Response(200, json={"messages": [{"id": f"wamid.teste{len(ENVIOS)}"}]})
     if path == WABA or path.startswith(WABA):
-        # pricing analytics: 1 ponto por número nos últimos 3 dias
+        # pricing analytics: 1 ponto por número nos últimos 3 dias, sempre dentro do
+        # período pedido (como a Meta): nos primeiros dias do mês os "últimos 3
+        # dias" caem no mês anterior e, fora do período, o card e a exportação
+        # do Orçamento divergiam
         agora = int(time.time())
+        janela = re.search(r"start\((\d+)\)\.end\((\d+)\)", request.url.params.get("fields", ""))
+        ini_janela, fim_janela = (int(janela[1]), int(janela[2])) if janela else (0, agora)
         pontos = []
         for d in range(3):
-            inicio = agora - (d + 1) * 86400
+            inicio = max(agora - (d + 1) * 86400, ini_janela)
+            if inicio >= fim_janela:
+                continue
             for n in NUMEROS:
                 pontos.append({"start": inicio, "end": inicio + 86400, "phone_number": n["display_phone_number"],
                                "volume": 10 + d, "cost": 0.5 + d / 10, "pricing_type": "REGULAR"})
@@ -180,6 +188,17 @@ from app.main import app  # noqa: E402
 @app.get("/__e2e/envios", include_in_schema=False)
 def envios_simulados():
     return ENVIOS
+
+
+@app.post("/__e2e/cache/limpar", include_in_schema=False)
+def limpar_cache():
+    """Esvazia o cache de relatórios (Redis de teste). Serve a cenário que lê um
+    número que o cache de 5 min pode ter guardado antes das cobranças do teste."""
+
+    from app import cache
+
+    cache._redis().flushdb()
+    return {"ok": True}
 
 
 @app.post("/__e2e/campanhas/enviar", include_in_schema=False)

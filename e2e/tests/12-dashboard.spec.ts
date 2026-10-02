@@ -1,4 +1,4 @@
-import { apiGet, baixar, card, escolherMulti, expect, permitirErrosConsole, test } from "./fixtures";
+import { apiGet, apiSend, baixar, card, escolherMulti, expect, permitirErrosConsole, test } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 const stat = (page: Page, rotulo: string) =>
@@ -92,6 +92,10 @@ test.describe("Dashboard", () => {
   }
 
   test("card 'Pagaram em até 7 dias' mostra % e valor e abre Quem pagou com janela 7 e o mesmo total", async ({ page }) => {
+    // No dia 1º, "Hoje" e "Este mês" são o mesmo período e o cache de 5 min do card pode ter
+    // guardado o número de antes das cobranças dos cenários anteriores
+    await apiSend(page, "POST", "/__e2e/cache/limpar");
+    await page.goto("/");
     await page.locator(".periodo-card", { hasText: "Este mês" }).first().click();
     const valor = stat(page, "Pagaram em até 7 dias");
     await expect(valor).not.toHaveText("…", { timeout: 30_000 });
