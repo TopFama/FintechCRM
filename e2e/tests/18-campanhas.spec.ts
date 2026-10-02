@@ -145,6 +145,8 @@ test.describe.serial("Campanhas", () => {
       .toBe(leads.total);
     const codigos = leads.itens.map((l: any) => l.codigo_cliente).sort();
 
+    // a efetividade fica 5 min em cache; os envios acima são mais novos que o cache
+    await apiSend(page, "POST", "/__e2e/cache/limpar");
     const efet = await apiGet(page, `/reports/efetividade?campanha=${campanha.id}`);
     expect(efet.total.clientes_cobrados).toBe(leads.total);
     const soRegua = await apiGet(page, "/reports/efetividade?campanha=regua");
@@ -288,6 +290,7 @@ test.describe.serial("Campanhas", () => {
   });
 
   test("Efetividade por campanha e lista de campanhas pelo período enviado", async ({ page }) => {
+    await apiSend(page, "POST", "/__e2e/cache/limpar");
     await page.goto("/");
     const e = card(page, "Efetividade da cobrança");
     await e.getByRole("button", { name: "Aplicar filtros" }).click();
