@@ -13,7 +13,8 @@ name: Deploy (VPS)
 #   - testar: só lê (usuário, commit atual, acesso ao GitHub, containers) e
 #     confere a saúde do backend; não muda nada na VPS.
 #   - deploy: traz a main, reconstrói os containers do CRM e confere a saúde.
-#     Só a partir da main.
+#     Só a partir da main. Se a VPS tiver commits que não
+#     estão no alvo, guarda numa branch vps-local-* e volta ao commit testado.
 # PR que mexe neste arquivo roda o "testar", para validar a conexão antes do merge.
 on:
   workflow_run:
@@ -148,10 +149,19 @@ jobs:
             git merge --ff-only "$alvo"
             echo "Código: $(git rev-parse --short "$antes") -> $(git rev-parse --short HEAD)"
           else
-            echo "::error::Histórico divergente entre a VPS e o alvo $alvo"
-            echo "VPS:   $(git rev-parse --short HEAD)"
-            echo "Alvo:  $(git rev-parse --short "$alvo")"
-            exit 1
+            # A VPS tem commits fora do alvo (alguém comitou direto nela): ela é só um
+            # espelho da main testada, então guarda esses commits numa branch local e
+            # volta ao alvo. Alteração não commitada é trabalho de alguém: recusa.
+            if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+              echo "::error::VPS com commits fora do alvo $alvo e alterações não commitadas; resolver na VPS (git status)"
+              exit 1
+            fi
+            backup="vps-local-$(date +%Y%m%d-%H%M%S)"
+            git branch "$backup" HEAD
+            echo "Commits só da VPS, guardados na branch $backup:"
+            git log --oneline "$alvo"..HEAD
+            git reset --hard "$alvo"
+            echo "Código: $(git rev-parse --short "$antes") -> $(git rev-parse --short HEAD)"
           fi
 
           docker compose up -d --build
