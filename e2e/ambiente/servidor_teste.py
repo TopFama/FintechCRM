@@ -190,6 +190,17 @@ def envios_simulados():
     return ENVIOS
 
 
+@app.post("/__e2e/cache/limpar", include_in_schema=False)
+def limpar_cache():
+    """Esvazia o cache de relatórios (Redis de teste). Serve a cenário que lê um
+    número que o cache de 5 min pode ter guardado antes das cobranças do teste."""
+
+    from app import cache
+
+    cache._redis().flushdb()
+    return {"ok": True}
+
+
 @app.post("/__e2e/campanhas/enviar", include_in_schema=False)
 def enviar_campanhas():
     """Envia na hora os pendentes das campanhas (sem depender do horário de
