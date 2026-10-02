@@ -402,6 +402,8 @@ test.describe.serial("Campanhas", () => {
 
     const opcoes = await apiGet(page, "/campanhas/opcoes");
     expect(opcoes.find((o: any) => o.id === id)).toMatchObject({ nome, fixa: true });
+    // a efetividade fica 5 min em cache; as cobranças deste teste são mais novas que o cache
+    await apiSend(page, "POST", "/__e2e/cache/limpar");
     const efet = await apiGet(page, "/reports/efetividade");
     expect(efet.por_campanha.map((l: any) => l.campanha)).toContain(nome);
     expect((await apiGet(page, `/reports/efetividade?campanha=${id}`)).total.clientes_cobrados).toBe(naFila);

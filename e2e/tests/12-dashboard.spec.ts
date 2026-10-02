@@ -393,10 +393,11 @@ test.describe("Dashboard", () => {
       await route.continue().catch(() => undefined);
     });
     await page.locator(".periodo-card", { hasText: "Últimos 7 dias" }).first().click();
-    await page.locator(".periodo-card", { hasText: "Este mês" }).first().click();
+    await expect.poll(() => pedidos.length).toBe(1); // a primeira consulta está no ar (segurada)
+    await page.locator(".periodo-card", { hasText: "Hoje" }).first().click();
+    await expect.poll(() => pedidos.length).toBe(2);
     await expect(stat(page, "Pagaram em até 7 dias")).not.toHaveText("…", { timeout: 30_000 });
     await expect(page.locator(".stat .texto-erro")).toHaveCount(0);
-    expect(pedidos.length).toBeGreaterThanOrEqual(2);
   });
 
   test("efetividade: exportar Excel e exportar por cliente", async ({ page }) => {
