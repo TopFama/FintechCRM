@@ -53,7 +53,7 @@ uma feature de algum domínio precisou de um campo novo: o co-change mais forte 
 ### `apps/backend/app/main.py`
 - **Domínio:** Plataforma
 - **Camada:** interface (bootstrap)
-- **Responsabilidade:** montar a aplicação.
+- **Responsabilidade:** montar a aplicação, inclusive a porta de entrada: 403 para `Host` ou `Origin` fora de `ALLOWED_HOSTS` (`lojastopfama.com.br` e subdomínios; teste: `tests/test_hosts_permitidos.py`).
 - **Violações encontradas:** nenhuma (migrations, checagem de segredos, admin, worker, registro dos routers).
 - **Churn:** 23 | **Linhas:** 162
 
