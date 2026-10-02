@@ -6,7 +6,8 @@ Uso: python seta_falso.py postgresql://crm:crm@localhost:5432/seta_fake
 
 import random
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import psycopg
 
@@ -52,7 +53,9 @@ PORTADORES = ["001", "114", "216"]
 
 def main(url: str) -> None:
     rnd = random.Random(42)
-    hoje = date.today()
+    # "hoje" de Brasília, como o app (o relógio do runner é UTC: de 00h às 03h UTC
+    # o dia é outro e todos os atrasos mudariam em 1 dia)
+    hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
     with psycopg.connect(url, autocommit=True) as conn:
         conn.execute(DDL)
         conn.execute("INSERT INTO condicoes VALUES ('004','4'), ('130','4'), ('001','1')")
