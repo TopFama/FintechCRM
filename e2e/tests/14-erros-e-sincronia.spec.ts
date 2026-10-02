@@ -1,7 +1,10 @@
 import { card, expect, permitirErrosConsole, responderDialogo, test } from "./fixtures";
+import { prepararConexoes } from "./preparo";
 
 // Cenários de resiliência da tela: erro de rede some quando a próxima chamada dá certo,
 // e cards que dependem uns dos outros ficam em sincronia. Roda por último porque exclui o token.
+
+test.beforeAll(prepararConexoes);
 
 test.describe("Erros e sincronia entre cards", () => {
   test("Dashboard: erro do resumo some quando o próximo período carrega", async ({ page }) => {

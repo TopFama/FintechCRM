@@ -1,4 +1,7 @@
 import { card, expect, permitirErrosConsole, test } from "./fixtures";
+import { prepararFaixas } from "./preparo";
+
+test.beforeAll(prepararFaixas);
 
 test.describe("Configurações → Horário", () => {
   test.beforeEach(async ({ page }) => {

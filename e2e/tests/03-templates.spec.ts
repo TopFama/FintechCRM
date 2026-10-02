@@ -1,4 +1,7 @@
 import { apiGet, campo, card, expect, permitirErrosConsole, test } from "./fixtures";
+import { prepararConexoes } from "./preparo";
+
+test.beforeAll(prepararConexoes);
 
 test.describe("Configurações → Templates", () => {
   test.beforeEach(async ({ page }) => {

@@ -3,28 +3,13 @@ import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { API_URL } from "./ambiente";
 import { apiGet, apiSend, baixar, card, expect, responderDialogo, test } from "./fixtures";
+import { prepararTemplates } from "./preparo";
 
 const DADOS = path.join(path.dirname(fileURLToPath(import.meta.url)), "dados");
 const SCREENSHOTS = process.env.E2E_SCREENSHOTS;
 
 async function foto(page: Page, nome: string) {
   if (SCREENSHOTS) await page.screenshot({ path: path.join(SCREENSHOTS, `${nome}.png`), fullPage: true });
-}
-
-async function garantirNumero(page: Page) {
-  if ((await apiGet(page, "/numbers")).length === 0) {
-    const token = await apiSend(page, "POST", "/meta-tokens", {
-      nome: "Token Campanhas",
-      token: "EAA-token-campanhas-1234",
-      waba_id: "1111111111",
-    });
-    expect(token.status).toBe(201);
-    const r = await apiSend(page, "POST", `/meta-tokens/${token.corpo.id}/importar-numeros`, { phone_number_ids: ["900001"] });
-    expect(r.status).toBe(200);
-  }
-  if (!(await apiGet(page, "/templates")).some((t: any) => t.name === "lembrete_vencimento")) {
-    expect((await apiSend(page, "POST", "/templates/meta/sync?waba_id=1111111111")).status).toBe(200);
-  }
 }
 
 async function atribuirTemplate(page: Page, template: string, origem: string) {
@@ -36,6 +21,8 @@ async function atribuirTemplate(page: Page, template: string, origem: string) {
   await bloco.getByRole("button", { name: "Salvar envio" }).click();
   await expect(bloco.locator(".success-box")).toContainText("Envio adicionado");
 }
+
+test.beforeAll(prepararTemplates);
 
 // SETA falso: lojas 01 e 06 com valor em atraso (com juros) entre 200 e 900 são
 // 00000025, 23, 21, 15, 33, 13, 31, 09, 07 e 05 (21 e 07 sem celular).
@@ -54,7 +41,6 @@ test.describe.serial("Campanhas", () => {
   });
 
   test("cria a campanha com lojas importadas e filtro de valor em atraso", async ({ page }) => {
-    await garantirNumero(page);
     await page.goto("/campanhas");
     await page.getByRole("button", { name: "Nova campanha" }).click();
     await page.getByLabel("Nome da campanha").fill("Feirão lojas 01 e 06");
@@ -364,7 +350,6 @@ test.describe.serial("Campanhas", () => {
   });
 
   test("remarketing do Renegocie entra como campanha fixa", async ({ page }) => {
-    await garantirNumero(page);
     const conexao = { base_url: "http://renegocie-api:8000", chave: "chave-teste" };
     expect((await apiSend(page, "PUT", "/remarketing/conexao", conexao)).status).toBe(200);
     const segmento = { ativo: true, janela_dias: 30, recontato_dias: 7 };

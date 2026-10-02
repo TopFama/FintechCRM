@@ -1,8 +1,11 @@
 import { baixar, card, expect, permitirErrosConsole, test } from "./fixtures";
 import type { Page } from "@playwright/test";
+import { prepararOperacao } from "./preparo";
 
 const aba = (page: Page, nome: string) => page.getByRole("button", { name: nome, exact: true });
 const tabela = (page: Page) => page.locator(".card table").first();
+
+test.beforeAll(prepararOperacao);
 
 test.describe("Relatórios", () => {
   test.beforeEach(async ({ page }) => {

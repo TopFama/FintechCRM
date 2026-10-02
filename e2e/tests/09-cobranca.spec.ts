@@ -1,5 +1,6 @@
 import { apiGet, baixar, campo, card, escolherMulti, expect, permitirErrosConsole, responderDialogo, test } from "./fixtures";
 import type { Page } from "@playwright/test";
+import { prepararBlacklist, prepararFaixas } from "./preparo";
 
 const titulo = (page: Page) => card(page, /^Clientes/).locator("h3");
 const linhas = (page: Page) => card(page, /^Clientes/).locator("tbody tr");
@@ -15,6 +16,11 @@ async function semRegrasPadrao(page: Page) {
   await filtros(page).getByLabel("Somente o primeiro dia da faixa").uncheck();
   await filtros(page).getByLabel("Somente clientes da regra WhatsApp").uncheck();
 }
+
+test.beforeAll(async () => {
+  await prepararFaixas();
+  await prepararBlacklist();
+});
 
 test.describe("Cobrança: consulta de clientes no SETA", () => {
   test.beforeEach(async ({ page }) => {

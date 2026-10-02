@@ -1,4 +1,7 @@
 import { apiGet, card, expect, test } from "./fixtures";
+import { prepararFila } from "./preparo";
+
+test.beforeAll(prepararFila);
 
 test.describe("Disparo pelo worker (Meta simulada)", () => {
   test("faixa com disparo ativo: itens da fila passam para enviado na tela, sem recarregar", async ({ page }) => {

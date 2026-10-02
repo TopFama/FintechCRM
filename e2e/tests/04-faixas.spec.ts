@@ -1,4 +1,7 @@
 import { apiGet, campo, card, expect, permitirErrosConsole, responderDialogo, test } from "./fixtures";
+import { prepararTemplates } from "./preparo";
+
+test.beforeAll(prepararTemplates);
 
 test.describe("Configurações → Faixas de cobrança", () => {
   test("lista vazia e sincronizar com as faixas de atraso (e de novo, sem duplicar)", async ({ page }) => {

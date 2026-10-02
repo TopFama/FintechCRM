@@ -1,11 +1,14 @@
 import { apiGet, apiSend, baixar, card, escolherMulti, expect, permitirErrosConsole, test } from "./fixtures";
 import type { Page } from "@playwright/test";
+import { prepararOperacao } from "./preparo";
 
 const stat = (page: Page, rotulo: string) =>
   page.locator(".stat", { has: page.locator(".label", { hasText: new RegExp(`^${rotulo.replace(/[()]/g, "\\$&")}$`) }) }).locator(".value").first();
 
 // "12.345" → 12345 (os cards mostram separador de milhar)
 const numero = (t: string) => Number(t.replace(/\./g, ""));
+
+test.beforeAll(prepararOperacao);
 
 test.describe("Dashboard", () => {
   test.beforeEach(async ({ page }) => {
