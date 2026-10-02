@@ -1,7 +1,7 @@
 import { EMAIL, SENHA } from "./ambiente";
 import { expect, permitirErrosConsole, test } from "./fixtures";
 
-test.describe("Login e navegação", () => {
+test.describe("Login e navegação", { tag: "@login" }, () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
   test("sem sessão, qualquer tela manda para o login", async ({ page }) => {

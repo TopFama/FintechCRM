@@ -3,7 +3,7 @@ import { prepararTemplates } from "./preparo";
 
 test.beforeAll(prepararTemplates);
 
-test.describe("Configurações → Faixas de cobrança", () => {
+test.describe("Configurações → Faixas de cobrança", { tag: "@faixas" }, () => {
   test("lista vazia e sincronizar com as faixas de atraso (e de novo, sem duplicar)", async ({ page }) => {
     await page.goto("/configuracoes?aba=faixas");
     // As faixas do remarketing nascem sozinhas, mas ficam na tela Campanhas: aqui só as de atraso

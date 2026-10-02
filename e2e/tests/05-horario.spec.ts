@@ -3,7 +3,7 @@ import { prepararFaixas } from "./preparo";
 
 test.beforeAll(prepararFaixas);
 
-test.describe("Configurações → Horário", () => {
+test.describe("Configurações → Horário", { tag: "@horario" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/configuracoes?aba=horario");
   });

@@ -2,7 +2,7 @@ import { apiGet, campo, card, expect, permitirErrosConsole, responderDialogo, te
 
 const WABA = "1111111111";
 
-test.describe("Configurações → Conexões", () => {
+test.describe("Configurações → Conexões", { tag: "@conexoes" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/configuracoes?aba=conexoes");
   });

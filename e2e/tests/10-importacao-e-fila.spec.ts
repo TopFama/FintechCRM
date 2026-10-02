@@ -15,7 +15,7 @@ async function abrirImportacao(page: Page, faixa: string) {
 
 test.beforeAll(prepararFaixas);
 
-test.describe("Cobrança → Importar planilha para a fila", () => {
+test.describe("Cobrança → Importar planilha para a fila", { tag: ["@importacao", "@fila"] }, () => {
   test("faixa sem número/template avisa antes de subir", async ({ page }) => {
     await page.goto("/cobranca");
     await campo(importar(page), "Faixa").selectOption({ label: "21 A 30" });
@@ -108,7 +108,7 @@ test.describe("Cobrança → Importar planilha para a fila", () => {
   });
 });
 
-test.describe("Detalhe da faixa: fila", () => {
+test.describe("Detalhe da faixa: fila", { tag: ["@importacao", "@fila"] }, () => {
   async function abrirFaixa(page: Page, nome: string) {
     const f = (await apiGet(page, "/faixas")).find((x: any) => x.name === nome);
     await page.goto(`/faixas/${f.id}`);

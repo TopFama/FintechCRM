@@ -7,7 +7,7 @@ const tabela = (page: Page) => page.locator(".card table").first();
 
 test.beforeAll(prepararOperacao);
 
-test.describe("Relatórios", () => {
+test.describe("Relatórios", { tag: "@relatorios" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/relatorios");
   });
@@ -62,7 +62,7 @@ test.describe("Relatórios", () => {
     await expect(page.getByText("Nenhum envio realizado ainda")).toHaveCount(0);
   });
 
-  test("quem pagou: totais, filtro de pagamento e Excel", async ({ page }) => {
+  test("quem pagou: totais, filtro de pagamento e Excel", { tag: ["@pagamentos"] }, async ({ page }) => {
     await aba(page, "Quem pagou").click();
     await expect(page.getByText("Pago de")).toBeVisible();
     await expect(page.locator(".stat", { hasText: "Clientes que pagaram" })).toBeVisible({ timeout: 30_000 });

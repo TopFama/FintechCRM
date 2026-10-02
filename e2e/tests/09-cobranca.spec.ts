@@ -22,7 +22,7 @@ test.beforeAll(async () => {
   await prepararBlacklist();
 });
 
-test.describe("Cobrança: consulta de clientes no SETA", () => {
+test.describe("Cobrança: consulta de clientes no SETA", { tag: "@cobranca" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/cobranca");
   });
@@ -213,7 +213,7 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
     expect(xlsx[0].join(" ")).toMatch(/nome/i);
   });
 
-  test("SETA fora do ar: mensagem clara e botão volta a funcionar", async ({ page }) => {
+  test("SETA fora do ar: mensagem clara e botão volta a funcionar", { tag: ["@resiliencia"] }, async ({ page }) => {
     permitirErrosConsole(page, "503");
     await page.route("**/cobranca/clientes?*", (r) =>
       r.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Falha ao consultar o SETA (OperationalError)" }) })
@@ -227,7 +227,7 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
     expect(await linhas(page).count()).toBeGreaterThan(0);
   });
 
-  test("filtro editado e não aplicado não é usado em silêncio por 'Enviar para fila'", async ({ page }) => {
+  test("filtro editado e não aplicado não é usado em silêncio por 'Enviar para fila'", { tag: ["@leads"] }, async ({ page }) => {
     await aplicar(page);
     await escolherMulti(filtros(page), "Faixa de atraso", ["151+"]);
     let url = "";
@@ -242,7 +242,7 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
     expect(decodeURIComponent(url)).toContain("faixa=151+");
   });
 
-  test("enviar para fila numa faixa sem número/template avisa que nada entrou na fila", async ({ page }) => {
+  test("enviar para fila numa faixa sem número/template avisa que nada entrou na fila", { tag: ["@leads"] }, async ({ page }) => {
     await escolherMulti(filtros(page), "Faixa de atraso", ["151+"]);
     await aplicar(page);
     const dialogo = responderDialogo(page, true);
@@ -252,7 +252,7 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
     await expect(filtros(page).locator(".success-box")).toHaveCount(0);
   });
 
-  test("cancelar a confirmação não envia nada", async ({ page }) => {
+  test("cancelar a confirmação não envia nada", { tag: ["@leads"] }, async ({ page }) => {
     await aplicar(page);
     let chamou = false;
     page.on("request", (r) => r.url().includes("/leads/gerar") && (chamou = true));
@@ -263,7 +263,7 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
     expect(chamou).toBe(false);
   });
 
-  test("enviar para fila: confirmação, sucesso, lista some e os clientes entram na fila da faixa", async ({ page }) => {
+  test("enviar para fila: confirmação, sucesso, lista some e os clientes entram na fila da faixa", { tag: ["@leads","@elegibilidade"] }, async ({ page }) => {
     await escolherMulti(filtros(page), "Faixa de atraso", ["3 A 10", "11 A 20"]);
     await semRegrasPadrao(page);
     await aplicar(page);
@@ -284,7 +284,7 @@ test.describe("Cobrança: consulta de clientes no SETA", () => {
     expect(naFila).toBeGreaterThan(0);
   });
 
-  test("vindo da matriz do Dashboard (?cluster=&faixa=) já consulta com os filtros", async ({ page }) => {
+  test("vindo da matriz do Dashboard (?cluster=&faixa=) já consulta com os filtros", { tag: ["@dashboard"] }, async ({ page }) => {
     await page.goto("/cobranca?cluster=ESPECIAL&faixa=151%2B");
     await expect(filtros(page).locator(".ms-btn", { hasText: "ESPECIAL" })).toBeVisible();
     await expect(filtros(page).locator(".ms-btn", { hasText: "151+" })).toBeVisible();

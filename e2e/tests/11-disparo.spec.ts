@@ -3,7 +3,7 @@ import { prepararFila } from "./preparo";
 
 test.beforeAll(prepararFila);
 
-test.describe("Disparo pelo worker (Meta simulada)", () => {
+test.describe("Disparo pelo worker (Meta simulada)", { tag: ["@disparo", "@elegibilidade"] }, () => {
   test("faixa com disparo ativo: itens da fila passam para enviado na tela, sem recarregar", async ({ page }) => {
     const f = (await apiGet(page, "/faixas")).find((x: any) => x.name === "3 A 10");
     await page.goto(`/faixas/${f.id}`);

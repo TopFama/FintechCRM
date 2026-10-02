@@ -26,7 +26,7 @@ test.beforeAll(prepararTemplates);
 
 // SETA falso: lojas 01 e 06 com valor em atraso (com juros) entre 200 e 900 são
 // 00000025, 23, 21, 15, 33, 13, 31, 09, 07 e 05 (21 e 07 sem celular).
-test.describe.serial("Campanhas", () => {
+test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","@relatorios","@dashboard","@pausas","@remarketing","@elegibilidade"] }, () => {
   test("menu: Campanhas logo abaixo de Cobrança, Remarketing vira aba", async ({ page }) => {
     await page.goto("/");
     const itens = await page.locator(".nav-link").allInnerTexts();

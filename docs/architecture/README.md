@@ -74,7 +74,7 @@ apps/frontend/src/
   api.ts (1272 linhas)                   todo o acesso ao backend e todos os tipos
   pages/          10 páginas              Relatorios.tsx tem 871 linhas
   components/     config/, dashboard/ e componentes soltos
-e2e/                                     Playwright: 174 cenários (+ login de setup) contra ambiente de teste
+e2e/                                     Playwright: 183 cenários (+ login de setup) contra ambiente de teste
 ```
 
 A camada de serviço existe, mas de forma informal: parte está em `services/`, a maior parte em
@@ -111,7 +111,7 @@ e `coverage combine`). Os pontos mais descobertos são justamente os de maior ri
 | `routers/reports.py` | 61% |
 | `dispatch_service.py` | 80% |
 
-**E2E**: `e2e/` com Playwright, 174 cenários (mais o login de setup) que cobrem essas telas pelo navegador (ver
+**E2E**: `e2e/` com Playwright, 183 cenários (mais o login de setup) que cobrem essas telas pelo navegador (ver
 `e2e/README.md`). Não entram na medição de cobertura acima.
 
 **CI**: no momento da análise só existia `security-scan.yml` (npm audit e pip-audit). A Fase 5

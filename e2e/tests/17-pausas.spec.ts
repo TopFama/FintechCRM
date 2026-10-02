@@ -9,7 +9,7 @@ const resumo = (page: Page) => page.getByText(/pendente\(s\) · \d+ pausado\(s\)
 
 test.beforeAll(prepararOperacao);
 
-test.describe.serial("Pendentes: pausar, retomar e parar", () => {
+test.describe.serial("Pendentes: pausar, retomar e parar", { tag: "@pausas" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/relatorios?aba=pendentes");
     await expect(page.getByText("Carregando...")).toHaveCount(0);

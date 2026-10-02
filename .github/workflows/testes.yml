@@ -2,7 +2,9 @@ name: Testes
 
 # Roda em todo PR e em todo push na main: scripts de teste do backend
 # (inclui a caracterização do fluxo de envio), regras de import entre camadas
-# (import-linter), build do frontend e a suíte e2e.
+# (import-linter), build do frontend, os testes do seletor e o e2e. O e2e roda só os
+# cenários que os arquivos alterados podem quebrar (e2e/selecionar-telas.mjs) mais a
+# fumaça; a suíte inteira roda quando a mudança é ampla, toda segunda-feira e sob demanda.
 # Mudança só em .md não roda: documentação vai direto para a main sem CI
 # (AGENTS.md → Merge na main), e um push desses cancelaria a rodada do código
 # que acabou de entrar (ver concurrency abaixo).
@@ -12,7 +14,14 @@ on:
   push:
     branches: [main]
     paths-ignore: ["**/*.md"]
-  workflow_dispatch: {}
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      completa:
+        description: "Rodar a suíte e2e inteira"
+        type: boolean
+        default: true
 
 concurrency:
   group: testes-${{ github.ref }}
@@ -78,6 +87,16 @@ jobs:
       - run: npm ci
       - run: npm run build:frontend
 
+  seletor:
+    name: Seletor do e2e (testes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - run: node --test e2e/selecionar-telas.test.mjs
+
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
@@ -103,58 +122,64 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
-      # Escolhe apenas as telas afetadas pelos arquivos alterados, com os cenários
-      # de que elas dependem (e2e/selecionar-telas.mjs), tanto em PR quanto em push.
-      - name: Escolher as telas
+      # Escolhe os cenários afetados pelos arquivos alterados (e2e/selecionar-telas.mjs):
+      # tags das funcionalidades tocadas + fumaça; "todos" quando a mudança é ampla.
+      - name: Escolher os cenários
         id: telas
         env:
           EVENTO: ${{ github.event_name }}
+          COMPLETA: ${{ inputs.completa }}
           BASE: ${{ github.base_ref }}
           BEFORE: ${{ github.event.before }}
         run: |
-          if [ "$EVENTO" = "pull_request" ]; then
-            git diff --name-only "origin/$BASE...HEAD" > alterados.txt
-          elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
-            git diff --name-only "$BEFORE...HEAD" > alterados.txt
+          if [ "$EVENTO" = "schedule" ] || [ "$COMPLETA" = "true" ]; then
+            echo '{"modo":"todos","grep":"","motivos":["execução completa (agendada ou manual)"]}' > selecao.json
           else
-            git diff --name-only "HEAD~1...HEAD" > alterados.txt
+            if [ "$EVENTO" = "pull_request" ]; then
+              git diff --name-only "origin/$BASE...HEAD" > alterados.txt
+            elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+              git diff --name-only "$BEFORE...HEAD" > alterados.txt
+            else
+              git diff --name-only "HEAD~1...HEAD" > alterados.txt
+            fi
+            echo "Arquivos alterados:"; cat alterados.txt
+            node e2e/selecionar-telas.mjs alterados.txt > selecao.json
           fi
-          echo "Arquivos alterados:"
-          cat alterados.txt
-          selecao=$(node e2e/selecionar-telas.mjs alterados.txt)
-          echo "Telas: $selecao"
-          echo "selecao=$selecao" >> "$GITHUB_OUTPUT"
+          echo "Seleção:"; jq . selecao.json
+          echo "modo=$(jq -r .modo selecao.json)" >> "$GITHUB_OUTPUT"
+          echo "grep=$(jq -r .grep selecao.json)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v7
-        if: steps.telas.outputs.selecao != 'nenhum'
+        if: steps.telas.outputs.modo != 'nenhum'
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: apps/backend/requirements.txt
       - name: Instalar dependências
-        if: steps.telas.outputs.selecao != 'nenhum'
+        if: steps.telas.outputs.modo != 'nenhum'
         run: |
           sudo apt-get install -y -q redis-tools >/dev/null
           python -m venv apps/backend/.venv
           apps/backend/.venv/bin/pip install -q -r apps/backend/requirements.txt
           cd e2e && npm ci && npx playwright install --with-deps chromium
       - name: Subir o ambiente de teste
-        if: steps.telas.outputs.selecao != 'nenhum'
+        if: steps.telas.outputs.modo != 'nenhum'
         working-directory: e2e
         run: ./ambiente/subir.sh
       - name: Rodar a suíte
-        if: steps.telas.outputs.selecao != 'nenhum'
+        if: steps.telas.outputs.modo != 'nenhum'
         working-directory: e2e
         env:
-          SELECAO: ${{ steps.telas.outputs.selecao }}
+          MODO: ${{ steps.telas.outputs.modo }}
+          GREP: ${{ steps.telas.outputs.grep }}
         run: |
-          if [ "$SELECAO" = "todos" ]; then
+          if [ "$MODO" = "todos" ]; then
             npx playwright test --reporter=line
           else
-            npx playwright test --reporter=line $SELECAO
+            npx playwright test --reporter=line --grep "$GREP"
           fi
-      - name: Nenhuma tela afetada
-        if: steps.telas.outputs.selecao == 'nenhum'
-        run: echo "Nenhum arquivo alterado é testado pelo e2e; suíte pulada."
+      - name: Nenhum cenário afetado
+        if: steps.telas.outputs.modo == 'nenhum'
+        run: echo "Nenhum arquivo alterado é exercitado pelo e2e; suíte pulada."
       - name: Logs do ambiente
         if: failure()
         run: tail -100 e2e/.ambiente-logs/backend.log || true

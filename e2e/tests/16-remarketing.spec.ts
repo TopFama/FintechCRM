@@ -14,7 +14,7 @@ const salvar = (page: import("@playwright/test").Page, renegocie: import("@playw
 
 test.beforeAll(prepararFaixas);
 
-test.describe.serial("Remarketing do Renegocie", () => {
+test.describe.serial("Remarketing do Renegocie", { tag: ["@remarketing","@elegibilidade"] }, () => {
   const acordo = (page: import("@playwright/test").Page) => card(page, "Acordo ativo com entrada não paga");
 
   test("conexão com o Renegocie: chave errada é recusada, a certa conecta", async ({ page }) => {
