@@ -1,11 +1,12 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, mensagemErroSeta, FiltrosCobranca, RelatorioCobranca } from "../../api";
+import { api, foiCancelada, mensagemErroSeta, FiltrosCobranca, RelatorioCobranca } from "../../api";
 import { formatBRL } from "../../format";
 import { IconAlert } from "../../icons";
 import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../BarraFiltrosCobranca";
 import MatrizTable from "../MatrizTable";
 import { OpcoesCobranca } from "../useOpcoesCobranca";
+import { useRequisicaoUnica } from "../useRequisicaoUnica";
 
 type Aba = "clientes" | "spc" | "valor" | "atraso";
 const ROTULOS: Record<Aba, string> = {
@@ -22,17 +23,17 @@ export default function MatrizCobrancaCard({ opcoes }: { opcoes: OpcoesCobranca 
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [aba, setAba] = useState<Aba>("clientes");
-  const reqRef = useRef(0);
+  const novaRequisicao = useRequisicaoUnica();
 
   function aplicar() {
     setErro(null);
     setCarregando(true);
-    const seq = ++reqRef.current;
+    const signal = novaRequisicao();
     api
-      .relatorioCobranca(filtros)
-      .then((r) => seq === reqRef.current && setRelatorio(r))
-      .catch((e) => seq === reqRef.current && setErro(mensagemErroSeta(e)))
-      .finally(() => seq === reqRef.current && setCarregando(false));
+      .relatorioCobranca(filtros, signal)
+      .then(setRelatorio)
+      .catch((e) => !foiCancelada(e) && setErro(mensagemErroSeta(e)))
+      .finally(() => !signal.aborted && setCarregando(false));
   }
 
   function abrirNaCobranca(cluster: string, faixa: string) {
@@ -59,6 +60,7 @@ export default function MatrizCobrancaCard({ opcoes }: { opcoes: OpcoesCobranca 
         valor={filtros}
         onChange={setFiltros}
         onAplicar={aplicar}
+        carregando={carregando}
         opcoes={opcoes}
         idPrefixo="dash-matriz"
       />

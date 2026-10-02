@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, ApiError, DashboardPorFaixa, DashboardSummary, DashboardTotalPorFaixa, PagosJanela } from "../api";
+import { api, ApiError, DashboardPorFaixa, DashboardSummary, DashboardTotalPorFaixa, PagosJanela, foiCancelada } from "../api";
 import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
@@ -24,6 +24,8 @@ export default function Dashboard() {
   // "Atualizar agora": recarrega todos os cards, inclusive os que não se atualizam sozinhos
   const [recarregar, setRecarregar] = useState(0);
   const [atualizadoEm, setAtualizadoEm] = useState<Date | null>(null);
+  // Desabilita "Atualizar agora" enquanto a consulta manual não volta (clique repetido)
+  const [atualizando, setAtualizando] = useState(false);
   const ciclo = useAtualizacaoAutomatica(30_000);
   const tipoDeBusca = useEhAtualizacaoAutomatica(periodo, recarregar);
 
@@ -47,19 +49,19 @@ export default function Dashboard() {
       setAtualizadoEm(null);
     }
     if (periodoIncompleto) return;
-    let atual = true;
+    // Período trocado ou tela fechada cancela a consulta em andamento
+    const controle = new AbortController();
+    setAtualizando(!auto);
     api
-      .dashboardSummary(periodo, auto)
+      .dashboardSummary(periodo, auto, controle.signal)
       .then((s) => {
-        if (!atual) return;
         setSummary(s);
         setError(null);
         setAtualizadoEm(new Date());
       })
-      .catch((e) => atual && setError(e.message));
-    return () => {
-      atual = false;
-    };
+      .catch((e) => !foiCancelada(e) && setError(e.message))
+      .finally(() => !controle.signal.aborted && setAtualizando(false));
+    return () => controle.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodo, recarregar, ciclo]);
 
@@ -74,7 +76,7 @@ export default function Dashboard() {
           <span className="text-muted">
             {atualizadoEm ? `Atualiza sozinho · atualizado às ${formatHora(atualizadoEm)}` : "Atualiza sozinho"}
           </span>
-          <button type="button" className="secondary small" onClick={() => setRecarregar((n) => n + 1)}>
+          <button type="button" className="secondary small" onClick={() => setRecarregar((n) => n + 1)} disabled={atualizando}>
             <IconRefresh width={14} height={14} /> Atualizar agora
           </button>
         </div>
@@ -161,18 +163,16 @@ function CardPagos7Dias({ periodo, recarregar }: { periodo: Periodo; recarregar:
     // "Atualizar agora" mantém o número atual até o novo chegar
     if (tipoDeBusca().trocouFiltro) setDados(null);
     setErro(null);
-    let atual = true;
+    const controle = new AbortController();
     api
-      .pagos7Dias(periodo)
-      .then((d) => atual && setDados(d))
+      .pagos7Dias(periodo, controle.signal)
+      .then(setDados)
       .catch((e) => {
-        if (!atual) return;
+        if (foiCancelada(e)) return;
         setDados(null);
         setErro(e instanceof ApiError && e.status === 503 ? "SETA indisponível" : e.message);
       });
-    return () => {
-      atual = false;
-    };
+    return () => controle.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodo.de, periodo.ate, recarregar]);
 

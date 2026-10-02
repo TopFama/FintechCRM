@@ -5,12 +5,13 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from cryptography.fernet import Fernet
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func
 
-from . import lojas as lojas_base, models
+from . import cache, lojas as lojas_base, models, seta_client
 from .config import settings
 from .database import SessionLocal
 from .routers import auth, blacklist, campanhas, chatwoot, cobranca, config_cobranca, dashboard, faixas, google, leads, lojas, meta_tokens, numbers, pausas, remarketing, reports, seta, templates, uploads, users
@@ -137,6 +138,17 @@ app.add_middleware(
     # sem isso o navegador esconde o nome do arquivo das exportações .xlsx
     expose_headers=["Content-Disposition"],
 )
+
+
+
+@app.exception_handler(seta_client.SetaOcupado)
+@app.exception_handler(cache.CacheOcupado)
+async def _consulta_ocupada(request: Request, exc: Exception):
+    """Muitas consultas pesadas ao SETA em andamento (ou a mesma ainda sendo
+    calculada): não é falha do ERP, é pedir de novo daqui a pouco (429, não 503)."""
+
+    return JSONResponse({"detail": str(exc)}, status_code=429, headers={"Retry-After": "10"})
+
 
 app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 

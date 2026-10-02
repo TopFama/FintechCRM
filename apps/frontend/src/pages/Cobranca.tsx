@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, ClienteCobranca, Faixa, FiltrosCobranca, mensagemErroSeta } from "../api";
+import { api, ClienteCobranca, Faixa, FiltrosCobranca, foiCancelada, mensagemErroSeta } from "../api";
 import { formatBRL, formatCpf, formatData } from "../format";
 import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../components/BarraFiltrosCobranca";
 import UploadPlanilhaFaixa from "../components/UploadPlanilhaFaixa";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
+import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
 import { IconAlert } from "../icons";
 import { SortDirection, useSort } from "../sort";
 
@@ -55,8 +56,9 @@ export default function Cobranca() {
     api.listFaixas().then((fs) => setFaixasUpload(fs.filter((f) => f.tipo === "regua"))).catch(() => undefined);
   }, []);
 
-  // Descarta respostas de consultas já substituídas por outra mais nova
-  const cliReqRef = useRef(0);
+  // Uma consulta nova cancela a anterior (inclusive o polling dela no backend)
+  const novaConsulta = useRequisicaoUnica();
+  const novoEnvio = useRequisicaoUnica(); // sair da tela para o polling do envio
 
   function buscarClientes(
     filtros: FiltrosCobranca,
@@ -67,21 +69,22 @@ export default function Cobranca() {
   ) {
     setClientesErro(null);
     setClientesCarregando(true);
-    const seq = ++cliReqRef.current;
+    const signal = novaConsulta();
     api
-      .listarClientesCobranca({ ...filtros, limit: novoLimit, offset: novoOffset, sort_by: sortBy ?? undefined, sort_dir: sortDir })
+      .listarClientesCobranca(
+        { ...filtros, limit: novoLimit, offset: novoOffset, sort_by: sortBy ?? undefined, sort_dir: sortDir },
+        signal
+      )
       .then((r) => {
-        if (seq !== cliReqRef.current) return;
         setClientes(r.itens);
         setTotalClientes(r.total);
         setConsultado(true);
       })
       .catch((e) => {
-        if (seq !== cliReqRef.current) return;
-        setClientesErro(mensagemErroSeta(e));
+        if (!foiCancelada(e)) setClientesErro(mensagemErroSeta(e));
       })
       .finally(() => {
-        if (seq === cliReqRef.current) setClientesCarregando(false);
+        if (!signal.aborted) setClientesCarregando(false);
       });
   }
 
@@ -140,8 +143,9 @@ export default function Cobranca() {
     setGerandoLeads(true);
     setLeadsErro(null);
     setLeadsResultado(null);
+    const signal = novoEnvio();
     try {
-      const r = await api.gerarLeads(filtrosEdit);
+      const r = await api.gerarLeads(filtrosEdit, signal);
       const semCelular = r.sem_celular > 0 ? ` ${r.sem_celular} sem celular válido.` : "";
       if (r.na_fila === 0) {
         setLeadsErro(
@@ -156,9 +160,9 @@ export default function Cobranca() {
       setConsultado(false);
       setLeadsResultado(`${r.na_fila.toLocaleString("pt-BR")} cliente(s) enviado(s) para a fila de cobrança.${semCelular}`);
     } catch (e) {
-      setLeadsErro(e instanceof Error ? e.message : "Erro ao enviar para a fila de cobrança");
+      if (!foiCancelada(e)) setLeadsErro(e instanceof Error ? e.message : "Erro ao enviar para a fila de cobrança");
     } finally {
-      setGerandoLeads(false);
+      if (!signal.aborted) setGerandoLeads(false);
     }
   }
 
@@ -217,6 +221,7 @@ export default function Cobranca() {
           valor={filtrosEdit}
           onChange={setFiltrosEdit}
           onAplicar={aplicarFiltros}
+          carregando={clientesCarregando}
           opcoes={opcoes}
           idPrefixo="cobranca"
           acaoDireita={

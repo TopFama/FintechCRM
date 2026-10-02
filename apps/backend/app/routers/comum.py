@@ -1,6 +1,7 @@
 """Peças da camada HTTP usadas por mais de um router (dependências de filtro,
 leitura de arquivo enviado). Não é um router: não registra rota nenhuma."""
 
+from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
 from typing import Literal
@@ -71,18 +72,28 @@ def filtros_base(
     )
 
 
+@contextmanager
+def erros_de_consulta_pesada():
+    """503 para SETA ou cache fora do ar. Consulta ocupada (SetaOcupado,
+    CacheOcupado) segue sem tradução: o handler do `main.py` responde 429."""
+
+    try:
+        yield
+    except (seta_client.SetaOcupado, cache.CacheOcupado):
+        raise
+    except (seta_client.SetaIndisponivel, cache.CacheIndisponivel) as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+
+
 def buscar_base_ou_erro(db: Session, filtros: dict) -> dict:
     """{"status": "ready", "data": [...]} ou {"status": "processing", "data":
     None} — ver `cobranca_base.buscar_base`."""
 
     try:
-        return cobranca_base.buscar_base(db, **filtros)
+        with erros_de_consulta_pesada():
+            return cobranca_base.buscar_base(db, **filtros)
     except cobranca_base.FiltroInvalido as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-    except seta_client.SetaIndisponivel as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-    except cache.CacheIndisponivel as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
 
 ClienteSortColumn = Literal[

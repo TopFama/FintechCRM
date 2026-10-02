@@ -1,10 +1,10 @@
 import io
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response
 from openpyxl import Workbook
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Font, PatternFill
@@ -15,7 +15,8 @@ from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from .. import cache, consultas_fila, fila_automatica, pausas, seta_client
+from .comum import erros_de_consulta_pesada
+from .. import consultas_fila, fila_automatica, pausas
 from ..services import efetividade_service, pagamentos_service
 from ..timezone import hora_br
 from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx, formula_safe, texto_nunca_formula
@@ -572,6 +573,11 @@ def export_erros(
 EfetividadeSortColumn = Literal[efetividade_service.COLUNAS_ORDENAVEIS]
 
 
+def _dados_efetividade(db, **filtros):
+    with erros_de_consulta_pesada():
+        return efetividade_service.obter_dados_efetividade(db, **filtros)
+
+
 @api.get("/efetividade", response_model=schemas.RelatorioEfetividadeOut)
 def relatorio_efetividade(
     cobrado_de: date | None = Query(None, description="Data de cobrança inicial"),
@@ -590,7 +596,7 @@ def relatorio_efetividade(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    dados, leads_sem_parcelas, _itens = efetividade_service.obter_dados_efetividade(
+    dados, leads_sem_parcelas, _itens = _dados_efetividade(
         db,
         cobrado_de=cobrado_de,
         cobrado_ate=cobrado_ate,
@@ -615,6 +621,8 @@ def relatorio_efetividade(
         leads_sem_parcelas=leads_sem_parcelas,
         dias_janela=dias_janela,
         valor_a_pagar_brl=valor_a_pagar_brl,
+        gerado_em=dados.get("gerado_em"),
+        desatualizado=dados.get("desatualizado", False),
     )
 
 
@@ -636,7 +644,7 @@ def export_relatorio_efetividade(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    dados, _leads_sem_parcelas, _itens = efetividade_service.obter_dados_efetividade(
+    dados, _leads_sem_parcelas, _itens = _dados_efetividade(
         db,
         cobrado_de=cobrado_de,
         cobrado_ate=cobrado_ate,
@@ -679,7 +687,7 @@ def relatorio_efetividade_clientes(
     """Mesmo relatório de efetividade, no nível de cada cliente/parcela
     cobrada — pra investigar caso a caso em vez de só o agregado."""
 
-    _dados, _leads_sem_parcelas, itens = efetividade_service.obter_dados_efetividade(
+    _dados, _leads_sem_parcelas, itens = _dados_efetividade(
         db,
         cobrado_de=cobrado_de,
         cobrado_ate=cobrado_ate,
@@ -726,7 +734,7 @@ def export_relatorio_efetividade_clientes(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    _dados, _leads_sem_parcelas, itens = efetividade_service.obter_dados_efetividade(
+    _dados, _leads_sem_parcelas, itens = _dados_efetividade(
         db,
         cobrado_de=cobrado_de,
         cobrado_ate=cobrado_ate,
@@ -766,36 +774,15 @@ def export_relatorio_efetividade_clientes(
 # --- Quem pagou o que foi cobrado (por cliente) -------------------------------
 
 
-_CAMPOS_DATA_PAGAMENTO = ("data_cobranca", "primeiro_pagamento", "ultimo_pagamento")
+def _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela=None, campanha=None):
+    """Lista cacheada por conjunto de filtros (compartilhada entre usuários):
+    ordenar, paginar e exportar com os mesmos filtros não reconsultam o SETA."""
 
-
-def _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela=None, campanha=None):
-    """Resultado cacheado por conjunto de filtros (compartilhado entre usuários):
-    ordenar, paginar e exportar com os mesmos filtros não reconsulta o SETA."""
-
-    filtros = dict(
-        cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate,
-        faixa=sorted(faixa or []), dias_janela=dias_janela, campanha=campanha,
-    )
-
-    def calcular():
-        return pagamentos_service.clientes_que_pagaram(db, **{**filtros, "faixa": faixa})
-
-    try:
-        try:
-            linhas = cache.obter_ou_calcular(cache.chave("relatorio-pagamentos", filtros), calcular, ttl_segundos=300)
-        except cache.CacheIndisponivel:
-            linhas = calcular()
-    except seta_client.SetaIndisponivel as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-    # o cache guarda JSON: devolve datas e valores aos tipos originais
-    for l in linhas:
-        for campo in _CAMPOS_DATA_PAGAMENTO:
-            if isinstance(l.get(campo), str):
-                l[campo] = date.fromisoformat(l[campo])
-        for campo in ("valor_cobrado", "valor_pago"):
-            l[campo] = Decimal(str(l[campo]))
-    return linhas
+    with erros_de_consulta_pesada():
+        return pagamentos_service.snapshot_pagamentos(
+            cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate, faixa=faixa,
+            dias_janela=dias_janela, campanha=campanha, velho=pagamentos_service.PAGAMENTOS_VELHO_SEGUNDOS,
+        )
 
 
 PagamentoSortColumn = Literal[pagamentos_service.COLUNAS_ORDENAVEIS]
@@ -817,7 +804,8 @@ def relatorio_pagamentos(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, campanha)
+    snap = _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, campanha)
+    linhas = snap.data
     if sort_by:
         linhas = pagamentos_service.ordenar(linhas, sort_by, sort_dir, carregar_regras(db).nomes_faixa)
     return schemas.PagamentosClientesPage(
@@ -826,6 +814,8 @@ def relatorio_pagamentos(
         valor_cobrado=sum((l["valor_cobrado"] for l in linhas), Decimal("0.00")),
         valor_pago=sum((l["valor_pago"] for l in linhas), Decimal("0.00")),
         itens=linhas[offset : offset + limit],
+        gerado_em=datetime.fromtimestamp(snap.gerado_em, tz=timezone.utc),
+        desatualizado=snap.velho,
     )
 
 
@@ -841,7 +831,7 @@ def export_relatorio_pagamentos(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _pagamentos(db, cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, campanha)
+    linhas = _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, campanha).data
     headers = [
         "Código do cliente", "Nome", "CPF", "Loja", "Faixa", "Data da cobrança", "Valor cobrado",
         "Valor pago", "Títulos pagos", "Primeiro pagamento", "Último pagamento",

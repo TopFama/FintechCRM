@@ -14,7 +14,10 @@ Convenções do schema do SETA que o restante do código precisa conhecer:
 """
 
 import logging
+import threading
 import time
+from collections import Counter
+from contextlib import contextmanager
 from datetime import date, timedelta
 from decimal import Decimal
 from functools import lru_cache
@@ -33,9 +36,95 @@ class SetaIndisponivel(Exception):
     """SETA não configurado ou inalcançável. A mensagem é segura para o usuário
     (não carrega host, usuário nem senha)."""
 
+    mensagem_segura = True  # o cache pode repetir a mensagem ao usuário
+
+
+class SetaOcupado(SetaIndisponivel):
+    """Já há consultas pesadas demais em andamento no SETA: não é falha do ERP,
+    é pedir de novo daqui a pouco. Não entra na quarentena de erro do cache."""
+
+    quarentena = False
+
 
 def is_configured() -> bool:
     return bool(settings.seta_db_host and settings.seta_db_user and settings.seta_db_password)
+
+
+# --- Limite de consultas pesadas ----------------------------------------------
+# O pool do SETA tem 5 conexões e uma consulta pesada segura uma por até
+# `seta_db_statement_timeout_seconds`. Sem teto, base de cobrança, cópia de
+# pagamentos e situação de títulos juntas deixam as consultas leves na fila e
+# viram 503. Só as pesadas passam por aqui (`consulta_pesada`); as leves
+# (chave primária, lotes de 1000) seguem livres. O controle é do processo: o
+# backend é um processo só (AGENTS.md); com mais de um, é neste ponto único
+# que entraria um semáforo em Redis.
+ESPERA_MAXIMA_SEGUNDOS = 60  # quanto uma consulta pesada espera por vaga
+MAX_AGUARDANDO = 4  # esperando por vaga; acima disso recusa na hora
+
+_vagas = threading.Semaphore(settings.seta_max_consultas_pesadas)
+_estado = threading.Lock()
+_ativas = 0
+_aguardando = 0
+_contadores: Counter = Counter()
+
+
+def metricas() -> dict:
+    """Consultas pesadas ativas/aguardando e totais desde que o processo subiu."""
+
+    with _estado:
+        return {"ativas": _ativas, "aguardando": _aguardando, **_contadores}
+
+
+@contextmanager
+def consulta_pesada(nome: str, **detalhes):
+    """Reserva uma das vagas de consulta pesada ao SETA (espera até
+    `ESPERA_MAXIMA_SEGUNDOS`, com no máximo `MAX_AGUARDANDO` esperando; senão
+    levanta SetaOcupado sem consultar nada). Registra no log o tipo, a duração e
+    os `itens` que quem usa preencher no dicionário devolvido. Nada de dado
+    pessoal no log: só nome da consulta e quantidades."""
+
+    global _ativas, _aguardando
+    if not _vagas.acquire(blocking=False):
+        with _estado:
+            lotado = _aguardando >= MAX_AGUARDANDO
+            if not lotado:
+                _aguardando += 1
+        if lotado:
+            _recusar(nome, "fila de espera cheia")
+        try:
+            obteve = _vagas.acquire(timeout=ESPERA_MAXIMA_SEGUNDOS)
+        finally:
+            with _estado:
+                _aguardando -= 1
+        if not obteve:
+            _recusar(nome, "tempo de espera esgotado")
+    with _estado:
+        _ativas += 1
+        _contadores["consultas"] += 1
+    info = dict(detalhes)
+    inicio = time.perf_counter()
+    logger.info("SETA query=%s iniciada ativas=%d %s", nome, _ativas, detalhes)
+    erro = None
+    try:
+        yield info
+    except Exception as exc:
+        erro = exc.__class__.__name__
+        raise
+    finally:
+        with _estado:
+            _ativas -= 1
+        _vagas.release()
+        logger.info(
+            "SETA query=%s itens=%s duracao=%.1fs%s", nome, info.get("itens"), time.perf_counter() - inicio,
+            f" erro={erro}" if erro else "",
+        )
+
+
+def _recusar(nome: str, motivo: str):
+    with _estado:
+        _contadores["recusadas"] += 1
+    logger.warning("SETA query=%s recusada (%s) %s", nome, motivo, metricas())
+    raise SetaOcupado("Há consultas pesadas ao SETA em andamento. Tente de novo em instantes")
 
 
 @lru_cache(maxsize=1)
@@ -374,10 +463,11 @@ def buscar_base_cobranca(
 
     try:
         rows = []
-        with engine.connect() as conn:
+        with consulta_pesada("base_cobranca", lotes=len(lotes)) as info, engine.connect() as conn:
             for lote in lotes:
                 alvo = {f"alvo{j}": c for j, c in enumerate(lote)}
                 rows.extend(conn.execute(montar(len(lote)), {**params, **alvo}).mappings().all())
+            info["itens"] = len(rows)
     except SQLAlchemyError as exc:
         logger.warning("Falha ao consultar o SETA: %s", exc.__class__.__name__)
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
@@ -470,10 +560,12 @@ def compras_de_todos() -> dict[str, tuple[int, date | None]]:
          GROUP BY v.cliente
     """
     try:
-        with engine.connect() as conn:
+        with consulta_pesada("compras_de_todos") as info, engine.connect() as conn:
             # Só de madrugada: lê a tabela de vendas inteira, passa do teto padrão por consulta
             conn.execute(text("SET statement_timeout = 900000"))
-            return {r.codigo: (int(r.qtd), r.ultima) for r in conn.execute(text(sql), _PARAMS_VENDA) if r.codigo}
+            compras = {r.codigo: (int(r.qtd), r.ultima) for r in conn.execute(text(sql), _PARAMS_VENDA) if r.codigo}
+            info["itens"] = len(compras)
+            return compras
     except SQLAlchemyError as exc:
         logger.warning("Falha na carga de compras do SETA: %s", exc.__class__.__name__)
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
@@ -660,7 +752,7 @@ def situacao_titulos(codigos: list[str]) -> dict[str, dict]:
     ).bindparams(bindparam("codigos", expanding=True))
 
     try:
-        with engine.connect() as conn:
+        with consulta_pesada("situacao_titulos", titulos=len(codigos)) as info, engine.connect() as conn:
             for i in range(0, len(codigos), CHUNK):
                 chunk = codigos[i : i + CHUNK]
                 for r in conn.execute(stmt, {"codigos": chunk}).mappings():
@@ -673,6 +765,7 @@ def situacao_titulos(codigos: list[str]) -> dict[str, dict]:
                         "valorpago": r["valorpago"],
                         "valor": r["valor"],
                     }
+            info["itens"] = len(resultado)
     except SQLAlchemyError as exc:
         logger.warning("Falha ao consultar situação dos títulos no SETA: %s", exc.__class__.__name__)
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
@@ -728,7 +821,7 @@ def baixas_de_clientes(clientes: list[tuple[str, date]]) -> list[dict]:
 
     engine = engine_ou_erro()
     try:
-        with engine.connect() as conn:
+        with consulta_pesada("baixas_de_clientes", clientes=len(clientes)) as info, engine.connect() as conn:
             for tipo, lote in plano_baixas(clientes):
                 if tipo == "recente":
                     # Lote ordenado por data: a menor data do lote é o início do
@@ -785,6 +878,7 @@ def baixas_de_clientes(clientes: list[tuple[str, date]]) -> list[dict]:
                 """
                 for r in conn.execute(text(sql), params).mappings():
                     resultado.append(_linha_baixa(r))
+            info["itens"] = len(resultado)
     except SQLAlchemyError as exc:
         logger.warning("Falha ao consultar baixas no SETA: %s", exc.__class__.__name__)
         raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc

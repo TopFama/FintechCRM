@@ -1,11 +1,12 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, Campanha, CampanhaIn, Faixa, FiltrosCobranca, mensagemErroSeta, PreviaCampanha } from "../api";
+import { api, Campanha, CampanhaIn, Faixa, FiltrosCobranca, foiCancelada, mensagemErroSeta, PreviaCampanha } from "../api";
 import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../components/BarraFiltrosCobranca";
 import EnviosFaixa from "../components/EnviosFaixa";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
+import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
 import { formatBRL, formatCelular, formatData, formatDataHora } from "../format";
 import { IconAlert, IconBolt, IconCheckCircle, IconEye, IconTrash, IconUpload } from "../icons";
 import { SortDirection, useSort } from "../sort";
@@ -197,7 +198,8 @@ export default function CampanhaDetail() {
     }
   }
 
-  const previaReqRef = useRef(0);
+  const novaPrevia = useRequisicaoUnica();
+  const novaExecucao = useRequisicaoUnica();
 
   function carregarPrevia(
     offset: number = previaOffset,
@@ -208,20 +210,14 @@ export default function CampanhaDetail() {
     if (!id) return;
     setErro(null);
     setCarregandoPrevia(true);
-    // Só a consulta mais recente vale: página ou ordenação trocada no meio não
-    // é sobrescrita pela resposta antiga
-    const seq = ++previaReqRef.current;
-    const atual = () => seq === previaReqRef.current;
+    // Só a consulta mais recente vale: página ou ordenação trocada no meio cancela
+    // a anterior (e o polling dela), que não sobrescreve a resposta nova
+    const signal = novaPrevia();
     api
-      .previaCampanha(id, {
-        limit,
-        offset,
-        sort_by: sortBy ?? undefined,
-        sort_dir: sortDir,
-      })
-      .then((p) => atual() && setPrevia(p))
-      .catch((e) => atual() && setErro(mensagemErroSeta(e)))
-      .finally(() => atual() && setCarregandoPrevia(false));
+      .previaCampanha(id, { limit, offset, sort_by: sortBy ?? undefined, sort_dir: sortDir }, signal)
+      .then(setPrevia)
+      .catch((e) => !foiCancelada(e) && setErro(mensagemErroSeta(e)))
+      .finally(() => !signal.aborted && setCarregandoPrevia(false));
   }
 
   async function executar() {
@@ -233,15 +229,16 @@ export default function CampanhaDetail() {
     setErro(null);
     setSucesso(null);
     setExecutando(true);
+    const signal = novaExecucao();
     try {
-      const r = await api.executarCampanha(id);
+      const r = await api.executarCampanha(id, signal);
       setSucesso(`${r.na_fila} cliente(s) colocado(s) na fila (de ${r.encontrados} encontrado(s)).`);
       setPrevia(null);
       recarregarCampanha();
     } catch (err) {
-      setErro(mensagemErroSeta(err));
+      if (!foiCancelada(err)) setErro(mensagemErroSeta(err));
     } finally {
-      setExecutando(false);
+      if (!signal.aborted) setExecutando(false);
     }
   }
 

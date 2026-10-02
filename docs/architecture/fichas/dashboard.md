@@ -19,7 +19,7 @@ fila" chama `fila_automatica.descartar_pendentes` (Envios).
 - **Camada:** interface (com aplicação e formatação dentro)
 - **Responsabilidade (1 frase, sem "e"):** servir os relatórios da tela Relatórios.
 - **Motivos para mudar:** colunas de relatório, filtros, exportação .xlsx, cores do Excel da efetividade, descartar fila, pagamentos.
-- **Depende de:** `cache`, `consultas_fila`, `fila_automatica` (descartar fila), `pausas`, `regras_db`, `seta_client`, `services/efetividade_service`, `services/pagamentos_service`, `utils/xlsx`, `models`, `schemas`, `timezone`.
+- **Depende de:** `cache`, `consultas_fila`, `fila_automatica` (descartar fila), `pausas`, `regras_db`, `seta_client`, `services/efetividade_service`, `services/pagamentos_service`, `utils/xlsx`, `models`, `schemas`, `timezone`, `routers/comum` (`erros_de_consulta_pesada`: 429 quando ocupado, 503 só quando o SETA/Redis estão fora). Efetividade e Quem pagou leem o snapshot do cache; ordenar, paginar e exportar não consultam o SETA.
 - **É usado por:** `main`.
 - **Violações encontradas:**
   - [x] Mais de uma responsabilidade: seis relatórios (telefones inválidos, envios, pendentes, erros, efetividade, pagamentos) num arquivo só (858 linhas; o maior do backend hoje é `seta_client.py`).
@@ -34,7 +34,7 @@ fila" chama `fila_automatica.descartar_pendentes` (Envios).
 - **Domínio:** Dashboard/Relatórios
 - **Camada:** interface
 - **Responsabilidade:** servir os cards do Dashboard. Na tabela "Por faixa", `_nome_faixa` é a única definição da faixa da linha (a de atraso do cliente, senão a da fila); os totais que não são soma da coluna (clientes e valor pago contados uma vez) vêm em `total_por_faixa`.
-- **Depende de:** `cache`, `consultas_fila`, `seta_client`, `services/custo_whatsapp`, `services/pagamentos_service`, `services/pagos_janela_service`, `utils/xlsx`, `timezone`.
+- **Depende de:** `cache`, `consultas_fila`, `seta_client`, `services/custo_whatsapp`, `services/pagamentos_service`, `services/pagos_janela_service`, `utils/xlsx`, `timezone`. "Pagaram em até 7 dias" reaproveita o snapshot `relatorio-pagamentos` (mesma chave de Quem pagou); sem Redis o resumo cai para só o que é local (`buscar_novos=False`).
 - **Violações encontradas:** nenhuma grave. As de 26/09 (import de `routers.reports`, `_limites_utc` e contagem de pausados no router) foram resolvidas pelo backlog #3: `_resumo` monta o card a partir de `consultas_fila` (`limites_utc`, `contar_pausados`), a mesma fonte dos relatórios.
 - **Churn:** 15 | **Linhas:** 350 | **Cobertura:** 24% (medida em 26/09)
 
@@ -42,7 +42,7 @@ fila" chama `fila_automatica.descartar_pendentes` (Envios).
 - **Domínio:** Dashboard/Relatórios
 - **Camada:** aplicação
 - **Responsabilidade:** montar os dados da efetividade.
-- **Depende de:** `campanhas_fixas`, `google_client`, `lojas`, `regras_db`, `relatorio_efetividade`, `services/custo_whatsapp`, `services/pagamentos_seta`, `seta_client`.
+- **Depende de:** `cache`, `campanhas_fixas`, `google_client`, `lojas`, `regras_db`, `relatorio_efetividade`, `services/custo_whatsapp`, `services/pagamentos_seta`, `seta_client`. Duas etapas: `snapshot_efetividade` (a consulta pesada ao SETA, sem filtro de loja, guardada no cache) e a derivação (loja, ordenação, página, Excel), que só lê o snapshot.
 - **Violações encontradas:** nenhuma. A de 26/09 (cópias de fuso `_inicio_dia_utc`/`_dia_br`) foi resolvida pelo backlog #10: usa `timezone.dia_br` e `timezone.inicio_do_dia_utc`.
 - **Churn:** 10 | **Linhas:** 275
 

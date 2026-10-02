@@ -81,7 +81,7 @@ cd <your-workspace>/apps/backend
 PYTHONPATH=. "$PY" <script.py>
 ```
 
-- Test scripts live in `apps/backend/tests/` (all run by `./tests/rodar_todos.sh` and in CI). Validate by
+- Test scripts live in `apps/backend/tests/` (all run by `./tests/rodar_todos.sh` and in CI; they need Postgres on `localhost:15432` and Redis on `localhost:6379`). Validate by
   exercising code: pure functions with `assert` scripts (put them in `apps/backend/tests/`, runnable as
   `PYTHONPATH=. "$PY" tests/<file>.py`, printing `OK` at the end)
   and endpoints with `fastapi.testclient.TestClient` (it runs the real `lifespan`: migrations + admin

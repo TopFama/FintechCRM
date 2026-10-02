@@ -18,6 +18,7 @@ import logging
 import threading
 import time
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -34,14 +35,28 @@ SOBREPOSICAO_DIAS = 7
 JANELA_ATIVA_DIAS = 60
 LOTE = 1000
 
-# Um processo só (worker e rotas no mesmo backend): evita duas cópias ao mesmo tempo
+# Um processo só (worker e rotas no mesmo backend): evita duas cópias ao mesmo
+# tempo. Quem chega com outra cópia em andamento espera até ESPERA_TRAVA_SEGUNDOS
+# (depois disso a outra já deve ter copiado o que ele precisa, ou ele devolve
+# "ocupado" em vez de prender a requisição).
 _trava = threading.Lock()
+ESPERA_TRAVA_SEGUNDOS = 60
 
 # A rodada do worker só acontece com alguém usando o CRM: sem ninguém, o SETA
 # não é lido. Relógio monotônico do processo; zera quando o backend reinicia.
 ATIVIDADE_JANELA_SEGUNDOS = 15 * 60
 _ultima_atividade: float | None = None
 _ultima_rodada: float | None = None
+
+
+@contextmanager
+def _exclusivo():
+    if not _trava.acquire(timeout=ESPERA_TRAVA_SEGUNDOS):
+        raise seta_client.SetaOcupado("A cópia dos pagamentos do SETA está em andamento. Tente de novo em instantes")
+    try:
+        yield
+    finally:
+        _trava.release()
 
 
 def registrar_atividade() -> None:
@@ -100,7 +115,7 @@ def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
         if not codigos:
             return 0
 
-    with _trava:
+    with _exclusivo():
         hoje = hoje_br()
         cobrancas = _cobrancas(db, codigos)
         cobrados = {c: primeira for c, (primeira, _) in cobrancas.items()}
@@ -124,14 +139,19 @@ def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
                     leituras[c] = max(copia.desde, copia.marca_dagua - timedelta(days=SOBREPOSICAO_DIAS))
         if codigos is None:
             global _ultima_rodada
-            _ultima_rodada = time.monotonic()
+            rodada_anterior, _ultima_rodada = _ultima_rodada, time.monotonic()
         if not leituras:
             if codigos is None:
                 logger.info("Pagamentos do SETA (rodada): nenhum cliente a reler")
             return 0
 
         t0 = time.monotonic()
-        baixas = seta_client.baixas_de_clientes(sorted(leituras.items()))
+        try:
+            baixas = seta_client.baixas_de_clientes(sorted(leituras.items()))
+        except seta_client.SetaOcupado:
+            if codigos is None:
+                _ultima_rodada = rodada_anterior  # SETA ocupado não gasta a rodada: tenta de novo no próximo minuto
+            raise
         segundos_seta = time.monotonic() - t0
 
         # Troca o trecho relido pelo que o SETA respondeu agora (some o que foi estornado)

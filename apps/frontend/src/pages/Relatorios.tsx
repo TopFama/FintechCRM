@@ -6,6 +6,7 @@ import {
   Faixa,
   FilaReportItem,
   FilaReportPage,
+  foiCancelada,
   InvalidPhoneRecord,
   Loja,
   PagamentoCliente,
@@ -18,6 +19,7 @@ import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import { AcaoPendentes, PainelAcao, PainelDescartar, PainelPausaLote, PausasAtivas } from "../components/PausasPendentes";
 import SelectCampanha from "../components/SelectCampanha";
 import SortableTh from "../components/SortableTh";
+import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
 import { formatBRL, formatCpf, formatData, formatDataHora, formatNumero, formatValorFila } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
 import { SortDirection, useSort } from "../sort";
@@ -170,6 +172,8 @@ export default function Relatorios() {
   // Descarta resposta de consulta já substituída (ex.: data mínima preenchida
   // antes da máxima dispara duas consultas ao SETA e a primeira pode chegar por último)
   const reqRef = useRef(0);
+  // Quem pagou vai ao SETA: filtro novo cancela a consulta anterior, incluindo a espera no backend
+  const novaConsultaPagamentos = useRequisicaoUnica();
 
   function load(
     novoOffset: number = offset,
@@ -194,16 +198,20 @@ export default function Relatorios() {
       sort_by: sortBy ?? undefined,
       sort_dir: sortDir,
     };
+    const signalPagamentos = tab === "pagamentos" ? novaConsultaPagamentos() : undefined;
     const request =
       tab === "pagamentos"
         ? api
-            .listPagamentos({
-              ...filtrosPagamentos(),
-              limit: novoLimit,
-              offset: novoOffset,
-              sort_by: sortBy ?? undefined,
-              sort_dir: sortDir,
-            })
+            .listPagamentos(
+              {
+                ...filtrosPagamentos(),
+                limit: novoLimit,
+                offset: novoOffset,
+                sort_by: sortBy ?? undefined,
+                sort_dir: sortDir,
+              },
+              signalPagamentos
+            )
             .then((r) => atual() && setPagamentos(r))
         : tab === "pendentes" || tab === "erros"
         ? (tab === "pendentes" ? api.listPendentes({ ...params, loja: loja || undefined }) : api.listErros(params)).then(
@@ -226,7 +234,7 @@ export default function Relatorios() {
             setDispatchTotal(r.total);
           });
     request
-      .catch((e) => atual() && setError(e.message))
+      .catch((e) => atual() && !foiCancelada(e) && setError(e.message))
       .finally(() => atual() && setLoading(false));
   }
 
@@ -541,7 +549,14 @@ export default function Relatorios() {
         {loading ? (
           <div className="loading-state">Carregando...</div>
         ) : tab === "pagamentos" ? (
-          <TabelaPagamentos dados={pagamentos} ordenacao={pagamentosSort} />
+          <>
+            {pagamentos?.desatualizado && (
+              <div className="field-hint" style={{ marginBottom: 8 }}>
+                Dados do SETA de {formatDataHora(pagamentos.gerado_em)}: o relatório está sendo atualizado.
+              </div>
+            )}
+            <TabelaPagamentos dados={pagamentos} ordenacao={pagamentosSort} />
+          </>
         ) : tab === "pendentes" || tab === "erros" ? (
           <TabelaFila
             tipo={tab}

@@ -362,6 +362,43 @@ test.describe("Dashboard", () => {
     await e.getByRole("columnheader", { name: /Recebimento/ }).click();
   });
 
+  test("efetividade: Aplicar fica desabilitado enquanto consulta e clique repetido não duplica o pedido ao SETA", async ({ page }) => {
+    const e = card(page, "Efetividade da cobrança");
+    const pedidos: string[] = [];
+    // segura a resposta para dar tempo de clicar de novo
+    await page.route("**/reports/efetividade?*", async (route) => {
+      pedidos.push(route.request().url());
+      await new Promise((r) => setTimeout(r, 1500));
+      await route.continue();
+    });
+    const aplicar = e.getByRole("button", { name: "Aplicar filtros" });
+    await aplicar.click();
+    await expect(aplicar).toBeDisabled();
+    await aplicar.click({ force: true });
+    await aplicar.click({ force: true });
+    await expect(e.locator("table")).toBeVisible({ timeout: 30_000 });
+    await expect(aplicar).toBeEnabled();
+    expect(pedidos).toHaveLength(1);
+  });
+
+  test("trocar o período no meio da consulta do SETA cancela a anterior e o card mostra a nova", async ({ page }) => {
+    const pedidos: string[] = [];
+    let primeira = true;
+    await page.route("**/dashboard/pagos-7-dias?*", async (route) => {
+      pedidos.push(route.request().url());
+      if (primeira) {
+        primeira = false;
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+      await route.continue().catch(() => undefined);
+    });
+    await page.locator(".periodo-card", { hasText: "Últimos 7 dias" }).first().click();
+    await expect.poll(() => pedidos.length).toBeGreaterThanOrEqual(1); // a consulta está no ar (segurada)
+    await page.locator(".periodo-card", { hasText: "Hoje" }).first().click();
+    await expect(stat(page, "Pagaram em até 7 dias")).not.toHaveText("…", { timeout: 30_000 });
+    await expect(page.locator(".stat .texto-erro")).toHaveCount(0);
+  });
+
   test("efetividade: exportar Excel e exportar por cliente", async ({ page }) => {
     const e = card(page, "Efetividade da cobrança");
     const a = await baixar(page, () => e.getByRole("button", { name: "Exportar Excel" }).click());
