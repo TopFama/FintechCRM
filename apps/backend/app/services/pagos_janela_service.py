@@ -1,7 +1,9 @@
 """Card "Pagaram em até 7 dias" do Dashboard: dos clientes cobrados no
 período, quantos pagaram dentro da janela. Usa a mesma regra de "pagou" e a
 mesma lista do relatório Quem pagou (pagamentos_service com dias_janela), pra
-o número do card ser exatamente o total do relatório."""
+o número do card ser exatamente o total do relatório. A lista vem do mesmo
+snapshot no Redis do relatório (`snapshot_pagamentos`), então abrir o card e o
+relatório com o mesmo período e janela consulta o SETA uma vez só."""
 
 from datetime import date, timedelta
 from decimal import Decimal
@@ -14,7 +16,8 @@ from . import pagamentos_service
 
 
 def resumo(db: Session, de: date | None, ate: date | None, dias_janela: int = 7) -> dict:
-    """Levanta seta_client.SetaIndisponivel se o SETA estiver fora."""
+    """Levanta seta_client.SetaIndisponivel se o SETA estiver fora e
+    cache.CacheIndisponivel/CacheOcupado se o Redis estiver."""
 
     query = db.query(models.Lead.codigo_cliente, models.Lead.cobrado_em).filter(
         models.Lead.status == "cobrado", models.Lead.cobrado_em.isnot(None)
@@ -33,7 +36,7 @@ def resumo(db: Session, de: date | None, ate: date | None, dias_janela: int = 7)
         if dia_br(cobrado_em) > limite:
             em_maturacao.add(codigo)
 
-    linhas = pagamentos_service.clientes_que_pagaram(db, cobrado_de=de, cobrado_ate=ate, dias_janela=dias_janela)
+    linhas = pagamentos_service.snapshot_pagamentos(cobrado_de=de, cobrado_ate=ate, dias_janela=dias_janela).data
     pagaram = {l["codigo_cliente"] for l in linhas}
     valor_pago = sum((Decimal(str(l["valor_pago"])) for l in linhas), Decimal("0.00"))
     percentual = (

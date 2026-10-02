@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     seta_db_connect_timeout_seconds: int = 10
     # Teto por consulta: o ERP é produção e a tabela de títulos passa de 27M de linhas.
     seta_db_statement_timeout_seconds: int = 120
+    # Consultas pesadas ao SETA (base de cobrança, baixas, situação de títulos,
+    # carga de compras) ao mesmo tempo, somando relatórios, telas e worker. O
+    # pool tem 5 conexões: o resto fica livre para as consultas leves.
+    seta_max_consultas_pesadas: int = 2
 
     # Google (OAuth2) — só para ler a planilha de lojas. Vazio = integração desligada.
     google_client_id: str = ""

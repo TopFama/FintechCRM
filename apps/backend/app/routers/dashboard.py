@@ -14,6 +14,7 @@ from ..timezone import hoje_br
 from ..database import get_db
 from ..deps import get_current_user
 from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx
+from .comum import erros_de_consulta_pesada
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,8 @@ def summary(
             cache.chave("dashboard-resumo-v2", {"de": de, "ate": ate}), calcular, RESUMO_TTL_SEGUNDOS, reaproveitar=auto
         )
     except cache.CacheIndisponivel:
-        dados = calcular()
+        # Sem Redis não há como proteger o SETA: mostra só o que já está copiado, nunca vai ao ERP
+        dados = _resumo(db, de, ate, buscar_novos=False).model_dump(mode="json")
     return schemas.DashboardSummary(**dados)
 
 
@@ -333,18 +335,9 @@ def pagos_7_dias(
     _user: models.User = Depends(get_current_user),
 ):
     """Clientes cobrados no período que pagaram em até 7 dias corridos da
-    cobrança (regra da Tarefa 5). Cache curto igual ao relatório Quem pagou."""
+    cobrança (regra da Tarefa 5). Usa a mesma lista em cache do relatório Quem
+    pagou (5 min), então não consulta o SETA de novo para o mesmo período."""
 
-    def calcular():
-        return pagos_janela_service.resumo(db, de, ate, dias_janela=7)
-
-    try:
-        try:
-            dados = cache.obter_ou_calcular(
-                cache.chave("dashboard-pagos-7-dias", {"de": de, "ate": ate}), calcular, ttl_segundos=300
-            )
-        except cache.CacheIndisponivel:
-            dados = calcular()
-    except seta_client.SetaIndisponivel as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "SETA indisponível") from exc
+    with erros_de_consulta_pesada():
+        dados = pagos_janela_service.resumo(db, de, ate, dias_janela=7)
     return schemas.PagosJanelaOut(**dados)

@@ -739,6 +739,10 @@ class RelatorioEfetividadeOut(BaseModel):
     leads_sem_parcelas: int
     dias_janela: int | None = None
     valor_a_pagar_brl: Decimal | None = None
+    # hora em que o SETA foi lido para este relatório; desatualizado = snapshot servido
+    # depois do prazo (recalculando em segundo plano ou SETA fora do ar)
+    gerado_em: datetime | None = None
+    desatualizado: bool = False
 
 
 # --- SETA (ERP) ---
@@ -1131,3 +1135,5 @@ class PagamentosClientesPage(BaseModel):
     valor_cobrado: Decimal
     valor_pago: Decimal
     itens: list[PagamentoClienteOut]
+    gerado_em: datetime | None = None
+    desatualizado: bool = False

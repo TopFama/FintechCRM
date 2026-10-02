@@ -98,18 +98,49 @@ export function mensagemErroSeta(e: unknown): string {
 
 // Relatórios pesados do SETA (base de cobrança) calculam em segundo plano no
 // backend (cache Redis) — a primeira consulta com um filtro novo devolve
-// "processing" na hora, sem segurar a conexão; aqui a gente só tenta de novo
-// a cada 2s até vir "ready", então quem chama continua recebendo uma Promise
-// normal com o resultado, como se fosse uma chamada síncrona.
-async function pollAsync<T>(chamar: () => Promise<{ status: "ready" | "processing"; data: T | null }>): Promise<T> {
-  const INTERVALO_MS = 2000;
-  const MAX_TENTATIVAS = 90; // ~3 minutos
-  for (let tentativa = 0; tentativa < MAX_TENTATIVAS; tentativa++) {
-    const resultado = await chamar();
+// "processing" na hora, sem segurar a conexão; aqui a gente só tenta de novo até
+// vir "ready", então quem chama continua recebendo uma Promise normal com o
+// resultado, como se fosse uma chamada síncrona.
+//
+// O intervalo cresce (2 s, 2 s, 3 s, 3 s, 4 s, 5 s…) e leva um jitter de ±20%:
+// abas abertas ao mesmo tempo não consultam o backend em sincronia. O `signal`
+// cancela de verdade: a espera termina e o polling para na hora (filtro trocado,
+// tela fechada), em vez de seguir pedindo ao SETA por minutos.
+const ESPERAS_POLLING_MS = [2000, 2000, 3000, 3000, 4000, 5000];
+const LIMITE_POLLING_MS = 180_000;
+
+function esperar(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new DOMException("Cancelado", "AbortError"));
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", cancelar);
+      resolve();
+    }, ms);
+    const cancelar = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Cancelado", "AbortError"));
+    };
+    signal?.addEventListener("abort", cancelar, { once: true });
+  });
+}
+
+/** Consulta cancelada de propósito (filtro trocado, tela fechada): não é erro para mostrar. */
+export function foiCancelada(e: unknown): boolean {
+  return e instanceof DOMException && e.name === "AbortError";
+}
+
+async function pollAsync<T>(
+  chamar: (signal?: AbortSignal) => Promise<{ status: "ready" | "processing"; data: T | null }>,
+  signal?: AbortSignal
+): Promise<T> {
+  const inicio = Date.now();
+  for (let tentativa = 0; Date.now() - inicio < LIMITE_POLLING_MS; tentativa++) {
+    const resultado = await chamar(signal);
     if (resultado.status === "ready" && resultado.data !== null) {
       return resultado.data;
     }
-    await new Promise((resolve) => setTimeout(resolve, INTERVALO_MS));
+    const base = ESPERAS_POLLING_MS[Math.min(tentativa, ESPERAS_POLLING_MS.length - 1)];
+    await esperar(base * (0.8 + Math.random() * 0.4), signal);
   }
   throw new ApiError(504, "O relatório está demorando mais que o esperado para calcular — tente novamente");
 }
@@ -296,11 +327,11 @@ export const api = {
   listQueue: (faixaId: string, params: { limit: number; offset: number } & OrdenacaoParams) =>
     request<{ total: number; itens: QueueItem[] }>(`/faixas/${faixaId}/queue?${montarQuery(params)}`),
 
-  pagos7Dias: (periodo: { de?: string; ate?: string }) =>
-    request<PagosJanela>(`/dashboard/pagos-7-dias?${montarQuery(periodo)}`),
+  pagos7Dias: (periodo: { de?: string; ate?: string }, signal?: AbortSignal) =>
+    request<PagosJanela>(`/dashboard/pagos-7-dias?${montarQuery(periodo)}`, { signal }),
   // auto=true: atualização automática da tela, o backend pode responder do cache compartilhado
-  dashboardSummary: (periodo: { de?: string; ate?: string } = {}, auto = false) =>
-    request<DashboardSummary>(`/dashboard/summary?${montarQuery({ ...periodo, auto: auto || undefined })}`),
+  dashboardSummary: (periodo: { de?: string; ate?: string } = {}, auto = false, signal?: AbortSignal) =>
+    request<DashboardSummary>(`/dashboard/summary?${montarQuery({ ...periodo, auto: auto || undefined })}`, { signal }),
 
   listInvalidPhones: (
     params: { faixa_id?: string; campanha?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
@@ -347,8 +378,8 @@ export const api = {
   ) => request<FilaReportPage>(`/relatorios/erros?${montarQuery(params)}`),
   downloadErrosXlsx: (params: { faixa_id?: string; campanha?: string; de?: string; ate?: string }) =>
     downloadFile(`/relatorios/erros/export?${montarQuery(params)}`, "relatorio_erros.xlsx"),
-  listPagamentos: (params: FiltrosPagamentos & { limit: number; offset: number } & OrdenacaoParams) =>
-    request<PagamentosPage>(`/relatorios/pagamentos?${montarQuery(params)}`),
+  listPagamentos: (params: FiltrosPagamentos & { limit: number; offset: number } & OrdenacaoParams, signal?: AbortSignal) =>
+    request<PagamentosPage>(`/relatorios/pagamentos?${montarQuery(params)}`, { signal }),
   downloadPagamentosXlsx: (params: FiltrosPagamentos) =>
     downloadFile(`/relatorios/pagamentos/export?${montarQuery(params)}`, "relatorio_pagamentos.xlsx"),
 
@@ -362,17 +393,19 @@ export const api = {
   regrasCobranca: () => request<RegrasCobranca>("/cobranca/regras"),
   atualizarComprasSeta: () =>
     request<{ clientes_atualizados: number }>("/cobranca/compras/atualizar", { method: "POST" }),
-  listarClientesCobranca: (params: FiltrosCobranca & { limit: number; offset: number } & OrdenacaoParams) =>
-    pollAsync<{ total: number; itens: ClienteCobranca[] }>(() =>
-      request(`/cobranca/clientes?${montarQuery(params)}`)
+  listarClientesCobranca: (params: FiltrosCobranca & { limit: number; offset: number } & OrdenacaoParams, signal?: AbortSignal) =>
+    pollAsync<{ total: number; itens: ClienteCobranca[] }>(
+      (s) => request(`/cobranca/clientes?${montarQuery(params)}`, { signal: s }),
+      signal
     ),
-  relatorioCobranca: (params: FiltrosCobranca) =>
-    pollAsync<RelatorioCobranca>(() => request(`/cobranca/relatorio?${montarQuery(params)}`)),
+  relatorioCobranca: (params: FiltrosCobranca, signal?: AbortSignal) =>
+    pollAsync<RelatorioCobranca>((s) => request(`/cobranca/relatorio?${montarQuery(params)}`, { signal: s }), signal),
 
   // --- Leads ---
-  gerarLeads: (params: FiltrosCobranca) =>
-    pollAsync<{ criados: number; ja_existiam: number; sem_celular: number; na_fila: number }>(() =>
-      request(`/leads/gerar?${montarQuery(params)}`, { method: "POST" })
+  gerarLeads: (params: FiltrosCobranca, signal?: AbortSignal) =>
+    pollAsync<{ criados: number; ja_existiam: number; sem_celular: number; na_fila: number }>(
+      (s) => request(`/leads/gerar?${montarQuery(params)}`, { method: "POST", signal: s }),
+      signal
     ),
   listarLeads: (params: FiltrosLeads & { limit: number; offset: number } & OrdenacaoParams) =>
     request<{ total: number; itens: Lead[] }>(`/leads?${montarQuery(params)}`),
@@ -394,8 +427,8 @@ export const api = {
     }),
 
   // --- Efetividade da cobrança ---
-  relatorioEfetividade: (params: FiltrosEfetividade) =>
-    request<RelatorioEfetividade>(`/reports/efetividade?${montarQuery(params)}`),
+  relatorioEfetividade: (params: FiltrosEfetividade, signal?: AbortSignal) =>
+    request<RelatorioEfetividade>(`/reports/efetividade?${montarQuery(params)}`, { signal }),
   exportarEfetividade: (params: FiltrosEfetividade) =>
     downloadFile(`/reports/efetividade.xlsx?${montarQuery(params)}`, "efetividade.xlsx"),
   exportarEfetividadeClientes: (params: FiltrosEfetividade) =>
@@ -482,10 +515,13 @@ export const api = {
     );
   },
   removerClientesCampanha: (id: string) => request<void>(`/campanhas/${id}/clientes`, { method: "DELETE" }),
-  previaCampanha: (id: string, params: { limit: number; offset: number } & OrdenacaoParams) =>
-    pollAsync<PreviaCampanha>(() => request(`/campanhas/${id}/previa?${montarQuery(params)}`)),
-  executarCampanha: (id: string) =>
-    pollAsync<{ encontrados: number; na_fila: number }>(() => request(`/campanhas/${id}/executar`, { method: "POST" })),
+  previaCampanha: (id: string, params: { limit: number; offset: number } & OrdenacaoParams, signal?: AbortSignal) =>
+    pollAsync<PreviaCampanha>((s) => request(`/campanhas/${id}/previa?${montarQuery(params)}`, { signal: s }), signal),
+  executarCampanha: (id: string, signal?: AbortSignal) =>
+    pollAsync<{ encontrados: number; na_fila: number }>(
+      (s) => request(`/campanhas/${id}/executar`, { method: "POST", signal: s }),
+      signal
+    ),
   colunasPlanilhaLojas: (file: File) => {
     const form = new FormData();
     form.append("file", file);
@@ -1285,6 +1321,9 @@ export interface RelatorioEfetividade {
   leads_sem_parcelas: number;
   dias_janela: number | null;
   valor_a_pagar_brl: string | null;
+  // hora em que o SETA foi lido; desatualizado = dado de antes do prazo (recalculando ou SETA fora)
+  gerado_em: string | null;
+  desatualizado: boolean;
 }
 
 export interface FiltrosEfetividade extends OrdenacaoParams {
@@ -1332,6 +1371,8 @@ export interface PagamentosPage {
   valor_cobrado: string;
   valor_pago: string;
   itens: PagamentoCliente[];
+  gerado_em: string | null;
+  desatualizado: boolean;
 }
 
 export interface ConexaoRenegocie {

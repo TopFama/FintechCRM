@@ -1,11 +1,12 @@
-import { useRef, useState } from "react";
-import { api, mensagemErroSeta, FiltrosEfetividade, LinhaEfetividade, RelatorioEfetividade } from "../../api";
-import { formatBRL, formatPercentual } from "../../format";
+import { useState } from "react";
+import { api, foiCancelada, mensagemErroSeta, FiltrosEfetividade, LinhaEfetividade, RelatorioEfetividade } from "../../api";
+import { formatBRL, formatDataHora, formatPercentual } from "../../format";
 import { IconAlert } from "../../icons";
 import CamposLoja from "../CamposLoja";
 import MultiSelect from "../MultiSelect";
 import SelectCampanha from "../SelectCampanha";
 import { OpcoesCobranca, opcoesCluster } from "../useOpcoesCobranca";
+import { useRequisicaoUnica } from "../useRequisicaoUnica";
 import SortableTh from "../SortableTh";
 import TabelaAjustavel from "../TabelaAjustavel";
 import { ordemFaixaFn, ordenarPor, SortDirection, useSort } from "../../sort";
@@ -100,7 +101,7 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
   const [exportando, setExportando] = useState(false);
   const [exportandoClientes, setExportandoClientes] = useState(false);
   const [aba, setAba] = useState<Aba>("faixa");
-  const reqRef = useRef(0);
+  const novaRequisicao = useRequisicaoUnica();
   // o relatório vem inteiro (sem paginação): ordenar na tela cobre o resultado todo e não reconsulta o SETA
   const ordenacao = useSort<Coluna>(null);
   const ordemFaixa = ordemFaixaFn(opcoes.regras?.faixas);
@@ -137,12 +138,12 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
     const f = filtrosComJanela();
     setErro(null);
     setCarregando(true);
-    const seq = ++reqRef.current;
+    const signal = novaRequisicao();
     api
-      .relatorioEfetividade(f)
-      .then((r) => seq === reqRef.current && setRelatorio(r))
-      .catch((e) => seq === reqRef.current && setErro(mensagemErroSeta(e)))
-      .finally(() => seq === reqRef.current && setCarregando(false));
+      .relatorioEfetividade(f, signal)
+      .then(setRelatorio)
+      .catch((e) => !foiCancelada(e) && setErro(mensagemErroSeta(e)))
+      .finally(() => !signal.aborted && setCarregando(false));
   }
 
   async function exportar() {
@@ -271,7 +272,7 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
       />
 
       <div className="actions-row">
-        <button type="button" onClick={aplicar} disabled={janelaInvalida}>
+        <button type="button" onClick={aplicar} disabled={janelaInvalida || carregando}>
           Aplicar filtros
         </button>
         <button
@@ -326,6 +327,12 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
 
       {relatorio && !carregando && (
         <>
+          {relatorio.desatualizado && (
+            <div className="field-hint" style={{ marginBottom: 8 }}>
+              Dados do SETA de {formatDataHora(relatorio.gerado_em)}: o relatório está sendo atualizado. Aplique de
+              novo daqui a pouco.
+            </div>
+          )}
           {relatorio.valor_a_pagar_brl !== null && (
             <div className="field-hint" style={{ marginBottom: 8 }}>
               Valor a pagar (Meta, conversas do período convertidas em BRL): {formatBRL(relatorio.valor_a_pagar_brl)}

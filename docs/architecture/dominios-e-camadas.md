@@ -80,7 +80,8 @@ tirar do caminho os acoplamentos que já causaram ou podem causar bug.
   pelo `worker.py` antes de cada envio. Só ocupa o cliente quem foi enviado, está pendente/reservado ou teve falha
   incerta (timeout) na Meta.
 - **SETA só leitura**: nenhum `INSERT/UPDATE/DELETE/DDL`; consultas em lote (CTE + `VALUES`),
-  nunca em loop por cliente. Toda consulta nova ao SETA entra em `seta_client.py`.
+  nunca em loop por cliente. Toda consulta nova ao SETA entra em `seta_client.py`, as pesadas por
+  `consulta_pesada` (limite global) e os relatórios por `cache` (um cálculo por chave, sem consulta direta se o Redis cair).
 - **Horário de negócio em GMT-3** (`timezone.BUSINESS_TZ`); o banco da app grava UTC ingênuo.
 - **`.env` não muda** (nomes, valores, local).
 

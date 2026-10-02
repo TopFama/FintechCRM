@@ -7,7 +7,8 @@ from decimal import Decimal
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from .. import consultas_fila, google_client, lojas as lojas_base, models
+from .. import cache, consultas_fila, google_client, lojas as lojas_base, models
+from ..database import SessionLocal
 from . import pagamentos_seta
 from ..timezone import dia_br
 
@@ -125,6 +126,53 @@ def clientes_que_pagaram(
         )
     linhas.sort(key=lambda l: (l["data_cobranca"], l["nome"] or ""), reverse=True)
     return linhas
+
+
+# 5 min frescos; o Quem pagou ainda serve a lista por mais 30 min (marcada
+# desatualizada) enquanto uma só atualização roda em segundo plano, ou se o SETA falha.
+PAGAMENTOS_TTL_SEGUNDOS = 300
+PAGAMENTOS_VELHO_SEGUNDOS = 1800
+_CAMPOS_DATA = ("data_cobranca", "primeiro_pagamento", "ultimo_pagamento")
+
+
+def snapshot_pagamentos(
+    *,
+    cobrado_de: date | None = None,
+    cobrado_ate: date | None = None,
+    pago_de: date | None = None,
+    pago_ate: date | None = None,
+    faixa: list[str] | None = None,
+    dias_janela: int | None = None,
+    campanha: str | None = None,
+    velho: int = 0,
+) -> cache.Snapshot:
+    """`clientes_que_pagaram` no Redis por conjunto de filtros, compartilhado
+    entre usuários e telas: ordenar, paginar, exportar e o card "Pagaram em até 7
+    dias" (mesmos filtros) leem a mesma lista sem refazer nada. `velho` é por
+    quanto tempo, depois dos 5 min, ainda se serve a lista enquanto ela é
+    atualizada. Levanta o que o cache e o SETA levantam."""
+
+    filtros = dict(
+        cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate, faixa=faixa,
+        dias_janela=dias_janela, campanha=campanha,
+    )
+
+    def calcular():
+        # pode rodar em segundo plano depois da requisição: sessão própria
+        with SessionLocal() as db:
+            return clientes_que_pagaram(db, **filtros)
+
+    snap = cache.obter_snapshot(
+        cache.chave("relatorio-pagamentos", filtros), calcular, ttl_segundos=PAGAMENTOS_TTL_SEGUNDOS, velho=velho
+    )
+    # o Redis guarda JSON: devolve datas e valores aos tipos originais
+    for l in snap.data:
+        for campo in _CAMPOS_DATA:
+            if isinstance(l.get(campo), str):
+                l[campo] = date.fromisoformat(l[campo])
+        for campo in ("valor_cobrado", "valor_pago"):
+            l[campo] = Decimal(str(l[campo]))
+    return snap
 
 
 COLUNAS_ORDENAVEIS = (

@@ -90,7 +90,7 @@ const TELAS = {
     depende: ["04-faixas", "05-horario", "06-indicadores", "07-blacklist"],
     arquivos: [
       `${F}pages/Cobranca.tsx`, `${F}components/BarraFiltrosCobranca.tsx`, `${F}components/CampoValorMaximo.tsx`,
-      `${F}components/CamposLoja.tsx`, `${F}components/MultiSelect.tsx`, `${F}components/useOpcoesCobranca.ts`,
+      `${F}components/CamposLoja.tsx`, `${F}components/MultiSelect.tsx`, `${F}components/useOpcoesCobranca.ts`, `${F}components/useRequisicaoUnica.ts`,
       `${F}components/MatrizTable.tsx`, `${F}components/SortableTh.tsx`, `${F}components/Paginacao.tsx`,
       `${B}routers/cobranca.py`, `${B}routers/comum.py`, `${B}routers/leads.py`, `${B}cobranca_base.py`,
       `${B}cobranca_relatorio.py`, `${B}leads_service.py`, `${B}seta_client.py`, `${B}blacklist.py`, `${B}elegibilidade.py`,
@@ -121,7 +121,7 @@ const TELAS = {
     depende: ["11-disparo"],
     arquivos: [
       `${F}pages/Dashboard.tsx`, `${F}components/dashboard/**`, `${F}components/DicaIndicador.tsx`, `${F}components/TabelaAjustavel.tsx`,
-      `${F}components/useAtualizacaoAutomatica.ts`, `${F}components/FiltroPeriodo.tsx`, `${F}components/SelectCampanha.tsx`,
+      `${F}components/useAtualizacaoAutomatica.ts`, `${F}components/useRequisicaoUnica.ts`, `${F}components/FiltroPeriodo.tsx`, `${F}components/SelectCampanha.tsx`,
       `${F}components/MatrizTable.tsx`, `${B}routers/dashboard.py`, `${B}routers/leads.py`, `${B}routers/cobranca.py`,
       `${B}consultas_fila.py`, `${B}services/**`, `${B}cambio.py`, `${B}relatorio_efetividade.py`, `${B}cobranca_relatorio.py`,
       `${B}utils/xlsx.py`, `${B}utils/leads_xlsx.py`,
@@ -130,7 +130,7 @@ const TELAS = {
   "13-relatorios": {
     depende: ["11-disparo"],
     arquivos: [
-      `${F}pages/Relatorios.tsx`, `${F}components/FiltroPeriodo.tsx`, `${F}components/Paginacao.tsx`,
+      `${F}pages/Relatorios.tsx`, `${F}components/FiltroPeriodo.tsx`, `${F}components/Paginacao.tsx`, `${F}components/useRequisicaoUnica.ts`,
       `${F}components/SortableTh.tsx`, `${F}components/SelectCampanha.tsx`, `${B}routers/reports.py`,
       `${B}consultas_fila.py`, `${B}services/**`, `${B}relatorio_efetividade.py`, `${B}utils/xlsx.py`,
     ],
@@ -138,7 +138,7 @@ const TELAS = {
   "14-erros-e-sincronia": {
     depende: ["12-dashboard", "13-relatorios"],
     arquivos: [
-      `${F}pages/Dashboard.tsx`, `${F}components/dashboard/**`, `${F}components/useAtualizacaoAutomatica.ts`,
+      `${F}pages/Dashboard.tsx`, `${F}components/dashboard/**`, `${F}components/useAtualizacaoAutomatica.ts`, `${F}components/useRequisicaoUnica.ts`,
       `${B}routers/dashboard.py`, `${B}services/**`, `${B}cambio.py`,
     ],
   },
@@ -169,7 +169,7 @@ const TELAS = {
   "18-campanhas": {
     depende: ["04-faixas"],
     arquivos: [
-      `${F}pages/Campanhas.tsx`, `${F}pages/CampanhaDetail.tsx`, `${F}components/BarraFiltrosCobranca.tsx`,
+      `${F}pages/Campanhas.tsx`, `${F}pages/CampanhaDetail.tsx`, `${F}components/BarraFiltrosCobranca.tsx`, `${F}components/useRequisicaoUnica.ts`,
       `${F}components/CamposLoja.tsx`, `${F}components/CampoValorMaximo.tsx`, `${F}components/SelectCampanha.tsx`,
       `${F}components/EnviosFaixa.tsx`, `${B}routers/campanhas.py`, `${B}campanhas.py`, `${B}campanhas_fixas.py`,
       `${B}cobranca_base.py`, `${B}fila_automatica.py`, `${B}elegibilidade.py`, `${B}pausas.py`, `${B}routers/lojas.py`,

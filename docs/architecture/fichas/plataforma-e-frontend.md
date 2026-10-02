@@ -65,4 +65,5 @@ uma feature de algum domínio precisou de um campo novo: o co-change mais forte 
 - **Churn:** 1 | **Linhas:** 62
 
 ### `apps/backend/app/utils/*`, `cache.py`, `config.py`, `database.py`
+- **`cache.py` (proteção do SETA):** dono de duas regras: um cálculo por chave (single-flight, trava com dono + batimento, fila limitada, quarentena de erro) e o formato do *snapshot* (`gerado_em`, `velho`). Não conhece relatório nenhum: quem chama passa a chave (`cache.chave`) e a função que calcula. O limite global de consultas pesadas fica em `seta_client.consulta_pesada` (config `SETA_MAX_CONSULTAS_PESADAS`). Teste: `tests/test_protecao_seta.py` (13 cenários que contam as chamadas ao SETA).
 - **Violações encontradas:** nenhuma. `utils/` não importa `models` nem FastAPI (a regra 5 está travada no CI pelo contrato `regras-puras` do `.importlinter`).

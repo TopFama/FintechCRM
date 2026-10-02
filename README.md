@@ -92,10 +92,11 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 | `SETA_DB_HOST` / `SETA_DB_PORT` / `SETA_DB_NAME` | backend | não | *(vazio)* / `5432` / `seta` | Postgres do ERP SETA, usado **só para leitura** (a conexão abre com `default_transaction_read_only=on`). Vazio = integração desligada: o backend sobe normalmente e `GET /seta/status` responde `configurado: false`. |
 | `SETA_DB_USER` / `SETA_DB_PASSWORD` | backend | não | *(vazio)* | Credenciais do SETA. O ideal é um usuário do banco só com `SELECT`. |
 | `SETA_DB_CONNECT_TIMEOUT_SECONDS` / `SETA_DB_STATEMENT_TIMEOUT_SECONDS` | backend | não | `10` / `120` | Tempo máximo para conectar e para cada consulta (o ERP é produção e a tabela de títulos passa de 27 milhões de linhas). |
+| `SETA_MAX_CONSULTAS_PESADAS` | backend | não | `2` | Quantas consultas pesadas ao SETA (base de cobrança, efetividade, pagamentos, compras) rodam ao mesmo tempo no processo; as demais esperam na vez (`seta_client.consulta_pesada`). **Não** aumente junto com o pool nem os timeouts para "resolver" lentidão: o limite existe para o ERP de produção não receber rajada. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | backend | não | *(vazio)* | Cliente OAuth2 (aplicativo da Web) do Google Cloud, com a Google Sheets API ativada. Vazio = integração desligada; sem ela só não dá para filtrar por regional/estado/cluster de loja. Depois de preenchido, conecte a conta em **Configurações** (o refresh token fica cifrado no banco com a `ENCRYPTION_KEY`). |
 | `GOOGLE_REDIRECT_URI` / `GOOGLE_FRONTEND_URL` | backend | não | `http://localhost:8000/google/oauth/callback` / `http://localhost:5173` | A primeira precisa estar cadastrada, idêntica, nas URIs de redirecionamento autorizadas do cliente OAuth; a segunda é para onde o navegador volta depois do consentimento. |
 | `GOOGLE_SHEET_LOJAS_ID` / `GOOGLE_SHEET_LOJAS_GID` | backend | não | planilha de lojas da TopFama | ID da planilha (trecho da URL entre `/d/` e `/edit`) e `gid` da aba (`#gid=…`). Colunas lidas: FILIAL, NOME COM COD, REGIONAL, ESTADO, CLUSTER INAD e CLUSTER POPULAÇÃO. |
-| `REDIS_URL` | backend | não | `redis://redis:6379/0` | Cache das consultas pesadas ao SETA (`GET /cobranca/clientes`, `/cobranca/relatorio` e `POST /leads/gerar` — a tabela de títulos tem mais de 27 milhões de linhas). Ver `app/cache.py`. |
+| `REDIS_URL` | backend | não | `redis://redis:6379/0` | Cache e trava das consultas pesadas ao SETA (base de cobrança, efetividade, Quem pagou, "Pagaram em até 7 dias", resumo e orçamento do Dashboard — a tabela de títulos tem mais de 27 milhões de linhas). Redis fora do ar = essas telas respondem 503 "cache indisponível"; o backend **não** cai para consulta direta ao SETA. Ver `app/cache.py`. |
 | `CORS_ALLOWED_ORIGINS` | backend | não | `*` | Origens liberadas no CORS, separadas por vírgula (ex: `https://crm.topfama.com.br`). O padrão `*` mantém o comportamento anterior; em produção, restrinja ao(s) domínio(s) real(is) do frontend. |
 | `COOKIE_SECURE` | backend | não | `true` | Atributo `Secure` do cookie httpOnly de sessão (ver "Limitações conhecidas / próximos passos" abaixo). Exige `https`; em desenvolvimento local sobre `http` puro, defina como `false`, senão o navegador descarta o cookie. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | backend | não | `720` | Validade do JWT de login (12 h). |
@@ -323,6 +324,19 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    atualizam sozinhos, só ao abrir, trocar o filtro ou em "Atualizar agora". Os pedidos
    automáticos (`auto=true`) leem do cache compartilhado no Redis (15 s o resumo, 10 min o
    orçamento).
+   **Proteção do SETA** (`app/cache.py` + `seta_client.consulta_pesada`): o relatório pesado é um
+   *snapshot* no Redis (resultado + `gerado_em`), com a chave igual para todos os usuários e abas.
+   Pedidos iguais ao mesmo tempo fazem **uma** consulta (single-flight: quem chega depois espera
+   ou recebe "processando"); a trava tem dono (só quem a pegou a solta) e batimento; no máximo
+   `SETA_MAX_CONSULTAS_PESADAS` consultas pesadas rodam juntas e a fila de espera é pequena (cheia =
+   429 com `Retry-After`, não 503). Efetividade e Quem pagou guardam 5 min e, vencido, mostram o último
+   snapshot (até 30 min) com o aviso "dados de …" enquanto atualizam uma vez em segundo plano;
+   ordenar, paginar e as três exportações da efetividade leem o snapshot, sem ir ao SETA.
+   "Pagaram em até 7 dias" usa o mesmo snapshot de Quem pagou. A base de cobrança fica 10 min e
+   não serve dado vencido (ela gera os leads). Erro do cálculo não é guardado: fica 30 s em
+   quarentena para o polling não refazer a consulta. No front-end, trocar o filtro ou sair da tela
+   cancela a consulta (`AbortController`, `useRequisicaoUnica`), o polling usa espera crescente com
+   jitter e os botões de aplicar ficam desabilitados enquanto a consulta anterior roda.
    A tabela **Por faixa** mostra Pendente, Erro, Enviado, Clientes cobrados (distintos, mesma
    base do "Pagaram após cobrança"), Frequência (mensagens do período aos clientes cobrados ÷
    cobrados que receberam mensagem), Pagaram após cobrança, % Conv. (pagaram ÷ cobrados),
@@ -405,7 +419,7 @@ leitura** (remote `git@github.com:TopFama/FintechCRM.git` em `/opt/FintechCRM`).
 
 | Workflow | Quando roda | Jobs (cada um numa máquina própria, em paralelo) |
 |---|---|---|
-| `testes.yml` | Todo PR e todo push na `main` (menos quando só mudam arquivos `.md`) e manual ("Run workflow") | **Backend (scripts de teste)**: Postgres descartável + `tests/rodar_todos.sh`. **Arquitetura (import-linter)**: `lint-imports` com `apps/backend/.importlinter`. **Frontend (build)**: `npm run build:frontend`. **E2E (Playwright)**: sobe Postgres, Redis, backend com Meta/Chatwoot/SETA/Google/Renegocie simulados e frontend, e um navegador percorre as telas (relatório do Playwright fica 7 dias como artefato quando falha). Em PR e em push na `main`, roda apenas as telas afetadas pelos arquivos alterados, com os cenários de que elas dependem (`e2e/selecionar-telas.mjs`; arquivo estrutural roda tudo; nada afetado pula o e2e) |
+| `testes.yml` | Todo PR e todo push na `main` (menos quando só mudam arquivos `.md`) e manual ("Run workflow") | **Backend (scripts de teste)**: Postgres e Redis descartáveis + `tests/rodar_todos.sh`. **Arquitetura (import-linter)**: `lint-imports` com `apps/backend/.importlinter`. **Frontend (build)**: `npm run build:frontend`. **E2E (Playwright)**: sobe Postgres, Redis, backend com Meta/Chatwoot/SETA/Google/Renegocie simulados e frontend, e um navegador percorre as telas (relatório do Playwright fica 7 dias como artefato quando falha). Em PR e em push na `main`, roda apenas as telas afetadas pelos arquivos alterados, com os cenários de que elas dependem (`e2e/selecionar-telas.mjs`; arquivo estrutural roda tudo; nada afetado pula o e2e) |
 | `e2e-mapa.yml` | PR que mexe em `e2e/selecionar-telas.mjs`, `e2e/tests/**` ou no próprio workflow; manual | Um job por tela: roda o spec só com os pré-requisitos declarados no mapa, para provar que a seleção do e2e em PR não depende de cenário fora do mapa |
 | `security-scan.yml` | Push/PR que mexe em `package.json`, `package-lock.json` ou `apps/backend/requirements.txt`; toda segunda às 9h UTC (6h em Brasília, pega falha nova em dependência que não mudou); manual | **npm audit (frontend)**: reprova vulnerabilidade alta ou crítica. **pip-audit (backend)**: reprova qualquer vulnerabilidade conhecida, exceto a exceção documentada no próprio arquivo (`ecdsa`, PYSEC-2026-1325, não afeta o app porque o JWT usa HS256) |
 | `deploy.yml` | **Automático** depois que o `testes.yml` passa inteiro num push na `main` (publica exatamente o commit testado; CI vermelho não publica). Manual ("Run workflow", `testar` ou `deploy`). PR que mexe no próprio arquivo roda o `testar` | Entra na rede Tailscale só durante o job (dispositivo efêmero `tag:ci`, segredos `TS_OAUTH_CLIENT_ID`/`TS_OAUTH_SECRET`; o SSH da VPS não aceita conexão da internet) e na VPS por SSH como o usuário `deploy` (`VPS_HOST` = IP do Tailscale da VPS, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, opcional `VPS_PORT`). **testar**: só lê (usuário, commit atual, alterações locais, containers, acesso da VPS ao GitHub). **deploy** (automático ou manual na `main`): `git merge --ff-only` do commit em `/opt/FintechCRM` e `docker compose up -d --build`. Os dois terminam conferindo `https://fintech.lojastopfama.com.br/api/health` |
@@ -523,6 +537,10 @@ Só é preciso refazer isto se a VPS, as chaves ou a conta do Tailscale mudarem.
 
 ## Limitações conhecidas / próximos passos
 
+- **Limite de consultas ao SETA por processo**: `SETA_MAX_CONSULTAS_PESADAS` e a fila de jobs do
+  cache valem dentro do processo do backend (hoje um uvicorn só, com o worker dentro). Com mais de um
+  processo, o limite global teria de virar um semáforo no Redis (o ponto único é
+  `seta_client.consulta_pesada`); a trava por chave e o snapshot já são do Redis e valem para todos.
 - **Imagem de header**: pela Meta, a imagem subida em Templates vai como mídia (`media_id`, subida
   uma vez por número e renovada a cada 20 dias; ver `dispatch_service.media_id_da_imagem`), sem
   precisar de link público. Pelo Chatwoot ainda é link: vale `PUBLIC_BASE_URL` (opcional) ou o

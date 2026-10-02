@@ -41,13 +41,14 @@ interface Props {
   onChange: (valor: FiltrosCobranca) => void;
   // Sem onAplicar, não mostra a linha de Aplicar/Limpar (formulário da campanha).
   onAplicar?: () => void;
+  carregando?: boolean; // desabilita Aplicar enquanto a consulta anterior não termina
   acaoDireita?: React.ReactNode; // botão extra alinhado à direita, na linha de Aplicar
   opcoes: OpcoesCobranca;
   idPrefixo: string;
 }
 
 // Mesmos filtros de GET /cobranca/clientes, /cobranca/relatorio e /leads/gerar.
-export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, opcoes, idPrefixo, acaoDireita }: Props) {
+export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, carregando, opcoes, idPrefixo, acaoDireita }: Props) {
   const paraOpcoes = (valores: string[] = []) => valores.map((v) => ({ value: v, label: v }));
   const set = (parcial: Partial<FiltrosCobranca>) => onChange({ ...valor, ...parcial });
 
@@ -171,7 +172,7 @@ export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, opcoe
 
       {onAplicar && (
       <div className="actions-row">
-        <button type="button" onClick={onAplicar}>
+        <button type="button" onClick={onAplicar} disabled={carregando}>
           Aplicar filtros
         </button>
         <button type="button" className="secondary" onClick={() => onChange(FILTROS_COBRANCA_PADRAO)}>

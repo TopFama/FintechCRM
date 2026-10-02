@@ -29,7 +29,7 @@ código a cada PR (ver AGENTS.md → "Documentação").
   só com alguém usando o CRM e no máximo a cada `PAGAMENTOS_SYNC_INTERVAL_SECONDS`) e cópia das
   compras do SETA às 03:00 (GMT-3). Não há fila externa (Celery, RQ): a "fila" é a tabela
   `cobranca_fila` (modelo `QueueItem`).
-- Redis: cache das consultas pesadas ao SETA e do Dashboard (`app/cache.py`).
+- Redis: cache e trava das consultas pesadas ao SETA e do Dashboard (`app/cache.py`): snapshot compartilhado, um cálculo por chave, 429 quando ocupado.
 - Autenticação por JWT em cookie httpOnly (python-jose), senha com bcrypt (passlib), tokens
   revogados em tabela e limite de tentativas por conta e por dispositivo.
 - Segredos no banco cifrados com Fernet (`app/crypto.py`, `ENCRYPTION_KEY`).

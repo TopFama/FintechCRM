@@ -34,6 +34,13 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
 - `meta_client.py` — **único** ponto de integração com a Graph API da Meta. Qualquer chamada nova
   à Meta entra aqui, nunca direto num router. Mesma regra para `seta_client.py` (ERP SETA, só
   leitura), `google_client.py` (OAuth2 + Sheets) e `chatwoot_client.py` (envio pelo Chatwoot).
+- `cache.py` — cache Redis e proteção do SETA: relatório pesado é *snapshot* com single-flight
+  (`obter_snapshot`/`obter_ou_calcular` esperam o resultado; `buscar_ou_iniciar` devolve "processing"),
+  trava com dono, fila limitada, quarentena de erro e `chave()` determinística (sem usuário na chave).
+  Relatório novo que consulta o SETA usa um desses dois, nunca `seta_client` direto no router; o limite
+  global (`SETA_MAX_CONSULTAS_PESADAS`) mora em `seta_client.consulta_pesada`, que toda consulta pesada
+  nova deve usar. Ordenar/paginar/exportar leem o snapshot. Redis fora = 503, nunca consulta direta.
+  Os testes do backend precisam de Redis em `localhost:6379` (banco 15; `rodar_todos.sh` o esvazia).
 - `worker.py` — agendamento do disparo e das rotinas diárias, roda com APScheduler **dentro do
   mesmo processo** do backend (não é um serviço/container separado); o envio de cada item em si
   fica em `dispatch_service.py`.
@@ -103,7 +110,7 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
 **Backend:**
 1. Ambiente: `cd apps/backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`.
 2. Os scripts de `tests/` rodam todos com `./tests/rodar_todos.sh` (Postgres em
-   `localhost:15432`, senha `t`) e rodam no CI em todo PR (`.github/workflows/testes.yml`,
+   `localhost:15432`, senha `t`, e Redis em `localhost:6379`) e rodam no CI em todo PR (`.github/workflows/testes.yml`,
    junto com o build do frontend e o e2e). `tests/test_caracterizacao_envios.py` fotografa o
    fluxo de envio (fila, pausa, blacklist, uma mensagem por cliente por dia): se ele falhar
    depois de uma mudança que não devia mexer em comportamento, investigue antes de ajustar o
