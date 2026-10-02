@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     # configure com o(s) domínio(s) real(is) do frontend.
     cors_allowed_origins: str = "*"
 
+    # Domínios aceitos no cabeçalho Host e, quando o navegador manda, no Origin
+    # (ver main.py): qualquer outro recebe 403. "*.dominio" libera os subdomínios;
+    # localhost/127.0.0.1 cobrem o proxy reverso na própria VPS e o desenvolvimento,
+    # testserver o TestClient dos testes.
+    allowed_hosts: str = "lojastopfama.com.br,*.lojastopfama.com.br,localhost,127.0.0.1,testserver"
+
     # Cookie de sessão (ver app/routers/auth.py) só deve ir sem o atributo
     # Secure em desenvolvimento local sobre http puro — em produção (https)
     # mantenha True; o navegador ignora Set-Cookie com Secure fora de https.

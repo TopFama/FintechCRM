@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 from alembic import command
 from alembic.config import Config
@@ -120,6 +121,26 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="FintechCRM — Cobrança via WhatsApp", lifespan=lifespan)
+
+_hosts_permitidos = [h.strip().lower() for h in settings.allowed_hosts.split(",") if h.strip()]
+
+
+def _host_permitido(host: str | None) -> bool:
+    host = (host or "").lower().rstrip(".")
+    return bool(host) and any(host == h or (h.startswith("*.") and host.endswith(h[1:])) for h in _hosts_permitidos)
+
+
+@app.middleware("http")
+async def _somente_dominio_permitido(request: Request, call_next):
+    """403 para quem não chegou por um domínio permitido (Host) e para requisição de
+    navegador vinda de outro site (Origin). Sem Origin passa: webhook, /media e o
+    healthcheck não mandam. Registrado antes do CORS: o 403 sai com os cabeçalhos dele."""
+
+    origin = request.headers.get("origin")
+    if not _host_permitido(request.url.hostname) or (origin is not None and not _host_permitido(urlparse(origin).hostname)):
+        return JSONResponse({"detail": "Forbidden"}, status_code=403)
+    return await call_next(request)
+
 
 _cors_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()]
 if not _cors_origins:
