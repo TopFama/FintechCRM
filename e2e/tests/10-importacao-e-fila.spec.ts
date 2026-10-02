@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { apiGet, baixar, campo, card, expect, permitirErrosConsole, test } from "./fixtures";
 import type { Page } from "@playwright/test";
+import { prepararFaixas } from "./preparo";
 
 const DADOS = path.join(path.dirname(fileURLToPath(import.meta.url)), "dados");
 const importar = (page: Page) => card(page, "Importar planilha para a fila");
@@ -12,7 +13,9 @@ async function abrirImportacao(page: Page, faixa: string) {
   await expect(page.getByRole("heading", { name: "Subir planilha e mapear colunas" })).toBeVisible();
 }
 
-test.describe("Cobrança → Importar planilha para a fila", () => {
+test.beforeAll(prepararFaixas);
+
+test.describe("Cobrança → Importar planilha para a fila", { tag: ["@importacao", "@fila"] }, () => {
   test("faixa sem número/template avisa antes de subir", async ({ page }) => {
     await page.goto("/cobranca");
     await campo(importar(page), "Faixa").selectOption({ label: "21 A 30" });
@@ -105,7 +108,7 @@ test.describe("Cobrança → Importar planilha para a fila", () => {
   });
 });
 
-test.describe("Detalhe da faixa: fila", () => {
+test.describe("Detalhe da faixa: fila", { tag: ["@importacao", "@fila"] }, () => {
   async function abrirFaixa(page: Page, nome: string) {
     const f = (await apiGet(page, "/faixas")).find((x: any) => x.name === nome);
     await page.goto(`/faixas/${f.id}`);

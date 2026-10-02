@@ -1,10 +1,13 @@
 import { card, expect, permitirErrosConsole, responderDialogo, test } from "./fixtures";
+import { prepararConexoes } from "./preparo";
 
 // Cenários de resiliência da tela: erro de rede some quando a próxima chamada dá certo,
 // e cards que dependem uns dos outros ficam em sincronia. Roda por último porque exclui o token.
 
-test.describe("Erros e sincronia entre cards", () => {
-  test("Dashboard: erro do resumo some quando o próximo período carrega", async ({ page }) => {
+test.beforeAll(prepararConexoes);
+
+test.describe("Erros e sincronia entre cards", { tag: "@resiliencia" }, () => {
+  test("Dashboard: erro do resumo some quando o próximo período carrega", { tag: ["@dashboard"] }, async ({ page }) => {
     permitirErrosConsole(page, "500");
     let falhar = true;
     await page.route("**/dashboard/summary?*", (r) =>
@@ -18,7 +21,7 @@ test.describe("Erros e sincronia entre cards", () => {
     await expect(page.locator(".error-box", { hasText: "Falha temporária" })).toHaveCount(0);
   });
 
-  test("Dashboard: resumo com erro não fica preso em 'Carregando'", async ({ page }) => {
+  test("Dashboard: resumo com erro não fica preso em 'Carregando'", { tag: ["@dashboard"] }, async ({ page }) => {
     permitirErrosConsole(page, "500");
     await page.route("**/dashboard/summary?*", (r) =>
       r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "Falha temporária" }) })
@@ -28,7 +31,7 @@ test.describe("Erros e sincronia entre cards", () => {
     await expect(page.getByText("Carregando resumo da fila...")).toHaveCount(0);
   });
 
-  test("Conexões: inbox informada em Números libera o 'Testar envio' sem recarregar", async ({ page }) => {
+  test("Conexões: inbox informada em Números libera o 'Testar envio' sem recarregar", { tag: ["@conexoes"] }, async ({ page }) => {
     await page.goto("/configuracoes?aba=conexoes");
     const numeros = card(page, "Números de WhatsApp");
     const l2 = numeros.locator("tbody tr", { hasText: "+55 11 4000-0002" });
@@ -40,7 +43,7 @@ test.describe("Erros e sincronia entre cards", () => {
     await expect(origem.locator("option", { hasText: "Lembrete 02" })).toHaveCount(1);
   });
 
-  test("Conexões: excluir o token também tira os números dele da lista na hora", async ({ page }) => {
+  test("Conexões: excluir o token também tira os números dele da lista na hora", { tag: ["@conexoes"] }, async ({ page }) => {
     await page.goto("/configuracoes?aba=conexoes");
     const numeros = card(page, "Números de WhatsApp");
     await expect(numeros.locator("tbody tr")).toHaveCount(2);
@@ -52,7 +55,7 @@ test.describe("Erros e sincronia entre cards", () => {
     await expect(numeros.getByText("Nenhum número importado")).toBeVisible({ timeout: 5_000 });
   });
 
-  test("depois de recarregar, os números do token excluído somem", async ({ page }) => {
+  test("depois de recarregar, os números do token excluído somem", { tag: ["@conexoes"] }, async ({ page }) => {
     await page.goto("/configuracoes?aba=conexoes");
     await expect(card(page, "Números de WhatsApp").getByText("Nenhum número importado")).toBeVisible();
   });

@@ -1,6 +1,6 @@
 import { card, expect, permitirErrosConsole, responderDialogo, test } from "./fixtures";
 
-test.describe("Configurações → Blacklist", () => {
+test.describe("Configurações → Blacklist", { tag: "@blacklist" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/configuracoes?aba=blacklist");
   });

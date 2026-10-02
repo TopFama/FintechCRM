@@ -1,5 +1,6 @@
 import { apiGet, apiSend, baixar, card, escolherMulti, expect, permitirErrosConsole, test } from "./fixtures";
 import type { Page } from "@playwright/test";
+import { prepararOperacao } from "./preparo";
 
 const stat = (page: Page, rotulo: string) =>
   page.locator(".stat", { has: page.locator(".label", { hasText: new RegExp(`^${rotulo.replace(/[()]/g, "\\$&")}$`) }) }).locator(".value").first();
@@ -7,7 +8,9 @@ const stat = (page: Page, rotulo: string) =>
 // "12.345" → 12345 (os cards mostram separador de milhar)
 const numero = (t: string) => Number(t.replace(/\./g, ""));
 
-test.describe("Dashboard", () => {
+test.beforeAll(prepararOperacao);
+
+test.describe("Dashboard", { tag: "@dashboard" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
   });
@@ -26,7 +29,7 @@ test.describe("Dashboard", () => {
     await expect(page.getByRole("heading", { name: "Erros recentes" })).toHaveCount(0);
   });
 
-  test("botão de período que fica azul no hover mostra o texto branco", async ({ page }) => {
+  test("botão de período que fica azul no hover mostra o texto branco", { tag: ["@visual"] }, async ({ page }) => {
     const botao = page.locator(".periodo-card", { hasText: "Últimos 7 dias" }).first();
     await botao.hover();
     await expect(botao).toHaveCSS("color", "rgb(255, 255, 255)");
@@ -72,7 +75,7 @@ test.describe("Dashboard", () => {
     ["Erros de envio", "erros"],
     ["Telefones inválidos", "invalidos"],
   ] as const) {
-    test(`card '${rotulo}' abre o relatório '${aba}' do mesmo período com o mesmo total`, async ({ page }) => {
+    test(`card '${rotulo}' abre o relatório '${aba}' do mesmo período com o mesmo total`, { tag: ["@relatorios"] }, async ({ page }) => {
       const valor = stat(page, rotulo);
       await expect(valor).not.toHaveText("…");
       const n = numero(await valor.innerText());
@@ -91,7 +94,7 @@ test.describe("Dashboard", () => {
     });
   }
 
-  test("card 'Pagaram em até 7 dias' mostra % e valor e abre Quem pagou com janela 7 e o mesmo total", async ({ page }) => {
+  test("card 'Pagaram em até 7 dias' mostra % e valor e abre Quem pagou com janela 7 e o mesmo total", { tag: ["@pagos-janela","@pagamentos"] }, async ({ page }) => {
     // No dia 1º, "Hoje" e "Este mês" são o mesmo período e o cache de 5 min do card pode ter
     // guardado o número de antes das cobranças dos cenários anteriores
     await apiSend(page, "POST", "/__e2e/cache/limpar");
@@ -114,7 +117,7 @@ test.describe("Dashboard", () => {
     }
   });
 
-  test("card 'Pagaram em até 7 dias' com SETA fora avisa só nele", async ({ page }) => {
+  test("card 'Pagaram em até 7 dias' com SETA fora avisa só nele", { tag: ["@pagos-janela","@pagamentos","@resiliencia"] }, async ({ page }) => {
     permitirErrosConsole(page, "503");
     await page.route("**/dashboard/pagos-7-dias*", (r) =>
       r.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "SETA indisponível" }) })
@@ -126,7 +129,7 @@ test.describe("Dashboard", () => {
     await expect(page.locator(".error-box")).toHaveCount(0);
   });
 
-  test("números dos cards saem com separador de milhar e o card fica mais largo que alto", async ({ page }) => {
+  test("números dos cards saem com separador de milhar e o card fica mais largo que alto", { tag: ["@visual"] }, async ({ page }) => {
     await page.route("**/dashboard/summary**", async (r) => {
       const res = await r.fetch();
       const json = { ...(await res.json()), total_pendentes: 12345, total_pausados: 1234, total_enviados: 98765 };
@@ -154,7 +157,7 @@ test.describe("Dashboard", () => {
     if (enviados !== "0") await expect(page.locator(".paginacao-info")).toContainText(`de ${enviados}`);
   });
 
-  test("por faixa mostra quem pagou após a cobrança e abre Quem pagou da faixa com o mesmo total", async ({ page }) => {
+  test("por faixa mostra quem pagou após a cobrança e abre Quem pagou da faixa com o mesmo total", { tag: ["@pagamentos"] }, async ({ page }) => {
     const porFaixa = card(page, "Por faixa");
     await expect(porFaixa.getByRole("columnheader", { name: /Pagaram após cobrança/ })).toBeVisible();
     await expect(porFaixa.getByRole("columnheader", { name: /Valor pago/ })).toBeVisible();
@@ -179,7 +182,7 @@ test.describe("Dashboard", () => {
     expect(v).toEqual([...v].sort((a, b) => a - b));
   });
 
-  test("por faixa: ordem das colunas, indicadores com fórmula e linha de total", async ({ page }) => {
+  test("por faixa: ordem das colunas, indicadores com fórmula e linha de total", { tag: ["@visual","@pagamentos"] }, async ({ page }) => {
     const porFaixa = card(page, "Por faixa");
     await expect(porFaixa.locator("thead th")).toHaveText([
       /^Faixa/, /^Pendente/, /^Erro/, /^Enviado/, /^Clientes cobrados/, /^Frequência/,
@@ -236,7 +239,7 @@ test.describe("Dashboard", () => {
     expect(await col(0)).toEqual(ordemAntes);
   });
 
-  test("por faixa: números e títulos centralizados, inclusive título quebrado em duas linhas", async ({ page }) => {
+  test("por faixa: números e títulos centralizados, inclusive título quebrado em duas linhas", { tag: ["@visual"] }, async ({ page }) => {
     const porFaixa = card(page, "Por faixa");
     await expect(porFaixa.locator("tbody tr").first()).toBeVisible();
     // Faixa fica à esquerda; as outras colunas, centralizadas
@@ -262,7 +265,7 @@ test.describe("Dashboard", () => {
     for (const d of desvios) expect(d).toBeLessThan(4);
   });
 
-  test("por faixa: altura ajustável na barra, com cabeçalho, total e faixa fixos na rolagem", async ({ page }) => {
+  test("por faixa: altura ajustável na barra, com cabeçalho, total e faixa fixos na rolagem", { tag: ["@visual"] }, async ({ page }) => {
     const porFaixa = card(page, "Por faixa");
     const wrap = porFaixa.locator(".tabela-ajustavel");
     const alca = porFaixa.getByRole("separator", { name: "Ajustar altura da tabela Por faixa" });
@@ -308,7 +311,7 @@ test.describe("Dashboard", () => {
   });
 
 
-  test("matriz cluster × faixa: aplicar, abas e clique leva para Cobrança filtrada", async ({ page }) => {
+  test("matriz cluster × faixa: aplicar, abas e clique leva para Cobrança filtrada", { tag: ["@cobranca"] }, async ({ page }) => {
     const m = card(page, "Base de cobrança — cluster × faixa");
     await expect(m).toContainText("Aplique os filtros para ver a matriz cluster × faixa.");
     await m.getByLabel("Somente o primeiro dia da faixa").uncheck();
@@ -332,7 +335,7 @@ test.describe("Dashboard", () => {
     await expect(card(page, /^Clientes/).locator("tbody tr").first()).toBeVisible();
   });
 
-  test("efetividade: janela 'Outro' valida 0–365 e bloqueia botões", async ({ page }) => {
+  test("efetividade: janela 'Outro' valida 0–365 e bloqueia botões", { tag: ["@efetividade"] }, async ({ page }) => {
     const e = card(page, "Efetividade da cobrança");
     await e.getByLabel("Janela de pagamento").selectOption({ label: "Outro (dias)" });
     await expect(e.getByText("Informe uma janela entre 0 e 365 dias.")).toBeVisible();
@@ -346,7 +349,7 @@ test.describe("Dashboard", () => {
     await expect(e.getByLabel("Janela de pagamento")).toHaveValue("7");
   });
 
-  test("efetividade: por faixa e por loja com linha de total; quem pagou hoje conta", async ({ page }) => {
+  test("efetividade: por faixa e por loja com linha de total; quem pagou hoje conta", { tag: ["@efetividade","@pagamentos"] }, async ({ page }) => {
     const e = card(page, "Efetividade da cobrança");
     await e.getByLabel("Janela de pagamento").selectOption({ label: "Qualquer data após o envio" });
     await e.getByRole("button", { name: "Aplicar filtros" }).click();
@@ -362,7 +365,7 @@ test.describe("Dashboard", () => {
     await e.getByRole("columnheader", { name: /Recebimento/ }).click();
   });
 
-  test("efetividade: Aplicar fica desabilitado enquanto consulta e clique repetido não duplica o pedido ao SETA", async ({ page }) => {
+  test("efetividade: Aplicar fica desabilitado enquanto consulta e clique repetido não duplica o pedido ao SETA", { tag: ["@efetividade","@resiliencia"] }, async ({ page }) => {
     const e = card(page, "Efetividade da cobrança");
     const pedidos: string[] = [];
     // segura a resposta para dar tempo de clicar de novo
@@ -381,7 +384,7 @@ test.describe("Dashboard", () => {
     expect(pedidos).toHaveLength(1);
   });
 
-  test("trocar o período no meio da consulta do SETA cancela a anterior e o card mostra a nova", async ({ page }) => {
+  test("trocar o período no meio da consulta do SETA cancela a anterior e o card mostra a nova", { tag: ["@efetividade","@resiliencia"] }, async ({ page }) => {
     const pedidos: string[] = [];
     let primeira = true;
     await page.route("**/dashboard/pagos-7-dias?*", async (route) => {
@@ -399,7 +402,7 @@ test.describe("Dashboard", () => {
     await expect(page.locator(".stat .texto-erro")).toHaveCount(0);
   });
 
-  test("efetividade: exportar Excel e exportar por cliente", async ({ page }) => {
+  test("efetividade: exportar Excel e exportar por cliente", { tag: ["@efetividade"] }, async ({ page }) => {
     const e = card(page, "Efetividade da cobrança");
     const a = await baixar(page, () => e.getByRole("button", { name: "Exportar Excel" }).click());
     expect(a.nome).toMatch(/\.xlsx$/);
@@ -408,7 +411,7 @@ test.describe("Dashboard", () => {
     expect(b.nome).toMatch(/\.xlsx$/);
   });
 
-  test("efetividade: filtro que não pega ninguém mostra estado vazio", async ({ page }) => {
+  test("efetividade: filtro que não pega ninguém mostra estado vazio", { tag: ["@efetividade"] }, async ({ page }) => {
     const e = card(page, "Efetividade da cobrança");
     await e.getByLabel("Enviado de").fill("2020-01-01");
     await e.getByLabel("Enviado até").fill("2020-01-02");
@@ -416,7 +419,7 @@ test.describe("Dashboard", () => {
     await expect(e.getByText("Nenhum lead enviado no período e filtros escolhidos.")).toBeVisible({ timeout: 30_000 });
   });
 
-  test("leads: contadores, filtro Hoje (liga/desliga) e exportação dos enviados", async ({ page }) => {
+  test("leads: contadores, filtro Hoje (liga/desliga) e exportação dos enviados", { tag: ["@leads"] }, async ({ page }) => {
     const l = card(page, "Leads");
     await expect(stat(page, "Leads novos")).not.toHaveText("…");
     await expect(stat(page, "Leads enviados")).not.toHaveText("0");
@@ -432,7 +435,7 @@ test.describe("Dashboard", () => {
     expect(linhas.length).toBeGreaterThan(1);
   });
 
-  test("orçamento: gasto por número, linha de total, ordenação e personalizado", async ({ page }) => {
+  test("orçamento: gasto por número, linha de total, ordenação e personalizado", { tag: ["@orcamento"] }, async ({ page }) => {
     const o = card(page, "Orçamento");
     await expect(o.locator("table")).toBeVisible({ timeout: 30_000 });
     await expect(o).toContainText("Realizado (gasto acumulado)");
@@ -454,7 +457,7 @@ test.describe("Dashboard", () => {
     await expect(o.locator("svg[role=img]")).toContainText("Acumulado:");
   });
 
-  test("orçamento: exportar por dia traz data, WABA, telefone e valor, somando o realizado", async ({ page }) => {
+  test("orçamento: exportar por dia traz data, WABA, telefone e valor, somando o realizado", { tag: ["@orcamento"] }, async ({ page }) => {
     const o = card(page, "Orçamento");
     await expect(o.locator("table")).toBeVisible({ timeout: 30_000 });
     const brl = (t: string) => Number(t.replace(/[^\d,]/g, "").replace(",", "."));
@@ -468,14 +471,14 @@ test.describe("Dashboard", () => {
     expect(dados.reduce((a, l) => a + Number(l[4]), 0)).toBeCloseTo(realizado, 1);
   });
 
-  test("orçamento: escolher 'Personalizado' sem datas não deixa os números do mês anterior na tela", async ({ page }) => {
+  test("orçamento: escolher 'Personalizado' sem datas não deixa os números do mês anterior na tela", { tag: ["@orcamento"] }, async ({ page }) => {
     const o = card(page, "Orçamento");
     await expect(o.locator("table")).toBeVisible({ timeout: 30_000 });
     await o.locator("select").selectOption("personalizado");
     await expect(o.getByText("Escolha a data mínima e a máxima.")).toBeVisible({ timeout: 3_000 });
   });
 
-  test("orçamento: Meta fora do ar mostra o motivo", async ({ page }) => {
+  test("orçamento: Meta fora do ar mostra o motivo", { tag: ["@orcamento","@resiliencia"] }, async ({ page }) => {
     permitirErrosConsole(page, "502");
     await page.route("**/dashboard/orcamento-progressao*", (r) =>
       r.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ detail: "Falha ao consultar a Meta" }) })
@@ -483,7 +486,7 @@ test.describe("Dashboard", () => {
     await page.reload();
     await expect(card(page, "Orçamento").locator(".error-box")).toContainText("Falha ao consultar a Meta");
   });
-  test("resumo e leads se atualizam sozinhos, sem F5, e param com a aba oculta", async ({ page }) => {
+  test("resumo e leads se atualizam sozinhos, sem F5, e param com a aba oculta", { tag: ["@resiliencia"] }, async ({ page }) => {
     await page.clock.install();
     await Promise.all([page.waitForResponse((r) => r.url().includes("/dashboard/summary?")), page.reload()]);
     await expect(stat(page, "Pendentes na fila")).not.toHaveText("999");
@@ -523,7 +526,7 @@ test.describe("Dashboard", () => {
     await expect.poll(() => resumos().length).toBe(antes + 1);
   });
 
-  test("'Atualizar agora' recarrega tudo, inclusive o card do SETA, sem apagar os números", async ({ page }) => {
+  test("'Atualizar agora' recarrega tudo, inclusive o card do SETA, sem apagar os números", { tag: ["@resiliencia"] }, async ({ page }) => {
     await expect(stat(page, "Pagaram em até 7 dias")).not.toHaveText("…", { timeout: 30_000 });
     const pedidos: URL[] = [];
     page.on("request", (r) => pedidos.push(new URL(r.url())));

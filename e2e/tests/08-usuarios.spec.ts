@@ -1,6 +1,6 @@
 import { card, expect, permitirErrosConsole, responderDialogo, test } from "./fixtures";
 
-test.describe("Configurações → Usuários", () => {
+test.describe("Configurações → Usuários", { tag: "@usuarios" }, () => {
   test("criar usuário padrão, e-mail repetido e senha curta", async ({ page }) => {
     permitirErrosConsole(page, /4\d\d/);
     await page.goto("/configuracoes?aba=usuarios");
@@ -33,7 +33,7 @@ test.describe("Configurações → Usuários", () => {
   });
 });
 
-test.describe("Usuário padrão", () => {
+test.describe("Usuário padrão", { tag: "@usuarios" }, () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
   test("não vê a aba Usuários nem abre por URL", async ({ page }) => {
@@ -48,7 +48,7 @@ test.describe("Usuário padrão", () => {
   });
 });
 
-test.describe("Excluir usuário", () => {
+test.describe("Excluir usuário", { tag: "@usuarios" }, () => {
   test("cancelar mantém; confirmar remove", async ({ page }) => {
     await page.goto("/configuracoes?aba=usuarios");
     const lista = card(page, /Usuários \(/);

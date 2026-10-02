@@ -1,6 +1,9 @@
 import { apiGet, campo, card, expect, permitirErrosConsole, test } from "./fixtures";
+import { prepararConexoes } from "./preparo";
 
-test.describe("Configurações → Templates", () => {
+test.beforeAll(prepararConexoes);
+
+test.describe("Configurações → Templates", { tag: "@templates" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/configuracoes?aba=templates");
   });
@@ -162,7 +165,7 @@ test.describe("Configurações → Templates", () => {
   });
 });
 
-test.describe("Conexões → Chatwoot: testar envio de template", () => {
+test.describe("Conexões → Chatwoot: testar envio de template", { tag: "@templates" }, () => {
   test("envia teste e mostra o resultado; botão só libera com tudo preenchido", async ({ page }) => {
     await page.goto("/configuracoes?aba=conexoes");
     const cw = card(page, "Chatwoot");

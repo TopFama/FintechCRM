@@ -1,7 +1,7 @@
 import { card, expect, permitirErrosConsole, responderDialogo, test } from "./fixtures";
 
 // Roda por último: mexe na base de lojas que os filtros das outras telas usam.
-test.describe("Configurações → Lojas", () => {
+test.describe("Configurações → Lojas", { tag: "@lojas" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/configuracoes?aba=lojas");
   });

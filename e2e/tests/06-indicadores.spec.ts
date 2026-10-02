@@ -2,7 +2,7 @@ import { card, expect, permitirErrosConsole, test } from "./fixtures";
 
 const hoje = new Date();
 
-test.describe("Configurações → Indicadores", () => {
+test.describe("Configurações → Indicadores", { tag: "@indicadores" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/configuracoes?aba=indicadores");
   });

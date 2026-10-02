@@ -1,4 +1,4 @@
-import { test as base, expect, type Locator, type Page } from "@playwright/test";
+import { test as base, expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -61,15 +61,18 @@ export async function escolherMulti(escopo: Page | Locator, rotulo: string, opco
   await btn.click();
 }
 
-/** Chamada direta ao backend de teste com a sessão do navegador (para preparar/conferir dados). */
-export async function apiGet(page: Page, caminho: string) {
-  const r = await page.request.get(`${API_URL}${caminho}`);
+/** Chamada direta ao backend de teste com a sessão do navegador (para preparar/conferir dados).
+ *  Aceita também um APIRequestContext, para preparar estado fora de um cenário (ver preparo.ts). */
+const sessao = (alvo: Page | APIRequestContext) => ("request" in alvo ? alvo.request : alvo);
+
+export async function apiGet(page: Page | APIRequestContext, caminho: string) {
+  const r = await sessao(page).get(`${API_URL}${caminho}`);
   expect(r.ok(), `GET ${caminho} → ${r.status()}`).toBeTruthy();
   return r.json();
 }
 
-export async function apiSend(page: Page, metodo: "POST" | "PUT" | "PATCH" | "DELETE", caminho: string, corpo?: unknown) {
-  const r = await page.request.fetch(`${API_URL}${caminho}`, { method: metodo, data: corpo });
+export async function apiSend(page: Page | APIRequestContext, metodo: "POST" | "PUT" | "PATCH" | "DELETE", caminho: string, corpo?: unknown) {
+  const r = await sessao(page).fetch(`${API_URL}${caminho}`, { method: metodo, data: corpo });
   return { status: r.status(), corpo: await r.json().catch(() => null) };
 }
 

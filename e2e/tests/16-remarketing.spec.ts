@@ -1,4 +1,5 @@
 import { apiGet, apiSend, card, expect, permitirErrosConsole, test } from "./fixtures";
+import { prepararFaixas } from "./preparo";
 
 // Renegocie simulado em servidor_teste.py: 00000003 só se identificou, 00000004 viu a
 // proposta há 40 dias, 00000005 e 00000027 têm acordo ativo (no SETA falso a entrada do
@@ -11,7 +12,9 @@ const salvar = (page: import("@playwright/test").Page, renegocie: import("@playw
     renegocie.getByRole("button", { name: "Salvar" }).click(),
   ]);
 
-test.describe.serial("Remarketing do Renegocie", () => {
+test.beforeAll(prepararFaixas);
+
+test.describe.serial("Remarketing do Renegocie", { tag: ["@remarketing","@elegibilidade"] }, () => {
   const acordo = (page: import("@playwright/test").Page) => card(page, "Acordo ativo com entrada não paga");
 
   test("conexão com o Renegocie: chave errada é recusada, a certa conecta", async ({ page }) => {
@@ -86,16 +89,6 @@ test.describe.serial("Remarketing do Renegocie", () => {
     await expect(card(page, "De onde vêm os clientes")).toContainText("não recebe planilha");
     await expect(card(page, "Leads gerados nesta faixa de atraso")).toHaveCount(0);
 
-    // o cenário de Conexões exclui o token (e os números): cadastra um de novo
-    if ((await apiGet(page, "/numbers")).length === 0) {
-      const token = await apiSend(page, "POST", "/meta-tokens", {
-        nome: "Token Remarketing",
-        token: "EAA-token-remarketing-1234",
-        waba_id: "1111111111",
-      });
-      expect(token.status).toBe(201);
-      expect((await apiSend(page, "POST", `/meta-tokens/${token.corpo.id}/importar-numeros`, { phone_number_ids: ["900002"] })).status).toBe(200);
-    }
     await page.reload();
     await page.getByRole("button", { name: "Adicionar número e template" }).click();
     await page.getByLabel("Número de envio").selectOption({ index: 1 });

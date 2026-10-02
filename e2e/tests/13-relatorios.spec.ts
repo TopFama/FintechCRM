@@ -1,10 +1,13 @@
 import { baixar, card, expect, permitirErrosConsole, test } from "./fixtures";
 import type { Page } from "@playwright/test";
+import { prepararOperacao } from "./preparo";
 
 const aba = (page: Page, nome: string) => page.getByRole("button", { name: nome, exact: true });
 const tabela = (page: Page) => page.locator(".card table").first();
 
-test.describe("Relatórios", () => {
+test.beforeAll(prepararOperacao);
+
+test.describe("Relatórios", { tag: "@relatorios" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/relatorios");
   });
@@ -59,7 +62,7 @@ test.describe("Relatórios", () => {
     await expect(page.getByText("Nenhum envio realizado ainda")).toHaveCount(0);
   });
 
-  test("quem pagou: totais, filtro de pagamento e Excel", async ({ page }) => {
+  test("quem pagou: totais, filtro de pagamento e Excel", { tag: ["@pagamentos"] }, async ({ page }) => {
     await aba(page, "Quem pagou").click();
     await expect(page.getByText("Pago de")).toBeVisible();
     await expect(page.locator(".stat", { hasText: "Clientes que pagaram" })).toBeVisible({ timeout: 30_000 });

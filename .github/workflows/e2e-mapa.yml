@@ -1,13 +1,15 @@
-name: Mapa de telas do e2e
+name: Mapa de cenários do e2e
 
-# Confere o mapa de e2e/selecionar-telas.mjs: cada tela (spec) roda sozinha,
-# só com os pré-requisitos declarados, numa máquina própria. Se uma falha aqui
-# e passa na suíte inteira, falta pré-requisito no mapa. Roda quando o mapa ou
-# os cenários mudam, e manualmente ("Run workflow").
+# Confere o que o seletor (e2e/selecionar-telas.mjs) promete: cada spec e cada tag
+# roda sozinho, numa máquina própria e sem nenhum outro cenário antes. Se uma falha
+# aqui e passa na suíte inteira, o cenário depende de outro que o seletor não traz
+# (preparar o estado em e2e/tests/preparo.ts, ou marcar o describe com as tags
+# certas). Roda quando o seletor ou os cenários mudam, e manualmente ("Run workflow").
 on:
   pull_request:
     paths:
       - "e2e/selecionar-telas.mjs"
+      - "e2e/ambiente/**"
       - "e2e/tests/**"
       - ".github/workflows/e2e-mapa.yml"
   workflow_dispatch: {}
@@ -18,26 +20,30 @@ concurrency:
 
 jobs:
   telas:
-    name: Listar telas
+    name: Listar specs e tags
     runs-on: ubuntu-latest
     outputs:
-      specs: ${{ steps.lista.outputs.specs }}
+      itens: ${{ steps.lista.outputs.itens }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
       - id: lista
-        run: echo "specs=$(node e2e/selecionar-telas.mjs --listar | jq -Rc 'split(" ")')" >> "$GITHUB_OUTPUT"
+        run: |
+          specs=$(node e2e/selecionar-telas.mjs --listar-specs)
+          tags=$(node e2e/selecionar-telas.mjs --listar-tags)
+          itens=$( { for s in $specs; do echo "spec:$s"; done; for t in $tags; do echo "tag:$t"; done; } | jq -Rsc 'split("\n") | map(select(length > 0))')
+          echo "itens=$itens" >> "$GITHUB_OUTPUT"
 
-  tela:
-    name: ${{ matrix.spec }}
+  isolado:
+    name: ${{ matrix.item }}
     needs: telas
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        spec: ${{ fromJSON(needs.telas.outputs.specs) }}
+        item: ${{ fromJSON(needs.telas.outputs.itens) }}
     services:
       postgres:
         image: postgres:16
@@ -72,12 +78,15 @@ jobs:
       - name: Subir o ambiente de teste
         working-directory: e2e
         run: ./ambiente/subir.sh
-      - name: Rodar a tela com os pré-requisitos
+      - name: Rodar sozinho
         working-directory: e2e
+        env:
+          ITEM: ${{ matrix.item }}
         run: |
-          specs=$(node selecionar-telas.mjs --spec "${{ matrix.spec }}")
-          echo "Rodando: $specs"
-          npx playwright test --reporter=line $specs
+          case "$ITEM" in
+            spec:*) npx playwright test --reporter=line "tests/${ITEM#spec:}.spec.ts" ;;
+            tag:*) npx playwright test --reporter=line --grep "@${ITEM#tag:}\\b" ;;
+          esac
       - name: Logs do ambiente
         if: failure()
         run: tail -100 e2e/.ambiente-logs/backend.log || true

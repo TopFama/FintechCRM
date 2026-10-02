@@ -160,8 +160,11 @@ continuar 100% condizente com o código — documento que descreve algo que não
    - `apps/backend/.importlinter` — módulo ou router novo entra nas listas dos contratos.
    - `e2e/README.md` e `GEMINI.md` — quando mudar como rodar a suíte e2e ou os comandos de
      validação e convenções que eles repetem.
-   - Tela nova, spec novo ou arquivo de frontend/backend novo que um spec testa? Declare no mapa
-     de `e2e/selecionar-telas.mjs` (senão o arquivo novo faz o PR rodar a suíte inteira).
+   - Spec novo, cenário novo ou arquivo de frontend/backend novo? Declare o arquivo no mapa de
+     `e2e/selecionar-telas.mjs` (`FUNCIONALIDADES`, ou a classe certa) e marque o cenário com as tags
+     de `e2e/README.md` → "Tags" (arquivo sem classe faz o PR rodar a suíte inteira, e
+     `node --test e2e/selecionar-telas.test.mjs` reprova). O spec prepara o próprio estado em
+     `e2e/tests/preparo.ts`; nenhum cenário pode depender de outro spec.
    - `.github/workflows/` mudou (job novo, gatilho, exceção de segurança)? Atualize a tabela de
      `README.md` → "CI (GitHub Actions)" e, se mudar o que conta para o merge, "Merge na main"
      abaixo.
@@ -191,8 +194,8 @@ ele **antes** do merge (item 8).
      `.md` (`paths-ignore`), então esse push não dispara nem cancela rodada de CI; PR só de `.md`
      também fica sem checks, e o merge dele não espera CI.
    - **Validação é o CI** (decisão do dono, 27/09/2026): o maintainer não roda testes em ambiente
-     local para decidir merge; avalia os checks do PR e o diff. Em PR e em push na `main`, o e2e roda só as
-     telas afetadas (`e2e/selecionar-telas.mjs`, decisão do dono, 27/09/2026); e um ❌ nela é trabalho
+     local para decidir merge; avalia os checks do PR e o diff. Em PR e em push na `main`, o e2e roda só os
+     cenários afetados mais a fumaça (`e2e/selecionar-telas.mjs`, decisão do dono, 27/09/2026); e um ❌ nela é trabalho
      imediato (item 3).
 2. Só faça merge quando, **no commit mais recente do PR**:
    - todos os jobs do `testes.yml` estiverem ✅ (Backend, Arquitetura, Frontend e E2E). Job ainda

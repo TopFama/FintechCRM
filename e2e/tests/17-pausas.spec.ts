@@ -1,12 +1,15 @@
 import { apiGet, expect, test } from "./fixtures";
 import type { Page } from "@playwright/test";
+import { prepararOperacao } from "./preparo";
 
 // Roda depois da importação/disparo: a fila de hoje ainda tem pendentes da faixa 11 A 20.
 const tabela = (page: Page) => page.locator(".card table").last();
 const blocoPausas = (page: Page) => page.locator("section.pausas-ativas");
 const resumo = (page: Page) => page.getByText(/pendente\(s\) · \d+ pausado\(s\)/);
 
-test.describe.serial("Pendentes: pausar, retomar e parar", () => {
+test.beforeAll(prepararOperacao);
+
+test.describe.serial("Pendentes: pausar, retomar e parar", { tag: "@pausas" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/relatorios?aba=pendentes");
     await expect(page.getByText("Carregando...")).toHaveCount(0);

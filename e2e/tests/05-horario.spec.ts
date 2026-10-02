@@ -1,6 +1,9 @@
 import { card, expect, permitirErrosConsole, test } from "./fixtures";
+import { prepararFaixas } from "./preparo";
 
-test.describe("Configurações → Horário", () => {
+test.beforeAll(prepararFaixas);
+
+test.describe("Configurações → Horário", { tag: "@horario" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/configuracoes?aba=horario");
   });
