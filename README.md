@@ -329,11 +329,14 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    Pendentes (e pausados), Cobranças, Erros e Telefones inválidos mudam na hora. Triggers do
    Postgres (migration `a3d5f7b9c1e2`) avisam no canal `painel` o saldo de cada comando em
    `cobranca_fila`, `telefones_invalidos` e `pausas_envio`, só no commit; um ouvinte (dono da trava
-   `lock:painel-ouvinte`) soma no contador do dia no Redis (`painel:dia:AAAA-MM-DD`, GMT-3, 35
-   dias) e publica no canal Redis `painel`. O contador nasce de `consultas_fila.contar_cards` (a
-   mesma contagem do resumo e dos relatórios) e é refeito a cada 60 s nos dias em uso; Pausados é
-   recontado a cada aviso. O WebSocket confere `Host`/`Origin` como o middleware e autentica pelo
-   cookie de sessão. Sem WebSocket (proxy sem upgrade, Redis fora, período com mais de 35 dias) a
+   `lock:painel-ouvinte`) é o único que escreve o contador do dia no Redis (`painel:dia:AAAA-MM-DD`,
+   GMT-3, 35 dias) e publica no canal Redis `painel`. O dia nasce de `consultas_fila.contar_cards`
+   (a mesma contagem do resumo e dos relatórios) quando alguma tela o pede; a carga guarda o
+   snapshot do Postgres e aviso de transação já contada nele não soma de novo, então o contador
+   fica exato sem recontagem periódica. Ao reconectar, o ouvinte descarta os dias e eles são
+   recarregados. Pausados é recontado com cache de 5 s, renovado na hora quando uma pausa muda.
+   O WebSocket confere `Host`/`Origin` como o middleware, autentica pelo cookie de sessão e
+   reconfere a sessão a cada 30 s. Sem WebSocket (proxy sem upgrade, Redis fora, período com mais de 35 dias) a
    tela segue com o polling de 30 s. Métricas: `painel_tempo_real.metricas()`.
    **Proteção do SETA** (`app/cache.py` + `seta_client.consulta_pesada`): o relatório pesado é um
    *snapshot* no Redis (resultado + `gerado_em`), com a chave igual para todos os usuários e abas.

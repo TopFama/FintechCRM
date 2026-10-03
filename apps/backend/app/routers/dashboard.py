@@ -59,6 +59,7 @@ def summary(
 # reconectam; o resto (backend reiniciando, Redis fora) tenta de novo depois.
 WS_SEM_TEMPO_REAL = 4000
 WS_NAO_AUTENTICADO = 4401
+WS_SESSAO_A_CADA_SEGUNDOS = 30  # sessão encerrada (Sair, usuário excluído) para de receber em até isso
 
 
 def _validar_sessao(token: str | None) -> None:
@@ -76,8 +77,13 @@ async def tempo_real(websocket: WebSocket, de: date = Query(...), ate: date = Qu
         await websocket.close(code=1008)
         return
     token = token_da_requisicao(websocket, None)
+    loop = asyncio.get_running_loop()
+
+    def em_thread(funcao, *args):
+        return loop.run_in_executor(painel_tempo_real.executor, funcao, *args)
+
     try:
-        await asyncio.to_thread(_validar_sessao, token)
+        await em_thread(_validar_sessao, token)
     except HTTPException:
         await websocket.close(code=WS_NAO_AUTENTICADO)
         return
@@ -89,18 +95,21 @@ async def tempo_real(websocket: WebSocket, de: date = Query(...), ate: date = Qu
     try:
         await avisos.subscribe(painel_tempo_real.CANAL)
         enviado = None
+        proxima_sessao = time.monotonic() + WS_SESSAO_A_CADA_SEGUNDOS
         while time.time() < expira:
-            atual = await asyncio.to_thread(painel_tempo_real.numeros, de, ate)
+            if time.monotonic() >= proxima_sessao:
+                await em_thread(_validar_sessao, token)
+                proxima_sessao = time.monotonic() + WS_SESSAO_A_CADA_SEGUNDOS
+            atual = await em_thread(painel_tempo_real.numeros, de, ate)
             if atual is None:
                 codigo = WS_SEM_TEMPO_REAL
                 break
-            if atual != enviado:
+            # {} = dia sendo carregado pelo ouvinte: os números vêm no próximo aviso
+            if atual and atual != enviado:
                 await websocket.send_json(atual)
                 enviado = atual
             if await avisos.get_message(ignore_subscribe_messages=True, timeout=25) is None:
-                # sem novidade: mantém a conexão viva no proxy e confere se a sessão segue valendo
-                await websocket.send_json({})
-                await asyncio.to_thread(_validar_sessao, token)
+                await websocket.send_json({})  # mantém a conexão viva no proxy
             else:
                 await asyncio.sleep(1)  # junta a rajada de avisos (lote de envio) num envio só
                 while await avisos.get_message(ignore_subscribe_messages=True, timeout=0):

@@ -2,7 +2,8 @@
 fila, dos telefones inválidos e das pausas; o ouvinte soma nos contadores do
 Redis e o WebSocket /dashboard/ws manda os números. Depois de cada transição
 real (criar, reservar, enviar, erro, parar, descartar, expirar, telefone
-inválido, pausar) o contador tem que ser igual à contagem do card/relatório.
+inválido, pausar, vários itens no mesmo commit, commit durante a carga) o
+contador tem que ser igual à contagem do card/relatório.
 
 Executa com assert simples, sem pytest. Encerra imprimindo 'OK'.
 """
@@ -26,7 +27,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app import cache, consultas_fila, fila_automatica, models, painel_tempo_real, pausas
-from app.database import SessionLocal
+from app.database import SessionLocal, engine
 from app.main import app
 from app.timezone import hoje_br
 
@@ -67,6 +68,15 @@ def invalido() -> models.InvalidPhoneRecord:
     return models.InvalidPhoneRecord(faixa_id=faixa.id, codigo_cliente="9", celular_original="1", motivo="x")
 
 
+def prontos(de, ate) -> dict:
+    """O primeiro pedido de um dia só pede a carga ao ouvinte ({}); espera os números."""
+    inicio = time.time()
+    while not (n := painel_tempo_real.numeros(de, ate)):
+        assert time.time() - inicio < 5, "o ouvinte não carregou o dia"
+        time.sleep(0.05)
+    return n
+
+
 def conferir(passo: str) -> None:
     """Espera o ouvinte aplicar o aviso e compara cada dia com a contagem do banco."""
     for dia in (anteontem, ontem, hoje):
@@ -85,7 +95,8 @@ db.add_all([item(S.pending), item(S.reserved, codigo="2"), item(S.error, codigo=
 velho = item(S.pending, criado=agora - timedelta(days=1), codigo="4")
 db.add(velho)
 db.commit()
-numeros = painel_tempo_real.numeros(anteontem, hoje)
+assert painel_tempo_real.numeros(anteontem, hoje) == {}  # pediu a carga
+numeros = prontos(anteontem, hoje)
 esperado = consultas_fila.contar_cards(db, anteontem, hoje)
 assert numeros == {**esperado, "total_pausados": 0}, numeros
 assert numeros["total_pendentes"] == 3 and numeros["total_erros"] == 1 and numeros["total_telefones_invalidos"] == 1
@@ -100,6 +111,39 @@ db.commit()
 conferir("envio")
 assert int(r.hget(f"painel:dia:{hoje}", "total_enviados")) == 1
 assert int(r.hget(f"painel:dia:{ontem}", "total_pendentes")) == 0
+
+# Vários itens no mesmo commit (o ORM manda um UPDATE por item, com o mesmo
+# saldo): o Postgres juntaria avisos de texto igual e o card contaria um só
+quatro = [item(S.pending, codigo=str(i)) for i in range(60, 64)]
+db.add_all(quatro)
+db.commit()
+conferir("quatro itens")
+for i in quatro:
+    i.status = S.error
+db.commit()
+conferir("quatro itens com erro no mesmo commit")
+
+# Commit no meio da carga: transação aberta quando o dia é contado entra uma
+# vez só (pelo aviso); o snapshot da carga diz quais avisos já estão contados
+r.delete(f"painel:dia:{hoje}")
+with engine.connect() as outra:
+    outra.execute(
+        models.QueueItem.__table__.insert().values(
+            id="no-meio", faixa_id=faixa.id, codigo_cliente="70", celular="5511999999999",
+            celular_original="11999999999", status="pending", created_at=agora, lojas="",
+        )
+    )
+    assert painel_tempo_real.numeros(hoje, hoje) == {}
+    inicio = time.time()
+    while not r.exists(f"painel:dia:{hoje}"):
+        assert time.time() - inicio < 5, "o ouvinte não carregou o dia"
+        time.sleep(0.05)
+    outra.commit()
+conferir("commit no meio da carga")
+assert painel_tempo_real._ja_contada(5, (10, 20, set()))
+assert painel_tempo_real._ja_contada(12, (10, 20, {11}))
+assert not painel_tempo_real._ja_contada(11, (10, 20, {11}))
+assert not painel_tempo_real._ja_contada(20, (10, 20, set()))
 
 # Webhook do Chatwoot: enviado vira erro
 velho.status = S.error
@@ -139,24 +183,26 @@ conferir("rollback")
 # Pausados: pausa não muda status, mas avisa; a recontagem segue a do card
 db.add(item(S.pending, codigo="40"))
 db.commit()
-assert painel_tempo_real.numeros(hoje, hoje)["total_pausados"] == 0  # fica em cache
+assert prontos(hoje, hoje)["total_pausados"] == 0  # fica em cache
 pausas.pausar(db, "cliente", "40", "teste", None, "teste")
 db.commit()
 inicio = time.time()
-while painel_tempo_real.numeros(hoje, hoje)["total_pausados"] != 1:  # recontado a cada aviso, sem esperar o cache
+while prontos(hoje, hoje)["total_pausados"] != 1:  # mudança de pausa renova o cache na hora
     assert time.time() - inicio < 5, "pausados não mudou com a pausa"
     time.sleep(0.05)
 
-# Recontagem corrige contador que divergiu (aviso perdido)
-r.hset(f"painel:dia:{hoje}", "total_enviados", 999)
-painel_tempo_real.recontar()
-conferir("recontagem")
-assert painel_tempo_real.metricas()["divergencias"] >= 1
+# Aviso grande demais para o NOTIFY: recomeça (descarta os dias; as telas pedem de novo)
+painel_tempo_real.aplicar('{"recontar": true}')
+assert not r.exists(f"painel:dia:{hoje}")
+prontos(anteontem, hoje)
+conferir("recomeço")
 
 # WebSocket: mesmos números e mudança chega sem pedir de novo
 with client.websocket_connect(f"/dashboard/ws?de={hoje}&ate={hoje}", headers=cookie) as ws:
     primeiro = ws.receive_json()
-    assert primeiro == painel_tempo_real.numeros(hoje, hoje), primeiro
+    while not primeiro:
+        primeiro = ws.receive_json()
+    assert primeiro == prontos(hoje, hoje), primeiro
     db.add(item(S.error, codigo="50"))
     db.commit()
     novo = ws.receive_json()
