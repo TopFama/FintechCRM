@@ -373,10 +373,12 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     await bloco.getByRole("button", { name: "Salvar envio" }).click();
     await expect(bloco.locator(".success-box")).toContainText("Envio adicionado");
 
+    // o worker (a cada 2 s, janela o dia todo) roda o remarketing assim que o envio
+    // existe e pode chegar antes deste pedido: o cliente entra uma vez, por um dos dois
     const resumo = await apiSend(page, "POST", "/remarketing/executar");
     expect(resumo.status).toBe(200);
-    const naFila = resumo.corpo.SO_IDENTIFICOU.na_fila;
-    expect(naFila).toBe(1);
+    expect([0, 1]).toContain(resumo.corpo.SO_IDENTIFICOU.na_fila);
+    const naFila = 1;
     expect((await apiSend(page, "POST", "/__e2e/campanhas/enviar")).status).toBe(200);
 
     // como numa campanha: lead da faixa de atraso marcado com a campanha fixa, cobrado no envio
