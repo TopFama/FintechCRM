@@ -1,18 +1,24 @@
+import asyncio
 import calendar
 import logging
+import time
 from datetime import date, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+import redis
+import redis.asyncio as redis_async
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from .. import cache, consultas_fila, seta_client
+from .. import cache, consultas_fila, painel_tempo_real, seta_client
 from ..services import custo_whatsapp, pagamentos_service, pagos_janela_service
 from ..timezone import hoje_br
-from ..database import get_db
-from ..deps import get_current_user
+from ..config import settings
+from ..database import SessionLocal, get_db
+from ..deps import get_current_user, token_da_requisicao, usuario_do_token
+from ..security import decode_access_token, origem_permitida
 from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx
 from .comum import erros_de_consulta_pesada
 
@@ -49,6 +55,74 @@ def summary(
     return schemas.DashboardSummary(**dados)
 
 
+# Fechamentos que a tela entende: período sem tempo real e sessão inválida não
+# reconectam; o resto (backend reiniciando, Redis fora) tenta de novo depois.
+WS_SEM_TEMPO_REAL = 4000
+WS_NAO_AUTENTICADO = 4401
+
+
+def _validar_sessao(token: str | None) -> None:
+    with SessionLocal() as db:
+        usuario_do_token(db, token)
+
+
+@router.websocket("/ws")
+async def tempo_real(websocket: WebSocket, de: date = Query(...), ate: date = Query(...)):
+    """Cards da fila em tempo real (ver painel_tempo_real). A tela continua com
+    o polling do /summary; isto só antecipa os números."""
+
+    # o middleware de Host/Origin é só HTTP: o WebSocket confere aqui
+    if not origem_permitida(websocket.url.hostname, websocket.headers.get("origin")):
+        await websocket.close(code=1008)
+        return
+    token = token_da_requisicao(websocket, None)
+    try:
+        await asyncio.to_thread(_validar_sessao, token)
+    except HTTPException:
+        await websocket.close(code=WS_NAO_AUTENTICADO)
+        return
+    expira = decode_access_token(token)["exp"]
+    await websocket.accept()
+    cliente = redis_async.from_url(settings.redis_url, decode_responses=True)
+    avisos = cliente.pubsub()
+    codigo = WS_NAO_AUTENTICADO  # sai do laço sem break só quando a sessão vence
+    try:
+        await avisos.subscribe(painel_tempo_real.CANAL)
+        enviado = None
+        while time.time() < expira:
+            atual = await asyncio.to_thread(painel_tempo_real.numeros, de, ate)
+            if atual is None:
+                codigo = WS_SEM_TEMPO_REAL
+                break
+            if atual != enviado:
+                await websocket.send_json(atual)
+                enviado = atual
+            if await avisos.get_message(ignore_subscribe_messages=True, timeout=25) is None:
+                # sem novidade: mantém a conexão viva no proxy e confere se a sessão segue valendo
+                await websocket.send_json({})
+                await asyncio.to_thread(_validar_sessao, token)
+            else:
+                await asyncio.sleep(1)  # junta a rajada de avisos (lote de envio) num envio só
+                while await avisos.get_message(ignore_subscribe_messages=True, timeout=0):
+                    pass
+    except HTTPException:
+        codigo = WS_NAO_AUTENTICADO
+    except (painel_tempo_real.Indisponivel, cache.CacheIndisponivel, redis.RedisError):
+        codigo = 1013
+    except (WebSocketDisconnect, RuntimeError):
+        return  # a tela fechou
+    except Exception:  # noqa: BLE001 - a tela tenta de novo e, até lá, fica no polling
+        logger.exception("Falha no Dashboard em tempo real")
+        codigo = 1011
+    finally:
+        await avisos.aclose()
+        await cliente.aclose()
+    try:
+        await websocket.close(code=codigo)
+    except (WebSocketDisconnect, RuntimeError):
+        pass  # a tela já tinha fechado
+
+
 def _nome_faixa():
     """Faixa da linha de "Por faixa": a de atraso do cliente (envio de
     campanha/remarketing), senão a faixa da fila."""
@@ -60,11 +134,7 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
     do envio, o resto pela data em que entrou na fila. Pagos por faixa vêm da
     cópia local do SETA; a atualização automática não vai ao SETA."""
 
-    ini, fim = consultas_fila.limites_utc(de, ate)
     periodo = consultas_fila.periodo_dos_cards(de, ate)
-
-    def count(*status_values: models.QueueStatus) -> int:
-        return consultas_fila.contar(db, periodo, *status_values)
 
     # Envio de campanha/remarketing conta na faixa de atraso do cliente
     # (QueueItem.faixa_atraso), não na faixa própria da campanha.
@@ -99,19 +169,9 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
         **_somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos),
     }
 
-    total_invalidos = (
-        db.query(func.count(models.InvalidPhoneRecord.id))
-        .filter(consultas_fila.condicao_periodo(models.InvalidPhoneRecord.created_at, ini, fim))
-        .scalar()
-        or 0
-    )
-
     return schemas.DashboardSummary(
-        total_pendentes=count(models.QueueStatus.pending, models.QueueStatus.reserved),
+        **consultas_fila.contar_cards(db, de, ate),
         total_pausados=consultas_fila.contar_pausados(db, periodo),
-        total_enviados=count(models.QueueStatus.sent),
-        total_erros=count(models.QueueStatus.error),
-        total_telefones_invalidos=total_invalidos,
         por_faixa=list(por_faixa.values()),
         total_por_faixa=schemas.DashboardTotalPorFaixa(**total_por_faixa),
     )

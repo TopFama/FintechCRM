@@ -332,6 +332,18 @@ export const api = {
   // auto=true: atualização automática da tela, o backend pode responder do cache compartilhado
   dashboardSummary: (periodo: { de?: string; ate?: string } = {}, auto = false, signal?: AbortSignal) =>
     request<DashboardSummary>(`/dashboard/summary?${montarQuery({ ...periodo, auto: auto || undefined })}`, { signal }),
+  /** Cards da fila em tempo real: o backend manda os números a cada mudança. */
+  painelTempoReal: (periodo: { de: string; ate: string }, aoReceber: (numeros: PainelTempoReal) => void) => {
+    const url = new URL(`${API_URL}/dashboard/ws?${montarQuery(periodo)}`, window.location.href);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(url);
+    // {} só mantém a conexão viva
+    ws.onmessage = (e) => {
+      const numeros = JSON.parse(e.data);
+      if ("total_pendentes" in numeros) aoReceber(numeros);
+    };
+    return ws;
+  },
 
   listInvalidPhones: (
     params: { faixa_id?: string; campanha?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
@@ -918,6 +930,14 @@ export interface PagosJanela {
   qtd_em_maturacao: number;
   dias_janela: number;
 }
+
+export type PainelTempoReal = Pick<
+  DashboardSummary,
+  "total_pendentes" | "total_pausados" | "total_enviados" | "total_erros" | "total_telefones_invalidos"
+>;
+
+// Fechamentos do /dashboard/ws em que não adianta reconectar: período sem tempo real e sessão inválida
+export const WS_SEM_RECONEXAO = [4000, 4401];
 
 export interface DashboardSummary {
   total_pendentes: number;

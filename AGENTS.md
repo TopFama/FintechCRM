@@ -41,6 +41,10 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
   global (`SETA_MAX_CONSULTAS_PESADAS`) mora em `seta_client.consulta_pesada`, que toda consulta pesada
   nova deve usar. Ordenar/paginar/exportar leem o snapshot. Redis fora = 503, nunca consulta direta.
   Os testes do backend precisam de Redis em `localhost:6379` (banco 15; `rodar_todos.sh` o esvazia).
+- `painel_tempo_real.py` — cards do Dashboard em tempo real (WebSocket `/dashboard/ws`): contadores
+  por dia no Redis alimentados pelas triggers `painel_*` do Postgres (fonte única das mudanças da
+  fila; não incremente contador à mão em outro lugar). A regra do dia do card mora em
+  `consultas_fila` (`periodo_dos_cards`/`dia_do_card`, `contar_cards`); mudou uma, mude a outra.
 - `worker.py` — agendamento do disparo e das rotinas diárias, roda com APScheduler **dentro do
   mesmo processo** do backend (não é um serviço/container separado); o envio de cada item em si
   fica em `dispatch_service.py`.

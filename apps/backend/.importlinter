@@ -36,6 +36,7 @@ source_modules =
     app.lojas_iniciais
     app.meta_client
     app.models
+    app.painel_tempo_real
     app.pausas
     app.rate_limit
     app.regras_db
@@ -137,6 +138,7 @@ source_modules =
     app.fila_automatica
     app.itens_fila
     app.leads_service
+    app.painel_tempo_real
     app.pausas
     app.remarketing
     app.telefones_invalidos

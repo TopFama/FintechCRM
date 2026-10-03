@@ -34,9 +34,17 @@ fila" chama `fila_automatica.descartar_pendentes` (Envios).
 - **Domínio:** Dashboard/Relatórios
 - **Camada:** interface
 - **Responsabilidade:** servir os cards do Dashboard. Na tabela "Por faixa", `_nome_faixa` é a única definição da faixa da linha (a de atraso do cliente, senão a da fila); os totais que não são soma da coluna (clientes e valor pago contados uma vez) vêm em `total_por_faixa`.
-- **Depende de:** `cache`, `consultas_fila`, `seta_client`, `services/custo_whatsapp`, `services/pagamentos_service`, `services/pagos_janela_service`, `utils/xlsx`, `timezone`. "Pagaram em até 7 dias" reaproveita o snapshot `relatorio-pagamentos` (mesma chave de Quem pagou); sem Redis o resumo cai para só o que é local (`buscar_novos=False`).
+- **Depende de:** `cache`, `consultas_fila`, `painel_tempo_real` (WebSocket `/dashboard/ws`), `seta_client`, `services/custo_whatsapp`, `services/pagamentos_service`, `services/pagos_janela_service`, `utils/xlsx`, `timezone`. "Pagaram em até 7 dias" reaproveita o snapshot `relatorio-pagamentos` (mesma chave de Quem pagou); sem Redis o resumo cai para só o que é local (`buscar_novos=False`).
 - **Violações encontradas:** nenhuma grave. As de 26/09 (import de `routers.reports`, `_limites_utc` e contagem de pausados no router) foram resolvidas pelo backlog #3: `_resumo` monta o card a partir de `consultas_fila` (`limites_utc`, `contar_pausados`), a mesma fonte dos relatórios.
 - **Churn:** 15 | **Linhas:** 350 | **Cobertura:** 24% (medida em 26/09)
+
+### `apps/backend/app/painel_tempo_real.py`
+- **Domínio:** Dashboard/Relatórios
+- **Camada:** aplicação (com infraestrutura: LISTEN do Postgres e Redis)
+- **Responsabilidade:** manter os números dos cards da fila em tempo real.
+- **Depende de:** `cache` (cliente Redis e cache de Pausados), `consultas_fila` (`contar_cards`, `dia_do_card`, `contar_pausados`), `database`, `timezone`. As mudanças chegam pelas triggers `painel_*` (migration `a3d5f7b9c1e2`), não por chamadas espalhadas no código.
+- **É usado por:** `main` (ouvinte no lifespan), `routers/dashboard` (WebSocket `/dashboard/ws`).
+- **Violações encontradas:** nenhuma.
 
 ### `apps/backend/app/services/efetividade_service.py`
 - **Domínio:** Dashboard/Relatórios

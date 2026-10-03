@@ -17,12 +17,8 @@ def token_da_requisicao(request: Request, credentials: HTTPAuthorizationCredenti
     return credentials.credentials if credentials else request.cookies.get("access_token")
 
 
-def get_current_user(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
-) -> models.User:
-    token = token_da_requisicao(request, credentials)
+def usuario_do_token(db: Session, token: str | None) -> models.User:
+    """Usuário da sessão do token (HTTP e WebSocket); 401 se não vale."""
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Não autenticado")
     payload = decode_access_token(token)
@@ -33,6 +29,15 @@ def get_current_user(
     user = db.query(models.User).filter(func.lower(models.User.email) == payload["sub"].lower()).first()
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário não encontrado")
+    return user
+
+
+def get_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> models.User:
+    user = usuario_do_token(db, token_da_requisicao(request, credentials))
     # Atualização automática de tela aberta (?auto=true) não conta como alguém usando
     if request.query_params.get("auto") != "true":
         pagamentos_seta.registrar_atividade()

@@ -98,7 +98,7 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 | `GOOGLE_SHEET_LOJAS_ID` / `GOOGLE_SHEET_LOJAS_GID` | backend | não | planilha de lojas da TopFama | ID da planilha (trecho da URL entre `/d/` e `/edit`) e `gid` da aba (`#gid=…`). Colunas lidas: FILIAL, NOME COM COD, REGIONAL, ESTADO, CLUSTER INAD e CLUSTER POPULAÇÃO. |
 | `REDIS_URL` | backend | não | `redis://redis:6379/0` | Cache e trava das consultas pesadas ao SETA (base de cobrança, efetividade, Quem pagou, "Pagaram em até 7 dias", resumo e orçamento do Dashboard — a tabela de títulos tem mais de 27 milhões de linhas). Redis fora do ar = essas telas respondem 503 "cache indisponível"; o backend **não** cai para consulta direta ao SETA. Ver `app/cache.py`. |
 | `CORS_ALLOWED_ORIGINS` | backend | não | `*` | Origens liberadas no CORS, separadas por vírgula (ex: `https://crm.topfama.com.br`). O padrão `*` mantém o comportamento anterior; em produção, restrinja ao(s) domínio(s) real(is) do frontend. |
-| `ALLOWED_HOSTS` | backend | não | `lojastopfama.com.br,*.lojastopfama.com.br,localhost,127.0.0.1,testserver` | Domínios aceitos no cabeçalho `Host` e, quando o navegador manda, no `Origin`; qualquer outro recebe **403 Forbidden** (`main.py`). `*.dominio` libera os subdomínios. Sem `Origin` passa (webhook do Chatwoot, `/media`, healthcheck). O proxy reverso precisa repassar o `Host` do domínio (padrão do Nginx/Caddy) ou chamar o backend pelo endereço interno (`127.0.0.1:porta`); um `Host` interno de outro nome (ex. `backend:8000`) precisa entrar nesta lista. |
+| `ALLOWED_HOSTS` | backend | não | `lojastopfama.com.br,*.lojastopfama.com.br,localhost,127.0.0.1,testserver` | Domínios aceitos no cabeçalho `Host` e, quando o navegador manda, no `Origin`; qualquer outro recebe **403 Forbidden** (`security.origem_permitida`, usada pelo middleware de `main.py` e pelo WebSocket do Dashboard). `*.dominio` libera os subdomínios. Sem `Origin` passa (webhook do Chatwoot, `/media`, healthcheck). O proxy reverso precisa repassar o `Host` do domínio (padrão do Nginx/Caddy) ou chamar o backend pelo endereço interno (`127.0.0.1:porta`); um `Host` interno de outro nome (ex. `backend:8000`) precisa entrar nesta lista. |
 | `COOKIE_SECURE` | backend | não | `true` | Atributo `Secure` do cookie httpOnly de sessão (ver "Limitações conhecidas / próximos passos" abaixo). Exige `https`; em desenvolvimento local sobre `http` puro, defina como `false`, senão o navegador descarta o cookie. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | backend | não | `720` | Validade do JWT de login (12 h). |
 | `PUBLIC_BASE_URL` | backend | não | *(vazio)* | Endereço público deste backend (sem barra final). Usado pelo envio via **Chatwoot** para montar o link da imagem de cabeçalho do template e no registro de webhooks (`/chatwoot/webhook`); pela Meta a imagem vai como `media_id`. |
@@ -325,6 +325,16 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    atualizam sozinhos, só ao abrir, trocar o filtro ou em "Atualizar agora". Os pedidos
    automáticos (`auto=true`) leem do cache compartilhado no Redis (15 s o resumo, 10 min o
    orçamento).
+   **Tempo real** (`app/painel_tempo_real.py`, WebSocket `/dashboard/ws?de=&ate=`): os cards
+   Pendentes (e pausados), Cobranças, Erros e Telefones inválidos mudam na hora. Triggers do
+   Postgres (migration `a3d5f7b9c1e2`) avisam no canal `painel` o saldo de cada comando em
+   `cobranca_fila`, `telefones_invalidos` e `pausas_envio`, só no commit; um ouvinte (dono da trava
+   `lock:painel-ouvinte`) soma no contador do dia no Redis (`painel:dia:AAAA-MM-DD`, GMT-3, 35
+   dias) e publica no canal Redis `painel`. O contador nasce de `consultas_fila.contar_cards` (a
+   mesma contagem do resumo e dos relatórios) e é refeito a cada 60 s nos dias em uso; Pausados é
+   recontado a cada aviso. O WebSocket confere `Host`/`Origin` como o middleware e autentica pelo
+   cookie de sessão. Sem WebSocket (proxy sem upgrade, Redis fora, período com mais de 35 dias) a
+   tela segue com o polling de 30 s. Métricas: `painel_tempo_real.metricas()`.
    **Proteção do SETA** (`app/cache.py` + `seta_client.consulta_pesada`): o relatório pesado é um
    *snapshot* no Redis (resultado + `gerado_em`), com a chave igual para todos os usuários e abas.
    Pedidos iguais ao mesmo tempo fazem **uma** consulta (single-flight: quem chega depois espera
@@ -480,6 +490,12 @@ publica à mão: o workflow `.github/workflows/deploy.yml` faz o deploy sozinho.
    migration roda sozinha na subida do backend, e dependência nova entra no rebuild da imagem.
 5. Termina chamando `/api/health` até 30 vezes, a cada 5 s. Um 502 logo depois do rebuild é
    normal (o backend ainda está subindo); o job só falha se não responder em 150 s.
+
+O Dashboard em tempo real usa WebSocket em `/api/dashboard/ws`: o proxy precisa repassar o
+upgrade. No Nginx, no `location` da API: `proxy_http_version 1.1;`,
+`proxy_set_header Upgrade $http_upgrade;`, `proxy_set_header Connection "upgrade";`,
+`proxy_set_header Host $host;` e `proxy_read_timeout 60s;` ou mais (o backend manda sinal a cada
+25 s). O Caddy faz isso sozinho. Sem o upgrade a tela continua com o polling de 30 s.
 
 Um deploy por vez (concorrência `deploy-vps`) e nunca cancelado no meio do `docker compose`. O log
 de cada deploy mostra `Código: <antes> -> <depois>` e o estado dos containers (Actions → "Deploy
