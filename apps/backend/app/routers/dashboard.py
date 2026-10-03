@@ -85,6 +85,9 @@ async def tempo_real(websocket: WebSocket, de: date = Query(...), ate: date = Qu
     try:
         await em_thread(_validar_sessao, token)
     except HTTPException:
+        # aceita antes de fechar: recusado no handshake o navegador só vê 403 e
+        # 1006, e a tela reconectaria sem parar em vez de ler o 4401
+        await websocket.accept()
         await websocket.close(code=WS_NAO_AUTENTICADO)
         return
     expira = decode_access_token(token)["exp"]
