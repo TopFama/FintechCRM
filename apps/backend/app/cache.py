@@ -108,6 +108,11 @@ def _redis() -> "redis.Redis":
     return _client
 
 
+def redis_cliente() -> "redis.Redis":
+    """O mesmo cliente, para quem guarda outra coisa no Redis (painel_tempo_real)."""
+    return _redis()
+
+
 @contextmanager
 def _acesso():
     try:
@@ -157,7 +162,7 @@ def chave(prefixo: str, payload: dict) -> str:
 # --- Trava com dono ------------------------------------------------------------
 
 _LUA_LIBERAR = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0"
-_LUA_RENOVAR = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) end return 0"
+LUA_RENOVAR = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) end return 0"
 
 
 class _Trava:
@@ -189,7 +194,7 @@ class _Trava:
                 logger.warning("cache trava deixou de ser renovada (vida máxima) chave=%s", _nome(self.chave_cache))
                 return
             try:
-                if not _redis().eval(_LUA_RENOVAR, 1, self.nome, self.token, TRAVA_TTL_SEGUNDOS):
+                if not _redis().eval(LUA_RENOVAR, 1, self.nome, self.token, TRAVA_TTL_SEGUNDOS):
                     logger.warning("cache trava perdida durante o cálculo chave=%s", _nome(self.chave_cache))
                     return
             except redis.RedisError:

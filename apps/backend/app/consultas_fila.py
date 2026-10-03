@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, contains_eager, selectinload
 
 from . import campanhas_fixas, models, pausas
 from .regras_db import carregar_regras
-from .timezone import inicio_do_dia_utc
+from .timezone import dia_br, inicio_do_dia_utc
 
 
 def filtro_faixa(db: Session, faixa_id: str):
@@ -205,6 +205,28 @@ def periodo_dos_cards(de: date | None, ate: date | None):
         and_(models.QueueItem.status == models.QueueStatus.sent, condicao_periodo(models.QueueItem.sent_at, ini, fim)),
         and_(models.QueueItem.status != models.QueueStatus.sent, condicao_periodo(models.QueueItem.created_at, ini, fim)),
     )
+
+
+def dia_do_card(status: str, criado: datetime | None, enviado: datetime | None) -> date | None:
+    """Dia (Brasília) em que o item conta nos cards: a mesma regra de
+    periodo_dos_cards, para os contadores do Dashboard em tempo real."""
+    quando = enviado if status == models.QueueStatus.sent.value else criado
+    return dia_br(quando) if quando else None
+
+
+def contar_cards(db: Session, de: date | None, ate: date | None) -> dict[str, int]:
+    """Números dos cards do Dashboard no período, iguais aos totais dos relatórios."""
+    ini, fim = limites_utc(de, ate)
+    periodo = periodo_dos_cards(de, ate)
+    return {
+        "total_pendentes": contar(db, periodo, models.QueueStatus.pending, models.QueueStatus.reserved),
+        "total_enviados": contar(db, periodo, models.QueueStatus.sent),
+        "total_erros": contar(db, periodo, models.QueueStatus.error),
+        "total_telefones_invalidos": db.query(func.count(models.InvalidPhoneRecord.id))
+        .filter(condicao_periodo(models.InvalidPhoneRecord.created_at, ini, fim))
+        .scalar()
+        or 0,
+    }
 
 
 def contar(db: Session, periodo, *status_values: models.QueueStatus) -> int:

@@ -111,6 +111,7 @@ export const FUNCIONALIDADES = {
     `${F}pages/Dashboard.tsx`, `${F}components/dashboard/MatrizCobrancaCard.tsx`, `${F}components/DicaIndicador.tsx`,
     `${F}components/TabelaAjustavel.tsx`, `${F}components/useAtualizacaoAutomatica.ts`, `${F}components/useRequisicaoUnica.ts`,
     `${F}components/FiltroPeriodo.tsx`, `${F}components/SelectCampanha.tsx`, `${F}components/MatrizTable.tsx`,
+    `${F}components/usePainelTempoReal.ts`, `${B}painel_tempo_real.py`,
     `${B}routers/dashboard.py`, `${B}consultas_fila.py`, `${B}cobranca_relatorio.py`,
   ],
   relatorios: [

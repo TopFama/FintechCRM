@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -76,3 +77,17 @@ def decode_oauth_state(token: str) -> str | None:
     except JWTError:
         return None
     return payload.get("usr") if payload.get("typ") == "oauth_state" else None
+
+
+_hosts_permitidos = [h.strip().lower() for h in settings.allowed_hosts.split(",") if h.strip()]
+
+
+def _host_permitido(host: str | None) -> bool:
+    host = (host or "").lower().rstrip(".")
+    return bool(host) and any(host == h or (h.startswith("*.") and host.endswith(h[1:])) for h in _hosts_permitidos)
+
+
+def origem_permitida(host: str | None, origin: str | None) -> bool:
+    """Chegou por um domínio permitido (Host) e, se veio de navegador (Origin),
+    de um site permitido. Vale para HTTP (middleware) e WebSocket."""
+    return _host_permitido(host) and (origin is None or _host_permitido(urlparse(origin).hostname))

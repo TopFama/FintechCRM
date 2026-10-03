@@ -197,7 +197,11 @@ def limpar_cache():
 
     from app import cache
 
-    cache._redis().flushdb()
+    r = cache.redis_cliente()
+    for chave in r.scan_iter():
+        # o Dashboard em tempo real (contadores e o dono do ouvinte) não é cache de relatório
+        if not chave.startswith(("painel:", "lock:painel-")):
+            r.delete(chave)
     return {"ok": True}
 
 

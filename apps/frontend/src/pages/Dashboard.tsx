@@ -12,6 +12,7 @@ import TabelaAjustavel from "../components/TabelaAjustavel";
 import { formatBRL, formatDecimal, formatHora, formatNumero, formatPercentual } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../components/useAtualizacaoAutomatica";
+import { usePainelTempoReal } from "../components/usePainelTempoReal";
 import { IconAlert, IconBolt, IconCheckCircle, IconClock, IconInbox, IconPhone, IconRefresh } from "../icons";
 import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
 
@@ -28,6 +29,8 @@ export default function Dashboard() {
   const [atualizando, setAtualizando] = useState(false);
   const ciclo = useAtualizacaoAutomatica(30_000);
   const tipoDeBusca = useEhAtualizacaoAutomatica(periodo, recarregar);
+  // Cards da fila na hora em que mudam; o polling segue para o resto e como reserva
+  const tempoReal = usePainelTempoReal(periodo.de, periodo.ate);
 
   // Aqui não há "sem filtro": período sem as duas datas é Personalizado incompleto
   const periodoIncompleto = !periodo.de || !periodo.ate;
@@ -99,7 +102,7 @@ export default function Dashboard() {
       {periodoIncompleto && <div className="empty-state"><p>Escolha a data mínima e a máxima.</p></div>}
       {!periodoIncompleto && !summary && !error && <div className="loading-state">Carregando resumo da fila...</div>}
       {summary && (
-        <ResumoFila summary={summary} periodo={periodo} nomesFaixa={opcoes.regras?.faixas} recarregar={recarregar} />
+        <ResumoFila summary={tempoReal ? { ...summary, ...tempoReal } : summary} periodo={periodo} nomesFaixa={opcoes.regras?.faixas} recarregar={recarregar} />
       )}
 
       <MatrizCobrancaCard opcoes={opcoes} />

@@ -1,7 +1,7 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlparse
 
 from alembic import command
 from alembic.config import Config
@@ -12,11 +12,11 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func
 
-from . import cache, lojas as lojas_base, models, seta_client
+from . import cache, lojas as lojas_base, models, painel_tempo_real, seta_client
 from .config import settings
 from .database import SessionLocal
 from .routers import auth, blacklist, campanhas, chatwoot, cobranca, config_cobranca, dashboard, faixas, google, leads, lojas, meta_tokens, numbers, pausas, remarketing, reports, seta, templates, uploads, users
-from .security import hash_password
+from .security import hash_password, origem_permitida
 from .segredos import recifrar_segredos
 from .worker import start_scheduler
 
@@ -116,18 +116,13 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     scheduler = start_scheduler()
+    ouvinte = asyncio.create_task(painel_tempo_real.ouvir())
     yield
+    ouvinte.cancel()
     scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="FintechCRM — Cobrança via WhatsApp", lifespan=lifespan)
-
-_hosts_permitidos = [h.strip().lower() for h in settings.allowed_hosts.split(",") if h.strip()]
-
-
-def _host_permitido(host: str | None) -> bool:
-    host = (host or "").lower().rstrip(".")
-    return bool(host) and any(host == h or (h.startswith("*.") and host.endswith(h[1:])) for h in _hosts_permitidos)
 
 
 @app.middleware("http")
@@ -136,8 +131,7 @@ async def _somente_dominio_permitido(request: Request, call_next):
     navegador vinda de outro site (Origin). Sem Origin passa: webhook, /media e o
     healthcheck não mandam. Registrado antes do CORS: o 403 sai com os cabeçalhos dele."""
 
-    origin = request.headers.get("origin")
-    if not _host_permitido(request.url.hostname) or (origin is not None and not _host_permitido(urlparse(origin).hostname)):
+    if not origem_permitida(request.url.hostname, request.headers.get("origin")):
         return JSONResponse({"detail": "Forbidden"}, status_code=403)
     return await call_next(request)
 

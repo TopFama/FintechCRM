@@ -5,6 +5,10 @@ import { prepararOperacao } from "./preparo";
 const stat = (page: Page, rotulo: string) =>
   page.locator(".stat", { has: page.locator(".label", { hasText: new RegExp(`^${rotulo.replace(/[()]/g, "\\$&")}$`) }) }).locator(".value").first();
 
+// Cenário que troca a resposta do /summary: sem o tempo real, que mandaria os
+// números de verdade por cima (4000 = a tela não tenta reconectar)
+const semTempoReal = (page: Page) => page.routeWebSocket(/\/dashboard\/ws/, (ws) => ws.close({ code: 4000 }));
+
 // "12.345" → 12345 (os cards mostram separador de milhar)
 const numero = (t: string) => Number(t.replace(/\./g, ""));
 
@@ -22,6 +26,27 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(stat(page, "Telefones inválidos")).not.toHaveText("0");
     const porFaixa = card(page, "Por faixa");
     await expect(porFaixa.locator("tbody tr", { hasText: "3 A 10" })).toBeVisible();
+  });
+
+  test("cards da fila mudam na hora, sem esperar a atualização de 30 s", { tag: ["@pausas"] }, async ({ page }) => {
+    const hoje = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+    const linha = page.locator(".stat-extra", { hasText: "pausados" });
+    const pausados = async () => numero((await linha.innerText()).match(/([\d.]+) pausados/)![1]);
+    await expect(linha).toBeVisible();
+    const antes = await pausados();
+    const faixa = (await apiGet(page, "/faixas")).find((f: any) => f.name === "11 A 20");
+    const pausa = await apiSend(page, "POST", "/pausas", { escopo: "faixa", valor: faixa.id, motivo: "Tempo real" });
+    expect(pausa.status).toBe(201);
+    try {
+      // bem antes do próximo polling (30 s): veio pelo WebSocket
+      await expect.poll(pausados, { timeout: 10_000 }).toBeGreaterThan(antes);
+      // e bate com o resumo do banco (que guarda o cálculo por alguns segundos)
+      const card = await pausados();
+      await expect.poll(async () => (await apiGet(page, `/dashboard/summary?de=${hoje}&ate=${hoje}`)).total_pausados, { timeout: 10_000 }).toBe(card);
+    } finally {
+      await apiSend(page, "POST", `/pausas/${pausa.corpo.id}/retomar`);
+    }
+    await expect.poll(pausados, { timeout: 10_000 }).toBe(antes);
   });
 
   test("Dashboard não tem mais a lista de erros recentes", async ({ page }) => {
@@ -130,6 +155,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
   });
 
   test("números dos cards saem com separador de milhar e o card fica mais largo que alto", { tag: ["@visual"] }, async ({ page }) => {
+    await semTempoReal(page);
     await page.route("**/dashboard/summary**", async (r) => {
       const res = await r.fetch();
       const json = { ...(await res.json()), total_pendentes: 12345, total_pausados: 1234, total_enviados: 98765 };
@@ -487,6 +513,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(card(page, "Orçamento").locator(".error-box")).toContainText("Falha ao consultar a Meta");
   });
   test("resumo e leads se atualizam sozinhos, sem F5, e param com a aba oculta", { tag: ["@resiliencia"] }, async ({ page }) => {
+    await semTempoReal(page); // aqui se confere o polling, que é a reserva
     await page.clock.install();
     await Promise.all([page.waitForResponse((r) => r.url().includes("/dashboard/summary?")), page.reload()]);
     await expect(stat(page, "Pendentes na fila")).not.toHaveText("999");
