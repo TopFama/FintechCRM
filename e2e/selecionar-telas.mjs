@@ -73,6 +73,7 @@ export const FUNCIONALIDADES = {
   indicadores: [
     `${F}pages/Configuracoes.tsx`, `${F}components/config/RegrasCobrancaCard.tsx`, `${F}components/config/JurosMultaCard.tsx`,
     `${F}components/config/OrcamentoCard.tsx`, `${F}components/MatrizTable.tsx`, `${B}routers/config_cobranca.py`,
+    `${F}components/config/JanelaPagamentoCard.tsx`, `${F}components/SelectJanelaPagamento.tsx`,
   ],
   blacklist: [`${F}pages/Configuracoes.tsx`, `${F}components/config/BlacklistCard.tsx`, `${B}routers/blacklist.py`, `${B}blacklist.py`, `${B}utils/document.py`],
   usuarios: [`${F}pages/Configuracoes.tsx`, `${F}components/config/UsuariosCard.tsx`, `${B}routers/users.py`],
@@ -155,10 +156,14 @@ export const FUNCIONALIDADES = {
   pagamentos: [
     `${B}services/pagamentos_service.py`, `${B}services/pagamentos_seta.py`, `${B}seta_client.py`, `${B}cache.py`,
     `${B}consultas_fila.py`, `${B}routers/reports.py`, `${B}routers/dashboard.py`, `${B}lojas.py`, `${B}google_client.py`,
+    `${F}components/SelectJanelaPagamento.tsx`,
   ],
-  "pagos-janela": [`${B}services/pagos_janela_service.py`, `${B}services/pagamentos_service.py`, `${B}routers/dashboard.py`],
+  "pagos-janela": [
+    `${B}services/pagos_janela_service.py`, `${B}services/pagamentos_service.py`, `${B}routers/dashboard.py`,
+    `${B}routers/config_cobranca.py`, `${F}components/SelectJanelaPagamento.tsx`,
+  ],
   efetividade: [
-    `${F}components/dashboard/EfetividadeCard.tsx`, `${B}services/efetividade_service.py`, `${B}services/pagamentos_seta.py`,
+    `${F}components/dashboard/EfetividadeCard.tsx`, `${F}components/SelectJanelaPagamento.tsx`, `${B}services/efetividade_service.py`, `${B}services/pagamentos_seta.py`,
     `${B}services/custo_whatsapp.py`, `${B}relatorio_efetividade.py`, `${B}cambio.py`, `${B}cache.py`, `${B}seta_client.py`,
     `${B}campanhas_fixas.py`, `${B}lojas.py`, `${B}google_client.py`, `${B}routers/reports.py`,
   ],

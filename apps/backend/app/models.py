@@ -574,7 +574,8 @@ class ConfiguracaoChatwoot(Base):
 
 
 class ParametrosCobranca(Base):
-    """Parâmetros de multa e juros — tabela de uma linha única."""
+    """Parâmetros de multa e juros e janela de pagamento do Dashboard —
+    tabela de uma linha única."""
 
     __tablename__ = "config_parametros"
 
@@ -582,6 +583,8 @@ class ParametrosCobranca(Base):
     juros_mes_percentual: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     multa_percentual: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     dias_min_juros: Mapped[int] = mapped_column(Integer)
+    # janela do card de pagamentos do Dashboard; nulo = qualquer data após a cobrança
+    dias_janela_dashboard: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class OrcamentoMensal(Base):

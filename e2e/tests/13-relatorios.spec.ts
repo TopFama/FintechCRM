@@ -77,6 +77,16 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
     await expect(page.getByText("Ninguém pagou no período")).toBeVisible({ timeout: 30_000 });
   });
 
+  test("quem pagou: janela da URL fora da lista abre em Outro e trocar a janela vai para a URL", { tag: ["@pagamentos"] }, async ({ page }) => {
+    await page.goto("/relatorios?aba=pagamentos&dias_janela=10");
+    await expect(page.getByLabel("Janela de pagamento")).toHaveValue("outro");
+    await expect(page.getByLabel("Dias (0–365)")).toHaveValue("10");
+    await page.getByLabel("Janela de pagamento").selectOption({ label: "Até 3 dias" });
+    await expect(page).toHaveURL(/dias_janela=3(&|$)/);
+    await page.getByLabel("Janela de pagamento").selectOption({ label: "Qualquer data após a cobrança" });
+    await expect(page).not.toHaveURL(/dias_janela/);
+  });
+
   test("trocar de aba mantém datas e mostra carregando", async ({ page }) => {
     await page.locator('input[type="date"]').first().fill("2020-01-01");
     await page.locator('input[type="date"]').nth(1).fill("2020-01-02");

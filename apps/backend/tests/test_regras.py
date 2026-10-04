@@ -327,6 +327,22 @@ assert resp.status_code == 200
 assert resp.json()["parametros"]["juros_mes_percentual"] == "10.00"
 print("  PUT /parametros válido: OK")
 
+# Janela do Dashboard: padrão 7; PUT parcial não mexe nos outros campos
+assert client.get("/config/cobranca", headers=headers).json()["parametros"]["dias_janela_dashboard"] == 7
+resp = client.put("/config/cobranca/parametros", json={"dias_janela_dashboard": 15}, headers=headers)
+assert resp.status_code == 200, resp.text
+p = resp.json()["parametros"]
+assert p["dias_janela_dashboard"] == 15 and p["juros_mes_percentual"] == "10.00" and p["dias_min_juros"] == 5
+resp = client.put("/config/cobranca/parametros", json={"juros_mes_percentual": "11.00"}, headers=headers)
+assert resp.status_code == 200 and resp.json()["parametros"]["dias_janela_dashboard"] == 15
+for invalido in ({"dias_janela_dashboard": -1}, {"dias_janela_dashboard": 366}, {"juros_mes_percentual": None}):
+    assert client.put("/config/cobranca/parametros", json=invalido, headers=headers).status_code == 400, invalido
+resp = client.put("/config/cobranca/parametros", json={"dias_janela_dashboard": None}, headers=headers)
+assert resp.status_code == 200 and resp.json()["parametros"]["dias_janela_dashboard"] is None
+resp = client.put("/config/cobranca/parametros", json={"dias_janela_dashboard": 7}, headers=headers)
+assert resp.status_code == 200
+print("  PUT /parametros parcial e janela do Dashboard: OK")
+
 # Sem token → 401
 resp = client.get("/config/cobranca")
 assert resp.status_code == 401

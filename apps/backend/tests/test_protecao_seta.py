@@ -234,7 +234,7 @@ def base_cobranca_pronta():
 
 respostas = em_paralelo([
     lambda: get(f"/dashboard/summary?de={HOJE}&ate={HOJE}"),
-    lambda: get(f"/dashboard/pagos-7-dias?de={HOJE}&ate={HOJE}"),
+    lambda: get(f"/dashboard/janela-pagamento?de={HOJE}&ate={HOJE}"),
     lambda: get(EFETIVIDADE),
     base_cobranca_pronta,
     lambda: get(f"/reports/pagamentos?cobrado_de={HOJE}&cobrado_ate={HOJE}&dias_janela=7"),
@@ -244,8 +244,20 @@ assert chamadas["base_cobranca"] == 1, dict(chamadas)
 assert chamadas["baixas_de_clientes"] == 1, dict(chamadas)  # a cópia dos pagamentos é uma só
 assert chamadas["situacao_titulos"] == 1, dict(chamadas)
 assert 1 <= simultaneas["maximo"] <= LIMITE, simultaneas
-# Pagaram em 7 dias e Quem pagou (mesmo período e janela) leem a mesma lista em cache
+# Card de pagamentos (janela padrão 7) e Quem pagou (mesmo período e janela) leem a mesma lista em cache
 assert len(list(cache._redis().scan_iter("snap:relatorio-pagamentos:*"))) == 1
+
+# --- Janela do card configurada em Indicadores: o card bate com Quem pagou da mesma janela ---
+
+for janela in (15, None):
+    r = client.put("/config/cobranca/parametros", json={"dias_janela_dashboard": janela}, headers=auth)
+    assert r.status_code == 200 and r.json()["parametros"]["dias_janela_dashboard"] == janela, r.text
+    card = get(f"/dashboard/janela-pagamento?de={HOJE}&ate={HOJE}").json()
+    sufixo = "" if janela is None else f"&dias_janela={janela}"
+    rel = get(f"/reports/pagamentos?cobrado_de={HOJE}&cobrado_ate={HOJE}{sufixo}").json()
+    assert card["dias_janela"] == janela and card["qtd_pagaram"] == rel["total_clientes"], (card, rel)
+assert card["qtd_em_maturacao"] == 0  # sem janela não há prazo a esperar
+assert client.put("/config/cobranca/parametros", json={"dias_janela_dashboard": 7}, headers=auth).status_code == 200
 
 # --- Cenário 5: cinco cliques em "Atualizar agora" = um cálculo ------------------------------
 
@@ -438,7 +450,7 @@ assert get(EFETIVIDADE).json()["desatualizado"] is False
 limpar()
 cliente_original = cache._client
 cache._client = redis.from_url("redis://localhost:1/0", decode_responses=True, socket_connect_timeout=0.5)
-for url in (EFETIVIDADE, f"/dashboard/pagos-7-dias?de={HOJE}&ate={HOJE}", "/cobranca/relatorio",
+for url in (EFETIVIDADE, f"/dashboard/janela-pagamento?de={HOJE}&ate={HOJE}", "/cobranca/relatorio",
             f"/reports/pagamentos?cobrado_de={HOJE}&cobrado_ate={HOJE}"):
     r = get(url)
     assert r.status_code == 503 and "Redis" in r.json()["detail"], (url, r.status_code, r.text)

@@ -44,7 +44,7 @@ cenários que verificam outra funcionalidade levam também a dela:
 | `@login` `@conexoes` `@templates` `@faixas` `@horario` `@indicadores` `@blacklist` `@usuarios` `@lojas` | Telas de Configurações e login |
 | `@cobranca` `@importacao` `@fila` `@disparo` `@leads` `@elegibilidade` `@pausas` | Consulta e envio para a fila, importação, fila e disparo, leads, no máximo uma cobrança por dia, pausas |
 | `@dashboard` `@relatorios` | Telas de números e relatórios |
-| `@pagamentos` `@pagos-janela` `@efetividade` `@orcamento` | Cards e abas de pagamento, "Pagaram em até 7 dias", efetividade e orçamento (os cálculos em si são conferidos nos testes do backend; aqui, só o que aparece na tela) |
+| `@pagamentos` `@pagos-janela` `@efetividade` `@orcamento` | Cards e abas de pagamento, card "Pagaram em até N dias", efetividade e orçamento (os cálculos em si são conferidos nos testes do backend; aqui, só o que aparece na tela) |
 | `@campanhas` `@remarketing` | Campanhas e remarketing do Renegocie |
 | `@resiliencia` | Erro, SETA/Meta fora do ar, cancelamento e atualização automática |
 | `@visual` | Aparência medida (cores, alinhamento, larguras, rolagem) |

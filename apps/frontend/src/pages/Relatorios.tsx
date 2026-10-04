@@ -18,6 +18,7 @@ import {
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import { AcaoPendentes, PainelAcao, PainelDescartar, PainelPausaLote, PausasAtivas } from "../components/PausasPendentes";
 import SelectCampanha from "../components/SelectCampanha";
+import SelectJanelaPagamento from "../components/SelectJanelaPagamento";
 import SortableTh from "../components/SortableTh";
 import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
 import { formatBRL, formatCpf, formatData, formatDataHora, formatNumero, formatValorFila } from "../format";
@@ -65,7 +66,7 @@ export default function Relatorios() {
   const campanha = params.get("campanha") ?? "";
   const cobradoDe = params.get("de") ?? "";
   const cobradoAte = params.get("ate") ?? "";
-  // Vem do card "Pagaram em até 7 dias": mesma janela da efetividade
+  // Vem do card de pagamentos do Dashboard ("" = qualquer data após a cobrança)
   const diasJanela = params.get("dias_janela") ?? "";
   const loja = tab === "pendentes" ? params.get("loja") ?? "" : "";
   function mudarUrl(mudancas: Record<string, string>) {
@@ -388,23 +389,11 @@ export default function Relatorios() {
           </div>
           {tab === "pagamentos" && (
             <>
-              <div className="field">
-                <label htmlFor="rel-dias-janela">Pagou em até</label>
-                <select
-                  id="rel-dias-janela"
-                  value={diasJanela}
-                  onChange={(e) => mudarUrl({ dias_janela: e.target.value })}
-                >
-                  <option value="">Qualquer data após a cobrança</option>
-                  {["3", "7", "15", "30"].includes(diasJanela) || !diasJanela ? null : (
-                    <option value={diasJanela}>{diasJanela} dias</option>
-                  )}
-                  <option value="3">3 dias</option>
-                  <option value="7">7 dias</option>
-                  <option value="15">15 dias</option>
-                  <option value="30">30 dias</option>
-                </select>
-              </div>
+              <SelectJanelaPagamento
+                id="rel-dias-janela"
+                valor={diasJanela}
+                onChange={(dias) => dias !== null && mudarUrl({ dias_janela: dias })}
+              />
               <div className="field">
                 <label htmlFor="rel-pago-de">Pago de</label>
                 <input id="rel-pago-de" type="date" value={pagoDe} max={pagoAte || undefined} onChange={(e) => setPagoDe(e.target.value)} />

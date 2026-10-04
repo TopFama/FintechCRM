@@ -1,5 +1,5 @@
 """API de configuração das regras de cobrança: clusters, faixas de atraso,
-matriz WhatsApp e parâmetros de multa/juros."""
+matriz WhatsApp, parâmetros de multa/juros e janela de pagamento do Dashboard."""
 
 import uuid
 from datetime import datetime
@@ -217,21 +217,29 @@ def put_parametros(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    # --- Validações ---
-    if not (Decimal(0) <= body.juros_mes_percentual <= Decimal(1000)):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Juros ao mês deve estar entre 0% e 1000%")
-    if not (Decimal(0) <= body.multa_percentual <= Decimal(100)):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Multa deve estar entre 0% e 100%")
-    if not (0 <= body.dias_min_juros <= 3650):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Carência deve estar entre 0 e 3650 dias")
+    # --- Validações (só dos campos enviados) ---
+    limites = {
+        "juros_mes_percentual": (Decimal(0), Decimal(1000), "Juros ao mês deve estar entre 0% e 1000%"),
+        "multa_percentual": (Decimal(0), Decimal(100), "Multa deve estar entre 0% e 100%"),
+        "dias_min_juros": (0, 3650, "Carência deve estar entre 0 e 3650 dias"),
+        # mesma faixa do filtro dias_janela dos relatórios
+        "dias_janela_dashboard": (0, 365, "Janela de pagamento deve estar entre 0 e 365 dias"),
+    }
+    enviados = body.model_dump(include=body.model_fields_set)
+    for campo, valor in enviados.items():
+        minimo, maximo, mensagem = limites[campo]
+        # só a janela aceita nulo (= qualquer data após a cobrança)
+        if valor is None and campo == "dias_janela_dashboard":
+            continue
+        if valor is None or not (minimo <= valor <= maximo):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, mensagem)
 
     params = db.query(models.ParametrosCobranca).first()
     if params is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Parâmetros de cobrança não encontrados no banco")
 
-    params.juros_mes_percentual = body.juros_mes_percentual
-    params.multa_percentual = body.multa_percentual
-    params.dias_min_juros = body.dias_min_juros
+    for campo, valor in enviados.items():
+        setattr(params, campo, valor)
     db.commit()
     return _ler_config(db)
 
