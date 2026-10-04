@@ -155,9 +155,14 @@ function StatLink({
   );
 }
 
+function rotuloJanela(dias: number | null): string {
+  if (dias === null) return "Pagaram após a cobrança";
+  return `Pagaram em até ${dias} ${dias === 1 ? "dia" : "dias"}`;
+}
+
 // Carregado à parte do resumo: depende do SETA e não pode segurar os outros cards.
 // Não se atualiza sozinho (poupa o SETA): só ao abrir, trocar o período ou em "Atualizar agora".
-function CardPagos7Dias({ periodo, recarregar }: { periodo: Periodo; recarregar: number }) {
+function CardJanelaPagamento({ periodo, recarregar }: { periodo: Periodo; recarregar: number }) {
   const [dados, setDados] = useState<PagosJanela | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const tipoDeBusca = useEhAtualizacaoAutomatica(periodo, 0);
@@ -168,7 +173,7 @@ function CardPagos7Dias({ periodo, recarregar }: { periodo: Periodo; recarregar:
     setErro(null);
     const controle = new AbortController();
     api
-      .pagos7Dias(periodo, controle.signal)
+      .janelaPagamento(periodo, controle.signal)
       .then(setDados)
       .catch((e) => {
         if (foiCancelada(e)) return;
@@ -179,7 +184,8 @@ function CardPagos7Dias({ periodo, recarregar }: { periodo: Periodo; recarregar:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodo.de, periodo.ate, recarregar]);
 
-  const rotulo = "Pagaram em até 7 dias";
+  // a janela vem da config de Indicadores, então só se sabe com a resposta
+  const rotulo = dados ? rotuloJanela(dados.dias_janela) : "Pagaram";
   if (!dados) {
     return (
       <div className="stat" aria-busy={!erro}>
@@ -201,10 +207,10 @@ function CardPagos7Dias({ periodo, recarregar }: { periodo: Periodo; recarregar:
   const pct = Number(dados.percentual).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   return (
     <StatLink
-      to={linkRelatorio("pagamentos", periodo, { dias_janela: "7" })}
+      to={linkRelatorio("pagamentos", periodo, dados.dias_janela === null ? {} : { dias_janela: String(dados.dias_janela) })}
       valor={formatNumero(dados.qtd_pagaram)}
       rotulo={rotulo}
-      ariaLabel={`Ver ${formatNumero(dados.qtd_pagaram)} clientes que pagaram em até 7 dias`}
+      ariaLabel={`Ver ${formatNumero(dados.qtd_pagaram)} clientes: ${rotulo}`}
       tom="tone-success"
       icone={<IconClock />}
     >
@@ -213,7 +219,7 @@ function CardPagos7Dias({ periodo, recarregar }: { periodo: Periodo; recarregar:
       </div>
       {dados.qtd_em_maturacao > 0 && (
         <div className="stat-extra stat-aviso">
-          {formatNumero(dados.qtd_em_maturacao)} ainda dentro da janela de 7 dias
+          {formatNumero(dados.qtd_em_maturacao)} ainda dentro da janela de {dados.dias_janela} {dados.dias_janela === 1 ? "dia" : "dias"}
         </div>
       )}
     </StatLink>
@@ -296,7 +302,7 @@ function ResumoFila({
           tom="tone-warning"
           icone={<IconPhone />}
         />
-        <CardPagos7Dias periodo={periodo} recarregar={recarregar} />
+        <CardJanelaPagamento periodo={periodo} recarregar={recarregar} />
       </div>
 
       <div className="card">

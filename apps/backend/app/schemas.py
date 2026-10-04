@@ -602,7 +602,7 @@ class PagosJanelaOut(BaseModel):
     percentual: Decimal
     valor_pago: Decimal
     qtd_em_maturacao: int
-    dias_janela: int
+    dias_janela: int | None
 
 
 class DashboardPorFaixa(BaseModel):
@@ -1070,9 +1070,11 @@ class CelulaMatrizIn(BaseModel):
 
 
 class ParametrosCobrancaIn(BaseModel):
-    juros_mes_percentual: Decimal
-    multa_percentual: Decimal
-    dias_min_juros: int
+    # cada card de Indicadores manda só os seus campos; o que não vier fica como está
+    juros_mes_percentual: Decimal | None = None
+    multa_percentual: Decimal | None = None
+    dias_min_juros: int | None = None
+    dias_janela_dashboard: int | None = None
 
 
 class ClusterConfigOut(BaseModel):
@@ -1105,6 +1107,7 @@ class ParametrosCobrancaOut(BaseModel):
     juros_mes_percentual: Decimal
     multa_percentual: Decimal
     dias_min_juros: int
+    dias_janela_dashboard: int | None
 
 
 class ConfigCobrancaOut(BaseModel):

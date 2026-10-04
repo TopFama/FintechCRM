@@ -96,7 +96,7 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | backend | não | *(vazio)* | Cliente OAuth2 (aplicativo da Web) do Google Cloud, com a Google Sheets API ativada. Vazio = integração desligada; sem ela só não dá para filtrar por regional/estado/cluster de loja. Depois de preenchido, conecte a conta em **Configurações** (o refresh token fica cifrado no banco com a `ENCRYPTION_KEY`). |
 | `GOOGLE_REDIRECT_URI` / `GOOGLE_FRONTEND_URL` | backend | não | `http://localhost:8000/google/oauth/callback` / `http://localhost:5173` | A primeira precisa estar cadastrada, idêntica, nas URIs de redirecionamento autorizadas do cliente OAuth; a segunda é para onde o navegador volta depois do consentimento. |
 | `GOOGLE_SHEET_LOJAS_ID` / `GOOGLE_SHEET_LOJAS_GID` | backend | não | planilha de lojas da TopFama | ID da planilha (trecho da URL entre `/d/` e `/edit`) e `gid` da aba (`#gid=…`). Colunas lidas: FILIAL, NOME COM COD, REGIONAL, ESTADO, CLUSTER INAD e CLUSTER POPULAÇÃO. |
-| `REDIS_URL` | backend | não | `redis://redis:6379/0` | Cache e trava das consultas pesadas ao SETA (base de cobrança, efetividade, Quem pagou, "Pagaram em até 7 dias", resumo e orçamento do Dashboard — a tabela de títulos tem mais de 27 milhões de linhas). Redis fora do ar = essas telas respondem 503 "cache indisponível"; o backend **não** cai para consulta direta ao SETA. Ver `app/cache.py`. |
+| `REDIS_URL` | backend | não | `redis://redis:6379/0` | Cache e trava das consultas pesadas ao SETA (base de cobrança, efetividade, Quem pagou, card de pagamentos, resumo e orçamento do Dashboard — a tabela de títulos tem mais de 27 milhões de linhas). Redis fora do ar = essas telas respondem 503 "cache indisponível"; o backend **não** cai para consulta direta ao SETA. Ver `app/cache.py`. |
 | `CORS_ALLOWED_ORIGINS` | backend | não | `*` | Origens liberadas no CORS, separadas por vírgula (ex: `https://crm.topfama.com.br`). O padrão `*` mantém o comportamento anterior; em produção, restrinja ao(s) domínio(s) real(is) do frontend. |
 | `ALLOWED_HOSTS` | backend | não | `lojastopfama.com.br,*.lojastopfama.com.br,localhost,127.0.0.1,testserver` | Domínios aceitos no cabeçalho `Host` e, quando o navegador manda, no `Origin`; qualquer outro recebe **403 Forbidden** (`security.origem_permitida`, usada pelo middleware de `main.py` e pelo WebSocket do Dashboard). `*.dominio` libera os subdomínios. Sem `Origin` passa (webhook do Chatwoot, `/media`, healthcheck). O proxy reverso precisa repassar o `Host` do domínio (padrão do Nginx/Caddy) ou chamar o backend pelo endereço interno (`127.0.0.1:porta`); um `Host` interno de outro nome (ex. `backend:8000`) precisa entrar nesta lista. |
 | `COOKIE_SECURE` | backend | não | `true` | Atributo `Secure` do cookie httpOnly de sessão (ver "Limitações conhecidas / próximos passos" abaixo). Exige `https`; em desenvolvimento local sobre `http` puro, defina como `false`, senão o navegador descarta o cookie. |
@@ -318,10 +318,11 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    exato da mensagem. Erros 131026 já gravados no CRM são reprocessados após a atualização.
    O relatório e o Excel de telefones inválidos incluem CPF após o código do cliente.
 8. **Dashboard** — pendentes (e quantos estão pausados), enviados, erros, telefones inválidos,
-   "Pagaram em até 7 dias" (via SETA) e por faixa. Cada card abre o
+   "Pagaram em até N dias" (via SETA; a janela vem de Configurações → Indicadores, padrão 7,
+   e "Qualquer data após a cobrança" vira "Pagaram após a cobrança") e por faixa. Cada card abre o
    relatório dele com o mesmo período (`/relatorios?aba=…&de=…&ate=…`). A tela se atualiza
    sozinha sem F5: resumo da fila a cada 30 s, leads a cada 60 s e orçamento a cada 15 min,
-   parando enquanto a aba está oculta. O "Pagaram em até 7 dias" (SETA) e a efetividade não se
+   parando enquanto a aba está oculta. O card de pagamentos (SETA) e a efetividade não se
    atualizam sozinhos, só ao abrir, trocar o filtro ou em "Atualizar agora". Os pedidos
    automáticos (`auto=true`) leem do cache compartilhado no Redis (15 s o resumo, 10 min o
    orçamento).
@@ -346,7 +347,7 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    429 com `Retry-After`, não 503). Efetividade e Quem pagou guardam 5 min e, vencido, mostram o último
    snapshot (até 30 min) com o aviso "dados de …" enquanto atualizam uma vez em segundo plano;
    ordenar, paginar e as três exportações da efetividade leem o snapshot, sem ir ao SETA.
-   "Pagaram em até 7 dias" usa o mesmo snapshot de Quem pagou. A base de cobrança fica 10 min e
+   O card de pagamentos usa o mesmo snapshot de Quem pagou (mesma janela). A base de cobrança fica 10 min e
    não serve dado vencido (ela gera os leads). Erro do cálculo não é guardado: fica 30 s em
    quarentena para o polling não refazer a consulta. No front-end, trocar o filtro ou sair da tela
    cancela a consulta (`AbortController`, `useRequisicaoUnica`), o polling usa espera crescente com
@@ -364,7 +365,7 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    com o foco nela; duplo clique volta ao padrão), guardada no navegador por tabela
    (`components/TabelaAjustavel.tsx`). Na rolagem, cabeçalho, linha de total e primeira coluna
    ficam fixos.
-   **Pagamentos**: "Pagaram em até 7 dias", Efetividade e "Quem pagou" leem a tabela local
+   **Pagamentos**: o card de pagamentos do Dashboard, Efetividade e "Quem pagou" leem a tabela local
    `pagamentos_seta` (baixas do SETA de quem já foi cobrado), não o SETA direto. O worker relê as
    baixas só enquanto alguém usa o CRM (requisição de usuário nos últimos 15 min, sem contar a
    atualização automática da tela), no máximo a cada 30 min (`PAGAMENTOS_SYNC_INTERVAL_SECONDS`), por cliente, a partir da última

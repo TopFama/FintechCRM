@@ -7,6 +7,29 @@ test.describe("Configurações → Indicadores", { tag: "@indicadores" }, () => 
     await page.goto("/configuracoes?aba=indicadores");
   });
 
+  test("janela de pagamento do Dashboard: primeira da aba, Outro valida 0–365, salvar e manter", async ({ page }) => {
+    await expect(page.locator(".card").first().locator("h3")).toHaveText("Dashboard");
+    const d = card(page, "Dashboard");
+    await expect(d.getByLabel("Janela de pagamento")).toHaveValue("7");
+    const jurosCampo = card(page, "Juros e multa").getByLabel("Juros ao mês (%)");
+    await expect(jurosCampo).not.toHaveValue("");
+    const juros = await jurosCampo.inputValue();
+    await d.getByLabel("Janela de pagamento").selectOption({ label: "Outro (dias)" });
+    await d.getByLabel("Dias (0–365)").fill("400");
+    await expect(d.getByText("Informe uma janela entre 0 e 365 dias.")).toBeVisible();
+    await expect(d.getByRole("button", { name: "Salvar janela" })).toBeDisabled();
+    await d.getByLabel("Janela de pagamento").selectOption({ label: "Até 15 dias" });
+    await d.getByRole("button", { name: "Salvar janela" }).click();
+    await expect(d.locator(".success-box")).toContainText("Janela de pagamento salva");
+    await page.reload();
+    await expect(card(page, "Dashboard").getByLabel("Janela de pagamento")).toHaveValue("15");
+    // juros e multa não mudam ao salvar a janela
+    await expect(card(page, "Juros e multa").getByLabel("Juros ao mês (%)")).toHaveValue(juros);
+    await card(page, "Dashboard").getByLabel("Janela de pagamento").selectOption({ label: "Até 7 dias" });
+    await card(page, "Dashboard").getByRole("button", { name: "Salvar janela" }).click();
+    await expect(card(page, "Dashboard").locator(".success-box")).toBeVisible();
+  });
+
   test("clusters e faixas padrão carregados; regra do WhatsApp em matriz", async ({ page }) => {
     const r = card(page, "Regras de cobrança");
     await expect(r.getByLabel("Nome do cluster")).toHaveCount(6);

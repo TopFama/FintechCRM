@@ -327,8 +327,8 @@ export const api = {
   listQueue: (faixaId: string, params: { limit: number; offset: number } & OrdenacaoParams) =>
     request<{ total: number; itens: QueueItem[] }>(`/faixas/${faixaId}/queue?${montarQuery(params)}`),
 
-  pagos7Dias: (periodo: { de?: string; ate?: string }, signal?: AbortSignal) =>
-    request<PagosJanela>(`/dashboard/pagos-7-dias?${montarQuery(periodo)}`, { signal }),
+  janelaPagamento: (periodo: { de?: string; ate?: string }, signal?: AbortSignal) =>
+    request<PagosJanela>(`/dashboard/janela-pagamento?${montarQuery(periodo)}`, { signal }),
   // auto=true: atualização automática da tela, o backend pode responder do cache compartilhado
   dashboardSummary: (periodo: { de?: string; ate?: string } = {}, auto = false, signal?: AbortSignal) =>
     request<DashboardSummary>(`/dashboard/summary?${montarQuery({ ...periodo, auto: auto || undefined })}`, { signal }),
@@ -559,7 +559,8 @@ export const api = {
     request<ConfigCobrancaOut>("/config/cobranca/faixas", { method: "PUT", body: JSON.stringify(faixas) }),
   salvarMatrizCobranca: (celulas: CelulaMatriz[]) =>
     request<ConfigCobrancaOut>("/config/cobranca/matriz", { method: "PUT", body: JSON.stringify(celulas) }),
-  salvarParametrosCobranca: (p: { juros_mes_percentual: string; multa_percentual: string; dias_min_juros: number }) =>
+  // manda só os campos do card; o backend mantém os outros
+  salvarParametrosCobranca: (p: Partial<ParametrosCobranca>) =>
     request<ConfigCobrancaOut>("/config/cobranca/parametros", { method: "PUT", body: JSON.stringify(p) }),
 
   // --- Orçamento (Tarefa 4) ---
@@ -928,7 +929,8 @@ export interface PagosJanela {
   percentual: string;
   valor_pago: string;
   qtd_em_maturacao: number;
-  dias_janela: number;
+  // null = qualquer data após a cobrança
+  dias_janela: number | null;
 }
 
 export type PainelTempoReal = Pick<
@@ -1018,11 +1020,19 @@ export interface CelulaMatriz {
   faixa_id: string;
 }
 
+export interface ParametrosCobranca {
+  juros_mes_percentual: string;
+  multa_percentual: string;
+  dias_min_juros: number;
+  // janela do card de pagamentos do Dashboard; null = qualquer data após a cobrança
+  dias_janela_dashboard: number | null;
+}
+
 export interface ConfigCobrancaOut {
   clusters: ClusterConfig[];
   faixas: FaixaAtrasoConfig[];
   matriz: CelulaMatriz[];
-  parametros: { juros_mes_percentual: string; multa_percentual: string; dias_min_juros: number };
+  parametros: ParametrosCobranca;
 }
 
 export interface OrcamentoMes {

@@ -7,6 +7,7 @@ import Faixas from "./Faixas";
 import NumerosCard from "../components/config/NumerosCard";
 import OrcamentoCard from "../components/config/OrcamentoCard";
 import LojasCard from "../components/config/LojasCard";
+import JanelaPagamentoCard from "../components/config/JanelaPagamentoCard";
 import JurosMultaCard from "../components/config/JurosMultaCard";
 import RegrasCobrancaCard from "../components/config/RegrasCobrancaCard";
 import RenegocieConexaoCard from "../components/config/RenegocieConexaoCard";
@@ -271,7 +272,10 @@ export default function Configuracoes() {
       {aba === "horario" && <DisparoCard />}
       {aba === "indicadores" && (
         <>
-          <RegrasCobrancaCard />
+          <JanelaPagamentoCard />
+          <div style={{ marginTop: 16 }}>
+            <RegrasCobrancaCard />
+          </div>
           <div style={{ marginTop: 16 }}>
             <JurosMultaCard />
           </div>

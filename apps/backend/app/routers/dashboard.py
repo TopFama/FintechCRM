@@ -399,17 +399,17 @@ def _orcamento(db: Session, inicio: date, fim: date) -> schemas.OrcamentoProgres
     )
 
 
-@router.get("/pagos-7-dias", response_model=schemas.PagosJanelaOut)
-def pagos_7_dias(
+@router.get("/janela-pagamento", response_model=schemas.PagosJanelaOut)
+def janela_pagamento(
     de: date | None = Query(None),
     ate: date | None = Query(None),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    """Clientes cobrados no período que pagaram em até 7 dias corridos da
-    cobrança (regra da Tarefa 5). Usa a mesma lista em cache do relatório Quem
+    """Clientes cobrados no período que pagaram dentro da janela configurada
+    em Indicadores (regra da Tarefa 5). Usa a mesma lista em cache do relatório Quem
     pagou (5 min), então não consulta o SETA de novo para o mesmo período."""
 
     with erros_de_consulta_pesada():
-        dados = pagos_janela_service.resumo(db, de, ate, dias_janela=7)
+        dados = pagos_janela_service.resumo(db, de, ate)
     return schemas.PagosJanelaOut(**dados)

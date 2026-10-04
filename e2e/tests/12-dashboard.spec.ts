@@ -132,7 +132,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(cardPagos).toContainText(/% dos cobrados · R\$/);
     await cardPagos.click();
     await expect(page).toHaveURL(/aba=pagamentos&de=\d{4}-\d{2}-01&ate=.*&dias_janela=7/);
-    await expect(page.getByLabel("Pagou em até")).toHaveValue("7");
+    await expect(page.getByLabel("Janela de pagamento")).toHaveValue("7");
     if (n > 0) {
       await expect(page.locator(".stat", { hasText: "Clientes que pagaram" }).locator(".value")).toHaveText(n.toLocaleString("pt-BR"), {
         timeout: 30_000,
@@ -142,13 +142,37 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     }
   });
 
+  test("card de pagamentos segue a janela de Indicadores e abre Quem pagou com ela", { tag: ["@pagos-janela","@pagamentos"] }, async ({ page }) => {
+    await apiSend(page, "PUT", "/config/cobranca/parametros", { dias_janela_dashboard: 15 });
+    try {
+      await page.reload();
+      const valor = stat(page, "Pagaram em até 15 dias");
+      await expect(valor).not.toHaveText("…", { timeout: 30_000 });
+      await page.locator(".stat", { has: page.locator(".label", { hasText: "Pagaram em até 15 dias" }) }).click();
+      await expect(page).toHaveURL(/aba=pagamentos.*&dias_janela=15/);
+      await expect(page.getByLabel("Janela de pagamento")).toHaveValue("15");
+
+      await apiSend(page, "PUT", "/config/cobranca/parametros", { dias_janela_dashboard: null });
+      await page.goto("/");
+      const cardSemLimite = page.locator(".stat", { has: page.locator(".label", { hasText: "Pagaram após a cobrança" }) });
+      await expect(cardSemLimite.locator(".value")).not.toHaveText("…", { timeout: 30_000 });
+      await cardSemLimite.click();
+      await expect(page).toHaveURL(/aba=pagamentos/);
+      await expect(page).not.toHaveURL(/dias_janela/);
+      await expect(page.getByLabel("Janela de pagamento")).toHaveValue("");
+    } finally {
+      await apiSend(page, "PUT", "/config/cobranca/parametros", { dias_janela_dashboard: 7 });
+    }
+  });
+
   test("card 'Pagaram em até 7 dias' com SETA fora avisa só nele", { tag: ["@pagos-janela","@pagamentos","@resiliencia"] }, async ({ page }) => {
     permitirErrosConsole(page, "503");
-    await page.route("**/dashboard/pagos-7-dias*", (r) =>
+    await page.route("**/dashboard/janela-pagamento*", (r) =>
       r.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "SETA indisponível" }) })
     );
     await page.reload();
-    const cardPagos = page.locator(".stat", { has: page.locator(".label", { hasText: "Pagaram em até 7 dias" }) });
+    // sem resposta não se sabe a janela: o rótulo fica só "Pagaram"
+    const cardPagos = page.locator(".stat", { has: page.locator(".label", { hasText: /^Pagaram$/ }) });
     await expect(cardPagos).toContainText("SETA indisponível");
     await expect(stat(page, "Cobranças")).not.toHaveText("…");
     await expect(page.locator(".error-box")).toHaveCount(0);
@@ -363,6 +387,8 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
 
   test("efetividade: janela 'Outro' valida 0–365 e bloqueia botões", { tag: ["@efetividade"] }, async ({ page }) => {
     const e = card(page, "Efetividade da cobrança");
+    await e.getByLabel("Janela de pagamento").selectOption({ label: "Até 3 dias" });
+    await expect(e.getByLabel("Janela de pagamento")).toHaveValue("3");
     await e.getByLabel("Janela de pagamento").selectOption({ label: "Outro (dias)" });
     await expect(e.getByText("Informe uma janela entre 0 e 365 dias.")).toBeVisible();
     await expect(e.getByRole("button", { name: "Aplicar filtros" })).toBeDisabled();
@@ -377,7 +403,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
 
   test("efetividade: por faixa e por loja com linha de total; quem pagou hoje conta", { tag: ["@efetividade","@pagamentos"] }, async ({ page }) => {
     const e = card(page, "Efetividade da cobrança");
-    await e.getByLabel("Janela de pagamento").selectOption({ label: "Qualquer data após o envio" });
+    await e.getByLabel("Janela de pagamento").selectOption({ label: "Qualquer data após a cobrança" });
     await e.getByRole("button", { name: "Aplicar filtros" }).click();
     await expect(e.locator("table")).toBeVisible({ timeout: 30_000 });
     const total = e.locator("tr.linha-total");
@@ -413,7 +439,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
   test("trocar o período no meio da consulta do SETA cancela a anterior e o card mostra a nova", { tag: ["@efetividade","@resiliencia"] }, async ({ page }) => {
     const pedidos: string[] = [];
     let primeira = true;
-    await page.route("**/dashboard/pagos-7-dias?*", async (route) => {
+    await page.route("**/dashboard/janela-pagamento?*", async (route) => {
       pedidos.push(route.request().url());
       if (primeira) {
         primeira = false;
@@ -558,7 +584,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     const pedidos: URL[] = [];
     page.on("request", (r) => pedidos.push(new URL(r.url())));
     await page.getByRole("button", { name: "Atualizar agora" }).click();
-    await expect.poll(() => pedidos.some((u) => u.pathname.endsWith("/dashboard/pagos-7-dias"))).toBe(true);
+    await expect.poll(() => pedidos.some((u) => u.pathname.endsWith("/dashboard/janela-pagamento"))).toBe(true);
     const resumo = pedidos.find((u) => u.pathname.endsWith("/dashboard/summary"));
     expect(resumo?.searchParams.get("auto")).toBeNull();
     await expect(page.locator(".loading-state")).toHaveCount(0);

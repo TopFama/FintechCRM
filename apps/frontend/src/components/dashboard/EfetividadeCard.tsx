@@ -5,6 +5,7 @@ import { IconAlert } from "../../icons";
 import CamposLoja from "../CamposLoja";
 import MultiSelect from "../MultiSelect";
 import SelectCampanha from "../SelectCampanha";
+import SelectJanelaPagamento from "../SelectJanelaPagamento";
 import { OpcoesCobranca, opcoesCluster } from "../useOpcoesCobranca";
 import { useRequisicaoUnica } from "../useRequisicaoUnica";
 import SortableTh from "../SortableTh";
@@ -12,15 +13,6 @@ import TabelaAjustavel from "../TabelaAjustavel";
 import { ordemFaixaFn, ordenarPor, SortDirection, useSort } from "../../sort";
 
 type Aba = "faixa" | "loja" | "campanha";
-
-// "" = qualquer data após o envio (sem limite); "outro" = número digitado
-const JANELAS = [
-  { value: "", label: "Qualquer data após o envio" },
-  { value: "7", label: "Até 7 dias" },
-  { value: "15", label: "Até 15 dias" },
-  { value: "30", label: "Até 30 dias" },
-  { value: "outro", label: "Outro (dias)" },
-];
 
 const FILTROS_PADRAO: FiltrosEfetividade = {
   cobrado_de: "",
@@ -93,8 +85,7 @@ const COLUNAS_LOJA: [Coluna, string][] = [
 
 export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) {
   const [filtros, setFiltros] = useState<FiltrosEfetividade>(FILTROS_PADRAO);
-  const [janela, setJanela] = useState("7");
-  const [janelaOutro, setJanelaOutro] = useState("");
+  const [janela, setJanela] = useState<string | null>("7");
   const [relatorio, setRelatorio] = useState<RelatorioEfetividade | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -122,12 +113,10 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
   }
 
   function filtrosComJanela(): FiltrosEfetividade {
-    const dias = janela === "outro" ? janelaOutro : janela;
-    return dias === "" ? filtros : { ...filtros, dias_janela: Number(dias) };
+    return janela ? { ...filtros, dias_janela: Number(janela) } : filtros;
   }
 
-  const janelaInvalida =
-    janela === "outro" && !(janelaOutro !== "" && Number(janelaOutro) >= 0 && Number(janelaOutro) <= 365);
+  const janelaInvalida = janela === null;
 
   function comOrdenacao(f: FiltrosEfetividade, sortBy: Coluna | null, sortDir: SortDirection): FiltrosEfetividade {
     return sortBy ? { ...f, sort_by: sortBy, sort_dir: sortDir } : f;
@@ -215,31 +204,8 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
             onChange={(e) => setFiltros({ ...filtros, cobrado_ate: e.target.value })}
           />
         </div>
-        <div className="field" style={{ flex: "1 1 200px" }}>
-          <label htmlFor="efet-janela">Janela de pagamento</label>
-          <select id="efet-janela" value={janela} onChange={(e) => setJanela(e.target.value)}>
-            {JANELAS.map((j) => (
-              <option key={j.value} value={j.value}>
-                {j.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        {janela === "outro" && (
-          <div className="field" style={{ flex: "0 1 120px" }}>
-            <label htmlFor="efet-janela-dias">Dias (0–365)</label>
-            <input
-              id="efet-janela-dias"
-              type="number"
-              min={0}
-              max={365}
-              value={janelaOutro}
-              onChange={(e) => setJanelaOutro(e.target.value)}
-            />
-          </div>
-        )}
+        <SelectJanelaPagamento id="efet-janela" valor={janela} onChange={setJanela} />
       </div>
-      {janelaInvalida && <div className="field-hint">Informe uma janela entre 0 e 365 dias.</div>}
 
       <div className="form-row" style={{ flexWrap: "wrap" }}>
         <MultiSelect
