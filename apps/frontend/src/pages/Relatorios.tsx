@@ -333,11 +333,13 @@ export default function Relatorios() {
 
       <div className="card">
         <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-          {ABAS.map(({ aba, rotulo }) => (
-            <button key={aba} className={tab === aba ? "" : "secondary"} onClick={() => setTab(aba)}>
-              {rotulo}
-            </button>
-          ))}
+          <div className="tabs" style={{ display: "flex", gap: 8, flexWrap: "wrap", maxWidth: "100%" }}>
+            {ABAS.map(({ aba, rotulo }) => (
+              <button key={aba} className={tab === aba ? "" : "secondary"} onClick={() => setTab(aba)}>
+                {rotulo}
+              </button>
+            ))}
+          </div>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
             <select aria-label="Faixa" value={faixaId} onChange={(e) => setFaixaId(e.target.value)} style={{ minWidth: 180 }}>
               <option value="">Todas as faixas</option>

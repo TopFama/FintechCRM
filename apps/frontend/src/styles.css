@@ -201,7 +201,6 @@ a {
   flex: 1;
   min-width: 0;
   padding: 36px 40px 60px;
-  max-width: 1080px;
   width: 100%;
 }
 
@@ -1274,9 +1273,21 @@ label {
     margin-right: auto;
   }
 
+  /* Menu numa linha só, abaixo da marca e do Sair, rolando de lado se não couber */
   .sidebar nav {
+    order: 2;
+    width: 100%;
     flex-direction: row;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .sidebar a.nav-link {
+    white-space: nowrap;
+  }
+
+  .brand-logo {
+    width: 112px;
   }
 
   .nav-section-label {
@@ -1284,6 +1295,7 @@ label {
   }
 
   .sidebar-footer {
+    order: 1;
     margin-top: 0;
     border-top: none;
     padding-top: 0;
@@ -1303,6 +1315,35 @@ label {
   .form-row {
     flex-direction: column;
     gap: 0;
+  }
+
+  /* Em coluna, a base do flex (ex.: flex: "1 1 160px" inline) viraria altura */
+  .form-row > * {
+    flex-basis: auto !important;
+  }
+
+  .card-header,
+  .faixa-row {
+    flex-wrap: wrap;
+  }
+
+  /* Abas numa linha só, rolando de lado */
+  .tabs {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+  }
+
+  .tabs > * {
+    flex-shrink: 0;
+  }
+
+  /* Gráfico do Orçamento mantém letra legível e rola de lado */
+  .orcamento-grafico {
+    overflow-x: auto;
+  }
+
+  .orcamento-grafico svg {
+    min-width: 560px;
   }
 
   /* No celular só o passo atual mostra o nome, senão o stepper passa da tela */
