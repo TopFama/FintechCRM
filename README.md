@@ -494,11 +494,28 @@ publica à mão: o workflow `.github/workflows/deploy.yml` faz o deploy sozinho.
 5. Termina chamando `/api/health` até 30 vezes, a cada 5 s. Um 502 logo depois do rebuild é
    normal (o backend ainda está subindo); o job só falha se não responder em 150 s.
 
-O Dashboard em tempo real usa WebSocket em `/api/dashboard/ws`: o proxy precisa repassar o
-upgrade. No Nginx, no `location` da API: `proxy_http_version 1.1;`,
-`proxy_set_header Upgrade $http_upgrade;`, `proxy_set_header Connection "upgrade";`,
-`proxy_set_header Host $host;` e `proxy_read_timeout 60s;` ou mais (o backend manda sinal a cada
-25 s). O Caddy faz isso sozinho. Sem o upgrade a tela continua com o polling de 30 s.
+O Dashboard em tempo real usa WebSocket em `/api/dashboard/ws`: o Nginx da VPS precisa repassar
+o upgrade. A config disso fica versionada em `deploy/nginx/` e o deploy a valida (`nginx -t`) e
+recarrega o Nginx. Se o `nginx -t` falhar, o deploy volta o código e não publica nada. Depois do
+health, o deploy confere se o WebSocket responde `101` pelo proxy e, se não, deixa um aviso. Sem o
+upgrade a tela continua com o polling de 30 s.
+
+Ligar uma vez, como root na VPS (depois que um deploy trouxe `deploy/nginx/`):
+
+```bash
+ln -s /opt/FintechCRM/deploy/nginx/fintechcrm-upgrade.conf /etc/nginx/conf.d/
+ln -s /opt/FintechCRM/deploy/nginx/fintechcrm-websocket.conf /etc/nginx/snippets/
+# no location que repassa /api/ em /etc/nginx/sites-available/fintech.lojastopfama.com.br:
+#   include snippets/fintechcrm-websocket.conf;
+# (tire desse location um proxy_http_version, Upgrade, Connection ou proxy_read_timeout que
+#  já existam: repetidos, o nginx -t acusa "duplicate")
+echo 'deploy ALL=(root) NOPASSWD: /usr/sbin/nginx -t, /usr/bin/systemctl reload nginx' > /etc/sudoers.d/deploy-nginx
+chmod 440 /etc/sudoers.d/deploy-nginx && visudo -c
+nginx -t && systemctl reload nginx
+```
+
+O deploy só usa esses dois comandos com sudo. Sem os links ou sem o sudoers, ele segue
+publicando normalmente e só avisa que o Nginx não foi recarregado.
 
 Um deploy por vez (concorrência `deploy-vps`) e nunca cancelado no meio do `docker compose`. O log
 de cada deploy mostra `Código: <antes> -> <depois>` e o estado dos containers (Actions → "Deploy

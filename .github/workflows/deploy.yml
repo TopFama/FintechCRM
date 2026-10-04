@@ -164,8 +164,29 @@ jobs:
             echo "Código: $(git rev-parse --short "$antes") -> $(git rev-parse --short HEAD)"
           fi
 
+          # Config do Nginx versionada em deploy/nginx (ligada uma vez por links, ver
+          # README). Config inválida: volta o código e não publica nada; o Nginx
+          # segue com a config antiga, que só muda no reload.
+          nginx_ligado=""
+          if [ ! -L /etc/nginx/snippets/fintechcrm-websocket.conf ]; then
+            echo "::notice::Nginx sem os links de deploy/nginx: WebSocket do Dashboard não liberado (README → Deploy)"
+          elif ! sudo -n -l nginx -t >/dev/null 2>&1; then
+            echo "::warning::deploy sem sudo para nginx -t/reload (README → Deploy); config do Nginx não recarregada"
+          else
+            nginx_ligado=1
+            if ! sudo -n nginx -t; then
+              git reset --hard "$antes"
+              echo "::error::nginx -t falhou com deploy/nginx; código voltou para $(git rev-parse --short HEAD)"
+              exit 1
+            fi
+          fi
+
           docker compose up -d --build
           docker compose ps --format '{{.Name}}: {{.State}}'
+
+          if [ -n "$nginx_ligado" ]; then
+            sudo -n systemctl reload nginx
+          fi
           REMOTO
 
       - name: Saúde do backend
@@ -177,3 +198,18 @@ jobs:
             echo "Tentativa $i: backend ainda não respondeu"; sleep 5
           done
           echo "::error::$URL_SAUDE não respondeu em 150 s"; exit 1
+
+      - name: WebSocket do Dashboard pelo proxy
+        if: github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.acao == 'deploy')
+        run: |
+          # Sem sessão o backend aceita e fecha com 4401: 101 = o proxy repassa o upgrade.
+          hoje=$(TZ=America/Sao_Paulo date +%F)
+          codigo=$(curl -sS --http1.1 -o /dev/null -w '%{http_code}' -m 5 \
+            -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+            "${URL_SAUDE%/health}/dashboard/ws?de=$hoje&ate=$hoje" || true)
+          if [ "$codigo" = "101" ]; then
+            echo "OK: WebSocket liberado no proxy"
+          else
+            echo "::warning::WebSocket do Dashboard respondeu $codigo pelo proxy (esperado 101); a tela segue no polling de 30 s (README → Deploy)"
+          fi
