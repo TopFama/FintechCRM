@@ -521,7 +521,7 @@ export default function TemplatesCard() {
                     Status
                   </SortableTh>
                   <th>Variáveis</th>
-                  <th>Imagem</th>
+                  <th style={{ textAlign: "center" }}>Imagem</th>
                   <th style={{ textAlign: "right" }}></th>
                 </tr>
               </thead>
@@ -551,9 +551,9 @@ export default function TemplatesCard() {
                         <td className="text-muted" style={{ fontSize: 12 }}>
                           {t.variables.map((v) => v.internal_name).join(", ") || "—"}
                         </td>
-                        <td>
+                        <td style={{ textAlign: "center" }}>
                           {t.header_type === "image" ? (
-                            <span style={{ display: "inline-flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                            <span style={{ display: "inline-flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
                               {t.image_url && <span className="badge sent">enviada</span>}
                               {subindoImagem === t.id && <span className="text-muted">Enviando e otimizando…</span>}
                               {/* trocar: imagem antiga (sem link público) ou arte nova */}
@@ -587,11 +587,11 @@ export default function TemplatesCard() {
                           )}
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                          <div style={{ display: "inline-grid", gap: 4 }}>
                             <button
                               type="button"
                               className="secondary small"
-                              style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap" }}
+                              style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap", justifyContent: "center" }}
                               onClick={() => handleRefreshStatus(t.id)}
                             >
                               Atualizar status
@@ -599,7 +599,7 @@ export default function TemplatesCard() {
                             <button
                               type="button"
                               className="secondary small"
-                              style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap" }}
+                              style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap", justifyContent: "center" }}
                               onClick={() => setPreviewId((atual) => (atual === t.id ? null : t.id))}
                             >
                               <IconEye width={14} height={14} /> {previewId === t.id ? "Fechar" : "Pré-visualizar"}
@@ -607,7 +607,7 @@ export default function TemplatesCard() {
                             <button
                               type="button"
                               className="secondary small"
-                              style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap" }}
+                              style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap", justifyContent: "center" }}
                               onClick={() => abrirTesteTemplate(t)}
                             >
                               <IconTemplate width={14} height={14} /> {testeTemplateId === t.id ? "Fechar teste" : "Testar envio"}
