@@ -692,7 +692,7 @@ class OrcamentoMesIn(BaseModel):
 
 class OrcamentoProgressaoDiaOut(BaseModel):
     data: date
-    gasto_acumulado_brl: Decimal
+    gasto_acumulado_brl: Decimal | None  # None = dia que ainda não aconteceu
 
 
 class OrcamentoProgressaoOut(BaseModel):

@@ -507,6 +507,19 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     const box = await o.locator("svg[role=img] rect").last().boundingBox();
     await page.mouse.move(box!.x + box!.width - 5, box!.y + box!.height / 2);
     await expect(o.locator("svg[role=img]")).toContainText("Acumulado:");
+    // mês corrente: a linha vai só até hoje (GMT-3) e termina numa bolinha
+    const diaHoje = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", day: "2-digit" }).format(new Date()));
+    const pontos = await o.locator("svg[role=img] polyline").getAttribute("points");
+    expect(pontos!.trim().split(" ")).toHaveLength(diaHoje);
+    await expect(o.locator("circle.fim-realizado")).toHaveCount(1);
+    // mês que já acabou: sem bolinha
+    const mesPassado = (await o.locator("select option").nth(1).getAttribute("value"))!;
+    await Promise.all([
+      page.waitForResponse((r) => r.url().includes("/dashboard/orcamento-progressao?") && r.ok()),
+      o.locator("select").selectOption(mesPassado),
+    ]);
+    await expect(o.locator("svg[role=img]")).toBeVisible({ timeout: 30_000 });
+    await expect(o.locator("circle.fim-realizado")).toHaveCount(0);
   });
 
   test("orçamento: exportar por dia traz data, WABA, telefone e valor, somando o realizado", { tag: ["@orcamento"] }, async ({ page }) => {

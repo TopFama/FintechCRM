@@ -269,12 +269,17 @@ function dataCurta(iso: string): string {
 }
 
 // Linha do gasto acumulado dia a dia + linha tracejada do limite orçado,
-// com eixos (R$ no Y, datas no X) e tooltip do dia sob o mouse.
+// com eixos (R$ no Y, datas no X) e tooltip do dia sob o mouse. A linha vai
+// só até hoje; com o período em andamento, uma bolinha marca onde ela termina.
 function GraficoGasto({ dados }: { dados: OrcamentoProgressao }) {
   const [hover, setHover] = useState<number | null>(null);
   const dias = dados.dias;
   const orcado = Number(dados.valor_orcado);
-  const valores = dias.map((d) => Number(d.gasto_acumulado_brl));
+  // dias sem valor (ainda não aconteceram) são sempre o fim da lista: o índice é o mesmo de `dias`
+  const valores = dias.filter((d) => d.gasto_acumulado_brl !== null).map((d) => Number(d.gasto_acumulado_brl));
+  const ultimo = valores.length - 1;
+  // período ainda acompanhado: já começou (tem dia com valor) e não terminou antes de hoje
+  const emAndamento = ultimo >= 0 && new Date(`${dados.ate}T00:00`) >= hojeBR();
   const maximo = Math.max(orcado, ...valores, 1) * 1.1;
   const areaL = LARGURA - M.esq - M.dir;
   const areaA = ALTURA - M.topo - M.base;
@@ -286,10 +291,11 @@ function GraficoGasto({ dados }: { dados: OrcamentoProgressao }) {
   const diario = (i: number) => valores[i] - (i > 0 ? valores[i - 1] : 0);
 
   function aoMover(e: React.MouseEvent<SVGRectElement>) {
+    if (ultimo < 0) return;
     const caixa = e.currentTarget.getBoundingClientRect();
     const px = ((e.clientX - caixa.left) / caixa.width) * areaL;
     const i = dias.length <= 1 ? 0 : Math.round((px / areaL) * (dias.length - 1));
-    setHover(Math.min(Math.max(i, 0), dias.length - 1));
+    setHover(Math.min(Math.max(i, 0), ultimo));
   }
 
   const tipX = hover !== null ? Math.min(x(hover) + 10, LARGURA - M.dir - 170) : 0;
@@ -332,11 +338,14 @@ function GraficoGasto({ dados }: { dados: OrcamentoProgressao }) {
         </text>
 
         <polyline
-          points={dias.map((_, i) => `${x(i)},${y(valores[i])}`).join(" ")}
+          points={valores.map((v, i) => `${x(i)},${y(v)}`).join(" ")}
           fill="none"
           stroke="var(--color-primary)"
           strokeWidth={2}
         />
+        {emAndamento && (
+          <circle className="fim-realizado" cx={x(ultimo)} cy={y(valores[ultimo])} r={4} fill="var(--color-primary)" />
+        )}
 
         {hover !== null && (
           <g pointerEvents="none">
