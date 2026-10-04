@@ -1043,7 +1043,7 @@ export interface OrcamentoMes {
 
 export interface OrcamentoProgressaoDia {
   data: string;
-  gasto_acumulado_brl: string;
+  gasto_acumulado_brl: string | null; // null = dia que ainda não aconteceu
 }
 
 export interface OrcamentoProgressao {

@@ -375,10 +375,15 @@ def _orcamento(db: Session, inicio: date, fim: date) -> schemas.OrcamentoProgres
     valor_gasto_brl: Decimal | None = None
     if por_dia is not None:
         acumulado = Decimal("0.00")
+        hoje = hoje_br()
         d = inicio
         while d <= fim:
-            acumulado += por_dia.get(d, Decimal("0"))
-            dias.append(schemas.OrcamentoProgressaoDiaOut(data=d, gasto_acumulado_brl=acumulado.quantize(Decimal("0.01"))))
+            # Dia que ainda não aconteceu fica no eixo, mas sem valor: a linha pára em hoje
+            if d > hoje:
+                dias.append(schemas.OrcamentoProgressaoDiaOut(data=d, gasto_acumulado_brl=None))
+            else:
+                acumulado += por_dia.get(d, Decimal("0"))
+                dias.append(schemas.OrcamentoProgressaoDiaOut(data=d, gasto_acumulado_brl=acumulado.quantize(Decimal("0.01"))))
             d += timedelta(days=1)
         valor_gasto_brl = acumulado.quantize(Decimal("0.01"))
 
