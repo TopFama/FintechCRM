@@ -635,6 +635,13 @@ export default function TemplatesCard() {
                     Template (Meta)
                   </SortableTh>
                   <SortableTh
+                    active={templatesSort.sortKey === "category"}
+                    dir={templatesSort.sortDir}
+                    onSort={() => templatesSort.toggleSort("category")}
+                  >
+                    Tipo
+                  </SortableTh>
+                  <SortableTh
                     active={templatesSort.sortKey === "waba_id"}
                     dir={templatesSort.sortDir}
                     onSort={() => templatesSort.toggleSort("waba_id")}
@@ -642,13 +649,6 @@ export default function TemplatesCard() {
                     WABA
                   </SortableTh>
                   <th>Telefones</th>
-                  <SortableTh
-                    active={templatesSort.sortKey === "category"}
-                    dir={templatesSort.sortDir}
-                    onSort={() => templatesSort.toggleSort("category")}
-                  >
-                    Tipo
-                  </SortableTh>
                   <SortableTh active={templatesSort.sortKey === "status"} dir={templatesSort.sortDir} onSort={() => templatesSort.toggleSort("status")}>
                     Status
                   </SortableTh>
@@ -670,13 +670,13 @@ export default function TemplatesCard() {
                             </div>
                           )}
                         </td>
+                        <td>{rotuloCategoria(t.category)}</td>
                         <td className="text-muted" style={{ fontFamily: "monospace", fontSize: 12 }}>
                           {t.waba_id || "—"}
                         </td>
                         <td className="text-muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>
                           {tels.length > 0 ? tels.map((tel) => <div key={tel}>{tel}</div>) : "—"}
                         </td>
-                        <td>{rotuloCategoria(t.category)}</td>
                         <td>
                           <span className={`badge ${t.status}`}>{rotuloStatusTemplate(t.status)}</span>
                         </td>
