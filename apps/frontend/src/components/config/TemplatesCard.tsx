@@ -652,7 +652,6 @@ export default function TemplatesCard() {
                   <SortableTh active={templatesSort.sortKey === "status"} dir={templatesSort.sortDir} onSort={() => templatesSort.toggleSort("status")}>
                     Status
                   </SortableTh>
-                  <th>Variáveis</th>
                   <th style={{ textAlign: "center" }}>Imagem</th>
                   <th style={{ textAlign: "right" }}></th>
                 </tr>
@@ -680,9 +679,6 @@ export default function TemplatesCard() {
                         <td>{rotuloCategoria(t.category)}</td>
                         <td>
                           <span className={`badge ${t.status}`}>{rotuloStatusTemplate(t.status)}</span>
-                        </td>
-                        <td className="text-muted" style={{ fontSize: 12 }}>
-                          {t.variables.map((v) => v.internal_name).join(", ") || "—"}
                         </td>
                         <td style={{ textAlign: "center" }}>
                           {t.header_type === "image" ? (
@@ -762,7 +758,7 @@ export default function TemplatesCard() {
                       </tr>
                       {previewId === t.id && (
                         <tr>
-                          <td colSpan={8}>
+                          <td colSpan={7}>
                             <div className="template-preview">
                               <PreviaWhatsapp
                                 texto={renderizarPreview(t)}
@@ -797,7 +793,7 @@ export default function TemplatesCard() {
                       )}
                       {testeTemplateId === t.id && (
                         <tr>
-                          <td colSpan={8}>
+                          <td colSpan={7}>
                             <div className="card" style={{ margin: "8px 0", background: "var(--color-bg-subtle, #f9fafb)", border: "1px solid var(--color-border)" }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                                 <h4 style={{ margin: 0 }}>Testar template: {t.meta_template_name} ({t.language})</h4>

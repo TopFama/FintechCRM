@@ -13,7 +13,9 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await page.getByRole("button", { name: "Sincronizar", exact: true }).click();
     const tabela = card(page, "Templates cadastrados");
     await expect(tabela.locator("tbody tr")).toHaveCount(3);
-    await expect(tabela.locator("tbody tr", { hasText: "cobranca_atraso" })).toContainText("variavel_1, variavel_2, variavel_3, variavel_4");
+    const cobranca = (await apiGet(page, "/templates")).find((t: any) => t.meta_template_name === "cobranca_atraso");
+    expect(cobranca.variables.map((v: any) => v.internal_name)).toEqual(["variavel_1", "variavel_2", "variavel_3", "variavel_4"]);
+    await expect(tabela.getByRole("columnheader", { name: "Variáveis" })).toHaveCount(0);
     await expect(tabela.locator("tbody tr", { hasText: "promo_reprovada" }).locator(".badge")).toHaveText(/rejected|reprovado/i);
     await expect(tabela.locator("tbody tr", { hasText: "promo_reprovada" })).toContainText("Marketing");
     await expect(tabela.locator("tbody tr", { hasText: "cobranca_atraso" })).toContainText("Utilidade");
