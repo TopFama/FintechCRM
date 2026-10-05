@@ -236,7 +236,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     const porFaixa = card(page, "Por faixa");
     await expect(porFaixa.locator("thead th")).toHaveText([
       /^Faixa/, /^Pendente/, /^Erro/, /^Enviado/, /^Clientes cobrados/, /^Frequência/,
-      /^Pagaram após cobrança/, /^%\sConv\./, /^%\sRep\./, /^Valor pago/,
+      /^Pagaram após cobrança/, /^%\sRep\./, /^%\sConv\./, /^Valor pago/,
     ]);
     const linhas = porFaixa.locator("tbody tr");
     await expect(linhas.first()).toBeVisible();
@@ -247,7 +247,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
 
     // % Rep. soma 100% quando alguém pagou (ou é 0,0% em todas as faixas)
     const pagaram = await col(6);
-    const reps = (await col(8)).map(pct);
+    const reps = (await col(7)).map(pct);
     if (soma(pagaram) > 0) expect(Math.abs(reps.reduce((s: number, v) => s + (v ?? 0), 0) - 100)).toBeLessThan(0.1 * n + 0.01);
 
     // Total: Pendente, Erro e Enviado somam a coluna; Clientes cobrados e
@@ -267,8 +267,8 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     const convTotal = new Intl.NumberFormat("pt-BR", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(
       pagaramTotal / cobrados
     );
-    await expect(total.nth(7)).toHaveText(convTotal);
-    await expect(total.nth(8)).toHaveText("");
+    await expect(total.nth(8)).toHaveText(convTotal);
+    await expect(total.nth(7)).toHaveText("");
 
     // 🛈 abre a dica com a fórmula e não reordena a tabela
     const ordemAntes = await col(0);
@@ -287,6 +287,38 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await conv.click();
     await expect(page.getByRole("tooltip")).toHaveCount(0);
     expect(await col(0)).toEqual(ordemAntes);
+  });
+
+  test("por faixa: colunas se arrastam pelo título e a ordem fica salva na conta", async ({ page }) => {
+    const porFaixa = card(page, "Por faixa");
+    const titulos = porFaixa.locator("thead th");
+    const pendente = porFaixa.getByRole("columnheader", { name: /^Pendente/ });
+    await expect(porFaixa.locator("tbody tr").first()).toBeVisible();
+    await expect(titulos.nth(1)).toHaveText(/^Pendente/);
+    const pendentes = await porFaixa.locator("tbody tr td:nth-child(2)").allInnerTexts();
+    try {
+      // Arrastar "Pendente" para cima de "Valor pago" leva a coluna para depois dela, com os números junto
+      await pendente.dragTo(porFaixa.getByRole("columnheader", { name: /^Valor pago/ }));
+      await expect(titulos.last()).toHaveText(/^Pendente/);
+      await expect(titulos.nth(1)).toHaveText(/^Erro/);
+      await expect(titulos.nth(8)).toHaveText(/^Valor pago/);
+      expect(await porFaixa.locator("tbody tr td:last-child").allInnerTexts()).toEqual(pendentes);
+      await expect(porFaixa.locator("tfoot tr.linha-total td").last()).not.toContainText("R$");
+      // Arrastar não ordena a tabela; clicar no título continua ordenando
+      await expect(pendente).toHaveAttribute("aria-sort", "none");
+      await pendente.click();
+      await expect(pendente).toHaveAttribute("aria-sort", "ascending");
+      // Faixa fica fixa na primeira coluna
+      await expect(titulos.first()).not.toHaveAttribute("draggable", "true");
+
+      // A ordem vem da conta: volta igual depois de recarregar
+      await page.reload();
+      await expect(titulos.last()).toHaveText(/^Pendente/);
+      expect((await apiGet(page, "/dashboard/colunas-por-faixa")).colunas.at(-1)).toBe("pending");
+    } finally {
+      // Os outros testes usam o mesmo usuário e contam com a ordem padrão
+      await apiSend(page, "PUT", "/dashboard/colunas-por-faixa", { colunas: [] });
+    }
   });
 
   test("por faixa: números e títulos centralizados, inclusive título quebrado em duas linhas", { tag: ["@visual"] }, async ({ page }) => {

@@ -36,6 +36,9 @@ class User(Base):
     # Só o admin pode criar/listar/excluir outros usuários (ver routers/users.py);
     # fora isso, um usuário criado pelo admin acessa o sistema normalmente, igual ao admin.
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Ordem das colunas da tabela "Por faixa" do Dashboard escolhida pelo usuário
+    # (chaves das colunas); nulo = ordem padrão da tela.
+    colunas_por_faixa: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

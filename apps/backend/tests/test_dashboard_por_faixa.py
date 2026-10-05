@@ -116,5 +116,19 @@ f = por_faixa["FC"]
 assert f["faixa_id"] == fc.id and f["sent"] == 0 and f["pending"] == 0, f
 assert f["clientes_cobrados"] == 1 and f["enviados_cobrados"] == 0 and f["clientes_com_envio"] == 0, f
 
+# Ordem das colunas: salva na conta do usuário; vazia volta à ordem padrão
+url = "/dashboard/colunas-por-faixa"
+assert client.get(url, headers=auth).json() == {"colunas": []}
+ordem = ["valor_pago", "pending", "representatividade"]
+res = client.put(url, json={"colunas": ordem}, headers=auth)
+assert res.status_code == 200 and res.json() == {"colunas": ordem}, res.text
+assert client.get(url, headers=auth).json() == {"colunas": ordem}
+db.expire_all()
+assert db.query(models.User).filter_by(email="admin@topfama.com.br").one().colunas_por_faixa == ordem
+assert client.put(url, json={"colunas": ["x" * 41]}, headers=auth).status_code == 422
+assert client.put(url, json={"colunas": [""]}, headers=auth).status_code == 422
+assert client.put(url, json={"colunas": []}, headers=auth).status_code == 200
+assert client.get(url, headers=auth).json() == {"colunas": []}
+
 db.close()
 print("OK")

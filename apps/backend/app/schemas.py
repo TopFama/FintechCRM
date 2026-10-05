@@ -669,6 +669,20 @@ class DashboardTotalPorFaixa(BaseModel):
     valor_pago: Decimal = Decimal("0.00")
 
 
+class ColunasPorFaixa(BaseModel):
+    """Ordem das colunas da tabela "Por faixa" do usuário logado. Vazia = ordem
+    padrão; a tela ignora chave que não conhece e põe no fim coluna que falta."""
+
+    colunas: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("colunas")
+    @classmethod
+    def validar_colunas(cls, v: list[str]) -> list[str]:
+        if any(not c or len(c) > 40 for c in v):
+            raise ValueError("Coluna inválida")
+        return v
+
+
 class DashboardSummary(BaseModel):
     total_pendentes: int
     total_pausados: int = 0
