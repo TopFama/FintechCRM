@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
@@ -143,28 +144,66 @@ class WhatsappNumberOut(BaseModel):
 # --- Templates ---
 
 
+# Regras da Meta para cadastrar template: o nome só aceita minúsculas, números e
+# "_"; o corpo vai até 1024 caracteres, com variáveis {{1}}, {{2}}… em
+# sequência e sem variável no começo ou no fim. A tela espelha para avisar.
+NOME_TEMPLATE_META = re.compile(r"^[a-z0-9_]{1,512}$")
+LIMITE_CORPO_TEMPLATE = 1024
+_VARIAVEL_TEMPLATE = re.compile(r"\{\{(\d+)\}\}")
+
+
+def _validar_campo_cliente(valor: str | None) -> str | None:
+    if valor is not None and valor not in CAMPOS_CLIENTE:
+        validos = ", ".join(sorted(CAMPOS_CLIENTE.keys()))
+        raise ValueError(f"Campo inválido ({validos})")
+    return valor
+
+
 class TemplateVariableIn(BaseModel):
     position: int
     internal_name: str
+    exemplo: str | None = None
+    campo_sugerido: str | None = None
+
+    _validar_campo = field_validator("campo_sugerido")(_validar_campo_cliente)
 
 
 class TemplateCreate(BaseModel):
+    """Template criado na plataforma: sempre rascunho em pt_BR; vai para a Meta
+    pelo botão "Enviar para aprovação"."""
+
     name: str
     meta_template_name: str
-    language: str
-    category: str = "UTILITY"
+    category: Literal["UTILITY", "MARKETING"] = "UTILITY"
     header_type: TemplateHeaderType = TemplateHeaderType.none
     body_text: str
     waba_id: str | None = None
     variables: list[TemplateVariableIn] = []
-    submit_to_meta: bool = False
 
-    @field_validator("language")
+    @field_validator("meta_template_name")
     @classmethod
-    def validar_idioma(cls, valor: str) -> str:
-        if not valor or not valor.strip():
-            raise ValueError("O idioma do template é obrigatório (ex: pt_BR, en_US)")
-        return valor.strip()
+    def validar_nome_meta(cls, valor: str) -> str:
+        valor = valor.strip()
+        if not NOME_TEMPLATE_META.match(valor):
+            raise ValueError("Nome na Meta: use só letras minúsculas sem acento, números e _ (até 512 caracteres)")
+        return valor
+
+    @model_validator(mode="after")
+    def validar_corpo(self):
+        corpo = self.body_text.strip()
+        if not corpo:
+            raise ValueError("O corpo do template é obrigatório")
+        if len(corpo) > LIMITE_CORPO_TEMPLATE:
+            raise ValueError(f"O corpo do template passa de {LIMITE_CORPO_TEMPLATE} caracteres")
+        posicoes = sorted({int(p) for p in _VARIAVEL_TEMPLATE.findall(corpo)})
+        if posicoes != list(range(1, len(posicoes) + 1)):
+            raise ValueError("As variáveis precisam ser {{1}}, {{2}}… em sequência")
+        if _VARIAVEL_TEMPLATE.match(corpo) or re.search(r"\{\{\d+\}\}$", corpo):
+            raise ValueError("O corpo do template não pode começar nem terminar com variável")
+        if sorted(v.position for v in self.variables) != posicoes:
+            raise ValueError("As variáveis informadas não batem com as do corpo do template")
+        self.body_text = corpo
+        return self
 
 
 class TemplateVariableOut(BaseModel):
@@ -174,18 +213,13 @@ class TemplateVariableOut(BaseModel):
     position: int
     internal_name: str
     campo_sugerido: str | None = None
+    exemplo: str | None = None
 
 
 class TemplateVariableUpdate(BaseModel):
     campo_sugerido: str | None = None
 
-    @field_validator("campo_sugerido")
-    @classmethod
-    def validar_campo(cls, valor: str | None) -> str | None:
-        if valor is not None and valor not in CAMPOS_CLIENTE:
-            validos = ", ".join(sorted(CAMPOS_CLIENTE.keys()))
-            raise ValueError(f"Campo inválido ({validos})")
-        return valor
+    _validar_campo = field_validator("campo_sugerido")(_validar_campo_cliente)
 
 
 class TemplateOut(BaseModel):

@@ -40,10 +40,10 @@ class MetaClient:
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}
 
-    async def _request(self, method: str, path: str, **kwargs) -> dict:
+    async def _request(self, method: str, path: str, headers: dict | None = None, **kwargs) -> dict:
         async with httpx.AsyncClient(timeout=30, transport=self._transport) as client:
             response = await client.request(
-                method, f"{self.base_url}/{path}", headers=self._headers(), **kwargs
+                method, f"{self.base_url}/{path}", headers=headers or self._headers(), **kwargs
             )
         if response.status_code >= 400:
             raise MetaAPIError(response.status_code, response.json())
@@ -71,6 +71,29 @@ class MetaClient:
 
     async def create_template(self, waba_id: str, payload: dict) -> dict:
         return await self._request("POST", f"{waba_id}/message_templates", json=payload)
+
+    async def app_id(self) -> str:
+        """App da Meta dono do token: é nele que a Resumable Upload guarda o arquivo."""
+        data = await self._request("GET", "app", params={"fields": "id"})
+        return str(data["id"])
+
+    async def subir_arquivo_template(self, nome: str, conteudo: bytes, mime: str) -> str:
+        """Sobe a imagem de exemplo do cabeçalho pela Resumable Upload API e
+        devolve o handle ("h") que o cadastro de template pede em
+        example.header_handle. O media id de envio (upload_media) não serve aqui."""
+
+        sessao = await self._request(
+            "POST",
+            f"{await self.app_id()}/uploads",
+            params={"file_name": nome, "file_length": len(conteudo), "file_type": mime},
+        )
+        data = await self._request(
+            "POST",
+            sessao["id"],
+            headers={"Authorization": f"OAuth {self.access_token}", "file_offset": "0"},
+            content=conteudo,
+        )
+        return str(data["h"])
 
     async def list_phone_numbers(self, waba_id: str) -> list[dict]:
         data = await self._request(

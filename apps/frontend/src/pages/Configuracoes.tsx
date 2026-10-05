@@ -6,6 +6,7 @@ import DisparoCard from "../components/config/DisparoCard";
 import Faixas from "./Faixas";
 import NumerosCard from "../components/config/NumerosCard";
 import OrcamentoCard from "../components/config/OrcamentoCard";
+import PreviaWhatsapp from "../components/PreviaWhatsapp";
 import LojasCard from "../components/config/LojasCard";
 import JanelaPagamentoCard from "../components/config/JanelaPagamentoCard";
 import JurosMultaCard from "../components/config/JurosMultaCard";
@@ -585,7 +586,11 @@ export default function Configuracoes() {
 
                 {testeTemplate && (
                   <div className="template-preview">
-                    <div className="template-preview-bubble">{renderizarPreviewTeste(testeTemplate)}</div>
+                    <PreviaWhatsapp
+                      texto={renderizarPreviewTeste(testeTemplate)}
+                      cabecalhoImagem={testeTemplate.header_type === "image"}
+                      imagemUrl={testeTemplate.image_url}
+                    />
                     {testeTemplate.variables.length > 0 && (
                       <div className="template-preview-vars">
                         {testeTemplate.variables.map((v) => (

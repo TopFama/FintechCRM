@@ -67,6 +67,13 @@ def _meta(request: httpx.Request) -> httpx.Response:
             TEMPLATES.append(novo)
             return httpx.Response(200, json={"id": novo["id"], "status": "PENDING", "category": body.get("category")})
         return httpx.Response(200, json={"data": TEMPLATES})
+    # Resumable Upload da imagem de exemplo do cabeçalho (envio para aprovação)
+    if path == "app":
+        return httpx.Response(200, json={"id": "APP_TESTE"})
+    if path == "APP_TESTE/uploads":
+        return httpx.Response(200, json={"id": "upload:SESSAO_TESTE"})
+    if path == "upload:SESSAO_TESTE":
+        return httpx.Response(200, json={"h": "4::HANDLE_TESTE"})
     if path.endswith("/phone_numbers"):
         return httpx.Response(200, json={"data": NUMEROS})
     if path.endswith("/messages"):

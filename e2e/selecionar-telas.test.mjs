@@ -136,6 +136,12 @@ for (const [arquivo, { liga, nao }] of Object.entries(SERVICOS)) {
   });
 }
 
+test("prévia do WhatsApp liga as telas que mostram template, não as outras", () => {
+  const r = sel(`${F}components/PreviaWhatsapp.tsx`);
+  for (const t of ["templates", "faixas", "fila", "disparo"]) assert.ok(r.tags.includes(t), t);
+  for (const t of ["cobranca", "dashboard", "relatorios"]) assert.ok(!r.tags.includes(t), t);
+});
+
 test("seta_client.py liga o que consulta o SETA, não o resto", () => {
   const r = sel(`${B}seta_client.py`);
   for (const t of ["cobranca", "pagamentos", "efetividade", "remarketing", "campanhas", "importacao"]) assert.ok(r.tags.includes(t), t);

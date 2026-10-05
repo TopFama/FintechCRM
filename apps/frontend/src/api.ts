@@ -213,8 +213,10 @@ export const api = {
     }),
 
   listTemplates: () => request<Template[]>("/templates"),
-  createTemplate: (payload: unknown) =>
+  createTemplate: (payload: TemplateCreate) =>
     request<Template>("/templates", { method: "POST", body: JSON.stringify(payload) }),
+  enviarTemplateParaAprovacao: (id: string) =>
+    request<Template>(`/templates/${id}/enviar-para-aprovacao`, { method: "POST" }),
   syncTemplatesFromMeta: () => request<Template[]>("/templates/meta/sync", { method: "POST" }),
   refreshTemplateStatus: (id: string) =>
     request<Template>(`/templates/${id}/refresh-status`, { method: "POST" }),
@@ -644,6 +646,17 @@ export interface TemplateVariable {
   position: number;
   internal_name: string;
   campo_sugerido: string | null;
+  exemplo: string | null;
+}
+
+export interface TemplateCreate {
+  name: string;
+  meta_template_name: string;
+  category: "UTILITY" | "MARKETING";
+  header_type: "none" | "image";
+  body_text: string;
+  waba_id?: string;
+  variables: { position: number; internal_name: string; exemplo: string; campo_sugerido: string | null }[];
 }
 
 // Campo do cliente disponível pra mapear numa variável de template — "exemplo"
@@ -686,6 +699,7 @@ export interface Template {
   body_text: string;
   status: "draft" | "pending" | "approved" | "rejected";
   meta_status_raw: string | null;
+  meta_template_id: string | null;
   waba_id: string | null;
   variables: TemplateVariable[];
 }
