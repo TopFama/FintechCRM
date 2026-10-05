@@ -138,7 +138,6 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     const novo = card(page, "Novo template");
     await novo.getByRole("button", { name: "Criar template" }).click();
     await campo(novo, "Nome interno").fill("Com imagem");
-    await campo(novo, /Nome do template na Meta/).fill("com_imagem");
     await campo(novo, "Cabeçalho com imagem?").selectOption("image");
     await campo(novo, /Corpo do template/).fill("Oi {{1}}, sua fatura chegou.");
     await campo(novo, "Exemplo de {{1}}").fill("Maria");
