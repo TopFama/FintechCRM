@@ -332,7 +332,7 @@ def export_invalid_phones(
     )
 
 
-DispatchSortColumn = Literal["codigo_cliente", "faixa", "nome", "valor", "telefone", "enviado_em"]
+DispatchSortColumn = Literal["codigo_cliente", "faixa", "nome", "loja", "valor", "telefone", "enviado_em"]
 
 
 def _to_report_item(item: models.QueueItem) -> schemas.DispatchReportItemOut:
@@ -340,6 +340,7 @@ def _to_report_item(item: models.QueueItem) -> schemas.DispatchReportItemOut:
         codigo_cliente=item.codigo_cliente,
         faixa=item.faixa.name if item.faixa else "",
         nome=item.nome,
+        lojas=[l for l in (item.lojas or "").split(",") if l],
         valor=item.valor,
         telefone=item.whatsapp_number.display_phone_number if item.whatsapp_number else "",
         enviado_em=item.sent_at,
@@ -375,12 +376,13 @@ def export_dispatch_report(
     _user: models.User = Depends(get_current_user),
 ):
     rows_data = consultas_fila.envios_realizados(db, faixa_id, de, ate, campanha=campanha).all()
-    headers = ["Código do cliente", "Faixa de atraso", "Nome", "Valor cobrado", "Telefone que cobrou", "Data/hora"]
+    headers = ["Código do cliente", "Faixa de atraso", "Nome", "Lojas", "Valor cobrado", "Telefone que cobrou", "Data/hora"]
     rows = [
         [
             item.codigo_cliente,
             item.faixa.name if item.faixa else "",
             formula_safe(item.nome),
+            (item.lojas or "").strip(","),
             formula_safe(item.valor or ""),
             item.whatsapp_number.display_phone_number if item.whatsapp_number else "",
             hora_br(item.sent_at),

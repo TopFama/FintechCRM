@@ -881,6 +881,7 @@ export interface DispatchReportItem {
   codigo_cliente: string;
   faixa: string;
   nome: string;
+  lojas: string[];
   valor: string | null;
   telefone: string;
   enviado_em: string;
