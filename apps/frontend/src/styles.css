@@ -1727,6 +1727,13 @@ button.excel:hover:not(:disabled) {
   vertical-align: middle;
   margin-left: 4px;
 }
+/* Colunas se arrastam pelo título; a coluna sob o arraste ganha um contorno */
+.tabela-por-faixa th[draggable="true"] {
+  cursor: grab;
+}
+.tabela-por-faixa th.th-alvo-arraste {
+  box-shadow: inset 0 0 0 2px var(--color-primary);
+}
 /* Nome da faixa fica à esquerda, como nas outras tabelas */
 .tabela-por-faixa th:first-child,
 .tabela-por-faixa td:first-child {

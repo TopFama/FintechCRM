@@ -329,6 +329,10 @@ export const api = {
   listQueue: (faixaId: string, params: { limit: number; offset: number } & OrdenacaoParams) =>
     request<{ total: number; itens: QueueItem[] }>(`/faixas/${faixaId}/queue?${montarQuery(params)}`),
 
+  /** Ordem das colunas da tabela "Por faixa", salva na conta do usuário (vazia = padrão). */
+  colunasPorFaixa: () => request<{ colunas: string[] }>("/dashboard/colunas-por-faixa"),
+  salvarColunasPorFaixa: (colunas: string[]) =>
+    request<{ colunas: string[] }>("/dashboard/colunas-por-faixa", { method: "PUT", body: JSON.stringify({ colunas }) }),
   janelaPagamento: (periodo: { de?: string; ate?: string }, signal?: AbortSignal) =>
     request<PagosJanela>(`/dashboard/janela-pagamento?${montarQuery(periodo)}`, { signal }),
   // auto=true: atualização automática da tela, o backend pode responder do cache compartilhado

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError, DashboardPorFaixa, DashboardSummary, DashboardTotalPorFaixa, PagosJanela, foiCancelada } from "../api";
 import EfetividadeCard from "../components/dashboard/EfetividadeCard";
@@ -251,12 +251,55 @@ function ResumoFila({
       : null,
     porFaixaSort.sortDir
   );
+  const [ordem, setOrdem] = useState<ColunaPorFaixa[]>(ORDEM_PADRAO);
+  const [arrastada, setArrastada] = useState<ColunaPorFaixa | null>(null);
+  const [alvo, setAlvo] = useState<ColunaPorFaixa | null>(null);
+  useEffect(() => {
+    api
+      .colunasPorFaixa()
+      .then((r) => setOrdem(ordemColunas(r.colunas)))
+      .catch(() => {}); // sem a ordem salva, fica a padrão
+  }, []);
+
+  // Solta a coluna arrastada no lugar da coluna alvo e salva na conta do usuário
+  function soltar(chave: ColunaPorFaixa) {
+    if (!arrastada || arrastada === chave) return;
+    const nova = ordem.filter((c) => c !== arrastada);
+    nova.splice(nova.indexOf(chave) + (ordem.indexOf(arrastada) < ordem.indexOf(chave) ? 1 : 0), 0, arrastada);
+    setOrdem(nova);
+    api.salvarColunasPorFaixa(nova).catch(() => {}); // sem salvar, a ordem vale só nesta visita
+  }
+
+  // Faixa fica sempre na primeira posição (coluna fixa na rolagem); as outras se arrastam pelo título
   const th = (chave: "faixa" | ColunaPorFaixa, rotulo: string, dica?: Dica) => (
     <SortableTh
       key={chave}
       active={porFaixaSort.sortKey === chave}
       dir={porFaixaSort.sortDir}
       onSort={() => porFaixaSort.toggleSort(chave)}
+      {...(chave !== "faixa" && {
+        draggable: true,
+        className: alvo === chave && arrastada !== chave ? "th-alvo-arraste" : undefined,
+        onDragStart: (e) => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", chave);
+          setArrastada(chave);
+        },
+        onDragOver: (e) => {
+          if (!arrastada) return;
+          e.preventDefault();
+          setAlvo(chave);
+        },
+        onDragLeave: () => setAlvo((a) => (a === chave ? null : a)),
+        onDrop: (e) => {
+          e.preventDefault();
+          soltar(chave);
+        },
+        onDragEnd: () => {
+          setArrastada(null);
+          setAlvo(null);
+        },
+      })}
     >
       {rotulo}
       {dica && <DicaIndicador titulo={rotulo} texto={dica.texto} formula={dica.formula} />}
@@ -321,31 +364,21 @@ function ResumoFila({
               <thead>
                 <tr>
                   {th("faixa", "Faixa")}
-                  {th("pending", "Pendente")}
-                  {th("error", "Erro")}
-                  {th("sent", "Enviado")}
-                  {th("clientes_cobrados", "Clientes cobrados", DICAS.clientes_cobrados)}
-                  {th("frequencia", "Frequência", DICAS.frequencia)}
-                  {th("pagaram", "Pagaram após cobrança", DICAS.pagaram)}
-                  {th("conversao", "%\u00a0Conv.", DICAS.conversao)}
-                  {th("representatividade", "%\u00a0Rep.", DICAS.representatividade)}
-                  {th("valor_pago", "Valor pago", DICAS.valor_pago)}
+                  {ordem.map((c) => th(c, COLUNAS[c].rotulo, COLUNAS[c].dica))}
                 </tr>
               </thead>
               <tbody>
                 {porFaixaOrdenado.map((row) => {
                   const link = (aba: string) => linkRelatorio(aba, periodo, { faixa_id: row.faixa_id });
-                  const celula = (aba: string, valor: number, rotulo: string) => (
-                    <td>
-                      <Link
-                        to={link(aba)}
-                        className="link-celula"
-                        aria-label={`Ver ${formatNumero(valor)} ${rotulo} da faixa ${row.faixa}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {formatNumero(valor)}
-                      </Link>
-                    </td>
+                  const celula: CelulaLink = (aba, valor, rotulo) => (
+                    <Link
+                      to={link(aba)}
+                      className="link-celula"
+                      aria-label={`Ver ${formatNumero(valor)} ${rotulo} da faixa ${row.faixa}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {formatNumero(valor)}
+                    </Link>
                   );
                   return (
                     // A linha inteira abre os envios da faixa; cada número abre o próprio relatório
@@ -355,15 +388,9 @@ function ResumoFila({
                           {row.faixa}
                         </Link>
                       </td>
-                      {celula("pendentes", row.pending, "pendentes")}
-                      {celula("erros", row.error, "erros")}
-                      {celula("envios", row.sent, "enviados")}
-                      <td>{formatNumero(row.clientes_cobrados)}</td>
-                      <td>{formatDecimal(row.frequencia)}</td>
-                      {celula("pagamentos", row.pagaram, "clientes que pagaram")}
-                      <td>{formatPercentual(row.conversao)}</td>
-                      <td>{formatPercentual(row.representatividade)}</td>
-                      <td>{formatBRL(row.valor_pago)}</td>
+                      {ordem.map((c) => (
+                        <td key={c}>{COLUNAS[c].celula(row, celula)}</td>
+                      ))}
                     </tr>
                   );
                 })}
@@ -371,16 +398,9 @@ function ResumoFila({
               <tfoot>
                 <tr className="linha-total">
                   <td className="cell-strong">Total</td>
-                  <td>{formatNumero(total.pending)}</td>
-                  <td>{formatNumero(total.error)}</td>
-                  <td>{formatNumero(total.sent)}</td>
-                  <td>{formatNumero(total.clientes_cobrados)}</td>
-                  <td>{formatDecimal(total.frequencia)}</td>
-                  <td>{formatNumero(total.pagaram)}</td>
-                  <td>{formatPercentual(total.conversao)}</td>
-                  {/* Sempre 100%: não traz nada */}
-                  <td />
-                  <td>{formatBRL(total.valor_pago)}</td>
+                  {ordem.map((c) => (
+                    <td key={c}>{COLUNAS[c].total(total)}</td>
+                  ))}
                 </tr>
               </tfoot>
             </table>
@@ -427,6 +447,64 @@ const DICAS: Record<
     formula: "Σ valor pago após a cobrança",
   },
 };
+
+type CelulaLink = (aba: string, valor: number, rotulo: string) => ReactNode;
+
+// Colunas da tabela "Por faixa" depois da Faixa: título, célula da linha e célula do total
+const COLUNAS: Record<
+  ColunaPorFaixa,
+  {
+    rotulo: string;
+    dica?: Dica;
+    celula: (row: LinhaPorFaixa, link: CelulaLink) => ReactNode;
+    total: (t: ReturnType<typeof totalPorFaixa>) => ReactNode;
+  }
+> = {
+  pending: { rotulo: "Pendente", celula: (r, l) => l("pendentes", r.pending, "pendentes"), total: (t) => formatNumero(t.pending) },
+  error: { rotulo: "Erro", celula: (r, l) => l("erros", r.error, "erros"), total: (t) => formatNumero(t.error) },
+  sent: { rotulo: "Enviado", celula: (r, l) => l("envios", r.sent, "enviados"), total: (t) => formatNumero(t.sent) },
+  clientes_cobrados: {
+    rotulo: "Clientes cobrados",
+    dica: DICAS.clientes_cobrados,
+    celula: (r) => formatNumero(r.clientes_cobrados),
+    total: (t) => formatNumero(t.clientes_cobrados),
+  },
+  frequencia: {
+    rotulo: "Frequência",
+    dica: DICAS.frequencia,
+    celula: (r) => formatDecimal(r.frequencia),
+    total: (t) => formatDecimal(t.frequencia),
+  },
+  pagaram: {
+    rotulo: "Pagaram após cobrança",
+    dica: DICAS.pagaram,
+    celula: (r, l) => l("pagamentos", r.pagaram, "clientes que pagaram"),
+    total: (t) => formatNumero(t.pagaram),
+  },
+  representatividade: {
+    rotulo: "%\u00a0Rep.",
+    dica: DICAS.representatividade,
+    celula: (r) => formatPercentual(r.representatividade),
+    total: () => null, // sempre 100%: não traz nada
+  },
+  conversao: {
+    rotulo: "%\u00a0Conv.",
+    dica: DICAS.conversao,
+    celula: (r) => formatPercentual(r.conversao),
+    total: (t) => formatPercentual(t.conversao),
+  },
+  valor_pago: { rotulo: "Valor pago", dica: DICAS.valor_pago, celula: (r) => formatBRL(r.valor_pago), total: (t) => formatBRL(t.valor_pago) },
+};
+
+// Ordem de quem ainda não arrastou nenhuma coluna
+const ORDEM_PADRAO = Object.keys(COLUNAS) as ColunaPorFaixa[];
+
+// Ordem salva na conta: ignora coluna que não existe mais e põe no fim, na
+// ordem padrão, coluna nova que a ordem salva ainda não tinha
+function ordemColunas(salvas: string[]): ColunaPorFaixa[] {
+  const validas = salvas.filter((c): c is ColunaPorFaixa => c in COLUNAS);
+  return [...new Set([...validas, ...ORDEM_PADRAO])];
+}
 
 // Colunas numéricas que vêm do backend em cada linha
 const CAMPOS_NUMERICOS = [

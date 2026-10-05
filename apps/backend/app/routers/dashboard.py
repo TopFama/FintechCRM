@@ -404,6 +404,24 @@ def _orcamento(db: Session, inicio: date, fim: date) -> schemas.OrcamentoProgres
     )
 
 
+@router.get("/colunas-por-faixa", response_model=schemas.ColunasPorFaixa)
+def colunas_por_faixa(user: models.User = Depends(get_current_user)):
+    return schemas.ColunasPorFaixa(colunas=user.colunas_por_faixa or [])
+
+
+@router.put("/colunas-por-faixa", response_model=schemas.ColunasPorFaixa)
+def salvar_colunas_por_faixa(
+    payload: schemas.ColunasPorFaixa,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Ordem das colunas da tabela "Por faixa" salva na conta: vale em qualquer
+    navegador em que o usuário entrar."""
+    user.colunas_por_faixa = payload.colunas or None
+    db.commit()
+    return payload
+
+
 @router.get("/janela-pagamento", response_model=schemas.PagosJanelaOut)
 def janela_pagamento(
     de: date | None = Query(None),
