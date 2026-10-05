@@ -54,7 +54,7 @@ type ColunaPagamento =
   | "valor_cobrado"
   | "valor_pago"
   | "primeiro_pagamento";
-type ColunaEnvio = "codigo_cliente" | "faixa" | "nome" | "valor" | "telefone" | "enviado_em";
+type ColunaEnvio = "codigo_cliente" | "faixa" | "nome" | "loja" | "valor" | "telefone" | "enviado_em";
 
 export default function Relatorios() {
   // Aba, período e faixa vivem na URL: um link do Dashboard abre direto no
@@ -635,6 +635,7 @@ export default function Relatorios() {
                       ["codigo_cliente", "Código do cliente"],
                       ["faixa", "Faixa de atraso"],
                       ["nome", "Nome"],
+                      ["loja", "Loja"],
                       ["valor", "Valor cobrado"],
                       ["telefone", "Telefone que cobrou"],
                       ["enviado_em", "Data/hora"],
@@ -657,6 +658,7 @@ export default function Relatorios() {
                     <td className="cell-strong">{r.codigo_cliente}</td>
                     <td>{r.faixa}</td>
                     <td>{r.nome || "—"}</td>
+                    <td className="text-muted">{r.lojas.length ? r.lojas.join(", ") : "—"}</td>
                     <td>{formatValorFila(r.valor)}</td>
                     <td className="text-muted">{r.telefone}</td>
                     <td className="text-faint">{formatDataHora(r.enviado_em)}</td>

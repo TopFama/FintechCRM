@@ -40,6 +40,17 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
     expect(nomes).toEqual([...nomes].sort((a, b) => a.localeCompare(b, "pt-BR")));
     const { linhas } = await baixar(page, () => page.getByRole("button", { name: /Baixar Excel/ }).click());
     expect(linhas.length - 1).toBe(await tabela(page).locator("tbody tr").count());
+    expect(linhas[0]).toContain("Lojas");
+  });
+
+  test("envios realizados: coluna Loja ordena no servidor", async ({ page }) => {
+    await aba(page, "Envios realizados").click();
+    await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
+    const pedido = page.waitForRequest((r) => r.url().includes("/relatorios/envios?") && r.url().includes("sort_by=loja"));
+    await tabela(page).getByRole("columnheader", { name: /^Loja/ }).click();
+    await pedido;
+    await expect(page.getByText("Carregando...")).toHaveCount(0);
+    await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
   });
 
   test("envios: filtro por faixa e por período", async ({ page }) => {

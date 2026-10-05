@@ -532,6 +532,7 @@ class DispatchReportItemOut(BaseModel):
     codigo_cliente: str
     faixa: str
     nome: str
+    lojas: list[str] = []
     valor: str | None
     telefone: str
     enviado_em: datetime
