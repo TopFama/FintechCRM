@@ -15,6 +15,8 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await expect(tabela.locator("tbody tr")).toHaveCount(3);
     await expect(tabela.locator("tbody tr", { hasText: "cobranca_atraso" })).toContainText("variavel_1, variavel_2, variavel_3, variavel_4");
     await expect(tabela.locator("tbody tr", { hasText: "promo_reprovada" }).locator(".badge")).toHaveText(/rejected|reprovado/i);
+    await expect(tabela.locator("tbody tr", { hasText: "promo_reprovada" })).toContainText("Marketing");
+    await expect(tabela.locator("tbody tr", { hasText: "cobranca_atraso" })).toContainText("Utilidade");
   });
 
   test("ordenar a tabela por nome e por status", async ({ page }) => {
@@ -58,44 +60,76 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await expect(tabela.locator(".template-preview-bubble")).not.toContainText("não mapeado");
   });
 
-  test("criar template: detecta variáveis, valida obrigatórios e cancela", async ({ page }) => {
+  test("criar template: nome em snake_case, idioma fixo, categorias, variáveis e cancela", async ({ page }) => {
     const novo = card(page, "Novo template");
     await novo.getByRole("button", { name: "Criar template" }).click();
+    await campo(novo, "Nome interno").fill("Cobrança Atraso 15 dias");
+    await expect(campo(novo, "Nome na Meta")).toHaveValue("cobranca_atraso_15_dias");
+    await campo(novo, "Nome na Meta").fill("Outro-Nome Ç");
+    await expect(campo(novo, "Nome na Meta")).toHaveValue("outro_nome_c");
+    await expect(campo(novo, "Idioma")).toHaveValue("Português (Brasil)");
+    await expect(campo(novo, "Idioma")).toBeDisabled();
+    expect(await campo(novo, "Categoria").locator("option").allInnerTexts()).toEqual(["Utilidade", "Marketing"]);
+
+    await campo(novo, /Corpo do template/).fill("{{1}}, pague {{3}}");
+    await expect(novo.locator(".field-error")).toHaveText([
+      "As variáveis precisam ser {{1}}, {{2}}… em sequência.",
+      "O corpo não pode começar nem terminar com variável.",
+    ]);
+    await expect(novo.getByRole("button", { name: "Salvar template" })).toBeDisabled();
+
     await campo(novo, /Corpo do template/).fill("Olá {{1}}, pague {{2}} até {{1}}.");
-    await expect(novo.getByText("Variáveis detectadas: variavel_1, variavel_2")).toBeVisible();
+    await expect(novo.getByText(/Variáveis detectadas: variavel_1, variavel_2/)).toBeVisible();
+    await expect(novo.locator(".field-error")).toHaveCount(0);
+    await campo(novo, "Nome interno").fill("");
     await novo.getByRole("button", { name: "Salvar template" }).click();
     expect(await campo(novo, "Nome interno").evaluate((e: HTMLInputElement) => e.validity.valid)).toBe(false);
     await novo.getByRole("button", { name: "Cancelar" }).click();
     await expect(novo.getByRole("button", { name: "Salvar template" })).toHaveCount(0);
   });
 
-  test("criar template local (rascunho) e enviar outro para análise na Meta", async ({ page }) => {
+  test("prévia com a formatação do WhatsApp e exemplos das variáveis", async ({ page }) => {
     const novo = card(page, "Novo template");
     await novo.getByRole("button", { name: "Criar template" }).click();
-    await campo(novo, "Nome interno").fill("Rascunho teste");
-    await campo(novo, /Nome do template na Meta/).fill("rascunho_teste");
-    await campo(novo, /Corpo do template/).fill("Oi {{1}}");
-    await novo.getByRole("button", { name: "Salvar template" }).click();
-    const tabela = card(page, "Templates cadastrados");
-    await expect(tabela.locator("tbody tr", { hasText: "Rascunho teste" }).locator(".badge")).toHaveText(/draft|rascunho/i);
-
-    await novo.getByRole("button", { name: "Criar template" }).click();
-    await campo(novo, "Nome interno").fill("Enviado Meta");
-    await campo(novo, /Nome do template na Meta/).fill("enviado_meta");
-    await campo(novo, /Corpo do template/).fill("Oi {{1}}, sua fatura {{2}}");
-    await novo.getByLabel("Enviar já para análise na Meta").check();
-    await novo.getByRole("button", { name: "Salvar template" }).click();
-    const linha = tabela.locator("tbody tr", { hasText: "Enviado Meta" });
-    await expect(linha.locator(".badge")).toHaveText(/pending|pendente/i);
-    await linha.getByRole("button", { name: "Atualizar status" }).click();
-    await expect(linha.locator(".badge")).toHaveText(/pending|pendente/i);
+    await campo(novo, /Corpo do template/).fill("Olá *{{1}}*, pague ~R$ 10~ _hoje_ com `pix`.\n- boleto\n- cartão\n> TopFama\n```linha mono```");
+    const bolha = novo.locator(".template-preview-bubble");
+    await expect(bolha.locator("strong")).toHaveText("{{1}}");
+    await campo(novo, "Campo do cliente de {{1}}").selectOption({ label: (await campo(novo, "Campo do cliente de {{1}}").locator("option").allInnerTexts()).find((o) => /nome/i.test(o))! });
+    await expect(campo(novo, "Exemplo de {{1}}")).not.toHaveValue("");
+    await campo(novo, "Exemplo de {{1}}").fill("Maria");
+    await expect(bolha.locator("strong")).toHaveText("Maria");
+    await expect(bolha.locator("s")).toHaveText("R$ 10");
+    await expect(bolha.locator("em")).toHaveText("hoje");
+    await expect(bolha.locator("code")).toHaveText("pix");
+    await expect(bolha.locator("li")).toHaveText(["boleto", "cartão"]);
+    await expect(bolha.locator("blockquote")).toHaveText("TopFama");
+    await expect(bolha.locator("pre")).toHaveText("linha mono");
+    await campo(novo, "Cabeçalho com imagem?").selectOption("image");
+    await expect(bolha.getByText("Imagem do cabeçalho")).toBeVisible();
+    await novo.getByRole("button", { name: "Cancelar" }).click();
   });
 
-  test("atualizar status de template nunca enviado à Meta mostra erro", async ({ page }) => {
-    permitirErrosConsole(page, "400");
-    const linha = card(page, "Templates cadastrados").locator("tbody tr", { hasText: "Rascunho teste" });
+  test("criar rascunho e enviar para aprovação na Meta", async ({ page }) => {
+    const novo = card(page, "Novo template");
+    const tabela = card(page, "Templates cadastrados");
+    await novo.getByRole("button", { name: "Criar template" }).click();
+    await campo(novo, "Nome interno").fill("Enviado Meta");
+    await campo(novo, /Corpo do template/).fill("Oi {{1}}, sua fatura {{2}} chegou.");
+    await campo(novo, "Exemplo de {{1}}").fill("Maria");
+    await campo(novo, "Exemplo de {{2}}").fill("189,90");
+    await novo.getByRole("button", { name: "Salvar template" }).click();
+    const linha = tabela.locator("tbody tr", { hasText: "Enviado Meta" });
+    await expect(linha).toContainText("enviado_meta");
+    await expect(linha.locator(".badge")).toHaveText(/draft|rascunho/i);
+    const salvo = (await apiGet(page, "/templates")).find((t: any) => t.name === "Enviado Meta");
+    expect(salvo.language).toBe("pt_BR");
+    expect(salvo.variables.map((v: any) => v.exemplo)).toEqual(["Maria", "189,90"]);
+
+    await linha.getByRole("button", { name: "Enviar para aprovação" }).click();
+    await expect(linha.locator(".badge")).toHaveText(/pending|pendente/i);
+    await expect(page.locator(".success-box").first()).toContainText("enviado para aprovação");
     await linha.getByRole("button", { name: "Atualizar status" }).click();
-    await expect(page.locator(".error-box").first()).toContainText("não foi submetido");
+    await expect(linha.locator(".badge")).toHaveText(/pending|pendente/i);
   });
 
   test("imagem do cabeçalho: subir e trocar", async ({ page }) => {
@@ -104,11 +138,16 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     const novo = card(page, "Novo template");
     await novo.getByRole("button", { name: "Criar template" }).click();
     await campo(novo, "Nome interno").fill("Com imagem");
-    await campo(novo, /Nome do template na Meta/).fill("com_imagem");
     await campo(novo, "Cabeçalho com imagem?").selectOption("image");
-    await campo(novo, /Corpo do template/).fill("Oi {{1}}");
+    await campo(novo, /Corpo do template/).fill("Oi {{1}}, sua fatura chegou.");
+    await campo(novo, "Exemplo de {{1}}").fill("Maria");
     await novo.getByRole("button", { name: "Salvar template" }).click();
     const linha = card(page, "Templates cadastrados").locator("tbody tr", { hasText: "Com imagem" });
+
+    // sem imagem a Meta recusaria: o backend barra antes
+    permitirErrosConsole(page, "400");
+    await linha.getByRole("button", { name: "Enviar para aprovação" }).click();
+    await expect(page.locator(".error-box").first()).toContainText("Suba a imagem do cabeçalho");
     const imagem = async () =>
       (await apiGet(page, "/templates")).find((t: any) => t.name === "Com imagem").image_url as string | null;
 
@@ -152,6 +191,13 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await validacao.getByRole("button", { name: "Usar imagem otimizada" }).click();
     await expect(page.locator(".success-box").first()).toContainText("Imagem otimizada salva");
     await expect.poll(imagem).toMatch(/\/media\/.+\.jpg\?v=/);
+  });
+
+  test("template com imagem vai para aprovação com a imagem do cabeçalho", async ({ page }) => {
+    const linha = card(page, "Templates cadastrados").locator("tbody tr", { hasText: "Com imagem" });
+    await linha.getByRole("button", { name: "Enviar para aprovação" }).click();
+    await expect(linha.locator(".badge").first()).toHaveText(/pending|pendente/i);
+    await expect(linha.getByRole("button", { name: "Enviar para aprovação" })).toHaveCount(0);
   });
 
   test("falha na sincronização aparece como erro e o botão volta ao normal", async ({ page }) => {

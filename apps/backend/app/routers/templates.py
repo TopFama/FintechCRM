@@ -286,17 +286,37 @@ def _resolve_waba_id(db: Session, waba_id: str | None) -> str:
     return waba_ids[0]
 
 
+# Todo template criado na plataforma é em português; os sincronizados da Meta
+# mantêm o idioma que vier de lá.
+IDIOMA_TEMPLATE = "pt_BR"
+
+
 @router.post("", response_model=schemas.TemplateOut, status_code=status.HTTP_201_CREATED)
-async def create_template(
+def create_template(
     payload: schemas.TemplateCreate,
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
+    """Salva o template como rascunho; a Meta só recebe pelo
+    `POST /{id}/enviar-para-aprovacao`, depois da imagem do cabeçalho."""
+
     waba_id = _resolve_waba_id(db, payload.waba_id)
+    repetido = (
+        db.query(models.Template.id)
+        .filter(
+            models.Template.waba_id == waba_id,
+            models.Template.meta_template_name == payload.meta_template_name,
+            models.Template.language == IDIOMA_TEMPLATE,
+        )
+        .first()
+    )
+    if repetido:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Já existe um template com esse nome nesta WABA")
+
     template = models.Template(
         name=payload.name,
         meta_template_name=payload.meta_template_name,
-        language=payload.language,
+        language=IDIOMA_TEMPLATE,
         category=payload.category,
         header_type=payload.header_type,
         body_text=payload.body_text,
@@ -308,39 +328,79 @@ async def create_template(
     for var in payload.variables:
         db.add(
             models.TemplateVariable(
-                template_id=template.id, position=var.position, internal_name=var.internal_name
+                template_id=template.id,
+                position=var.position,
+                internal_name=var.internal_name,
+                campo_sugerido=var.campo_sugerido,
+                exemplo=(var.exemplo or "").strip() or None,
             )
         )
-    db.flush()
+    db.commit()
+    return _with_variables(db.query(models.Template)).filter(models.Template.id == template.id).first()
 
-    if payload.submit_to_meta:
-        try:
-            token = token_da_waba(db, waba_id)
-        except MetaTokenConfigError as exc:
-            db.commit()
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
-        client = MetaClient(access_token=token)
-        components = [{"type": "BODY", "text": payload.body_text}]
-        if payload.header_type == models.TemplateHeaderType.image:
-            components.insert(0, {"type": "HEADER", "format": "IMAGE"})
-        try:
-            result = await client.create_template(
-                waba_id,
-                {
-                    "name": payload.meta_template_name,
-                    "language": payload.language,
-                    "category": payload.category,
-                    "components": components,
-                },
+@router.post("/{template_id}/enviar-para-aprovacao", response_model=schemas.TemplateOut)
+async def enviar_para_aprovacao(
+    template_id: str,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Cadastra o rascunho na Meta com os exemplos que a análise exige: o valor
+    de cada variável (example.body_text) e, com cabeçalho de imagem, a imagem
+    já subida no template (example.header_handle)."""
+
+    template = _with_variables(db.query(models.Template)).filter(
+        models.Template.id == template_id
+    ).first()
+    if not template:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
+    if template.meta_template_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Este template já foi enviado para a Meta")
+    if not template.waba_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "WABA não identificada para este template")
+    if any(not v.exemplo for v in template.variables):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Preencha o exemplo de todas as variáveis antes de enviar para aprovação"
+        )
+    caminho_imagem = None
+    if template.header_type == models.TemplateHeaderType.image:
+        caminho_imagem = arquivo_imagem(template)
+        if not caminho_imagem:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "Suba a imagem do cabeçalho antes de enviar para aprovação"
             )
-            template.meta_template_id = result.get("id")
-            template.status = models.TemplateStatus.pending
-            template.meta_status_raw = "PENDING"
-        except MetaAPIError as exc:
-            db.commit()
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
+    try:
+        client = MetaClient(access_token=token_da_waba(db, template.waba_id))
+    except MetaTokenConfigError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    corpo: dict = {"type": "BODY", "text": template.body_text}
+    if template.variables:
+        corpo["example"] = {"body_text": [[v.exemplo for v in template.variables]]}
+    componentes = [corpo]
+    try:
+        if caminho_imagem:
+            with open(caminho_imagem, "rb") as f:
+                conteudo = f.read()
+            mime = "image/png" if caminho_imagem.endswith(".png") else "image/jpeg"
+            handle = await client.subir_arquivo_template(os.path.basename(caminho_imagem), conteudo, mime)
+            componentes.insert(0, {"type": "HEADER", "format": "IMAGE", "example": {"header_handle": [handle]}})
+        result = await client.create_template(
+            template.waba_id,
+            {
+                "name": template.meta_template_name,
+                "language": template.language,
+                "category": template.category,
+                "components": componentes,
+            },
+        )
+    except MetaAPIError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+    template.meta_template_id = result.get("id")
+    template.status = _map_meta_status(result.get("status") or "PENDING")
+    template.meta_status_raw = result.get("status") or "PENDING"
     db.commit()
     db.refresh(template)
     return template

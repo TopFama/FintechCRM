@@ -140,6 +140,8 @@ class TemplateVariable(Base):
     # de referência na pré-visualização da aba Templates; o mapeamento que
     # realmente vale no envio é o de FaixaVariableMapping, por faixa.
     campo_sugerido: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Valor de exemplo que vai para a Meta ao enviar o template para aprovação
+    exemplo: Mapped[str | None] = mapped_column(String, nullable=True)
 
     template: Mapped[Template] = relationship(back_populates="variables")
 

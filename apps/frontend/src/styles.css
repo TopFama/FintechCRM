@@ -784,6 +784,51 @@ label {
   margin-bottom: 16px;
 }
 
+.template-preview-bubble img {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.template-preview-sem-imagem {
+  display: grid;
+  place-items: center;
+  height: 120px;
+  max-width: 280px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  background: var(--color-neutral-bg);
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.template-preview-bubble code,
+.template-preview-bubble pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+}
+
+.template-preview-bubble pre {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.template-preview-bubble ul,
+.template-preview-bubble ol {
+  margin: 0;
+  padding-left: 20px;
+  white-space: normal;
+}
+
+.template-preview-bubble blockquote {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
 .template-preview-vars {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));

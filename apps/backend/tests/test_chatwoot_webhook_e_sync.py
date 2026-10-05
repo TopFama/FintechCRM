@@ -430,23 +430,18 @@ class TestChatwootWebhookESync(unittest.TestCase):
         self.assertEqual(estado_durante_segundo_await.get("lead1_status"), "novo")
 
 
-    def test_template_create_exige_idioma(self):
-        """Valida que a criação de template não presume idioma e exige do usuário."""
-        with self.assertRaises(ValidationError):
-            TemplateCreate(
-                name="teste",
-                meta_template_name="teste",
-                language="",
-                body_text="Olá {{1}}",
-            )
-        # Com idioma explícito deve validar com sucesso
+    def test_template_create_idioma_fixo(self):
+        """O cadastro não recebe idioma: todo template criado na plataforma é pt_BR."""
         tc = TemplateCreate(
             name="teste",
             meta_template_name="teste",
-            language="pt_BR",
-            body_text="Olá {{1}}",
+            language="en_US",
+            body_text="Olá {{1}}, tudo bem?",
+            variables=[{"position": 1, "internal_name": "variavel_1"}],
         )
-        self.assertEqual(tc.language, "pt_BR")
+        self.assertFalse(hasattr(tc, "language"))
+        with self.assertRaises(ValidationError):
+            TemplateCreate(name="teste", meta_template_name="Teste", body_text="Olá.")
 
 
 if __name__ == "__main__":

@@ -144,7 +144,7 @@ ele é cadastrado em **Configurações → Tokens da Meta** e guardado cifrado n
      vão disparar e clique em **Importar selecionados**. No card **Números de WhatsApp** informe a inbox do
      Chatwoot de cada número e desative os que não devem enviar.
 6. **Configurações → Templates**: use **"Sincronizar templates da Meta"** para puxar os templates já aprovados,
-   ou crie um novo template pelo próprio portal (com a opção de já submeter para aprovação).
+   ou crie um novo template pelo próprio portal (salvo como rascunho e enviado pelo botão "Enviar para aprovação").
 
 Sem um token ativo cadastrado e vinculado ao número ou à sua WABA, sincronizar templates, criar template
 na Meta e disparar mensagens vão falhar com aviso de token não configurado.
@@ -252,8 +252,13 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
 1. **Números** — em **Configurações → Conexões**, cadastre o token da Meta (com o WABA ID) e
    importe os números da WABA (ver "Configurando a API da Meta" acima).
 2. **Templates** — sincronize os templates já aprovados na Meta (por WABA ID) ou crie um novo
-   template pelo portal (com opção de já submeter para análise da Meta e acompanhar o status de
-   aprovação depois). Templates com cabeçalho de imagem permitem subir a imagem, reaproveitada em
+   template pelo portal. O cadastro é sempre em português (pt_BR, sem edição), com categoria
+   Utilidade ou Marketing, nome na Meta formatado em snake_case enquanto se digita, exemplo de cada
+   variável (como na tela da Meta) e prévia com a formatação do WhatsApp (*negrito*, _itálico_,
+   ~tachado~, ```mono```, listas e citação). O template nasce rascunho; o botão "Enviar para
+   aprovação" da tabela manda para a Meta com os exemplos e, se tiver cabeçalho, a imagem já subida
+   (por isso a imagem vem antes do envio), e o status é acompanhado depois. Templates sincronizados
+   da Meta continuam valendo em qualquer idioma. Templates com cabeçalho de imagem permitem subir a imagem, reaproveitada em
    todo envio daquele template; se ela passar do limite do WhatsApp, o sistema mostra a versão
    otimizada para o usuário aprovar (ver "Limitações conhecidas").
 3. **Faixas de cobrança** (**Configurações → Faixas**) — as faixas da régua (faixas de atraso)
@@ -598,10 +603,13 @@ Só é preciso refazer isto se a VPS, as chaves ou a conta do Tailscale mudarem.
   aprovar (`POST /templates/{id}/image/confirmar`) ou recusar
   (`DELETE /templates/{id}/image/pendente`); recusando, o template fica com a imagem anterior e o
   aviso pede uma imagem de até 5 MB.
-- **Submissão de template para aprovação**: o endpoint de criação já está implementado
-  (`POST /templates`, com `submit_to_meta=true`), mas os requisitos exatos de formatação de
-  componentes variam por categoria — revise o payload em `app/routers/templates.py` contra a
-  documentação oficial antes de depender disso em produção.
+- **Envio de template para aprovação** (`POST /templates/{id}/enviar-para-aprovacao`): manda
+  `example.body_text` com o exemplo gravado de cada variável e, com cabeçalho de imagem,
+  `example.header_handle` com a imagem do template subida pela Resumable Upload API da Meta (o app
+  vem de `GET /app` com o próprio token, sem configuração a mais). As regras de cadastro da Meta
+  (nome `[a-z0-9_]`, corpo até 1024 caracteres, variáveis em sequência e fora do começo e do fim)
+  ficam em `schemas.TemplateCreate`; a tela só espelha para formatar e avisar. Só Utilidade e
+  Marketing: Autenticação exige o formato próprio de código da Meta e não é cadastrada aqui.
 - **Retry de envio**: hoje, uma falha de envio marca o item como `error` e fica visível no
   dashboard; o único reprocessamento automático é o erro `131026` do Chatwoot, que tenta o próximo
   telefone do cadastro. Retry geral com backoff para os demais erros ainda não está implementado.

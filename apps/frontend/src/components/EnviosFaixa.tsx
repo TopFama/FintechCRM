@@ -1,7 +1,8 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, urlImagemTemplate, CampoCliente, Faixa, FaixaEnvio, FaixaVariableMappingIn, Template, TemplateVariable, WhatsappNumber } from "../api";
+import { api, CampoCliente, Faixa, FaixaEnvio, FaixaVariableMappingIn, Template, TemplateVariable, WhatsappNumber } from "../api";
 import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTrash } from "../icons";
+import PreviaWhatsapp from "./PreviaWhatsapp";
 
 type MapeamentoEdicao = { fonte_tipo: "coluna" | "campo_cliente"; valor: string };
 
@@ -416,16 +417,11 @@ export default function EnviosFaixa({
 
             {templateFinal && formNumberId && mostrarPreviewEnvio && (
               <div className="template-preview">
-                <div className="template-preview-bubble">
-                  {templateFinal.header_type === "image" && templateFinal.image_url && (
-                    <img
-                      src={urlImagemTemplate(templateFinal.image_url)}
-                      alt="Cabeçalho do template"
-                      style={{ width: "100%", maxWidth: 280, borderRadius: 8, marginBottom: 10, display: "block" }}
-                    />
-                  )}
-                  {renderizarPreviewForm(templateFinal)}
-                </div>
+                <PreviaWhatsapp
+                  texto={renderizarPreviewForm(templateFinal)}
+                  cabecalhoImagem={templateFinal.header_type === "image"}
+                  imagemUrl={templateFinal.image_url}
+                />
                 <p className="field-hint">
                   Valores entre colchetes vêm de "Coluna da planilha" (só o nome sugerido — o valor real é o da
                   planilha subida); os demais usam o exemplo do campo do cliente escolhido.

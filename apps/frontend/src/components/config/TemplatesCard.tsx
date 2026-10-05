@@ -1,10 +1,11 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
-import { api, CampoCliente, ImagemPendente, Template, urlImagemTemplate, WhatsappNumber } from "../../api";
+import { api, CampoCliente, ImagemPendente, Template, TemplateCreate, urlImagemTemplate, WhatsappNumber } from "../../api";
+import PreviaWhatsapp from "../PreviaWhatsapp";
 import SortableTh from "../SortableTh";
 import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTemplate } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 
-type ColunaTemplate = "meta_template_name" | "waba_id" | "status";
+type ColunaTemplate = "meta_template_name" | "waba_id" | "category" | "status";
 
 // Imagem que precisou ser comprimida: o usuário vê a original ao lado da
 // otimizada e decide se usa; só depois de aprovar ela entra no template.
@@ -19,6 +20,48 @@ function formatarTamanho(bytes: number): string {
   return bytes >= 1024 * 1024
     ? `${(bytes / (1024 * 1024)).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+const CATEGORIAS: { valor: TemplateCreate["category"]; rotulo: string }[] = [
+  { valor: "UTILITY", rotulo: "Utilidade" },
+  { valor: "MARKETING", rotulo: "Marketing" },
+];
+
+// Sincronizados da Meta podem vir em categoria que o cadastro não oferece
+function rotuloCategoria(categoria: string): string {
+  if (categoria === "AUTHENTICATION") return "Autenticação";
+  return CATEGORIAS.find((c) => c.valor === categoria)?.rotulo ?? categoria;
+}
+
+const FORM_VAZIO = {
+  name: "",
+  meta_template_name: "",
+  category: "UTILITY" as TemplateCreate["category"],
+  header_type: "none" as TemplateCreate["header_type"],
+  body_text: "",
+};
+
+// Espelho das regras da Meta que o backend confere (schemas.TemplateCreate):
+// aqui só formatam o nome enquanto digita e avisam antes de salvar.
+function formatarNomeTemplate(texto: string): string {
+  return texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[\s.-]+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+    .replace(/_+/g, "_")
+    .slice(0, 512);
+}
+
+function avisosDoCorpo(corpo: string, posicoes: number[]): string[] {
+  const texto = corpo.trim();
+  const avisos: string[] = [];
+  if (texto.length > 1024) avisos.push("O corpo passa de 1024 caracteres.");
+  if (posicoes.some((p, i) => p !== i + 1)) avisos.push("As variáveis precisam ser {{1}}, {{2}}… em sequência.");
+  if (/^\{\{\d+\}\}/.test(texto) || /\{\{\d+\}\}$/.test(texto))
+    avisos.push("O corpo não pode começar nem terminar com variável.");
+  return avisos;
 }
 
 function rotuloStatusTemplate(status: string): string {
@@ -65,6 +108,7 @@ export default function TemplatesCard() {
           if (templatesSort.sortKey === "waba_id") return t.waba_id || "";
           if (templatesSort.sortKey === "meta_template_name") return t.meta_template_name;
           if (templatesSort.sortKey === "status") return t.status;
+          if (templatesSort.sortKey === "category") return rotuloCategoria(t.category);
           return "";
         }
       : null,
@@ -87,15 +131,11 @@ export default function TemplatesCard() {
   const [testeVariaveis, setTesteVariaveis] = useState<Record<string, string>>({});
   const [testeEnviando, setTesteEnviando] = useState(false);
   const [testeResultado, setTesteResultado] = useState<{ ok: boolean; detalhe: string } | null>(null);
-  const [form, setForm] = useState({
-    name: "",
-    meta_template_name: "",
-    language: "pt_BR",
-    category: "UTILITY",
-    header_type: "none" as "none" | "image",
-    body_text: "",
-    submit_to_meta: false,
-  });
+  const [form, setForm] = useState(FORM_VAZIO);
+  // Enquanto o nome na Meta não é digitado à mão, ele acompanha o nome interno
+  const [nomeMetaEditado, setNomeMetaEditado] = useState(false);
+  const [exemplos, setExemplos] = useState<Record<number, { exemplo: string; campo: string }>>({});
+  const [enviandoAprovacao, setEnviandoAprovacao] = useState<string | null>(null);
 
   const wabaIds = useMemo(
     () => Array.from(new Set(numbers.map((n) => n.waba_id))),
@@ -212,29 +252,54 @@ export default function TemplatesCard() {
     return positions.map((position) => ({ position, internal_name: `variavel_${position}` }));
   }
 
+  const variaveisForm = detectVariables(form.body_text);
+  const avisosForm = avisosDoCorpo(form.body_text, variaveisForm.map((v) => v.position));
+  const textoPreviaForm = form.body_text.replace(/\{\{(\d+)\}\}/g, (match, pos) => exemplos[Number(pos)]?.exemplo || match);
+
+  function escolherCampoExemplo(posicao: number, campo: string) {
+    const exemplo = campos.find((c) => c.campo === campo)?.exemplo;
+    setExemplos((atual) => ({
+      ...atual,
+      [posicao]: { campo, exemplo: exemplo ?? atual[posicao]?.exemplo ?? "" },
+    }));
+  }
+
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
+    if (avisosForm.length > 0) return;
     setError(null);
     setSaving(true);
     try {
-      const variables = detectVariables(form.body_text);
-      const payload = { ...form, variables, waba_id: wabaIds.length > 1 ? selectedWabaId : undefined };
-      await api.createTemplate(payload);
+      const variables = variaveisForm.map((v) => ({
+        ...v,
+        exemplo: exemplos[v.position]?.exemplo ?? "",
+        campo_sugerido: exemplos[v.position]?.campo || null,
+      }));
+      await api.createTemplate({ ...form, variables, waba_id: wabaIds.length > 1 ? selectedWabaId : undefined });
       setShowCreate(false);
-      setForm({
-        name: "",
-        meta_template_name: "",
-        language: "pt_BR",
-        category: "UTILITY",
-        header_type: "none",
-        body_text: "",
-        submit_to_meta: false,
-      });
+      setForm(FORM_VAZIO);
+      setNomeMetaEditado(false);
+      setExemplos({});
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar template");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleEnviarAprovacao(t: Template) {
+    setError(null);
+    setAviso(null);
+    setEnviandoAprovacao(t.id);
+    try {
+      const atualizado = await api.enviarTemplateParaAprovacao(t.id);
+      setTemplates((prev) => prev.map((item) => (item.id === t.id ? atualizado : item)));
+      setAviso(`Template "${t.name}" enviado para aprovação na Meta.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao enviar para aprovação");
+    } finally {
+      setEnviandoAprovacao(null);
     }
   }
 
@@ -407,15 +472,32 @@ export default function TemplatesCard() {
             <div className="form-row">
               <div className="field">
                 <label htmlFor="tpl-nome-interno">Nome interno</label>
-                <input id="tpl-nome-interno" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-              </div>
-              <div className="field">
-                <label htmlFor="tpl-nome-do-template">Nome do template na Meta (snake_case)</label>
-                <input id="tpl-nome-do-template"
-                  value={form.meta_template_name}
-                  onChange={(e) => setForm({ ...form, meta_template_name: e.target.value })}
+                <input
+                  id="tpl-nome-interno"
+                  value={form.name}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      name: e.target.value,
+                      meta_template_name: nomeMetaEditado ? form.meta_template_name : formatarNomeTemplate(e.target.value),
+                    })
+                  }
                   required
                 />
+              </div>
+              <div className="field">
+                <label htmlFor="tpl-nome-do-template">Nome na Meta</label>
+                <input id="tpl-nome-do-template"
+                  value={form.meta_template_name}
+                  onChange={(e) => {
+                    setNomeMetaEditado(true);
+                    setForm({ ...form, meta_template_name: formatarNomeTemplate(e.target.value) });
+                  }}
+                  pattern="[a-z0-9_]+"
+                  maxLength={512}
+                  required
+                />
+                <p className="field-hint">Letras minúsculas, números e _</p>
               </div>
             </div>
             <div className="form-row">
@@ -434,16 +516,22 @@ export default function TemplatesCard() {
               )}
               <div className="field">
                 <label htmlFor="tpl-idioma">Idioma</label>
-                <input id="tpl-idioma" value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} />
+                <input id="tpl-idioma" value="Português (Brasil)" disabled />
               </div>
             </div>
             <div className="form-row">
               <div className="field">
                 <label htmlFor="tpl-categoria">Categoria</label>
-                <select id="tpl-categoria" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                  <option value="UTILITY">UTILITY</option>
-                  <option value="MARKETING">MARKETING</option>
-                  <option value="AUTHENTICATION">AUTHENTICATION</option>
+                <select
+                  id="tpl-categoria"
+                  value={form.category}
+                  onChange={(e) => setForm({ ...form, category: e.target.value as TemplateCreate["category"] })}
+                >
+                  {CATEGORIAS.map((c) => (
+                    <option key={c.valor} value={c.valor}>
+                      {c.rotulo}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="field">
@@ -463,23 +551,60 @@ export default function TemplatesCard() {
                 rows={4}
                 value={form.body_text}
                 onChange={(e) => setForm({ ...form, body_text: e.target.value })}
+                maxLength={1024}
                 required
               />
               <p className="field-hint">
-                Variáveis detectadas: {detectVariables(form.body_text).map((v) => v.internal_name).join(", ") || "nenhuma"}
+                *negrito* _itálico_ ~tachado~ ```mono``` · {form.body_text.trim().length}/1024 · Variáveis detectadas:{" "}
+                {variaveisForm.map((v) => v.internal_name).join(", ") || "nenhuma"}
               </p>
+              {avisosForm.map((a) => (
+                <p key={a} className="field-error">
+                  {a}
+                </p>
+              ))}
             </div>
-            <div className="field">
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={form.submit_to_meta}
-                  onChange={(e) => setForm({ ...form, submit_to_meta: e.target.checked })}
-                />
-                Enviar já para análise na Meta
-              </label>
+            {variaveisForm.length > 0 && (
+              <div className="template-preview-vars">
+                {variaveisForm.map((v) => (
+                  <Fragment key={v.position}>
+                    <div className="field">
+                      <label htmlFor={`tpl-campo-${v.position}`}>{`Campo do cliente de {{${v.position}}}`}</label>
+                      <select
+                        id={`tpl-campo-${v.position}`}
+                        value={exemplos[v.position]?.campo ?? ""}
+                        onChange={(e) => escolherCampoExemplo(v.position, e.target.value)}
+                      >
+                        <option value="">Não mapeado</option>
+                        {campos.map((c) => (
+                          <option key={c.campo} value={c.campo}>
+                            {c.rotulo}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`tpl-exemplo-${v.position}`}>{`Exemplo de {{${v.position}}}`}</label>
+                      <input
+                        id={`tpl-exemplo-${v.position}`}
+                        value={exemplos[v.position]?.exemplo ?? ""}
+                        onChange={(e) =>
+                          setExemplos((atual) => ({
+                            ...atual,
+                            [v.position]: { campo: atual[v.position]?.campo ?? "", exemplo: e.target.value },
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+                  </Fragment>
+                ))}
+              </div>
+            )}
+            <div className="template-preview">
+              <PreviaWhatsapp texto={textoPreviaForm} cabecalhoImagem={form.header_type === "image"} />
             </div>
-            <button type="submit" disabled={saving}>
+            <button type="submit" disabled={saving || avisosForm.length > 0}>
               {saving ? "Salvando..." : "Salvar template"}
             </button>
           </form>
@@ -517,6 +642,13 @@ export default function TemplatesCard() {
                     WABA
                   </SortableTh>
                   <th>Telefones</th>
+                  <SortableTh
+                    active={templatesSort.sortKey === "category"}
+                    dir={templatesSort.sortDir}
+                    onSort={() => templatesSort.toggleSort("category")}
+                  >
+                    Tipo
+                  </SortableTh>
                   <SortableTh active={templatesSort.sortKey === "status"} dir={templatesSort.sortDir} onSort={() => templatesSort.toggleSort("status")}>
                     Status
                   </SortableTh>
@@ -545,6 +677,7 @@ export default function TemplatesCard() {
                         <td className="text-muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>
                           {tels.length > 0 ? tels.map((tel) => <div key={tel}>{tel}</div>) : "—"}
                         </td>
+                        <td>{rotuloCategoria(t.category)}</td>
                         <td>
                           <span className={`badge ${t.status}`}>{rotuloStatusTemplate(t.status)}</span>
                         </td>
@@ -588,14 +721,26 @@ export default function TemplatesCard() {
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <div style={{ display: "inline-grid", gap: 4 }}>
-                            <button
-                              type="button"
-                              className="secondary small"
-                              style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap", justifyContent: "center" }}
-                              onClick={() => handleRefreshStatus(t.id)}
-                            >
-                              Atualizar status
-                            </button>
+                            {t.meta_template_id ? (
+                              <button
+                                type="button"
+                                className="secondary small"
+                                style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap", justifyContent: "center" }}
+                                onClick={() => handleRefreshStatus(t.id)}
+                              >
+                                Atualizar status
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="small"
+                                style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap", justifyContent: "center" }}
+                                onClick={() => handleEnviarAprovacao(t)}
+                                disabled={enviandoAprovacao === t.id}
+                              >
+                                {enviandoAprovacao === t.id ? "Enviando..." : "Enviar para aprovação"}
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="secondary small"
@@ -617,9 +762,13 @@ export default function TemplatesCard() {
                       </tr>
                       {previewId === t.id && (
                         <tr>
-                          <td colSpan={7}>
+                          <td colSpan={8}>
                             <div className="template-preview">
-                              <div className="template-preview-bubble">{renderizarPreview(t)}</div>
+                              <PreviaWhatsapp
+                                texto={renderizarPreview(t)}
+                                cabecalhoImagem={t.header_type === "image"}
+                                imagemUrl={t.image_url}
+                              />
                               {t.variables.length === 0 ? (
                                 <p className="field-hint">Este template não tem variáveis.</p>
                               ) : (
@@ -648,7 +797,7 @@ export default function TemplatesCard() {
                       )}
                       {testeTemplateId === t.id && (
                         <tr>
-                          <td colSpan={7}>
+                          <td colSpan={8}>
                             <div className="card" style={{ margin: "8px 0", background: "var(--color-bg-subtle, #f9fafb)", border: "1px solid var(--color-border)" }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                                 <h4 style={{ margin: 0 }}>Testar template: {t.meta_template_name} ({t.language})</h4>
@@ -722,9 +871,11 @@ export default function TemplatesCard() {
                             )}
 
                             <div className="template-preview" style={{ marginTop: 12, marginBottom: 12 }}>
-                              <div className="template-preview-bubble">
-                                {renderizarPreviewComValores(t, testeVariaveis)}
-                              </div>
+                              <PreviaWhatsapp
+                                texto={renderizarPreviewComValores(t, testeVariaveis)}
+                                cabecalhoImagem={t.header_type === "image"}
+                                imagemUrl={t.image_url}
+                              />
                             </div>
 
                             <div className="actions-row" style={{ marginTop: 16 }}>

@@ -233,9 +233,8 @@ with TestClient(app) as client:
         json={
             "name": "Template Integ",
             "meta_template_name": "tmpl_integ_vars",
-            "language": "pt_BR",
             "category": "UTILITY",
-            "body_text": "Olá {{1}}, seu valor é {{2}}",
+            "body_text": "Olá {{1}}, seu valor é {{2}}.",
             "variables": [
                 {"position": 1, "internal_name": "codigo_e_nome"},
                 {"position": 2, "internal_name": "valor_cobrar"},

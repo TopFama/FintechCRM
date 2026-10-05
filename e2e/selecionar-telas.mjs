@@ -62,12 +62,12 @@ export const FUNCIONALIDADES = {
     `${B}routers/seta.py`, `${B}meta_client.py`, `${B}chatwoot_client.py`, `${B}google_client.py`,
   ],
   templates: [
-    `${F}pages/Configuracoes.tsx`, `${F}components/config/TemplatesCard.tsx`, `${B}routers/templates.py`,
+    `${F}pages/Configuracoes.tsx`, `${F}components/config/TemplatesCard.tsx`, `${F}components/PreviaWhatsapp.tsx`, `${B}routers/templates.py`,
     `${B}utils/imagem.py`, `${B}variaveis_template.py`, `${B}meta_client.py`,
   ],
   faixas: [
     `${F}pages/Configuracoes.tsx`, `${F}pages/Faixas.tsx`, `${F}pages/FaixaWizard.tsx`, `${F}pages/FaixaDetail.tsx`,
-    `${F}components/EnviosFaixa.tsx`, `${B}routers/faixas.py`, `${B}variaveis_template.py`,
+    `${F}components/EnviosFaixa.tsx`, `${F}components/PreviaWhatsapp.tsx`, `${B}routers/faixas.py`, `${B}variaveis_template.py`,
   ],
   horario: [`${F}pages/Configuracoes.tsx`, `${F}components/config/DisparoCard.tsx`, `${B}routers/config_cobranca.py`, `${B}routers/faixas.py`],
   indicadores: [
@@ -99,11 +99,11 @@ export const FUNCIONALIDADES = {
     `${B}utils/leads_xlsx.py`, `${B}utils/valor.py`, `${B}routers/leads.py`, `${B}leads_service.py`,
   ],
   fila: [
-    `${F}pages/FaixaDetail.tsx`, `${F}components/EnviosFaixa.tsx`, `${B}routers/faixas.py`, `${B}itens_fila.py`,
+    `${F}pages/FaixaDetail.tsx`, `${F}components/EnviosFaixa.tsx`, `${F}components/PreviaWhatsapp.tsx`, `${B}routers/faixas.py`, `${B}itens_fila.py`,
     `${B}consultas_fila.py`, `${B}fila_automatica.py`,
   ],
   disparo: [
-    `${F}pages/FaixaDetail.tsx`, `${F}components/EnviosFaixa.tsx`, `${B}dispatch_service.py`, `${B}elegibilidade.py`,
+    `${F}pages/FaixaDetail.tsx`, `${F}components/EnviosFaixa.tsx`, `${F}components/PreviaWhatsapp.tsx`, `${B}dispatch_service.py`, `${B}elegibilidade.py`,
     `${B}fila_automatica.py`, `${B}pausas.py`, `${B}meta_client.py`, `${B}chatwoot_client.py`, `${B}routers/faixas.py`,
     `${B}campanhas_fixas.py`, `${B}itens_fila.py`, `${B}variaveis_template.py`, `${B}upload_service.py`,
     `${B}telefones_invalidos.py`,
@@ -146,7 +146,7 @@ export const FUNCIONALIDADES = {
   campanhas: [
     `${F}pages/Campanhas.tsx`, `${F}pages/CampanhaDetail.tsx`, `${F}components/BarraFiltrosCobranca.tsx`, `${F}components/useRequisicaoUnica.ts`,
     `${F}components/CamposLoja.tsx`, `${F}components/CampoValorMaximo.tsx`, `${F}components/SelectCampanha.tsx`,
-    `${F}components/EnviosFaixa.tsx`, `${B}routers/campanhas.py`, `${B}campanhas.py`, `${B}campanhas_fixas.py`,
+    `${F}components/EnviosFaixa.tsx`, `${F}components/PreviaWhatsapp.tsx`, `${B}routers/campanhas.py`, `${B}campanhas.py`, `${B}campanhas_fixas.py`,
     `${B}cobranca_base.py`, `${B}fila_automatica.py`, `${B}elegibilidade.py`, `${B}pausas.py`, `${B}routers/lojas.py`,
     `${B}lojas.py`, `${B}leads_service.py`, `${B}routers/comum.py`, `${B}routers/pausas.py`, `${B}seta_client.py`,
     `${B}cache.py`, `${B}services/compras_seta.py`, `${B}utils/valor.py`, `${B}routers/dashboard.py`, `${B}routers/reports.py`,
