@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../useAtualizacaoAutomatica";
 import { api, OrcamentoProgressao } from "../../api";
 import { formatBRL, formatData, hojeBR } from "../../format";
@@ -259,7 +259,8 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
   );
 }
 
-const LARGURA = 720;
+// Largura mínima do desenho: no celular o gráfico rola na horizontal em vez de espremer.
+const LARGURA_MIN = 560;
 const ALTURA = 260;
 const M = { topo: 16, dir: 16, base: 44, esq: 104 };
 
@@ -273,6 +274,16 @@ function dataCurta(iso: string): string {
 // só até hoje; com o período em andamento, uma bolinha marca onde ela termina.
 function GraficoGasto({ dados }: { dados: OrcamentoProgressao }) {
   const [hover, setHover] = useState<number | null>(null);
+  // Desenha na largura real do card (1 unidade do SVG = 1 px), para o texto não crescer com o card.
+  const caixaRef = useRef<HTMLDivElement>(null);
+  const [largura, setLargura] = useState(720);
+  useEffect(() => {
+    const caixa = caixaRef.current;
+    if (!caixa) return;
+    const obs = new ResizeObserver(([e]) => setLargura(Math.max(LARGURA_MIN, Math.floor(e.contentRect.width))));
+    obs.observe(caixa);
+    return () => obs.disconnect();
+  }, []);
   const dias = dados.dias;
   const orcado = Number(dados.valor_orcado);
   // dias sem valor (ainda não aconteceram) são sempre o fim da lista: o índice é o mesmo de `dias`
@@ -281,7 +292,7 @@ function GraficoGasto({ dados }: { dados: OrcamentoProgressao }) {
   // período ainda acompanhado: já começou (tem dia com valor) e não terminou antes de hoje
   const emAndamento = ultimo >= 0 && new Date(`${dados.ate}T00:00`) >= hojeBR();
   const maximo = Math.max(orcado, ...valores, 1) * 1.1;
-  const areaL = LARGURA - M.esq - M.dir;
+  const areaL = largura - M.esq - M.dir;
   const areaA = ALTURA - M.topo - M.base;
   const x = (i: number) => M.esq + (dias.length <= 1 ? areaL / 2 : (i / (dias.length - 1)) * areaL);
   const y = (v: number) => M.topo + areaA - (v / maximo) * areaA;
@@ -298,14 +309,14 @@ function GraficoGasto({ dados }: { dados: OrcamentoProgressao }) {
     setHover(Math.min(Math.max(i, 0), ultimo));
   }
 
-  const tipX = hover !== null ? Math.min(x(hover) + 10, LARGURA - M.dir - 170) : 0;
+  const tipX = hover !== null ? Math.min(x(hover) + 10, largura - M.dir - 170) : 0;
 
   return (
-    <div className="orcamento-grafico">
-      <svg viewBox={`0 0 ${LARGURA} ${ALTURA}`} width="100%" role="img" aria-label="Gasto acumulado por dia vs. orçado">
+    <div className="orcamento-grafico" ref={caixaRef}>
+      <svg viewBox={`0 0 ${largura} ${ALTURA}`} width={largura} height={ALTURA} role="img" aria-label="Gasto acumulado por dia vs. orçado">
         {ticksY.map((v) => (
           <g key={v}>
-            <line x1={M.esq} x2={LARGURA - M.dir} y1={y(v)} y2={y(v)} stroke="var(--color-border)" />
+            <line x1={M.esq} x2={largura - M.dir} y1={y(v)} y2={y(v)} stroke="var(--color-border)" />
             <text x={M.esq - 8} y={y(v) + 4} textAnchor="end" fontSize="11" fill="var(--color-text-muted)">
               {formatBRL(v.toFixed(2))}
             </text>
@@ -332,8 +343,8 @@ function GraficoGasto({ dados }: { dados: OrcamentoProgressao }) {
           Gasto acumulado (R$)
         </text>
 
-        <line x1={M.esq} x2={LARGURA - M.dir} y1={y(orcado)} y2={y(orcado)} stroke="var(--color-danger)" strokeDasharray="6 4" strokeWidth={1.5} />
-        <text x={LARGURA - M.dir} y={y(orcado) - 6} textAnchor="end" fontSize="11" fill="var(--color-danger)">
+        <line x1={M.esq} x2={largura - M.dir} y1={y(orcado)} y2={y(orcado)} stroke="var(--color-danger)" strokeDasharray="6 4" strokeWidth={1.5} />
+        <text x={largura - M.dir} y={y(orcado) - 6} textAnchor="end" fontSize="11" fill="var(--color-danger)">
           Limite orçado {formatBRL(orcado.toFixed(2))}
         </text>
 

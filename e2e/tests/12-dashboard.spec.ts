@@ -552,6 +552,15 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     ]);
     await expect(o.locator("svg[role=img]")).toBeVisible({ timeout: 30_000 });
     await expect(o.locator("circle.fim-realizado")).toHaveCount(0);
+    // o SVG é desenhado na largura real (1 unidade = 1 px), então a letra não cresce com o card
+    const svg = o.locator("svg[role=img]");
+    for (const largura of [1600, 390]) {
+      await page.setViewportSize({ width: largura, height: 900 });
+      await expect(async () => {
+        const vb = Number((await svg.getAttribute("viewBox"))!.split(" ")[2]);
+        expect(Math.abs((await svg.boundingBox())!.width - vb)).toBeLessThan(1);
+      }).toPass();
+    }
   });
 
   test("orçamento: exportar por dia traz data, WABA, telefone e valor, somando o realizado", { tag: ["@orcamento"] }, async ({ page }) => {

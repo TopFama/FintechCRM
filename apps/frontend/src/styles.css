@@ -1387,10 +1387,6 @@ label {
     overflow-x: auto;
   }
 
-  .orcamento-grafico svg {
-    min-width: 560px;
-  }
-
   /* No celular só o passo atual mostra o nome, senão o stepper passa da tela */
   .stepper-step:not(.active) .stepper-label {
     display: none;
