@@ -696,6 +696,9 @@ class Campanha(Base):
     fonte_valores: Mapped[str] = mapped_column(String, default="seta", server_default="seta")
     planilha_colunas: Mapped[list] = mapped_column(JSON, default=list)
     planilha_linhas: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Com valores da planilha: cliente sem valor válido nela usa o do SETA só
+    # se o usuário autorizou (True); False deixa de fora; nulo aguarda decisão.
+    valor_seta_autorizado: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # Nulo: cada cliente recebe uma vez por campanha. Com valor: pode receber
     # de novo depois desse número de dias.
     recontato_dias: Mapped[int | None] = mapped_column(Integer, nullable=True)

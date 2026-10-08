@@ -374,12 +374,28 @@ def colunas_em_branco(campanha: models.Campanha, mapeamentos: list[models.FaixaV
     return resultado
 
 
+def valor_da_planilha(linha: dict) -> Decimal | None:
+    """Valor da linha da planilha; None quando não é válido (fica o do SETA,
+    se o usuário autorizou em `Campanha.valor_seta_autorizado`)."""
+
+    return _decimal_planilha(_coluna_da_linha(linha, _COLUNAS_VALOR) or "")
+
+
+def valor_invalido(campanha: models.Campanha) -> int:
+    """Clientes da planilha sem valor válido."""
+
+    return sum(1 for linha in (campanha.planilha_linhas or {}).values() if valor_da_planilha(linha) is None)
+
+
 def com_dados_da_planilha(cliente: dict, campanha: models.Campanha) -> dict:
-    """Cliente do SETA com nome, CPF e celular conferidos pela planilha."""
+    """Cliente do SETA com valor, nome, CPF e celular conferidos pela planilha."""
     linha = (campanha.planilha_linhas or {}).get(cliente["codigo"])
     if not linha:
         return cliente
     novo = dict(cliente)
+    if (valor := valor_da_planilha(linha)) is not None:
+        novo["valor_cobrar"] = valor
+        novo["valor_atraso"] = valor
     if "_nome" in linha:
         novo["nome"] = linha["_nome"]
     if "_cpf" in linha:
@@ -387,7 +403,6 @@ def com_dados_da_planilha(cliente: dict, campanha: models.Campanha) -> dict:
     if "_celular" in linha:
         novo["celular"] = linha["_celular"]
         novo["celular_original"] = linha["_celular"]
-    # Valor NUNCA é trocado pela planilha
     return novo
 
 
@@ -703,7 +718,13 @@ def diagnosticar(db: Session, campanha: models.Campanha) -> dict:
         linha = (campanha.planilha_linhas or {}).get(codigo)
         if not linha:
             return "pronto"
-            
+        if campanha.fonte_valores == "planilha" and valor_da_planilha(linha) is None:
+            # Valor inválido na planilha: o do SETA só com autorização do usuário
+            if campanha.valor_seta_autorizado is None:
+                return "aguardando_decisao"
+            if not campanha.valor_seta_autorizado:
+                return "fora_por_decisao"
+
         for m in campanha.faixa.variable_mappings:
             if m.fonte_tipo == "coluna" and m.column_name:
                 val = str(linha.get(m.column_name, "")).strip()
