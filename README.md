@@ -357,9 +357,11 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    quarentena para o polling não refazer a consulta. No front-end, trocar o filtro ou sair da tela
    cancela a consulta (`AbortController`, `useRequisicaoUnica`), o polling usa espera crescente com
    jitter e os botões de aplicar ficam desabilitados enquanto a consulta anterior roda.
-   A tabela **Por faixa** mostra Pendente, Erro, Enviado, Clientes cobrados (distintos, mesma
-   base do "Pagaram após cobrança"), Frequência (mensagens do período aos clientes cobrados ÷
-   cobrados que receberam mensagem), Pagaram após cobrança, % Rep. (pagaram da faixa ÷ soma das
+   A tabela **Por faixa** mostra Pendente, Erro, Enviado, Clientes cobrados (clientes distintos
+   que receberam mensagem da faixa com envio no período filtrado, a mesma base das Cobranças),
+   Frequência (mensagens do período ÷ clientes cobrados), Pagaram após cobrança (clientes
+   cobrados que pagaram depois do primeiro envio do período; o número abre Quem pagou com
+   `base=envios`, a mesma lista), % Rep. (pagaram da faixa ÷ soma das
    faixas, fecha 100%), % Conv. (pagaram ÷ cobrados) e Valor pago, com linha de total
    (clientes e pagamentos contados uma vez, mesmo em mais de uma faixa) e um ícone 🛈 com a
    fórmula de cada indicador. Essa é a ordem padrão: cada usuário arrasta os títulos para

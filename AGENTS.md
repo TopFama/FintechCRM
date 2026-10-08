@@ -45,6 +45,8 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
   por dia no Redis alimentados pelas triggers `painel_*` do Postgres (fonte única das mudanças da
   fila; não incremente contador à mão em outro lugar). A regra do dia do card mora em
   `consultas_fila` (`periodo_dos_cards`/`dia_do_card`, `contar_cards`); mudou uma, mude a outra.
+  Clientes cobrados do "Por faixa" (e a base do "Pagaram após cobrança") também saem de lá:
+  `clientes_com_envio_no_periodo`, os envios `sent` do período.
 - `worker.py` — agendamento do disparo e das rotinas diárias, roda com APScheduler **dentro do
   mesmo processo** do backend (não é um serviço/container separado); o envio de cada item em si
   fica em `dispatch_service.py`.

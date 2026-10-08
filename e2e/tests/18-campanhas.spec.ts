@@ -327,9 +327,16 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     await expect(feirao).toBeVisible();
     const envio = await apiGet(page, `/campanhas?periodo=envio&de=${ontem}&ate=${hoje}`);
     expect(envio.map((c: any) => c.nome)).toContain("Feirão lojas 01 e 06");
-    // o remarketing (campanha fixa) também aparece se enviou no período
-    const fixas = await apiGet(page, `/campanhas/fixas?periodo=envio&de=${ontem}&ate=${hoje}`);
-    await expect(page.locator(".faixa-row")).toHaveCount(envio.length + fixas.length);
+    // o remarketing (campanha fixa) também aparece se enviou no período. O worker
+    // pode enviar o remarketing entre a tela carregar e a consulta: refaz a busca
+    // da tela e compara de novo até tela e API lerem o mesmo momento.
+    await expect(async () => {
+      const comEnvio = await apiGet(page, `/campanhas?periodo=envio&de=${ontem}&ate=${hoje}`);
+      const fixas = await apiGet(page, `/campanhas/fixas?periodo=envio&de=${ontem}&ate=${hoje}`);
+      await page.getByLabel("Até", { exact: true }).fill(ontem);
+      await page.getByLabel("Até", { exact: true }).fill(hoje);
+      await expect(page.locator(".faixa-row")).toHaveCount(comEnvio.length + fixas.length, { timeout: 3_000 });
+    }).toPass();
     await foto(page, "campanhas-filtro-periodo");
   });
 

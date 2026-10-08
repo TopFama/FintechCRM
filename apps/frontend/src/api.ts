@@ -1399,6 +1399,8 @@ export interface FiltrosPagamentos {
   pago_de?: string;
   pago_ate?: string;
   dias_janela?: number;
+  // "envios" = clientes cobrados do Dashboard (com mensagem enviada no período)
+  base?: "envios";
 }
 
 export interface PagamentoCliente {

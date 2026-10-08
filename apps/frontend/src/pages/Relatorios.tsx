@@ -68,6 +68,8 @@ export default function Relatorios() {
   const cobradoAte = params.get("ate") ?? "";
   // Vem do card de pagamentos do Dashboard ("" = qualquer data após a cobrança)
   const diasJanela = params.get("dias_janela") ?? "";
+  // Vem do "Pagaram" do Por faixa: cobrados = clientes com envio no período
+  const base = params.get("base") === "envios" ? ("envios" as const) : undefined;
   const loja = tab === "pendentes" ? params.get("loja") ?? "" : "";
   function mudarUrl(mudancas: Record<string, string>) {
     setParams(
@@ -243,7 +245,7 @@ export default function Relatorios() {
     setOffset(0);
     load(0, limit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, faixaId, campanha, loja, cobradoDe, cobradoAte, pagoDe, pagoAte, diasJanela, faixasProntas]);
+  }, [tab, faixaId, campanha, loja, cobradoDe, cobradoAte, pagoDe, pagoAte, diasJanela, base, faixasProntas]);
 
   function filtrosPagamentos() {
     const nome = faixas.find((f) => f.id === faixaId)?.name;
@@ -255,6 +257,7 @@ export default function Relatorios() {
       pago_de: pagoDe || undefined,
       pago_ate: pagoAte || undefined,
       dias_janela: diasJanela ? Number(diasJanela) : undefined,
+      base,
     };
   }
 

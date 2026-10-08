@@ -24,12 +24,13 @@ from sqlalchemy.orm import sessionmaker
 
 from app import models, seta_client
 from app.database import Base
-from app.services import pagamentos_seta, pagamentos_service
+from app.services import pagamentos_seta
 from app.timezone import hoje_br
 
 engine = create_engine("sqlite://")
 Base.metadata.create_all(engine, tables=[
     models.Lead.__table__, models.PagamentoSeta.__table__, models.PagamentoSetaCliente.__table__,
+    models.Faixa.__table__, models.QueueItem.__table__,
 ])
 db = sessionmaker(bind=engine)()
 
@@ -126,33 +127,21 @@ assert ("00000005", hoje) in pagou and ("00000006", hoje) in pagou, pagou
 valores = pagamentos_seta.valores_pagos_pos_cobranca(db, pares_hoje)
 assert set(valores) == {("00000005", hoje), ("00000006", hoje)}, valores
 
-# 5. Clientes cobrados por faixa (coluna do Dashboard): clientes distintos na
-# mesma base do "Pagaram após cobrança" (lead cobrado no período, pela faixa do lead)
-dia_cob = hoje - timedelta(days=3)
-
-
-def lead_faixa(codigo: str, faixa: str, venc_dias: int, status: str = "cobrado", dia: date = dia_cob) -> models.Lead:
-    return models.Lead(
-        codigo_cliente=codigo, nome="X", cluster="TOP", faixa=faixa, dias_atraso=10,
-        vencimento_mais_antigo=dia - timedelta(days=venc_dias), status=status,
-        cobrado_em=datetime.combine(dia, datetime.min.time()) + timedelta(hours=15),
-    )
-
-
-db.add_all([
-    lead_faixa("00000020", "FA", 10),
-    lead_faixa("00000020", "FA", 40),  # mesmo cliente, outra parcela: conta uma vez
-    lead_faixa("00000020", "FB", 70),  # mesmo cliente em outra faixa: conta nas duas
-    lead_faixa("00000021", "FA", 10),
-    lead_faixa("00000022", "FA", 10, status="novo"),  # não cobrado: fora
-    lead_faixa("00000023", "FA", 10, dia=dia_cob - timedelta(days=30)),  # cobrado fora do período: fora
-])
+# 6. Reenvio a lead já cobrado (cobrado_em de dias atrás): o horário da
+# mensagem de hoje, na fila, decide o pago antes/depois dela.
+faixa = models.Faixa(name="FR")
+db.add(faixa)
+db.flush()
+for codigo in ("00000007", "00000008"):
+    db.add(lead(codigo, hoje - timedelta(days=3)))
+    db.add(models.QueueItem(
+        faixa_id=faixa.id, codigo_cliente=codigo, celular="5511999999999", celular_original="11999999999",
+        status=models.QueueStatus.sent, sent_at=datetime.combine(hoje, datetime.min.time()) + timedelta(hours=15),
+    ))
 db.commit()
-cobrados = pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=dia_cob, cobrado_ate=dia_cob)
-assert cobrados == {"FA": {"00000020", "00000021"}, "FB": {"00000020"}}, cobrados
-# Sem período: conta todo cobrado da faixa
-assert pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=None, cobrado_ate=None)["FA"] == {
-    "00000020", "00000021", "00000023"
-}
+seta["T9"] = ("00000007", hoje, Decimal("70"), "R", meio_dia - timedelta(hours=2))  # antes da mensagem de hoje
+seta["T10"] = ("00000008", hoje, Decimal("80"), "R", meio_dia + timedelta(hours=2))  # depois
+pagou = pagamentos_seta.pagamentos_pos_cobranca(db, [("00000007", hoje), ("00000008", hoje)])
+assert set(pagou) == {("00000008", hoje)}, pagou
 
 print("OK")

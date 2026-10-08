@@ -209,6 +209,52 @@ def periodo_dos_cards(de: date | None, ate: date | None):
     )
 
 
+def nome_faixa():
+    """Faixa da linha de "Por faixa" do Dashboard: a de atraso do cliente
+    (envio de campanha/remarketing), senão a faixa da fila. Pede o join com
+    models.Faixa."""
+    return func.coalesce(func.nullif(models.QueueItem.faixa_atraso, ""), models.Faixa.name)
+
+
+def clientes_com_envio_no_periodo(db: Session, de: date | None, ate: date | None, campanha: str | None = None):
+    """Clientes cobrados do período: quem recebeu mensagem (status sent) com
+    data de envio no período, por faixa de nome_faixa(). Devolve {faixa:
+    {codigo_cliente: linha}}, a linha com `mensagens` (quantas no período,
+    na faixa) e os dados do primeiro envio do período na faixa (`primeiro_envio`
+    em UTC, `nome`, `cpf`, `lojas`, `valor`). Base dos clientes cobrados, da
+    Frequência e do "Pagaram após cobrança" do Dashboard."""
+
+    ini, fim = limites_utc(de, ate)
+    faixa = nome_faixa()
+    grupo = (faixa, models.QueueItem.codigo_cliente)
+    envios = (
+        select(
+            faixa.label("faixa"),
+            models.QueueItem.codigo_cliente,
+            func.count().over(partition_by=grupo).label("mensagens"),
+            func.row_number().over(partition_by=grupo, order_by=models.QueueItem.sent_at).label("ordem"),
+            models.QueueItem.sent_at.label("primeiro_envio"),
+            models.QueueItem.nome,
+            models.QueueItem.cpf,
+            models.QueueItem.lojas,
+            valor_numerico().label("valor"),
+        )
+        .select_from(models.QueueItem)
+        .join(models.Faixa, models.QueueItem.faixa_id == models.Faixa.id)
+        .where(
+            models.QueueItem.status == models.QueueStatus.sent,
+            condicao_periodo(models.QueueItem.sent_at, ini, fim),
+        )
+    )
+    if campanha:
+        envios = envios.where(filtro_campanha(db, models.QueueItem.faixa_id, campanha))
+    envios = envios.subquery()
+    por_faixa: dict[str, dict] = {}
+    for linha in db.execute(select(envios).where(envios.c.ordem == 1)):
+        por_faixa.setdefault(linha.faixa, {})[linha.codigo_cliente] = linha
+    return por_faixa
+
+
 def dia_do_card(status: str, criado: datetime | None, enviado: datetime | None) -> date | None:
     """Dia (Brasília) em que o item conta nos cards: a mesma regra de
     periodo_dos_cards, para os contadores do Dashboard em tempo real."""

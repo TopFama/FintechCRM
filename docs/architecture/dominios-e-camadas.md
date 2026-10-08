@@ -23,6 +23,11 @@ são desse domínio (a mesma tabela está em `scripts/grafo_dependencias.py`, qu
 | **Dashboard/Relatórios** | Leitura: cards, relatórios, efetividade, orçamento e custo do WhatsApp | `routers/dashboard.py`, `routers/reports.py`, `consultas_fila.py`, `services/efetividade_service.py`, `relatorio_efetividade.py`, `services/custo_whatsapp.py` |
 | **Plataforma** | O que todo domínio usa e não é de nenhum | `main.py`, `config.py`, `database.py`, `models.py`, `schemas.py`, `cache.py`, `timezone.py`, `utils/phone.py`, `utils/document.py`, `utils/spreadsheet.py`, `utils/xlsx.py`, `utils/erros.py`, `routers/comum.py` |
 
+`consultas_fila.py` é dono da regra de período do Dashboard: o dia de cada card
+(`periodo_dos_cards`, `contar_cards`) e a base de clientes cobrados do "Por faixa"
+(`clientes_com_envio_no_periodo`: clientes com mensagem enviada no período), que
+`pagamentos_service.clientes_que_pagaram(base="envios")` também usa.
+
 Diferenças para a tabela sugerida no plano: não há domínio "Clientes" separado (o cliente é o do
 SETA, lido em Cobrança, e o `Lead` é a fotografia dele no dia); "Cobranças" virou **Cobrança**
 (base e regras); **Templates**, **Campanhas** e **Pagamentos** entraram porque têm regra própria.

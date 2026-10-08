@@ -369,7 +369,9 @@ function ResumoFila({
               </thead>
               <tbody>
                 {porFaixaOrdenado.map((row) => {
-                  const link = (aba: string) => linkRelatorio(aba, periodo, { faixa_id: row.faixa_id });
+                  // "Pagaram" abre Quem pagou na base do Dashboard (clientes com envio no período)
+                  const link = (aba: string) =>
+                    linkRelatorio(aba, periodo, { faixa_id: row.faixa_id, ...(aba === "pagamentos" ? { base: "envios" } : {}) });
                   const celula: CelulaLink = (aba, valor, rotulo) => (
                     <Link
                       to={link(aba)}
@@ -419,18 +421,16 @@ const DICAS: Record<
   Dica
 > = {
   clientes_cobrados: {
-    texto:
-      "Clientes distintos que receberam cobrança nesta faixa no período. No total, cada cliente conta uma vez, mesmo cobrado em mais de uma faixa.",
-    formula: "Contagem de clientes distintos cobrados na faixa",
+    texto: "Clientes distintos que receberam mensagem desta faixa no período filtrado. No total, cada cliente conta uma vez.",
+    formula: "Contagem de clientes distintos com mensagem enviada na faixa no período",
   },
   frequencia: {
-    texto: "Média de mensagens enviadas no período por cliente cobrado que recebeu mensagem.",
-    formula: "Mensagens enviadas no período aos clientes cobrados ÷ Clientes cobrados que receberam mensagem",
+    texto: "Média de mensagens enviadas no período por cliente cobrado.",
+    formula: "Mensagens enviadas no período ÷ Clientes cobrados no período",
   },
   pagaram: {
-    texto:
-      "Clientes cobrados no período que pagaram depois da cobrança. No total, cada cliente conta uma vez, mesmo cobrado em mais de uma faixa.",
-    formula: "Contagem de clientes distintos cobrados que pagaram após a cobrança",
+    texto: "Clientes cobrados no período que pagaram depois do primeiro envio do período.",
+    formula: "Contagem de clientes distintos cobrados que pagaram após o primeiro envio do período",
   },
   conversao: {
     texto: "Dos clientes cobrados na faixa, quantos pagaram depois da cobrança.",

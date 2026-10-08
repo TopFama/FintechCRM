@@ -217,7 +217,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     const pagaram = numero(await linha.locator("td").nth(6).innerText());
     await expect(linha.locator("td").nth(9)).toContainText(/R\$\s?[1-9]/);
     await linha.locator("td").nth(6).getByRole("link").click();
-    await expect(page).toHaveURL(/aba=pagamentos.*faixa_id=/);
+    await expect(page).toHaveURL(/aba=pagamentos.*faixa_id=.*base=envios/);
     await expect(page.locator(".stat", { hasText: "Clientes que pagaram" }).locator(".value")).toHaveText(
       pagaram.toLocaleString("pt-BR"),
       { timeout: 30_000 }
