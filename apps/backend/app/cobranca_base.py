@@ -73,6 +73,7 @@ def buscar_base(
     valor_atraso_max: Decimal | None = None,
     valor_atraso_com_juros: bool = False,
     codigos: list[str] | None = None,
+    incluir_so_campanhas: bool = False,
 ) -> dict:
     """{"status": "ready", "data": [...]} com os clientes da base de
     cobrança (do mais atrasado para o menos), ou {"status": "processing",
@@ -90,6 +91,8 @@ def buscar_base(
     - `valor_atraso_min` / `valor_atraso_max`: total das parcelas já vencidas,
       pelo valor original ou, com `valor_atraso_com_juros`, com multa e juros.
     - `codigos`: só esses clientes (planilha de clientes de uma campanha).
+    - `incluir_so_campanhas`: aceita em `faixas` as faixas só de campanhas
+      (ex.: "Antecipado"); sem pedir faixa, elas nunca entram.
     """
 
     if (lojas is not None and not lojas) or (codigos is not None and not codigos):
@@ -97,7 +100,7 @@ def buscar_base(
 
     regras = carregar_regras(db)
 
-    _validar(faixas, regras.nomes_faixa, "Faixa")
+    _validar(faixas, regras.nomes_faixa if incluir_so_campanhas else regras.nomes_faixa_regua, "Faixa")
     _validar(clusters, regras.nomes_cluster, "Cluster")
     _validar(faixas_compra, NOMES_FAIXA_COMPRA, "Faixa de compra")
     _validar(restricoes_spc, ["sim", "nao", "indeterminado"], "Restrição SPC")
@@ -109,7 +112,7 @@ def buscar_base(
         dos_clusters = clusters or regras.nomes_cluster
         faixas_sel = [f for f in regras.nomes_faixa if any(regras.entra_no_whatsapp(c, f) for c in dos_clusters)]
     else:
-        faixas_sel = list(regras.nomes_faixa)
+        faixas_sel = regras.nomes_faixa_regua
 
     intervalos = [(regras.faixa(f).dia_min, regras.faixa(f).dia_max) for f in faixas_sel]
     dias_exatos = [regras.faixa(f).dia_min for f in faixas_sel] if apenas_primeiro_dia else None

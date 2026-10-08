@@ -30,6 +30,7 @@ def regras(db: Session = Depends(get_db), _user: models.User = Depends(get_curre
         faixas_whatsapp={c: r.faixas_whatsapp(c) for c in r.nomes_cluster},
         primeiro_dia={f.nome: f.dia_min for f in r.faixas},
         faixas_compra=NOMES_FAIXA_COMPRA,
+        faixas_so_campanhas=r.nomes_faixa_so_campanhas,
     )
 
 
@@ -162,7 +163,7 @@ def relatorio(
         status="ready",
         data=schemas.RelatorioCobrancaOut(
             clusters=r.nomes_cluster,
-            faixas=r.nomes_faixa,
+            faixas=r.nomes_faixa_regua,
             quantidade=cobranca_relatorio.montar_matriz(clientes, r),
             quantidade_com_restricao_spc=cobranca_relatorio.montar_matriz(clientes, r, apenas_com_restricao_spc=True),
             valor_em_aberto=cobranca_relatorio.montar_matriz_valor(clientes, r),

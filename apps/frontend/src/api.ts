@@ -1004,6 +1004,7 @@ export interface RegrasCobranca {
   faixas_whatsapp: Record<string, string[]>; // cluster -> faixas que recebem WhatsApp
   primeiro_dia: Record<string, number>;
   faixas_compra: string[];
+  faixas_so_campanhas?: string[]; // ex.: "Antecipado": só no filtro das campanhas
 }
 
 // --- Configuração da cobrança (clusters, faixas de atraso, matriz do WhatsApp) ---
@@ -1025,6 +1026,7 @@ export interface FaixaAtrasoConfig {
   nome: string;
   dia_min: number;
   dia_max: number | null;
+  so_campanhas?: boolean;
 }
 
 export interface FaixaAtrasoConfigIn {

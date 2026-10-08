@@ -475,4 +475,26 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     await expect(page.locator(".faixa-row", { hasText: "Planilha promo" })).toHaveCount(0);
     expect((await page.request.get(`${API_URL}/campanhas/${campanha.id}`)).status()).toBe(404);
   });
+
+  test("faixa Antecipado: só nas campanhas, sozinha e sem valor em atraso", async ({ page }) => {
+    const regras = await apiGet(page, "/cobranca/regras");
+    expect(regras.faixas_so_campanhas).toEqual(["Antecipado"]);
+    expect(Object.values(regras.faixas_whatsapp).flat()).not.toContain("Antecipado");
+    // a Cobrança (e a rotina diária) não pede a faixa
+    expect((await page.request.get(`${API_URL}/cobranca/clientes?faixa=Antecipado`)).status()).toBe(400);
+    expect((await apiSend(page, "POST", "/campanhas", { nome: "Antecipado misturado", filtros: { faixa: ["Antecipado", "2"] } })).status).toBe(400);
+    expect(
+      (await apiSend(page, "POST", "/campanhas", { nome: "Antecipado com atraso", filtros: { faixa: ["Antecipado"], valor_atraso_min: 10 } })).status,
+    ).toBe(400);
+
+    const criada = await apiSend(page, "POST", "/campanhas", { nome: "Antes do vencimento", filtros: { faixa: ["Antecipado"] } });
+    expect(criada.status).toBe(201);
+    await page.goto(`/campanhas/${criada.corpo.id}`);
+    await expect(page.getByLabel("Valor em atraso de (R$)")).toHaveCount(0);
+    const previa = card(page, "Quem entraria agora");
+    await previa.getByRole("button", { name: "Ver prévia" }).click();
+    // SETA falso: só 00000099 tem a parcela mais antiga vencendo daqui a 10 dias
+    await expect(previa).toContainText("1 cliente(s) entrariam");
+    await expect(previa).toContainText("ANTONIO");
+  });
 });

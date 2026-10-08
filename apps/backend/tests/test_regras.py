@@ -73,13 +73,15 @@ engine = create_engine(DB_URL)
 Session = sessionmaker(bind=engine)
 
 from app.regras_db import carregar_regras
-from app.cobranca_regras import REGRAS_PADRAO
+from app.cobranca_regras import REGRAS_PADRAO, FaixaAtraso
 
 with Session() as db:
     regras = carregar_regras(db)
 
 assert regras.clusters == REGRAS_PADRAO.clusters, f"clusters divergem:\n{regras.clusters}\n!=\n{REGRAS_PADRAO.clusters}"
-assert regras.faixas == REGRAS_PADRAO.faixas, f"faixas divergem:\n{regras.faixas}\n!=\n{REGRAS_PADRAO.faixas}"
+# a migration c8e2a4f6b0d1 acrescenta a faixa só de campanhas "Antecipado" antes do padrão
+assert regras.faixas[0] == FaixaAtraso("Antecipado", -365, -2, so_campanhas=True), regras.faixas[0]
+assert regras.faixas[1:] == REGRAS_PADRAO.faixas, f"faixas divergem:\n{regras.faixas}\n!=\n{REGRAS_PADRAO.faixas}"
 assert regras.whatsapp == REGRAS_PADRAO.whatsapp, f"whatsapp diverge"
 assert regras.juros == REGRAS_PADRAO.juros, f"juros divergem: {regras.juros} != {REGRAS_PADRAO.juros}"
 print("  carregar_regras == REGRAS_PADRAO: OK")
@@ -160,7 +162,13 @@ resp = client.get("/config/cobranca", headers=headers)
 assert resp.status_code == 200, f"GET config falhou: {resp.text}"
 cfg = resp.json()
 assert len(cfg["clusters"]) == 6
-assert len(cfg["faixas"]) == 13
+assert len(cfg["faixas"]) == 14
+antecipado = next(f for f in cfg["faixas"] if f["nome"] == "Antecipado")
+assert (antecipado["dia_min"], antecipado["dia_max"], antecipado["so_campanhas"]) == (-365, -2, True)
+assert not any(f["so_campanhas"] for f in cfg["faixas"] if f["nome"] != "Antecipado")
+cr0 = client.get("/cobranca/regras", headers=headers).json()
+assert cr0["faixas_so_campanhas"] == ["Antecipado"] and "Antecipado" in cr0["faixas"]
+assert all("Antecipado" not in fs for fs in cr0["faixas_whatsapp"].values())
 assert cfg["parametros"]["juros_mes_percentual"] == "15.99"
 print("  GET /config/cobranca: OK")
 

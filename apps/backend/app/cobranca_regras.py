@@ -55,11 +55,14 @@ class Cluster:
 @dataclass(frozen=True)
 class FaixaAtraso:
     """Intervalo de dias de atraso. dia_max None = sem limite superior.
-    'Primeiro dia' da faixa é sempre dia_min."""
+    'Primeiro dia' da faixa é sempre dia_min. `so_campanhas` (ex.: "Antecipado",
+    antes do vencimento): só entra numa campanha que pede a faixa, nunca na
+    matriz do WhatsApp nem no "todas as faixas"."""
 
     nome: str
     dia_min: int
     dia_max: int | None
+    so_campanhas: bool = False
 
 
 @dataclass(frozen=True)
@@ -70,6 +73,15 @@ class Regras:
     faixas: tuple[FaixaAtraso, ...]        # ordenadas por dia_min crescente
     whatsapp: frozenset[tuple[str, str]]   # pares (nome_cluster, nome_faixa) que recebem WhatsApp
     juros: ParametrosJuros
+
+    @property
+    def nomes_faixa_regua(self) -> list[str]:
+        """Faixas sem as só de campanhas: o "todas as faixas" de quem não pede uma."""
+        return [f.nome for f in self.faixas if not f.so_campanhas]
+
+    @property
+    def nomes_faixa_so_campanhas(self) -> list[str]:
+        return [f.nome for f in self.faixas if f.so_campanhas]
 
     @property
     def nomes_cluster(self) -> list[str]:
@@ -103,12 +115,12 @@ class Regras:
         raise KeyError(f"Faixa {nome!r} não encontrada")
 
     def entra_no_whatsapp(self, cluster: str, faixa: str | None) -> bool:
-        """False se faixa is None."""
-        return faixa is not None and (cluster, faixa) in self.whatsapp
+        """False se faixa is None ou só de campanhas."""
+        return faixa is not None and faixa not in self.nomes_faixa_so_campanhas and (cluster, faixa) in self.whatsapp
 
     def faixas_whatsapp(self, cluster: str) -> list[str]:
         """Nomes das faixas que recebem WhatsApp para o cluster, na ordem das faixas."""
-        return [f.nome for f in self.faixas if (cluster, f.nome) in self.whatsapp]
+        return [f.nome for f in self.faixas if self.entra_no_whatsapp(cluster, f.nome)]
 
 
 # --- Faixa de compra: quantidade de compras no crediário (não configurável) ---

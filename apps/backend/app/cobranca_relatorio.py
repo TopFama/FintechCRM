@@ -15,7 +15,7 @@ def _montar_matriz_generica(
     apenas_com_restricao_spc: bool = False,
 ) -> dict:
     nomes_cluster = regras.nomes_cluster
-    nomes_faixa = regras.nomes_faixa
+    nomes_faixa = regras.nomes_faixa_regua
     celulas = {c: {f: zero for f in nomes_faixa} for c in nomes_cluster}
     for cliente in clientes:
         if cliente.get("faixa") is None:

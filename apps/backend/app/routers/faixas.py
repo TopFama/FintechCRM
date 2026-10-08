@@ -3,7 +3,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session, selectinload
 
-from .. import models, regras_db, schemas
+from .. import campanhas as camp, models, regras_db, schemas
 from ..database import get_db
 from ..deps import get_current_user
 from ..utils.spreadsheet import build_model_xlsx
@@ -39,6 +39,13 @@ def _salvar_mapeamento(
     por todos os envios dessa faixa que usam esse template."""
 
     _validar_mapeamento_variaveis(template, variable_mappings)
+    campanha = db.query(models.Campanha).filter(models.Campanha.faixa_id == faixa_id).first()
+    if campanha is not None and (
+        erro := camp.erro_faixa_so_campanhas(
+            db, list((campanha.filtros or {}).get("faixa") or []), valor_atraso=False, mapeamentos=variable_mappings
+        )
+    ):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, erro)
     db.query(models.FaixaVariableMapping).filter(
         models.FaixaVariableMapping.faixa_id == faixa_id,
         models.FaixaVariableMapping.template_id == template.id,
@@ -177,7 +184,7 @@ def sincronizar_faixas_atraso(
 
     criadas: list[str] = []
     ja_existentes: list[str] = []
-    for nome in regras.nomes_faixa:
+    for nome in regras.nomes_faixa_regua:
         if nome in nomes_existentes:
             ja_existentes.append(nome)
             continue

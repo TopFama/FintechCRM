@@ -405,12 +405,13 @@ export default function CampanhaDetail() {
           <div className="card-header">
             <h3>Quem recebe</h3>
           </div>
-          <p className="card-subtitle">Só clientes em atraso no SETA.</p>
+          <p className="card-subtitle">Só clientes em atraso no SETA, ou na faixa Antecipado.</p>
           <BarraFiltrosCobranca
             valor={form.filtros}
             onChange={(filtros) => setForm({ ...form, filtros })}
             opcoes={opcoes}
             idPrefixo="camp"
+            incluirSoCampanhas
           />
 
           <div className="sub-card" style={{ marginTop: 16 }}>

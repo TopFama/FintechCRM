@@ -401,7 +401,14 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    a cada N dias (sem ele, cada cliente recebe uma vez por campanha); desligado, só entra na fila pelo
    "Colocar na fila agora". **Pausar** (retém os pendentes e o envio automático até retomar, via
    pausa por faixa) e **Parar** (cancela os pendentes e desliga o automático) ficam na lista e na
-   campanha. A planilha de clientes pode ser escolhida já na criação. Só entra quem está em atraso no SETA. Uma planilha de clientes (coluna
+   campanha. A planilha de clientes pode ser escolhida já na criação. Só entra quem está em atraso no SETA, ou,
+   escolhendo a faixa **Antecipado** no filtro de faixa, quem ainda não tem nada vencido (parcela mais
+   antiga vencendo de 2 a 365 dias à frente; o lembrete "-1" continua fora). Antecipado é uma faixa de
+   atraso só de campanhas (`config_faixas_atraso.so_campanhas`, selo "Só campanhas" em Regras de
+   cobrança): fica fora da matriz do WhatsApp, da rotina diária, da Cobrança, do Remarketing e do
+   "Sincronizar faixas"; na campanha fica sozinha no filtro de faixa, sem filtro de valor em atraso e
+   sem a variável "Valor em atraso" (use "Valor da próxima parcela"). Quem a recebe não vai para a
+   régua no dia seguinte (não está em atraso). Uma planilha de clientes (coluna
    Codigo ou CPF) restringe a base; com "valores da planilha", Valor, Celular e as demais colunas
    (nas variáveis do template) vêm dela. O agendador roda as campanhas do dia junto com o
    remarketing, antes do horário de início. Por baixo, cada campanha tem uma faixa própria

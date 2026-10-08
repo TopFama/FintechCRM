@@ -6,7 +6,8 @@ template e variáveis, como no remarketing. Com "Envio automático", roda todo
 dia de disparo dentro do período (um dia só = início e fim iguais); sem ele,
 só pelo "Colocar na fila agora". No dia,
 antes do horário de início, o agendador busca a base da campanha no SETA
-(só clientes em atraso) e coloca na fila quem ainda não recebeu. Com uma
+(só clientes em atraso, ou na faixa só de campanhas "Antecipado", quando a
+campanha a escolhe) e coloca na fila quem ainda não recebeu. Com uma
 planilha de clientes, a base fica restrita a eles e, se a campanha usa os
 valores da planilha, valor, celular e colunas das variáveis vêm dela. Daí em diante é o fluxo
 normal: blacklist, uma cobrança por cliente por dia, pausas, expiração no
@@ -39,7 +40,7 @@ from .regras_db import carregar_regras
 from .timezone import hoje_br, inicio_do_dia_utc, inicio_hoje_utc, para_br
 from .utils.phone import is_valid_phone
 from .utils.valor import ler_valor
-from .variaveis_template import formatar_moeda
+from .variaveis_template import CAMPOS_CLIENTE, extrair_placeholders, formatar_moeda
 
 logger = logging.getLogger("campanhas")
 
@@ -105,7 +106,39 @@ def filtros_para_busca(db: Session, filtros: dict, clientes: list[str] | None) -
         valor_atraso_max=decimal("valor_atraso_max"),
         valor_atraso_com_juros=bool(filtros.get("valor_atraso_com_juros", False)),
         codigos=list(clientes) if clientes else None,
+        incluir_so_campanhas=True,
     )
+
+
+# Campo de template que não existe para quem não está em atraso: bloqueado na
+# campanha da faixa só de campanhas (Antecipado).
+CAMPOS_SO_EM_ATRASO = ("valor_atraso",)
+
+
+def faixa_so_campanhas(db: Session, faixas: list[str]) -> str | None:
+    """A faixa só de campanhas (ex.: "Antecipado") entre as faixas escolhidas."""
+    so_campanhas = carregar_regras(db).nomes_faixa_so_campanhas
+    return next((f for f in faixas if f in so_campanhas), None)
+
+
+def erro_faixa_so_campanhas(db: Session, faixas: list[str], *, valor_atraso: bool, mapeamentos) -> str | None:
+    """Mensagem de erro se a campanha usa a faixa só de campanhas com outra
+    faixa, com filtro de valor em atraso ou com variável "Valor em atraso"."""
+
+    faixa = faixa_so_campanhas(db, faixas)
+    if faixa is None:
+        return None
+    if len(faixas) > 1:
+        return f"A faixa {faixa} não pode ser combinada com outras faixas"
+    if valor_atraso:
+        return f"A faixa {faixa} não tem valor em atraso; tire esse filtro"
+    for m in mapeamentos:
+        campos = [m.column_name] if m.fonte_tipo == "campo_cliente" else (
+            extrair_placeholders(m.expressao or "") if m.fonte_tipo == "expressao" else []
+        )
+        if bloqueado := next((c for c in campos if c in CAMPOS_SO_EM_ATRASO), None):
+            return f'A faixa {faixa} não tem "{CAMPOS_CLIENTE[bloqueado]}"; troque essa variável do template'
+    return None
 
 
 def ja_receberam(db: Session, campanha: models.Campanha, agora: datetime | None = None) -> set[str]:
@@ -135,8 +168,10 @@ def selecionar(db: Session, campanha: models.Campanha) -> dict:
     job = cobranca_base.buscar_base(db, **filtros_para_busca(db, campanha.filtros or {}, campanha.clientes))
     if job["status"] != "ready":
         return {"status": "processing"}
-    # Só quem está em atraso: fica de fora o lembrete (parcela ainda a vencer).
-    base = [c for c in job["data"] if c["dias_atraso"] >= 1]
+    # Só quem está em atraso ou numa faixa só de campanhas (Antecipado): o
+    # lembrete (parcela vencendo amanhã ou hoje) fica de fora.
+    so_campanhas = carregar_regras(db).nomes_faixa_so_campanhas
+    base = [c for c in job["data"] if c["dias_atraso"] >= 1 or c["faixa"] in so_campanhas]
     fora = ja_receberam(db, campanha)
     return {"status": "ready", "total_base": len(base), "clientes": [c for c in base if c["codigo"] not in fora]}
 

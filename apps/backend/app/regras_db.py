@@ -30,7 +30,7 @@ def carregar_regras(db: Session) -> Regras:
         for c in clusters_db
     )
     faixas = tuple(
-        FaixaAtraso(nome=f.nome, dia_min=f.dia_min, dia_max=f.dia_max)
+        FaixaAtraso(nome=f.nome, dia_min=f.dia_min, dia_max=f.dia_max, so_campanhas=f.so_campanhas)
         for f in faixas_db
     )
 

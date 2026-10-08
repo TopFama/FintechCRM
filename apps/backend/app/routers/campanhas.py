@@ -150,6 +150,18 @@ def _validar(db: Session, payload: CampanhaIn, atual: models.Campanha | None) ->
     )
     if invalidas:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Filtro desconhecido: {', '.join(invalidas)}")
+    mapeamentos = (
+        db.query(models.FaixaVariableMapping).filter(models.FaixaVariableMapping.faixa_id == atual.faixa_id).all()
+        if atual is not None
+        else []
+    )
+    if erro := camp.erro_faixa_so_campanhas(
+        db,
+        f.faixa,
+        valor_atraso=f.valor_atraso_min is not None or f.valor_atraso_max is not None,
+        mapeamentos=mapeamentos,
+    ):
+        raise _erro(erro)
     if payload.fonte_valores == "planilha" and not (atual and atual.clientes):
         if payload.ativa:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de clientes para usar os valores dela")
