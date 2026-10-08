@@ -210,7 +210,7 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     await page.getByLabel("Até (vazio = sem data final)").fill("2099-01-02");
     await page.getByRole("button", { name: "Criar campanha" }).click();
     await expect(page.getByRole("heading", { name: "Planilha promo" })).toBeVisible();
-    await expect(page.getByText("clientes_campanha.xlsx · 3 cliente(s)")).toBeVisible();
+    await expect(page.getByText("clientes_campanha.xlsx · 2 cliente(s)")).toBeVisible();
     await expect(page.getByLabel("Valor, celular e variáveis vêm")).toHaveValue("planilha");
     await expect(page.locator(".status-pill").first()).toHaveText("Automática");
     await expect(page.locator(".page-header .subtitle")).toContainText("Envio automático de 01/01/2099 a 02/01/2099");

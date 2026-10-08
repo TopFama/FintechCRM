@@ -95,7 +95,7 @@ print("  OK")
 
 print("3. Seleção da campanha")
 base = {"status": "ready", "data": [{"codigo": l["codigo"], "dias_atraso": l["dias_atraso"], "faixa": REGRAS.faixa_por_dias(l["dias_atraso"])} for l in LINHAS]}
-campanha = SimpleNamespace(filtros={"faixa": ["Antecipado"]}, clientes=[])
+campanha = SimpleNamespace(filtros={"faixa": ["Antecipado"]}, clientes=[], incluir_cobrados_hoje=False, todos_da_planilha=False, planilha_linhas={})
 with (
     patch("app.campanhas.carregar_regras", return_value=REGRAS),
     patch("app.campanhas.filtros_para_busca", return_value={}),
