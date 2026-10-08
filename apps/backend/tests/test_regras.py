@@ -73,13 +73,15 @@ engine = create_engine(DB_URL)
 Session = sessionmaker(bind=engine)
 
 from app.regras_db import carregar_regras
-from app.cobranca_regras import REGRAS_PADRAO
+from app.cobranca_regras import REGRAS_PADRAO, FaixaAtraso
 
 with Session() as db:
     regras = carregar_regras(db)
 
 assert regras.clusters == REGRAS_PADRAO.clusters, f"clusters divergem:\n{regras.clusters}\n!=\n{REGRAS_PADRAO.clusters}"
-assert regras.faixas == REGRAS_PADRAO.faixas, f"faixas divergem:\n{regras.faixas}\n!=\n{REGRAS_PADRAO.faixas}"
+# a migration c8e2a4f6b0d1 acrescenta a faixa só de campanhas "Antecipado" antes do padrão
+assert regras.faixas[0] == FaixaAtraso("Antecipado", -365, -2, so_campanhas=True), regras.faixas[0]
+assert regras.faixas[1:] == REGRAS_PADRAO.faixas, f"faixas divergem:\n{regras.faixas}\n!=\n{REGRAS_PADRAO.faixas}"
 assert regras.whatsapp == REGRAS_PADRAO.whatsapp, f"whatsapp diverge"
 assert regras.juros == REGRAS_PADRAO.juros, f"juros divergem: {regras.juros} != {REGRAS_PADRAO.juros}"
 print("  carregar_regras == REGRAS_PADRAO: OK")
