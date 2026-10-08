@@ -776,14 +776,14 @@ def export_relatorio_efetividade_clientes(
 # --- Quem pagou o que foi cobrado (por cliente) -------------------------------
 
 
-def _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela=None, campanha=None):
+def _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela=None, campanha=None, base="leads"):
     """Lista cacheada por conjunto de filtros (compartilhada entre usuários):
     ordenar, paginar e exportar com os mesmos filtros não reconsultam o SETA."""
 
     with erros_de_consulta_pesada():
         return pagamentos_service.snapshot_pagamentos(
             cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate, faixa=faixa,
-            dias_janela=dias_janela, campanha=campanha, velho=pagamentos_service.PAGAMENTOS_VELHO_SEGUNDOS,
+            dias_janela=dias_janela, campanha=campanha, base=base, velho=pagamentos_service.PAGAMENTOS_VELHO_SEGUNDOS,
         )
 
 
@@ -799,6 +799,7 @@ def relatorio_pagamentos(
     faixa: list[str] | None = Query(None),
     campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     dias_janela: int | None = Query(None, ge=0, le=365, description="Pagou em até N dias corridos da cobrança"),
+    base: pagamentos_service.Base = Query("leads", description='"envios" = cobrados do Dashboard (envio no período)'),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort_by: PagamentoSortColumn | None = Query(None),
@@ -806,7 +807,7 @@ def relatorio_pagamentos(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    snap = _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, campanha)
+    snap = _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, campanha, base)
     linhas = snap.data
     if sort_by:
         linhas = pagamentos_service.ordenar(linhas, sort_by, sort_dir, carregar_regras(db).nomes_faixa)
@@ -830,10 +831,11 @@ def export_relatorio_pagamentos(
     faixa: list[str] | None = Query(None),
     campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     dias_janela: int | None = Query(None, ge=0, le=365),
+    base: pagamentos_service.Base = Query("leads"),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, campanha).data
+    linhas = _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, campanha, base).data
     headers = [
         "Código do cliente", "Nome", "CPF", "Loja", "Faixa", "Data da cobrança", "Valor cobrado",
         "Valor pago", "Títulos pagos", "Primeiro pagamento", "Último pagamento",

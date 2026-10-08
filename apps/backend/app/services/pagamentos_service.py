@@ -1,8 +1,10 @@
 """Relatório de quem pagou o que foi cobrado, por cliente: leads cobrados no
-período de cobrança cruzados com as baixas do SETA copiadas em pagamentos_seta."""
+período de cobrança (ou, com base=envios, clientes com mensagem enviada no
+período) cruzados com as baixas do SETA copiadas em pagamentos_seta."""
 
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -12,10 +14,12 @@ from ..database import SessionLocal
 from . import pagamentos_seta
 from ..timezone import dia_br
 
+# De onde sai quem foi cobrado no período: leads (cobrado_em) ou envios da fila (Dashboard)
+Base = Literal["leads", "envios"]
+
 
 def condicao_cobrados(cobrado_de: date | None, cobrado_ate: date | None):
-    """Lead cobrado no período: a base de clientes_que_pagaram e, por isso,
-    também dos clientes cobrados e da Frequência do Dashboard."""
+    """Lead cobrado no período: a base de clientes_que_pagaram (sem base=envios)."""
 
     ini, fim = consultas_fila.limites_utc(cobrado_de, cobrado_ate)
     return and_(
@@ -23,22 +27,6 @@ def condicao_cobrados(cobrado_de: date | None, cobrado_ate: date | None):
         models.Lead.cobrado_em.isnot(None),
         consultas_fila.condicao_periodo(models.Lead.cobrado_em, ini, fim),
     )
-
-
-def clientes_cobrados_por_faixa(
-    db: Session, *, cobrado_de: date | None, cobrado_ate: date | None
-) -> dict[str, set[str]]:
-    """Clientes distintos cobrados no período, por faixa do lead: quem pagou
-    numa faixa sempre está aqui."""
-
-    por_faixa: dict[str, set[str]] = {}
-    for faixa, codigo in (
-        db.query(models.Lead.faixa, models.Lead.codigo_cliente)
-        .filter(condicao_cobrados(cobrado_de, cobrado_ate))
-        .distinct()
-    ):
-        por_faixa.setdefault(faixa, set()).add(codigo)
-    return por_faixa
 
 
 def clientes_que_pagaram(
@@ -52,42 +40,62 @@ def clientes_que_pagaram(
     dias_janela: int | None = None,
     campanha: str | None = None,
     buscar_novos: bool = True,
+    base: Base = "leads",
 ) -> list[dict]:
     """Uma linha por cliente e data de cobrança, só de quem pagou. Com
     `dias_janela`, "pagou" segue exatamente pagamentos_seta.pagamentos_pos_cobranca
     (quitou qualquer título até data_cobranca + dias_janela), a mesma regra do
     Relatório de Efetividade e do card do Dashboard. Levanta
     seta_client.SetaIndisponivel se o SETA estiver fora (com `buscar_novos`,
-    o padrão, quando algum cliente ainda não foi copiado do SETA)."""
+    o padrão, quando algum cliente ainda não foi copiado do SETA).
 
-    query = db.query(models.Lead).filter(condicao_cobrados(cobrado_de, cobrado_ate))
-    if faixa:
-        query = query.filter(models.Lead.faixa.in_(faixa))
-    if campanha:
-        # "regua" = cobranças da régua; id = clientes daquela campanha (como na Efetividade)
-        query = query.filter(models.Lead.campanha_id == ("" if campanha == "regua" else campanha))
+    `base="envios"` parte dos clientes cobrados do Dashboard
+    (consultas_fila.clientes_com_envio_no_periodo): cobrado no período = recebeu
+    mensagem no período, e a data da cobrança é a do primeiro envio do período
+    na faixa. Sem ele, parte dos leads com cobrado_em no período."""
 
-    # Mesmo cliente em mais de um lead no mesmo dia (faixas/vencimentos
+    if base == "envios":
+        cobrados = (
+            (codigo, e.nome, e.cpf, nome_faixa, e.lojas, dia_br(e.primeiro_envio), e.valor)
+            for nome_faixa, clientes in consultas_fila.clientes_com_envio_no_periodo(
+                db, cobrado_de, cobrado_ate, campanha
+            ).items()
+            if not faixa or nome_faixa in faixa
+            for codigo, e in clientes.items()
+        )
+    else:
+        query = db.query(models.Lead).filter(condicao_cobrados(cobrado_de, cobrado_ate))
+        if faixa:
+            query = query.filter(models.Lead.faixa.in_(faixa))
+        if campanha:
+            # "regua" = cobranças da régua; id = clientes daquela campanha (como na Efetividade)
+            query = query.filter(models.Lead.campanha_id == ("" if campanha == "regua" else campanha))
+        cobrados = (
+            (l.codigo_cliente, l.nome, l.cpf, l.faixa, l.lojas, dia_br(l.cobrado_em), l.valor_cobrar)
+            for l in query.all()
+        )
+
+    # Mesmo cliente em mais de um lead ou faixa no mesmo dia (faixas/vencimentos
     # diferentes) vira uma linha só, somando o valor cobrado.
     cobrancas: dict[tuple[str, date], dict] = {}
-    for lead in query.all():
-        chave = (lead.codigo_cliente, dia_br(lead.cobrado_em))
+    for codigo, nome, cpf, nome_faixa, lojas_texto, dia, valor in cobrados:
+        chave = (codigo, dia)
         linha = cobrancas.get(chave)
-        lojas = {l for l in (lead.lojas or "").split(",") if l}
+        lojas = {l for l in (lojas_texto or "").split(",") if l}
         if linha is None:
             cobrancas[chave] = {
-                "codigo_cliente": lead.codigo_cliente,
-                "nome": lead.nome,
-                "cpf": lead.cpf,
-                "faixas": {lead.faixa},
+                "codigo_cliente": codigo,
+                "nome": nome,
+                "cpf": cpf,
+                "faixas": {nome_faixa},
                 "lojas": lojas,
-                "data_cobranca": chave[1],
-                "valor_cobrado": Decimal(lead.valor_cobrar or 0),
+                "data_cobranca": dia,
+                "valor_cobrado": Decimal(valor or 0),
             }
         else:
-            linha["faixas"].add(lead.faixa)
+            linha["faixas"].add(nome_faixa)
             linha["lojas"] |= lojas
-            linha["valor_cobrado"] += Decimal(lead.valor_cobrar or 0)
+            linha["valor_cobrado"] += Decimal(valor or 0)
 
     pares = sorted(cobrancas)
     pagou, pagos = pagamentos_seta.analisar_pos_cobranca(db, pares, dias_janela, pago_de, pago_ate, buscar_novos)
@@ -144,6 +152,7 @@ def snapshot_pagamentos(
     faixa: list[str] | None = None,
     dias_janela: int | None = None,
     campanha: str | None = None,
+    base: Base = "leads",
     velho: int = 0,
 ) -> cache.Snapshot:
     """`clientes_que_pagaram` no Redis por conjunto de filtros, compartilhado
@@ -154,7 +163,7 @@ def snapshot_pagamentos(
 
     filtros = dict(
         cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate, faixa=faixa,
-        dias_janela=dias_janela, campanha=campanha,
+        dias_janela=dias_janela, campanha=campanha, base=base,
     )
 
     def calcular():

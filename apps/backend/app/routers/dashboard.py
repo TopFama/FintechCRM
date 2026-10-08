@@ -8,7 +8,7 @@ from decimal import Decimal
 import redis
 import redis.asyncio as redis_async
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -135,12 +135,6 @@ async def tempo_real(websocket: WebSocket, de: date = Query(...), ate: date = Qu
         pass  # a tela já tinha fechado
 
 
-def _nome_faixa():
-    """Faixa da linha de "Por faixa": a de atraso do cliente (envio de
-    campanha/remarketing), senão a faixa da fila."""
-    return func.coalesce(func.nullif(models.QueueItem.faixa_atraso, ""), models.Faixa.name)
-
-
 def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool = True) -> schemas.DashboardSummary:
     """Cards e tabela por faixa respeitam o período: enviado conta pela data
     do envio, o resto pela data em que entrou na fila. Pagos por faixa vêm da
@@ -152,11 +146,10 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
     # (QueueItem.faixa_atraso), não na faixa própria da campanha.
     por_faixa_rows = (
         db.query(
-            models.Faixa.id, _nome_faixa(), models.QueueItem.faixa_atraso, models.QueueItem.status,
+            models.Faixa.id, consultas_fila.nome_faixa(), models.QueueItem.faixa_atraso, models.QueueItem.status,
             func.count(models.QueueItem.id),
         )
-        # Só faixas com movimento no período (sem listar faixa zerada ou excluída);
-        # faixa só com cliente cobrado entra em _somar_cobrados_por_faixa
+        # Só faixas com movimento no período (sem listar faixa zerada ou excluída)
         .join(models.QueueItem, and_(models.QueueItem.faixa_id == models.Faixa.id, periodo))
         .group_by(models.Faixa.id, models.Faixa.name, models.QueueItem.faixa_atraso, models.QueueItem.status)
         .all()
@@ -192,63 +185,30 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
 def _somar_cobrados_por_faixa(
     db: Session, de: date | None, ate: date | None, por_faixa: dict[str, dict]
 ) -> dict[str, int]:
-    """Clientes distintos cobrados no período (mesma base do "Pagaram após
-    cobrança", base da % Conv.) e, só entre eles, as mensagens enviadas no
-    período e quantos receberam alguma (base da Frequência). A coluna Enviado
-    inteira misturaria mensagens a clientes cobrados antes do período, e o
-    lead marcado como cobrado à mão não recebeu mensagem. Devolve os totais
-    da tabela com cada cliente uma vez, mesmo cobrado em mais de uma faixa."""
+    """Clientes cobrados = clientes distintos que receberam mensagem (sent) da
+    faixa com data de envio no período, a mesma base das Cobranças, da coluna
+    Enviado e do "Pagaram após cobrança" (base da % Conv.). Frequência =
+    mensagens do período ÷ esses clientes. Nos totais cada cliente conta uma
+    vez, mesmo com mensagem em mais de uma faixa."""
 
-    cobrados = pagamentos_service.clientes_cobrados_por_faixa(db, cobrado_de=de, cobrado_ate=ate)
-    # Faixa cadastrada com cliente cobrado no período e sem fila (lead marcado
-    # como cobrado à mão) também ganha linha. Faixa de lead que não existe em
-    # Faixas fica de fora, como já acontecia com o "Pagaram após cobrança":
-    # sem ela não há relatório para onde a linha levar.
-    faltando = set(cobrados) - set(por_faixa)
-    if faltando:
-        for faixa_id, nome in db.query(models.Faixa.id, models.Faixa.name).filter(models.Faixa.name.in_(faltando)):
-            por_faixa[nome] = {"faixa": nome, "faixa_id": faixa_id}
-    ini, fim = consultas_fila.limites_utc(de, ate)
-    nome_faixa = _nome_faixa()
-    cliente_cobrado = (
-        select(models.Lead.id)
-        .where(
-            models.Lead.codigo_cliente == models.QueueItem.codigo_cliente,
-            models.Lead.faixa == nome_faixa,
-            pagamentos_service.condicao_cobrados(de, ate),
-        )
-        .exists()
-    )
-    enviados = (
-        db.query(nome_faixa, models.QueueItem.codigo_cliente, func.count(models.QueueItem.id))
-        .join(models.Faixa, models.QueueItem.faixa_id == models.Faixa.id)
-        .filter(
-            models.QueueItem.status == models.QueueStatus.sent,
-            consultas_fila.condicao_periodo(models.QueueItem.sent_at, ini, fim),
-            cliente_cobrado,
-        )
-        .group_by(nome_faixa, models.QueueItem.codigo_cliente)
-        .all()
-    )
+    envios = consultas_fila.clientes_com_envio_no_periodo(db, de, ate)
+    clientes: set[str] = set()
     for nome, entry in por_faixa.items():
-        entry["clientes_cobrados"] = len(cobrados.get(nome, ()))
-        entry["enviados_cobrados"] = entry["clientes_com_envio"] = 0
-    com_envio: set[str] = set()
-    for nome, codigo, mensagens in enviados:
-        if nome in por_faixa:
-            por_faixa[nome]["enviados_cobrados"] += mensagens
-            por_faixa[nome]["clientes_com_envio"] += 1
-            com_envio.add(codigo)
+        da_faixa = envios.get(nome, {})
+        entry["clientes_cobrados"] = entry["clientes_com_envio"] = len(da_faixa)
+        entry["enviados_cobrados"] = sum(e.mensagens for e in da_faixa.values())
+        clientes.update(da_faixa)
     return {
-        "clientes_cobrados": len(set().union(*(cobrados.get(nome, set()) for nome in por_faixa))),
+        "clientes_cobrados": len(clientes),
         "enviados_cobrados": sum(e["enviados_cobrados"] for e in por_faixa.values()),
-        "clientes_com_envio": len(com_envio),
+        "clientes_com_envio": len(clientes),
     }
 
 
 def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> dict:
-    """Clientes cobrados no período que pagaram depois da cobrança (qualquer
-    data), por faixa: mesma lista do relatório Quem pagou filtrado pela faixa.
+    """Clientes cobrados no período (com envio no período) que pagaram depois
+    do primeiro envio do período (qualquer data), por faixa: mesma lista do
+    relatório Quem pagou com base=envios filtrado pela faixa.
     O valor de cada cliente conta uma vez por faixa, e nos totais devolvidos
     (clientes e valor) uma vez só, mesmo cobrado em mais de uma faixa."""
 
@@ -257,11 +217,13 @@ def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], bus
         entry["valor_pago"] = "0.00"
     try:
         linhas = pagamentos_service.clientes_que_pagaram(
-            db, cobrado_de=de, cobrado_ate=ate, buscar_novos=buscar_novos
+            db, cobrado_de=de, cobrado_ate=ate, buscar_novos=buscar_novos, base="envios"
         )
     except seta_client.SetaIndisponivel:
         # SETA fora com cliente novo sem cópia: mostra o que já está copiado
-        linhas = pagamentos_service.clientes_que_pagaram(db, cobrado_de=de, cobrado_ate=ate, buscar_novos=False)
+        linhas = pagamentos_service.clientes_que_pagaram(
+            db, cobrado_de=de, cobrado_ate=ate, buscar_novos=False, base="envios"
+        )
     # Uma linha por cliente e data de cobrança: cobrado em dois dias, as duas
     # linhas trazem o mesmo pagamento (o da primeira já inclui o da segunda).
     # Vale o maior valor do cliente, senão o pagamento soma duas vezes.

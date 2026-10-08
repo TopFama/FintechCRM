@@ -21,6 +21,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from itertools import chain
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -201,21 +202,26 @@ def sincronizar(db: Session, codigos: set[str] | None = None) -> int:
 
 def _horarios_envio(db: Session, pares: list[tuple[str, date]]) -> dict[tuple[str, date], datetime]:
     """(codigo_cliente, data_cobranca) → primeiro envio naquele dia, na hora de
-    Brasília (mesma referência do horário do caixa do SETA)."""
+    Brasília (mesma referência do horário do caixa do SETA): o mais cedo entre
+    a cobrança do lead e as mensagens enviadas, porque o reenvio a um lead já
+    cobrado não muda o cobrado_em."""
     if not pares:
         return {}
     codigos = {c for c, _ in pares}
     dias = [d for _, d in pares]
+    ini, fim = inicio_do_dia_utc(min(dias)), inicio_do_dia_utc(max(dias) + timedelta(days=1))
     horarios: dict[tuple[str, date], datetime] = {}
-    # Só os dias das cobranças pedidas (índice de cobrado_em); filtra os clientes aqui
-    for codigo, cobrado_em in db.query(models.Lead.codigo_cliente, models.Lead.cobrado_em).filter(
-        models.Lead.status == "cobrado",
-        models.Lead.cobrado_em >= inicio_do_dia_utc(min(dias)),
-        models.Lead.cobrado_em < inicio_do_dia_utc(max(dias) + timedelta(days=1)),
-    ):
+    # Só os dias das cobranças pedidas (índices de cobrado_em e sent_at); filtra os clientes aqui
+    leads = db.query(models.Lead.codigo_cliente, models.Lead.cobrado_em).filter(
+        models.Lead.status == "cobrado", models.Lead.cobrado_em >= ini, models.Lead.cobrado_em < fim
+    )
+    envios = db.query(models.QueueItem.codigo_cliente, models.QueueItem.sent_at).filter(
+        models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.sent_at >= ini, models.QueueItem.sent_at < fim
+    )
+    for codigo, quando in chain(leads, envios):
         if codigo not in codigos:
             continue
-        local = hora_br(cobrado_em)
+        local = hora_br(quando)
         chave = (codigo, local.date())
         if chave not in horarios or local < horarios[chave]:
             horarios[chave] = local

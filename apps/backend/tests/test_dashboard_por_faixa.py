@@ -1,6 +1,6 @@
 """Tabela "Por faixa" do Dashboard (GET /dashboard/summary): clientes cobrados
-na mesma base do "Pagaram após cobrança" e, só entre eles, as mensagens do
-período e quantos receberam alguma (base da Frequência), por faixa de atraso.
+= clientes distintos com mensagem enviada no período, na faixa da coluna
+Enviado; Frequência e "Pagaram após cobrança" na mesma base.
 
 Executa com assert simples, sem pytest. Encerra imprimindo 'OK'.
 """
@@ -24,7 +24,8 @@ from fastapi.testclient import TestClient
 from app import models
 from app.database import SessionLocal
 from app.main import app
-from app.timezone import hoje_br
+from app.services import pagamentos_service
+from app.timezone import hoje_br, inicio_do_dia_utc
 
 with TestClient(app):  # sobe o schema e cria o admin
     pass
@@ -38,24 +39,31 @@ auth = {"Authorization": f"Bearer {res.json()['access_token']}"}
 db = SessionLocal()
 fa, fb, campanha = models.Faixa(name="FA"), models.Faixa(name="FB"), models.Faixa(name="CAMPANHA X", tipo="campanha")
 fc = models.Faixa(name="FC")  # só lead marcado como cobrado à mão, sem fila
-db.add_all([fa, fb, campanha, fc])
+fr = models.Faixa(name="FR")  # reenvio a lead já cobrado ontem
+fh = models.Faixa(name="FH")  # limite de horário do dia
+db.add_all([fa, fb, campanha, fc, fr, fh])
 db.flush()
 
 agora = datetime.utcnow()
+hoje = hoje_br()
+ontem = agora - timedelta(days=1)
+dia_h = hoje - timedelta(days=10)
 S = models.QueueStatus
 
 
-def item(faixa: models.Faixa, codigo: str, status: models.QueueStatus, faixa_atraso: str | None = None, sent_at=agora):
+def item(faixa: models.Faixa, codigo: str, status: models.QueueStatus, faixa_atraso: str | None = None, sent_at=agora,
+         valor: str | None = None):
     return models.QueueItem(
         faixa_id=faixa.id, codigo_cliente=codigo, celular="5511999999999", celular_original="11999999999",
         status=status, sent_at=sent_at if status == S.sent else None, created_at=agora, faixa_atraso=faixa_atraso,
+        valor=valor,
     )
 
 
 def lead(codigo: str, faixa: str, venc_dias: int = 10, cobrado_em=agora):
     return models.Lead(
         codigo_cliente=codigo, nome="X", cluster="TOP", faixa=faixa, dias_atraso=10,
-        vencimento_mais_antigo=hoje_br() - timedelta(days=venc_dias), status="cobrado", cobrado_em=cobrado_em,
+        vencimento_mais_antigo=hoje - timedelta(days=venc_dias), status="cobrado", cobrado_em=cobrado_em,
     )
 
 
@@ -63,58 +71,97 @@ db.add_all([
     item(fa, "1", S.sent), item(fa, "1", S.sent),  # cliente 1: duas mensagens hoje
     item(fa, "2", S.sent),
     item(campanha, "2", S.sent, faixa_atraso="FA"),  # campanha conta na faixa de atraso do cliente
-    item(fa, "3", S.error),
-    item(fa, "9", S.sent),  # cobrado dias atrás: entra no Enviado, fica fora da Frequência
+    item(campanha, "6", S.sent, faixa_atraso="FA"),  # só pela campanha: cobrado em FA
+    item(fa, "3", S.error), item(fa, "10", S.invalid_phone),  # sem mensagem enviada: fora
+    item(fa, "9", S.sent),  # lead cobrado dias atrás, mensagem hoje: conta hoje
     item(fb, "4", S.sent), item(fb, "5", S.pending),
+    item(fb, "1", S.sent),  # cliente 1 também em FB: um em cada faixa, um no total
     item(fa, "1", S.sent, sent_at=agora - timedelta(days=5)),  # fora do período
-    lead("1", "FA"), lead("1", "FA", venc_dias=40),  # duas parcelas: um cliente só
+    item(fr, "R", S.sent, sent_at=ontem), item(fr, "R", S.sent, valor="1.500,00"),
+    # 23:59 e 00:01 de Brasília em volta da virada de dia_h
+    item(fh, "H1", S.sent, sent_at=inicio_do_dia_utc(dia_h + timedelta(days=1)) - timedelta(minutes=1)),
+    item(fh, "H2", S.sent, sent_at=inicio_do_dia_utc(dia_h + timedelta(days=1)) + timedelta(minutes=1)),
+    lead("1", "FA"), lead("1", "FA", venc_dias=40),
     lead("2", "FA"), lead("4", "FB"),
-    lead("7", "FA"),  # marcado como cobrado à mão: sem mensagem
+    lead("7", "FA"),  # marcado como cobrado à mão: sem mensagem, não conta
     lead("9", "FA", cobrado_em=agora - timedelta(days=5)),
     lead("8", "FC"),
+    lead("R", "FR", cobrado_em=ontem),  # o reenvio de hoje não muda o cobrado_em
 ])
 db.commit()
 
+
+def resumo(de, ate, pagaram=()):
+    with patch("app.services.pagamentos_service.clientes_que_pagaram", return_value=list(pagaram)) as pagos:
+        res = client.get(f"/dashboard/summary?de={de.isoformat()}&ate={ate.isoformat()}", headers=auth)
+    assert res.status_code == 200, res.text
+    assert pagos.call_args.kwargs["base"] == "envios", pagos.call_args
+    return res.json()
+
+
 pagaram = [
     {"codigo_cliente": "1", "faixa": "FA", "valor_pago": Decimal("10")},
-    # mesmo cliente cobrado de novo noutro dia: a linha traz o mesmo pagamento
+    # mesmo cliente com duas linhas (dias diferentes): a linha traz o mesmo pagamento
     {"codigo_cliente": "1", "faixa": "FA", "valor_pago": Decimal("10")},
     # cobrado em duas faixas no mesmo dia: conta nas duas linhas, uma vez no total
     {"codigo_cliente": "4", "faixa": "FA, FB", "valor_pago": Decimal("25")},
 ]
-hoje = hoje_br().isoformat()
-with patch("app.services.pagamentos_service.clientes_que_pagaram", return_value=pagaram):
-    res = client.get(f"/dashboard/summary?de={hoje}&ate={hoje}", headers=auth)
-assert res.status_code == 200, res.text
-por_faixa = {r["faixa"]: r for r in res.json()["por_faixa"]}
-assert set(por_faixa) == {"FA", "FB", "FC"}, por_faixa
+dados = resumo(hoje, hoje, pagaram)
+por_faixa = {r["faixa"]: r for r in dados["por_faixa"]}
+assert set(por_faixa) == {"FA", "FB", "FR"}, por_faixa  # FC só tem lead marcado à mão
 
 f = por_faixa["FA"]
-assert f["sent"] == 5 and f["error"] == 1, f
-assert f["clientes_cobrados"] == 3, f  # clientes 1, 2 e 7
-assert f["enviados_cobrados"] == 4, f  # 2 do cliente 1 + 2 do cliente 2 (régua e campanha); o 9 fica fora
-assert f["clientes_com_envio"] == 2, f  # o 7 não recebeu mensagem: fica fora da Frequência
+assert f["sent"] == 6 and f["error"] == 1 and f["invalid_phone"] == 1, f
+assert f["clientes_cobrados"] == 4, f  # 1, 2, 6 e 9; o 7 (à mão), o 3 e o 10 (sem envio) ficam fora
+assert f["enviados_cobrados"] == f["sent"] and f["clientes_com_envio"] == 4, f
 assert f["pagaram"] == 2 and f["valor_pago"] == "35.00", f
 
 f = por_faixa["FB"]
-assert f["sent"] == 1 and f["pending"] == 1, f
-assert f["clientes_cobrados"] == 1 and f["enviados_cobrados"] == 1 and f["clientes_com_envio"] == 1, f
+assert f["sent"] == 2 and f["pending"] == 1, f
+assert f["clientes_cobrados"] == 2 and f["enviados_cobrados"] == 2 and f["clientes_com_envio"] == 2, f
 assert f["pagaram"] == 1 and f["valor_pago"] == "25.00", f
 
-# Total: cada cliente e cada pagamento uma vez (cliente 4 está em FA e FB)
-total = res.json()["total_por_faixa"]
+# Reenvio hoje a lead cobrado ontem: conta hoje (antes ficava 0)
+f = por_faixa["FR"]
+assert f["sent"] == 1 and f["clientes_cobrados"] == 1 and f["enviados_cobrados"] == 1, f
+
+# Total: cada cliente e cada pagamento uma vez (cliente 1 em FA e FB); num dia
+# sem cliente repetido, cobranças = clientes cobrados
+total = dados["total_por_faixa"]
 assert total == {
-    "clientes_cobrados": 5,  # 1, 2, 7 (FA), 4 (FB), 8 (FC)
-    "enviados_cobrados": 5,
-    "clientes_com_envio": 3,  # 1, 2 e 4
+    "clientes_cobrados": 6,  # 1, 2, 6, 9, 4 e R
+    "enviados_cobrados": 9,
+    "clientes_com_envio": 6,
     "pagaram": 2,  # 1 e 4
     "valor_pago": "35.00",
 }, total
+assert dados["total_enviados"] == total["enviados_cobrados"], dados
 
-# Faixa sem fila no período, só com cliente cobrado: aparece com os cobrados
-f = por_faixa["FC"]
-assert f["faixa_id"] == fc.id and f["sent"] == 0 and f["pending"] == 0, f
-assert f["clientes_cobrados"] == 1 and f["enviados_cobrados"] == 0 and f["clientes_com_envio"] == 0, f
+# Ontem e hoje: o cliente R recebeu duas mensagens, é um cliente (Frequência 2,0)
+f = {r["faixa"]: r for r in resumo(hoje - timedelta(days=1), hoje)["por_faixa"]}["FR"]
+assert f["sent"] == 2 and f["enviados_cobrados"] == 2 and f["clientes_cobrados"] == 1, f
+
+# Limite do dia em Brasília: 23:59 conta, 00:01 do dia seguinte não
+f = {r["faixa"]: r for r in resumo(dia_h, dia_h)["por_faixa"]}["FH"]
+assert f["sent"] == 1 and f["clientes_cobrados"] == 1, f
+
+# Pagaram com base=envios: data da cobrança = primeiro envio do período na
+# faixa; quem pagou antes dele não entra
+db.add_all([
+    models.PagamentoSeta(titulo_codigo="P1", codigo_cliente="R", pagamento=hoje, valor=Decimal("30"), rp="R"),
+    models.PagamentoSeta(titulo_codigo="P2", codigo_cliente="4", pagamento=hoje - timedelta(days=1), valor=Decimal("40"), rp="R"),
+])
+db.commit()
+linhas = pagamentos_service.clientes_que_pagaram(db, cobrado_de=hoje, cobrado_ate=hoje, buscar_novos=False, base="envios")
+assert [(l["codigo_cliente"], l["faixa"], l["data_cobranca"]) for l in linhas] == [("R", "FR", hoje)], linhas
+assert linhas[0]["valor_pago"] == Decimal("30.00") and linhas[0]["valor_cobrado"] == Decimal("1500.00"), linhas
+# Pela data do lead (relatório pelo menu), o R foi cobrado ontem
+assert [l["data_cobranca"] for l in pagamentos_service.clientes_que_pagaram(
+    db, cobrado_de=hoje - timedelta(days=1), cobrado_ate=hoje - timedelta(days=1), buscar_novos=False
+) if l["codigo_cliente"] == "R"] == [hoje - timedelta(days=1)]
+assert pagamentos_service.clientes_que_pagaram(
+    db, cobrado_de=hoje, cobrado_ate=hoje, faixa=["FA"], buscar_novos=False, base="envios"
+) == []
 
 # Ordem das colunas: salva na conta do usuário; vazia volta à ordem padrão
 url = "/dashboard/colunas-por-faixa"
