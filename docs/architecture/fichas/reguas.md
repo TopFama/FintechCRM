@@ -16,7 +16,8 @@ enviar"), que em 26/09 era feita em quatro lugares de Envios, está centralizada
 - **Camada:** interface
 - **Responsabilidade:** configurar faixas e seus envios.
 - **Motivos para mudar:** telas de faixa, validação de mapeamento, sincronização com as faixas de atraso.
-- **Depende de:** `models`, `schemas`, `regras_db`, `utils/spreadsheet`.
+- **Regras próprias:** faixa só de campanhas (ex.: "Antecipado") não vira faixa de envio: o "Sincronizar faixas" a pula e o `create_faixa` recusa o nome dela.
+- **Depende de:** `models`, `schemas`, `regras_db`, `campanhas`, `utils/spreadsheet`.
 - **É usado por:** `main`.
 - **Violações encontradas:**
   - [ ] Mais de uma responsabilidade

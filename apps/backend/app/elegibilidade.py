@@ -5,7 +5,13 @@ caminho de envio (régua, campanha, remarketing, planilha):
 - entrada: `clientes_bloqueados_hoje` (quem está pendente/reservado ou já foi
   cobrado hoje) e a blacklist;
 - saída: `conferir_saida`, chamada pelo worker item a item logo antes de
-  enviar (pausa, blacklist e cobrança de hoje por outro caminho)."""
+  enviar (pausa, blacklist e cobrança de hoje por outro caminho).
+
+Exceção: a campanha com "Incluir quem já recebeu mensagem hoje"
+(`Campanha.incluir_cobrados_hoje`) entra sem olhar a cobrança de hoje
+(`campanhas._bloqueados`) e sai mesmo que o cliente já tenha recebido hoje
+(`fora_da_regra_do_dia`). O envio dela continua contando como cobrança do dia
+para os outros caminhos."""
 
 from sqlalchemy import and_, or_, text
 from sqlalchemy.orm import Session
@@ -102,6 +108,17 @@ def ja_cobrado_hoje(db: Session, item: models.QueueItem) -> bool:
     )
 
 
+def fora_da_regra_do_dia(db: Session, item: models.QueueItem) -> bool:
+    """Item de campanha marcada para incluir quem já recebeu mensagem hoje."""
+
+    return (
+        db.query(models.Campanha.id)
+        .filter(models.Campanha.faixa_id == item.faixa_id, models.Campanha.incluir_cobrados_hoje.is_(True))
+        .first()
+        is not None
+    )
+
+
 # Resultado de `conferir_saida` quando o item está só retido por pausa: volta
 # a pendente e sai quando a pausa acabar.
 RETIDO = "retido"
@@ -119,6 +136,6 @@ def conferir_saida(db: Session, item: models.QueueItem, blacklist: Blacklist) ->
     if blacklist.contem(item.codigo_cliente, item.cpf):
         return "Cliente na blacklist; não enviado"
     # Última barreira: o mesmo cliente pode ter entrado em duas filas antes de sair em uma.
-    if ja_cobrado_hoje(db, item):
+    if ja_cobrado_hoje(db, item) and not fora_da_regra_do_dia(db, item):
         return "Cliente já cobrado hoje em outra faixa ou envio; não reenviado"
     return None

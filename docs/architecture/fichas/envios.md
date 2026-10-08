@@ -13,10 +13,10 @@ saída estavam escritas dentro do laço do worker. O backlog #4 (PR #6) juntou t
 
 | Checagem | Onde acontece hoje |
 |---|---|
-| Pendente/reservado ou cobrado hoje (entrada) | `elegibilidade.clientes_bloqueados_hoje` (trava a entrada com `travar_entrada_na_fila`, lock do Postgres até o commit), chamada por `fila_automatica.enfileirar_leads`/`enfileirar_clientes`, `campanhas.executar`, `remarketing.enfileirar` e `upload_service.importar_planilha` |
+| Pendente/reservado ou cobrado hoje (entrada) | `elegibilidade.clientes_bloqueados_hoje` (trava a entrada com `travar_entrada_na_fila`, lock do Postgres até o commit), chamada por `fila_automatica.enfileirar_leads`/`enfileirar_clientes`, `campanhas.executar` (via `campanhas._bloqueados`; a campanha com `incluir_cobrados_hoje` só trava a fila), `remarketing.enfileirar` e `upload_service.importar_planilha` |
 | Cobrado hoje (lista da tela) | `elegibilidade.sem_cobrados_hoje` (usa `cobrados_hoje`), chamada por `routers/cobranca` e `routers/leads` |
 | Blacklist (entrada) | classe `blacklist.Blacklist`: `cobranca_base.buscar_base` (na consulta ao SETA), `remarketing`, `upload_service`, `routers/leads` |
-| Pausa, blacklist e cobrado hoje (saída) | `elegibilidade.conferir_saida`, chamada pelo `worker.run_dispatch_cycle` antes de cada envio; o worker ainda filtra a busca de pendentes por `retencao.faixas`/`retencao.condicao()`, e `campanhas.campanhas_para_hoje` relê as pausas de faixa |
+| Pausa, blacklist e cobrado hoje (saída) | `elegibilidade.conferir_saida`, chamada pelo `worker.run_dispatch_cycle` antes de cada envio (item de campanha com `incluir_cobrados_hoje` não é barrado por cobrado hoje: `fora_da_regra_do_dia`); o worker ainda filtra a busca de pendentes por `retencao.faixas`/`retencao.condicao()`, e `campanhas.campanhas_para_hoje` relê as pausas de faixa |
 | Janela/horário | `worker._within_schedule_window`, `_due`, `_na_janela_diaria` |
 
 ---

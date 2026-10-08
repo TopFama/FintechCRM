@@ -698,6 +698,13 @@ class Campanha(Base):
     # Nulo: cada cliente recebe uma vez por campanha. Com valor: pode receber
     # de novo depois desse número de dias.
     recontato_dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Com planilha: entra todo cliente dela com parcela em aberto no SETA, em
+    # atraso ou não, sem filtro de faixa (campanhas.faixa_na_campanha: sem
+    # atraso vai para a faixa só de campanhas, ex.: "Antecipado"; 1 dia, "1").
+    todos_da_planilha: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Fora da regra de uma cobrança por cliente por dia: entra e sai da fila
+    # mesmo que o cliente já tenha recebido mensagem hoje por outro caminho.
+    incluir_cobrados_hoje: Mapped[bool] = mapped_column(Boolean, default=False)
     ultima_execucao: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ultima_execucao_dia: Mapped[date | None] = mapped_column(Date, nullable=True)
     ultimo_resultado: Mapped[dict] = mapped_column(JSON, default=dict)

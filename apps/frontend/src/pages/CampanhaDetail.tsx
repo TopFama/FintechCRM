@@ -27,6 +27,8 @@ const NOVA: CampanhaIn = {
   data_fim: null,
   fonte_valores: "seta",
   recontato_dias: null,
+  todos_da_planilha: false,
+  incluir_cobrados_hoje: false,
   filtros: FILTROS_CAMPANHA_PADRAO,
 };
 
@@ -44,6 +46,8 @@ function paraForm(c: Campanha): CampanhaIn {
     data_fim: c.data_fim,
     fonte_valores: c.fonte_valores,
     recontato_dias: c.recontato_dias,
+    todos_da_planilha: c.todos_da_planilha,
+    incluir_cobrados_hoje: c.incluir_cobrados_hoje,
     filtros,
   };
 }
@@ -190,7 +194,7 @@ export default function CampanhaDetail() {
     if (!id || !window.confirm("Tirar a planilha de clientes? A campanha volta a usar só os filtros.")) return;
     try {
       await api.removerClientesCampanha(id);
-      setForm((f) => ({ ...f, fonte_valores: "seta" }));
+      setForm((f) => ({ ...f, fonte_valores: "seta", todos_da_planilha: false }));
       setPrevia(null);
       recarregarCampanha();
     } catch (err) {
@@ -405,7 +409,11 @@ export default function CampanhaDetail() {
           <div className="card-header">
             <h3>Quem recebe</h3>
           </div>
-          <p className="card-subtitle">Só clientes em atraso no SETA, ou na faixa Antecipado.</p>
+          <p className="card-subtitle">
+            {form.todos_da_planilha
+              ? "Todos os clientes da planilha com parcela em aberto no SETA, em atraso ou não."
+              : "Só clientes em atraso no SETA, ou na faixa Antecipado."}
+          </p>
           <BarraFiltrosCobranca
             valor={form.filtros}
             onChange={(filtros) => setForm({ ...form, filtros })}
@@ -449,7 +457,14 @@ export default function CampanhaDetail() {
                 {planilhaNova && (
                   <>
                     <span className="text-muted">{planilhaNova.name} · será lida ao criar a campanha</span>
-                    <button type="button" className="danger small" onClick={() => setPlanilhaNova(null)}>
+                    <button
+                      type="button"
+                      className="danger small"
+                      onClick={() => {
+                        setPlanilhaNova(null);
+                        setForm((f) => ({ ...f, todos_da_planilha: false }));
+                      }}
+                    >
                       <IconTrash width={14} height={14} /> Tirar planilha
                     </button>
                   </>
@@ -487,8 +502,40 @@ export default function CampanhaDetail() {
                   </span>
                 )}
               </div>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={form.todos_da_planilha}
+                  disabled={!temPlanilhaOuNova}
+                  onChange={(e) => setForm({ ...form, todos_da_planilha: e.target.checked })}
+                />
+                Todos os clientes da planilha com parcela em aberto, em atraso ou não
+              </label>
+              <p className="field-hint" style={{ marginTop: 0 }}>
+                Quem está em atraso entra na sua faixa de atraso, e quem não está, na faixa Antecipado. Sem filtro
+                de faixa nem de valor em atraso.
+              </p>
             </>
           </div>
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <h3>Regra de uma mensagem por dia</h3>
+          </div>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={form.incluir_cobrados_hoje}
+              onChange={(e) => setForm({ ...form, incluir_cobrados_hoje: e.target.checked })}
+            />
+            Incluir quem já recebeu mensagem hoje
+          </label>
+          <p className="field-hint" style={{ marginTop: 0 }}>
+            {form.incluir_cobrados_hoje
+              ? "Esta campanha envia mesmo para quem já recebeu outra mensagem hoje (régua, outra campanha ou remarketing)."
+              : "Quem já recebeu mensagem hoje por outro caminho fica fora deste envio (uma mensagem por cliente por dia)."}
+          </p>
         </div>
 
         <div className="actions-row" style={{ marginBottom: 16 }}>

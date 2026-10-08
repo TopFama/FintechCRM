@@ -1161,6 +1161,10 @@ export interface CampanhaIn {
   data_fim: string | null;
   fonte_valores: "seta" | "planilha";
   recontato_dias: number | null;
+  /** Com planilha: todos os clientes dela com parcela em aberto, em atraso ou não. */
+  todos_da_planilha: boolean;
+  /** Fora da regra de uma mensagem por cliente por dia. */
+  incluir_cobrados_hoje: boolean;
   filtros: FiltrosCobranca;
 }
 

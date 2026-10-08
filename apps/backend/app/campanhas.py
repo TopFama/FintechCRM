@@ -9,9 +9,12 @@ antes do horário de início, o agendador busca a base da campanha no SETA
 (só clientes em atraso, ou na faixa só de campanhas "Antecipado", quando a
 campanha a escolhe) e coloca na fila quem ainda não recebeu. Com uma
 planilha de clientes, a base fica restrita a eles e, se a campanha usa os
-valores da planilha, valor, celular e colunas das variáveis vêm dela. Daí em diante é o fluxo
-normal: blacklist, uma cobrança por cliente por dia, pausas, expiração no
-fim da janela.
+valores da planilha, valor, celular e colunas das variáveis vêm dela. Com
+"Todos os clientes da planilha", entra todo cliente dela com parcela em aberto
+no SETA, em atraso ou não (`faixa_na_campanha`). Daí em diante é o fluxo
+normal: blacklist, uma cobrança por cliente por dia (a não ser na campanha
+com "Incluir quem já recebeu mensagem hoje"), pausas, expiração no fim da
+janela.
 
 Quem entra na fila da campanha vira também um Lead da sua faixa de atraso
 marcado com a campanha (é o que a Efetividade e a exportação de leads filtram
@@ -30,7 +33,7 @@ from openpyxl import load_workbook
 from sqlalchemy.orm import Session, selectinload
 
 from . import cobranca_base, lojas as lojas_base, models, pausas, seta_client
-from .elegibilidade import STATUS_OCUPA_CLIENTE, clientes_bloqueados_hoje, ocupa_cliente
+from .elegibilidade import STATUS_OCUPA_CLIENTE, clientes_bloqueados_hoje, ocupa_cliente, travar_entrada_na_fila
 from .fila_automatica import (
     enfileirar_clientes,
     enfileirar_leads,
@@ -65,11 +68,14 @@ def em_periodo(campanha: models.Campanha, hoje: date) -> bool:
     return True
 
 
-def filtros_para_busca(db: Session, filtros: dict, clientes: list[str] | None) -> dict:
+def filtros_para_busca(
+    db: Session, filtros: dict, clientes: list[str] | None, *, todos_da_planilha: bool = False
+) -> dict:
     """Argumentos de `cobranca_base.buscar_base` a partir dos filtros salvos
     (mesmos nomes dos parâmetros de /cobranca/clientes). Numa campanha, o
     padrão é pegar todos os dias da faixa e ignorar a matriz do WhatsApp:
-    quem decide quem entra são os filtros da própria campanha."""
+    quem decide quem entra são os filtros da própria campanha. Com
+    `todos_da_planilha` (e a planilha), vale qualquer dia de atraso."""
 
     def lista(chave: str) -> list[str] | None:
         return list(filtros.get(chave) or []) or None
@@ -107,12 +113,29 @@ def filtros_para_busca(db: Session, filtros: dict, clientes: list[str] | None) -
         valor_atraso_com_juros=bool(filtros.get("valor_atraso_com_juros", False)),
         codigos=list(clientes) if clientes else None,
         incluir_so_campanhas=True,
+        todos_os_dias=bool(todos_da_planilha and clientes),
     )
 
 
 # Campo de template que não existe para quem não está em atraso: bloqueado na
 # campanha da faixa só de campanhas (Antecipado).
 CAMPOS_SO_EM_ATRASO = ("valor_atraso",)
+
+
+def faixa_na_campanha(regras, dias_atraso: int) -> str | None:
+    """Faixa de quem entra pela campanha com todos os clientes da planilha:
+    em atraso, a faixa de atraso cadastrada ou, se nenhuma cobre o dia, uma
+    faixa só com ele (ex.: "1"); sem atraso, a faixa só de campanhas que cobre
+    o dia (ou a primeira delas, ex.: "Antecipado"). None se não há faixa só de
+    campanhas cadastrada para quem não está em atraso."""
+
+    if dias_atraso >= 1:
+        faixa = regras.faixa_por_dias(dias_atraso)
+        return faixa if faixa and faixa not in regras.nomes_faixa_so_campanhas else str(dias_atraso)
+    faixa = regras.faixa_por_dias(dias_atraso)
+    if faixa in regras.nomes_faixa_so_campanhas:
+        return faixa
+    return next(iter(regras.nomes_faixa_so_campanhas), None)
 
 
 def faixa_so_campanhas(db: Session, faixas: list[str]) -> str | None:
@@ -132,12 +155,37 @@ def erro_faixa_so_campanhas(db: Session, faixas: list[str], *, valor_atraso: boo
         return f"A faixa {faixa} não pode ser combinada com outras faixas"
     if valor_atraso:
         return f"A faixa {faixa} não tem valor em atraso; tire esse filtro"
+    if bloqueado := _campo_so_em_atraso(mapeamentos):
+        return f'A faixa {faixa} não tem "{CAMPOS_CLIENTE[bloqueado]}"; troque essa variável do template'
+    return None
+
+
+def _campo_so_em_atraso(mapeamentos) -> str | None:
     for m in mapeamentos:
         campos = [m.column_name] if m.fonte_tipo == "campo_cliente" else (
             extrair_placeholders(m.expressao or "") if m.fonte_tipo == "expressao" else []
         )
         if bloqueado := next((c for c in campos if c in CAMPOS_SO_EM_ATRASO), None):
-            return f'A faixa {faixa} não tem "{CAMPOS_CLIENTE[bloqueado]}"; troque essa variável do template'
+            return bloqueado
+    return None
+
+
+def erro_todos_da_planilha(db: Session, faixas: list[str], *, valor_atraso: bool, mapeamentos) -> str | None:
+    """Mensagem de erro se a campanha com todos os clientes da planilha tem
+    filtro de faixa ou de valor em atraso, usa a variável "Valor em atraso"
+    (quem não está em atraso não tem) ou não há faixa só de campanhas."""
+
+    if faixas:
+        return "Com todos os clientes da planilha, a campanha não filtra por faixa; tire esse filtro"
+    if valor_atraso:
+        return "Com todos os clientes da planilha, tire o filtro de valor em atraso (quem não está em atraso não tem)"
+    if bloqueado := _campo_so_em_atraso(mapeamentos):
+        return (
+            f'Com todos os clientes da planilha, quem não está em atraso não tem "{CAMPOS_CLIENTE[bloqueado]}"; '
+            "troque essa variável do template"
+        )
+    if not carregar_regras(db).nomes_faixa_so_campanhas:
+        return "Cadastre uma faixa só de campanhas (ex.: Antecipado) para quem não está em atraso"
     return None
 
 
@@ -165,13 +213,25 @@ def selecionar(db: Session, campanha: models.Campanha) -> dict:
     hoje (base filtrada menos quem já recebeu da campanha), ou
     {"status": "processing"} enquanto o SETA calcula a base em segundo plano."""
 
-    job = cobranca_base.buscar_base(db, **filtros_para_busca(db, campanha.filtros or {}, campanha.clientes))
+    todos = bool(getattr(campanha, "todos_da_planilha", False) and campanha.clientes)
+    job = cobranca_base.buscar_base(
+        db, **filtros_para_busca(db, campanha.filtros or {}, campanha.clientes, todos_da_planilha=todos)
+    )
     if job["status"] != "ready":
         return {"status": "processing"}
-    # Só quem está em atraso ou numa faixa só de campanhas (Antecipado): o
-    # lembrete (parcela vencendo amanhã ou hoje) fica de fora.
-    so_campanhas = carregar_regras(db).nomes_faixa_so_campanhas
-    base = [c for c in job["data"] if c["dias_atraso"] >= 1 or c["faixa"] in so_campanhas]
+    regras = carregar_regras(db)
+    if todos:
+        # Todo cliente da planilha com parcela em aberto, inclusive o lembrete
+        base = [
+            {**c, "faixa": faixa}
+            for c in job["data"]
+            if (faixa := faixa_na_campanha(regras, c["dias_atraso"])) is not None
+        ]
+    else:
+        # Só quem está em atraso ou numa faixa só de campanhas (Antecipado): o
+        # lembrete (parcela vencendo amanhã ou hoje) fica de fora.
+        so_campanhas = regras.nomes_faixa_so_campanhas
+        base = [c for c in job["data"] if c["dias_atraso"] >= 1 or c["faixa"] in so_campanhas]
     fora = ja_receberam(db, campanha)
     return {"status": "ready", "total_base": len(base), "clientes": [c for c in base if c["codigo"] not in fora]}
 
@@ -238,6 +298,17 @@ def _carregar_faixa(db: Session, campanha: models.Campanha) -> models.Faixa:
     )
 
 
+def _bloqueados(db: Session, campanha: models.Campanha) -> set[str]:
+    """Quem não pode entrar na fila desta campanha agora. A campanha fora da
+    regra de uma cobrança por dia ignora pendentes e cobrados de hoje em
+    outros caminhos (não duplicar na própria campanha é com `ja_receberam`)."""
+
+    if campanha.incluir_cobrados_hoje:
+        travar_entrada_na_fila(db)
+        return set()
+    return clientes_bloqueados_hoje(db)
+
+
 def executar(db: Session, campanha: models.Campanha, *, created_by: str | None = None) -> dict:
     """Busca a base e coloca na fila. Devolve {"status": "processing"} se a
     base ainda está sendo calculada (quem chamou tenta de novo depois) ou o
@@ -260,7 +331,7 @@ def executar(db: Session, campanha: models.Campanha, *, created_by: str | None =
             db,
             _carregar_faixa(db, campanha),
             clientes,
-            bloqueados=clientes_bloqueados_hoje(db),
+            bloqueados=_bloqueados(db, campanha),
             juros=juros,
             parcelas=parcelas,
             origem="na campanha",
