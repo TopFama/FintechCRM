@@ -49,6 +49,8 @@ class CampanhaIn(BaseModel):
     data_fim: date | None = None
     fonte_valores: Literal["seta", "planilha"] = "seta"
     recontato_dias: int | None = Field(default=None, ge=1, le=365)
+    todos_da_planilha: bool = False
+    incluir_cobrados_hoje: bool = False
     filtros: FiltrosCampanha = FiltrosCampanha()
 
 
@@ -88,6 +90,8 @@ def _out(
         "data_fim": c.data_fim,
         "fonte_valores": c.fonte_valores,
         "recontato_dias": c.recontato_dias,
+        "todos_da_planilha": c.todos_da_planilha,
+        "incluir_cobrados_hoje": c.incluir_cobrados_hoje,
         "filtros": FiltrosCampanha(**(c.filtros or {})).model_dump(mode="json"),
         "clientes_total": len(c.clientes or []),
         "clientes_arquivo": c.clientes_arquivo,
@@ -155,13 +159,14 @@ def _validar(db: Session, payload: CampanhaIn, atual: models.Campanha | None) ->
         if atual is not None
         else []
     )
-    if erro := camp.erro_faixa_so_campanhas(
-        db,
-        f.faixa,
-        valor_atraso=f.valor_atraso_min is not None or f.valor_atraso_max is not None,
-        mapeamentos=mapeamentos,
-    ):
+    valor_atraso = f.valor_atraso_min is not None or f.valor_atraso_max is not None
+    if erro := camp.erro_faixa_so_campanhas(db, f.faixa, valor_atraso=valor_atraso, mapeamentos=mapeamentos):
         raise _erro(erro)
+    if payload.todos_da_planilha:
+        if erro := camp.erro_todos_da_planilha(db, f.faixa, valor_atraso=valor_atraso, mapeamentos=mapeamentos):
+            raise _erro(erro)
+        if payload.ativa and not (atual and atual.clientes):
+            raise _erro("Suba a planilha de clientes para usar todos os clientes dela")
     if payload.fonte_valores == "planilha" and not (atual and atual.clientes):
         if payload.ativa:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de clientes para usar os valores dela")
@@ -179,6 +184,8 @@ def _aplicar(c: models.Campanha, payload: CampanhaIn, nome: str) -> None:
     c.data_fim = payload.data_fim
     c.fonte_valores = payload.fonte_valores
     c.recontato_dias = payload.recontato_dias
+    c.todos_da_planilha = payload.todos_da_planilha
+    c.incluir_cobrados_hoje = payload.incluir_cobrados_hoje
     c.filtros = payload.filtros.model_dump(mode="json")
     # Mudou a configuração: pode rodar de novo hoje com a nova regra.
     c.ultima_execucao_dia = None
@@ -428,6 +435,7 @@ def remover_clientes(campanha_id: str, db: Session = Depends(get_db), _user: mod
     c.planilha_colunas = []
     c.clientes_arquivo = None
     c.fonte_valores = "seta"
+    c.todos_da_planilha = False
     c.ultima_execucao_dia = None
     db.commit()
 
@@ -494,6 +502,8 @@ def executar_agora(campanha_id: str, db: Session = Depends(get_db), user: models
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Atribua um número e um template à campanha antes de rodar")
     if c.fonte_valores == "planilha" and not c.clientes:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de clientes para usar os valores dela")
+    if c.todos_da_planilha and not c.clientes:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de clientes para usar todos os clientes dela")
     try:
         resultado = camp.executar(db, c, created_by=user.id)
     except _ERROS_BASE as exc:

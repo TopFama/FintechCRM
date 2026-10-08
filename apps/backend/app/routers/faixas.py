@@ -40,12 +40,13 @@ def _salvar_mapeamento(
 
     _validar_mapeamento_variaveis(template, variable_mappings)
     campanha = db.query(models.Campanha).filter(models.Campanha.faixa_id == faixa_id).first()
-    if campanha is not None and (
-        erro := camp.erro_faixa_so_campanhas(
-            db, list((campanha.filtros or {}).get("faixa") or []), valor_atraso=False, mapeamentos=variable_mappings
-        )
-    ):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, erro)
+    if campanha is not None:
+        faixas = list((campanha.filtros or {}).get("faixa") or [])
+        erro = camp.erro_faixa_so_campanhas(db, faixas, valor_atraso=False, mapeamentos=variable_mappings)
+        if erro is None and campanha.todos_da_planilha:
+            erro = camp.erro_todos_da_planilha(db, faixas, valor_atraso=False, mapeamentos=variable_mappings)
+        if erro:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, erro)
     db.query(models.FaixaVariableMapping).filter(
         models.FaixaVariableMapping.faixa_id == faixa_id,
         models.FaixaVariableMapping.template_id == template.id,
@@ -126,6 +127,12 @@ def create_faixa(
 ):
     if db.query(models.Faixa).filter(models.Faixa.name == payload.name).first():
         raise HTTPException(status.HTTP_409_CONFLICT, "Já existe uma faixa com esse nome")
+    # Faixa só de campanhas (ex.: "Antecipado") só envia por campanha: sem
+    # faixa de envio própria, com número e template.
+    if payload.name.strip().lower() in {n.lower() for n in regras_db.carregar_regras(db).nomes_faixa_so_campanhas}:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"A faixa {payload.name.strip()} só envia por campanha; use a tela Campanhas"
+        )
 
     faixa = models.Faixa(name=payload.name)
     db.add(faixa)

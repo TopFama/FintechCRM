@@ -286,7 +286,8 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    nome ou CPF válidos são rejeitadas e listadas no resultado do upload, assim como clientes da
    **blacklist**. Também é rejeitado quem já está pendente/reservado na fila de **qualquer** faixa
    ou já foi cobrado **hoje** (horário de Brasília) em qualquer caminho — a regra fixa é no máximo
-   uma cobrança por cliente por dia (`app/elegibilidade.py`); em outro dia o cliente pode voltar.
+   uma cobrança por cliente por dia (`app/elegibilidade.py`); em outro dia o cliente pode voltar. A
+   única exceção é a campanha com "Incluir quem já recebeu mensagem hoje" (ver Campanhas).
    O valor pode vir escrito de vários jeitos ("1.500,00", "1 500,00", "10,00 reais", "US$ 50"):
    vale o primeiro número. Linha com valor zerado não entra direto: o resultado do upload lista
    essas linhas com os valores que o sistema tem do cliente (valor em atraso com juros, em aberto,
@@ -408,9 +409,23 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    cobrança): fica fora da matriz do WhatsApp, da rotina diária, da Cobrança, do Remarketing e do
    "Sincronizar faixas"; na campanha fica sozinha no filtro de faixa, sem filtro de valor em atraso e
    sem a variável "Valor em atraso" (use "Valor da próxima parcela"). Quem a recebe não vai para a
-   régua no dia seguinte (não está em atraso). Uma planilha de clientes (coluna
+   régua no dia seguinte (não está em atraso). Antecipado não tem faixa de envio própria em
+   Configurações → Faixas (nem pelo "Nova faixa"): o único jeito de enviar para ela é por campanha.
+   No "Por faixa" do Dashboard, a linha Antecipado aparece quando há envio de campanha para ela no
+   período. A faixa de atraso **"1"** (1 dia de atraso) faz parte da régua: a migration
+   `e6b2d8f4a1c7` a cria (regra de cobrança e faixa da régua, sem número/template e fora da matriz
+   do WhatsApp) onde nenhuma faixa cobria o dia 1. Uma planilha de clientes (coluna
    Codigo ou CPF) restringe a base; com "valores da planilha", Valor, Celular e as demais colunas
-   (nas variáveis do template) vêm dela. O agendador roda as campanhas do dia junto com o
+   (nas variáveis do template) vêm dela. Com **"Todos os clientes da planilha com parcela em aberto,
+   em atraso ou não"** (`Campanha.todos_da_planilha`), entra todo cliente da planilha que tem parcela
+   em aberto no SETA, vencida ou não (quem não tem parcela em aberto fica de fora): em atraso, na sua
+   faixa de atraso (um dia que nenhuma faixa cobre vira uma faixa só com ele); sem atraso (inclusive
+   o lembrete), na faixa Antecipado. A campanha fica sem filtro de faixa e de valor em
+   atraso e sem a variável "Valor em atraso". Com **"Incluir quem já recebeu mensagem hoje"**
+   (`Campanha.incluir_cobrados_hoje`), a campanha sai da regra de uma mensagem por cliente por dia:
+   entra na fila e envia mesmo para quem já recebeu outra mensagem hoje. Sem essa opção, quem já
+   recebeu mensagem hoje fica fora do envio. O envio dela continua contando como a cobrança do dia
+   para a régua e os outros caminhos. O agendador roda as campanhas do dia junto com o
    remarketing, antes do horário de início. Por baixo, cada campanha tem uma faixa própria
    ("Campanha: …", `app/campanhas.py`), fora da lista de faixas de atraso. O **Remarketing do
    Renegocie** virou uma aba desta tela (`/remarketing` redireciona para lá), com template e número

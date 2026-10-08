@@ -28,6 +28,11 @@ class FiltroInvalido(ValueError):
     """Nome de faixa/cluster desconhecido; a mensagem é segura para o usuário."""
 
 
+# Intervalo de dias de atraso que cobre qualquer cliente com parcela em aberto,
+# inclusive vencimentos daqui a anos (`todos_os_dias`).
+TODOS_OS_DIAS = (-100_000, None)
+
+
 def _validar(valores: list[str] | None, validos: list[str], rotulo: str) -> None:
     for v in valores or []:
         if v not in validos:
@@ -74,6 +79,7 @@ def buscar_base(
     valor_atraso_com_juros: bool = False,
     codigos: list[str] | None = None,
     incluir_so_campanhas: bool = False,
+    todos_os_dias: bool = False,
 ) -> dict:
     """{"status": "ready", "data": [...]} com os clientes da base de
     cobrança (do mais atrasado para o menos), ou {"status": "processing",
@@ -93,6 +99,9 @@ def buscar_base(
     - `codigos`: só esses clientes (planilha de clientes de uma campanha).
     - `incluir_so_campanhas`: aceita em `faixas` as faixas só de campanhas
       (ex.: "Antecipado"); sem pedir faixa, elas nunca entram.
+    - `todos_os_dias`: qualquer dia de atraso, vencido ou não, inclusive os
+      que não caem em faixa nenhuma (campanha com todos os clientes da
+      planilha); ignora `faixas` e `apenas_primeiro_dia`.
     """
 
     if (lojas is not None and not lojas) or (codigos is not None and not codigos):
@@ -114,8 +123,12 @@ def buscar_base(
     else:
         faixas_sel = regras.nomes_faixa_regua
 
-    intervalos = [(regras.faixa(f).dia_min, regras.faixa(f).dia_max) for f in faixas_sel]
-    dias_exatos = [regras.faixa(f).dia_min for f in faixas_sel] if apenas_primeiro_dia else None
+    if todos_os_dias:
+        intervalos = [TODOS_OS_DIAS]
+        dias_exatos = None
+    else:
+        intervalos = [(regras.faixa(f).dia_min, regras.faixa(f).dia_max) for f in faixas_sel]
+        dias_exatos = [regras.faixa(f).dia_min for f in faixas_sel] if apenas_primeiro_dia else None
 
     bl_codigos, bl_cpfs = codigos_bloqueados(db)
 
