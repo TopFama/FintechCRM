@@ -1,6 +1,7 @@
 """Gráfico do card Orçamento do Dashboard (GET /dashboard/orcamento-progressao):
 a linha de realizado vai só até hoje (GMT-3). Dia que ainda não aconteceu fica
-no eixo com gasto_acumulado_brl nulo, e o total realizado não muda.
+no eixo com gasto_acumulado_brl nulo, e o total realizado não muda. As
+mensagens cobradas acumulam do mesmo jeito (mensagens_acumuladas).
 
 Executa com assert simples, sem pytest. Encerra imprimindo 'OK'.
 """
@@ -35,9 +36,13 @@ HOJE = date(2026, 10, 4)
 def orcamento(inicio: date, fim: date):
     # R$ 1,00 por dia em todo o período, inclusive "dias futuros" (não podem entrar)
     por_dia = {inicio + timedelta(days=i): Decimal("1.00") for i in range((fim - inicio).days + 1)}
+    # 2 mensagens por dia, em dois números da mesma WABA (somam no dia)
+    por_dia_numero = {
+        (d, "waba", tel): [Decimal("0.50"), 1] for d in por_dia for tel in ("5511999990001", "5511999990002")
+    }
     with (
         patch.object(dashboard, "hoje_br", lambda: HOJE),
-        patch.object(dashboard.custo_whatsapp, "custo_detalhado", lambda db, i, f: CustoWhatsapp(por_dia)),
+        patch.object(dashboard.custo_whatsapp, "custo_detalhado", lambda db, i, f: CustoWhatsapp(por_dia, por_dia_numero=por_dia_numero)),
     ):
         db = SessionLocal()
         try:
@@ -51,12 +56,15 @@ o = orcamento(date(2026, 10, 1), date(2026, 10, 31))
 assert len(o.dias) == 31
 assert [d.gasto_acumulado_brl for d in o.dias[:4]] == [Decimal("1.00"), Decimal("2.00"), Decimal("3.00"), Decimal("4.00")]
 assert all(d.gasto_acumulado_brl is None for d in o.dias[4:]), o.dias[4:]
+assert [d.mensagens_acumuladas for d in o.dias[:4]] == [2, 4, 6, 8]
+assert all(d.mensagens_acumuladas is None for d in o.dias[4:])
 assert o.valor_gasto_brl == Decimal("4.00")
 
 # Mês passado: todos os dias com valor
 o = orcamento(date(2026, 9, 1), date(2026, 9, 30))
 assert all(d.gasto_acumulado_brl is not None for d in o.dias)
 assert o.valor_gasto_brl == Decimal("30.00")
+assert o.dias[-1].mensagens_acumuladas == 60
 
 # Período que ainda não começou (personalizado): nenhum valor, total zero
 o = orcamento(date(2026, 11, 1), date(2026, 11, 5))

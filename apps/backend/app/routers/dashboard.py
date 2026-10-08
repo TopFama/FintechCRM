@@ -374,7 +374,11 @@ def _orcamento(db: Session, inicio: date, fim: date) -> schemas.OrcamentoProgres
     dias: list[schemas.OrcamentoProgressaoDiaOut] = []
     valor_gasto_brl: Decimal | None = None
     if por_dia is not None:
+        msgs_dia: dict[date, int] = {}
+        for (dia, _waba, _tel), (_gasto, mensagens) in custo.por_dia_numero.items():
+            msgs_dia[dia] = msgs_dia.get(dia, 0) + mensagens
         acumulado = Decimal("0.00")
+        msgs = 0
         hoje = hoje_br()
         d = inicio
         while d <= fim:
@@ -383,7 +387,12 @@ def _orcamento(db: Session, inicio: date, fim: date) -> schemas.OrcamentoProgres
                 dias.append(schemas.OrcamentoProgressaoDiaOut(data=d, gasto_acumulado_brl=None))
             else:
                 acumulado += por_dia.get(d, Decimal("0"))
-                dias.append(schemas.OrcamentoProgressaoDiaOut(data=d, gasto_acumulado_brl=acumulado.quantize(Decimal("0.01"))))
+                msgs += msgs_dia.get(d, 0)
+                dias.append(
+                    schemas.OrcamentoProgressaoDiaOut(
+                        data=d, gasto_acumulado_brl=acumulado.quantize(Decimal("0.01")), mensagens_acumuladas=msgs
+                    )
+                )
             d += timedelta(days=1)
         valor_gasto_brl = acumulado.quantize(Decimal("0.01"))
 

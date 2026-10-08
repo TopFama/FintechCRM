@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../useAtualizacaoAutomatica";
 import { api, OrcamentoProgressao } from "../../api";
-import { formatBRL, formatData, hojeBR } from "../../format";
+import { formatBRL, formatData, formatNumero, hojeBR } from "../../format";
 import { IconAlert, IconDownload } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 import SortableTh from "../SortableTh";
@@ -300,6 +300,8 @@ function GraficoGasto({ dados }: { dados: OrcamentoProgressao }) {
   const ticksY = [0, 0.25, 0.5, 0.75, 1].map((f) => f * maximo);
   const passoX = Math.max(1, Math.ceil(dias.length / 8));
   const diario = (i: number) => valores[i] - (i > 0 ? valores[i - 1] : 0);
+  const msgs = (i: number) => dias[i].mensagens_acumuladas ?? 0;
+  const msgsDia = (i: number) => msgs(i) - (i > 0 ? msgs(i - 1) : 0);
 
   function aoMover(e: React.MouseEvent<SVGRectElement>) {
     if (ultimo < 0) return;
@@ -309,7 +311,7 @@ function GraficoGasto({ dados }: { dados: OrcamentoProgressao }) {
     setHover(Math.min(Math.max(i, 0), ultimo));
   }
 
-  const tipX = hover !== null ? Math.min(x(hover) + 10, largura - M.dir - 170) : 0;
+  const tipX = hover !== null ? Math.min(x(hover) + 10, largura - M.dir - 190) : 0;
 
   return (
     <div className="orcamento-grafico" ref={caixaRef}>
@@ -362,15 +364,21 @@ function GraficoGasto({ dados }: { dados: OrcamentoProgressao }) {
           <g pointerEvents="none">
             <line x1={x(hover)} x2={x(hover)} y1={M.topo} y2={M.topo + areaA} stroke="var(--color-text-muted)" strokeDasharray="2 3" />
             <circle cx={x(hover)} cy={y(valores[hover])} r={4} fill="var(--color-primary)" />
-            <rect x={tipX} y={M.topo} width={160} height={54} rx={6} fill="var(--color-surface)" stroke="var(--color-border)" />
+            <rect x={tipX} y={M.topo} width={180} height={84} rx={6} fill="var(--color-surface)" stroke="var(--color-border)" />
             <text x={tipX + 10} y={M.topo + 17} fontSize="12" fontWeight="600" fill="var(--color-text)">
               {formatData(dias[hover].data)}
             </text>
             <text x={tipX + 10} y={M.topo + 33} fontSize="11" fill="var(--color-text)">
               No dia: {formatBRL(diario(hover).toFixed(2))}
             </text>
-            <text x={tipX + 10} y={M.topo + 47} fontSize="11" fill="var(--color-text-muted)">
+            <text x={tipX + 10} y={M.topo + 47} fontSize="11" fill="var(--color-text)">
+              Qtd mensagens: {formatNumero(msgsDia(hover))}
+            </text>
+            <text x={tipX + 10} y={M.topo + 61} fontSize="11" fill="var(--color-text-muted)">
               Acumulado: {formatBRL(valores[hover].toFixed(2))}
+            </text>
+            <text x={tipX + 10} y={M.topo + 75} fontSize="11" fill="var(--color-text-muted)">
+              Envios acumulados: {formatNumero(msgs(hover))}
             </text>
           </g>
         )}
