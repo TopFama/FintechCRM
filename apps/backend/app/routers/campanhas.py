@@ -96,6 +96,8 @@ def _out(
         "clientes_total": len(c.clientes or []),
         "clientes_arquivo": c.clientes_arquivo,
         "planilha_colunas": c.planilha_colunas or [],
+        "valor_invalido": camp.valor_invalido(c),
+        "valor_seta_autorizado": c.valor_seta_autorizado,
         "envios_ativos": len(envios),
         "templates": sorted({e.template.name for e in envios if e.template}),
         "ultima_execucao": c.ultima_execucao,
@@ -398,32 +400,49 @@ async def subir_clientes(
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    """Planilha .xlsx de clientes: a campanha passa a olhar só para eles
-    (pela coluna Codigo ou, sem ela, CPF). As demais colunas ficam guardadas
-    para quando a campanha usa os valores da planilha."""
+    """Planilha .xlsx de clientes com verificação dos campos obrigatórios."""
 
     c = _get(db, campanha_id)
     content = await ler_planilha_limitada(file)
     try:
-        # Planilha e consulta ao SETA fora do event loop (worker no mesmo processo)
         lido = await run_in_threadpool(camp.ler_clientes, file.filename or "", content)
+        if not lido["clientes"]:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nenhum cliente identificado na planilha")
+            
+        cadastro = await run_in_threadpool(seta_client.cadastro_por_codigo, lido["clientes"])
+        planilha_linhas, pendentes, completados_pelo_seta = await run_in_threadpool(
+            camp.conferir_obrigatorios, lido["linhas"], cadastro
+        )
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except seta_client.SetaIndisponivel as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-    if not lido["clientes"]:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nenhum cliente identificado na planilha")
-    c.clientes = lido["clientes"]
-    c.planilha_linhas = lido["linhas"]
+        
+    clientes_validos = list(planilha_linhas.keys())
+    
+    # Limpa as reserva_vazio da campanha (novo upload zera decisões)
+    for mapping in c.faixa.variable_mappings:
+        mapping.reserva_vazio = None
+        
+    c.clientes = clientes_validos
+    c.planilha_linhas = planilha_linhas
     c.planilha_colunas = lido["colunas"]
     c.clientes_arquivo = file.filename
+    c.valor_seta_autorizado = None
     c.ultima_execucao_dia = None
     db.commit()
+    
+    # Executa a verificação de colunas em branco em memória
+    col_vazias = camp.colunas_em_branco(c, c.faixa.variable_mappings)
+    
     return {
-        "clientes": len(lido["clientes"]),
+        "clientes": len(clientes_validos),
         "ignoradas": lido["ignoradas"],
         "coluna": lido["coluna"],
         "colunas": lido["colunas"],
+        "pendentes": pendentes,
+        "completados_pelo_seta": completados_pelo_seta,
+        "colunas_em_branco": col_vazias
     }
 
 
@@ -434,6 +453,7 @@ def remover_clientes(campanha_id: str, db: Session = Depends(get_db), _user: mod
     c.planilha_linhas = {}
     c.planilha_colunas = []
     c.clientes_arquivo = None
+    c.valor_seta_autorizado = None
     c.fonte_valores = "seta"
     c.todos_da_planilha = False
     c.ultima_execucao_dia = None
@@ -470,14 +490,14 @@ def previa(
 
     c = _get(db, campanha_id)
     try:
-        selecao = camp.selecionar(db, c)
+        resultado = camp.diagnosticar(db, c)
     except _ERROS_BASE as exc:
         raise _erro_base(exc) from exc
-    if selecao["status"] != "ready":
+    if resultado["status"] != "ready":
         return {"status": "processing", "data": None}
-    clientes = selecao["clientes"]
+    clientes = resultado["clientes"]
     if c.fonte_valores == "planilha":
-        clientes = [camp.com_valores_da_planilha(x, c) for x in clientes]
+        clientes = [camp.com_dados_da_planilha(x, c) for x in clientes]
     if sort_by:
         clientes = ordenar_clientes(clientes, sort_by, sort_dir, db)
     campos = ("codigo", "nome", "celular", "cpfcnpj", "cluster", "faixa", "dias_atraso", "valor_cobrar",
@@ -485,9 +505,10 @@ def previa(
     return {
         "status": "ready",
         "data": {
-            "total_base": selecao["total_base"],
+            "total_base": resultado["total_base"],
             "total": len(clientes),
             "itens": [{k: x.get(k) for k in campos} for x in clientes[offset : offset + limit]],
+            "diagnostico": resultado.get("diagnostico")
         },
     }
 
@@ -511,3 +532,85 @@ def executar_agora(campanha_id: str, db: Session = Depends(get_db), user: models
     if resultado["status"] != "ready":
         return {"status": "processing", "data": None}
     return {"status": "ready", "data": {"encontrados": resultado["encontrados"], "na_fila": resultado["na_fila"]}}
+
+
+class ReservaVazioItem(BaseModel):
+    template_variable_id: str
+    reserva: str
+
+class ReservaVazioRequest(BaseModel):
+    reservas: list[ReservaVazioItem]
+
+
+@router.get("/{campanha_id}/clientes/colunas-em-branco")
+def colunas_em_branco_get(
+    campanha_id: str,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    c = _get(db, campanha_id)
+    return camp.colunas_em_branco(c, c.faixa.variable_mappings)
+
+
+@router.put("/{campanha_id}/variaveis/reserva")
+def salvar_reserva(
+    campanha_id: str,
+    payload: ReservaVazioRequest,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    from ..variaveis_template import CAMPOS_CLIENTE
+    c = _get(db, campanha_id)
+    mappings = {m.template_variable_id: m for m in c.faixa.variable_mappings}
+    
+    for item in payload.reservas:
+        if item.template_variable_id not in mappings:
+            continue
+            
+        reserva = item.reserva
+        if reserva != "fora" and reserva not in CAMPOS_CLIENTE:
+            raise _erro(f"A reserva '{reserva}' é inválida.")
+            
+        if reserva in camp.CAMPOS_SO_EM_ATRASO:
+            f = FiltrosCampanha(**(c.filtros or {}))
+            valor_atraso = f.valor_atraso_min is not None or f.valor_atraso_max is not None
+            m = mappings[item.template_variable_id]
+            old_tipo = m.fonte_tipo
+            old_col = m.column_name
+            m.fonte_tipo = "campo_cliente"
+            m.column_name = reserva
+            
+            try:
+                if erro_faixa := camp.erro_faixa_so_campanhas(db, f.faixa, valor_atraso=valor_atraso, mapeamentos=c.faixa.variable_mappings):
+                    raise _erro(erro_faixa)
+                if c.todos_da_planilha:
+                    if erro_planilha := camp.erro_todos_da_planilha(db, f.faixa, valor_atraso=valor_atraso, mapeamentos=c.faixa.variable_mappings):
+                        raise _erro(erro_planilha)
+            finally:
+                m.fonte_tipo = old_tipo
+                m.column_name = old_col
+                
+        mappings[item.template_variable_id].reserva_vazio = reserva
+        
+    db.commit()
+    return camp.colunas_em_branco(c, c.faixa.variable_mappings)
+
+
+class ValorSetaIn(BaseModel):
+    autorizado: bool
+
+
+@router.put("/{campanha_id}/valor-seta")
+def autorizar_valor_seta(
+    campanha_id: str,
+    payload: ValorSetaIn,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Cliente sem valor válido na planilha: usa o valor do SETA (autorizado)
+    ou fica fora da campanha."""
+
+    c = _get(db, campanha_id)
+    c.valor_seta_autorizado = payload.autorizado
+    db.commit()
+    return _out(c)

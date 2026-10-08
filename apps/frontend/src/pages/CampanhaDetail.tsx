@@ -9,6 +9,8 @@ import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
 import { formatBRL, formatCelular, formatData, formatDataHora } from "../format";
 import { IconAlert, IconBolt, IconCheckCircle, IconEye, IconTrash, IconUpload } from "../icons";
+import ModalDecisaoVariaveis from "../components/ModalDecisaoVariaveis";
+import { ColunaEmBranco } from "../api";
 import { SortDirection, useSort } from "../sort";
 import { AcoesCampanha, criadoEm, periodoCampanha, situacaoCampanha } from "./Campanhas";
 
@@ -90,6 +92,9 @@ export default function CampanhaDetail() {
     carregarPrevia(0, previaLimit, chave, dir);
   });
   const [executando, setExecutando] = useState(false);
+  const [colunasEmBranco, setColunasEmBranco] = useState<ColunaEmBranco[]>([]);
+  const [pendentesPlanilha, setPendentesPlanilha] = useState<Record<string, number>>({});
+  const [completadosSeta, setCompletadosSeta] = useState<Record<string, number>>({});
 
   const alterado = !campanha || JSON.stringify(paraPayload(form)) !== JSON.stringify(paraPayload(paraForm(campanha)));
 
@@ -99,6 +104,9 @@ export default function CampanhaDetail() {
       .getCampanha(id)
       .then((c) => {
         setCampanha(c);
+        if (c.clientes_arquivo) {
+          api.getColunasEmBrancoCampanha(id).then(cb => { if (cb.length > 0) setColunasEmBranco(cb); }).catch(() => {});
+        }
         setForm(paraForm(c));
         return api.getFaixa(c.faixa_id).then(setFaixa);
       })
@@ -178,9 +186,14 @@ export default function CampanhaDetail() {
     try {
       const r = await api.subirClientesCampanha(id, arquivo);
       setSucesso(
-        `Planilha lida pela coluna ${r.coluna}: ${r.clientes} cliente(s)` +
-          (r.ignoradas ? `, ${r.ignoradas} linha(s) sem cliente identificado.` : "."),
+        `Planilha lida pela coluna ${r.coluna}: ${r.clientes} cliente(s) válidos` +
+          (r.ignoradas ? `, ${r.ignoradas} linha(s) sem cliente identificado.` : ".")
       );
+      setPendentesPlanilha(r.pendentes || {});
+      setCompletadosSeta(r.completados_pelo_seta || {});
+      if (r.colunas_em_branco && r.colunas_em_branco.length > 0) {
+        setColunasEmBranco(r.colunas_em_branco);
+      }
       setPrevia(null);
       recarregarCampanha();
     } catch (err) {
@@ -190,8 +203,19 @@ export default function CampanhaDetail() {
     }
   }
 
+  async function autorizarValorSeta(autorizado: boolean) {
+    if (!id) return;
+    setErro(null);
+    try {
+      setCampanha(await api.autorizarValorSetaCampanha(id, autorizado));
+      setPrevia(null);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Erro ao salvar a decisão");
+    }
+  }
+
   async function removerPlanilha() {
-    if (!id || !window.confirm("Tirar a planilha de clientes? A campanha volta a usar só os filtros.")) return;
+    if (!id || !window.confirm("Remover a planilha de clientes? A campanha volta a usar só os filtros.")) return;
     try {
       await api.removerClientesCampanha(id);
       setForm((f) => ({ ...f, fonte_valores: "seta", todos_da_planilha: false }));
@@ -285,6 +309,18 @@ export default function CampanhaDetail() {
 
   return (
     <div>
+      {colunasEmBranco.length > 0 && campanha && (
+        <ModalDecisaoVariaveis
+          campanhaId={campanha.id}
+          colunasEmBranco={colunasEmBranco}
+          onClose={() => setColunasEmBranco([])}
+          onSalvo={() => {
+            setColunasEmBranco([]);
+            setPrevia(null);
+            recarregarCampanha();
+          }}
+        />
+      )}
       <Link to="/campanhas" className="back-link">
         ← Campanhas
       </Link>
@@ -428,6 +464,46 @@ export default function CampanhaDetail() {
               <p className="field-hint">
                 Coluna Codigo ou CPF. Os filtros acima continuam valendo.
               </p>
+              {Object.keys(pendentesPlanilha).length > 0 && (
+                <div className="error-box" style={{ marginBottom: 12, fontSize: '0.9em' }}>
+                  <strong>Atenção: alguns clientes ficaram de fora por dados obrigatórios inválidos:</strong>
+                  <ul style={{ margin: "4px 0 0 20px" }}>
+                    {Object.entries(pendentesPlanilha).map(([motivo, qtd]) => (
+                      <li key={motivo}>{qtd} cliente(s) {motivo}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {campanha?.fonte_valores === "planilha" && campanha.valor_invalido > 0 && (
+                <div className={campanha.valor_seta_autorizado === null ? "error-box" : "success-box"} style={{ marginBottom: 12, fontSize: "0.9em" }}>
+                  <strong>
+                    {campanha.valor_invalido} cliente(s) sem valor válido na planilha.{" "}
+                    {campanha.valor_seta_autorizado === null
+                      ? "Usar o valor do SETA para eles?"
+                      : campanha.valor_seta_autorizado
+                        ? "Usando o valor do SETA."
+                        : "Ficam fora da campanha."}
+                  </strong>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button type="button" className="small" disabled={campanha.valor_seta_autorizado === true} onClick={() => autorizarValorSeta(true)}>
+                      Usar o valor do SETA
+                    </button>
+                    <button type="button" className="secondary small" disabled={campanha.valor_seta_autorizado === false} onClick={() => autorizarValorSeta(false)}>
+                      Deixar fora
+                    </button>
+                  </div>
+                </div>
+              )}
+              {Object.keys(completadosSeta).length > 0 && (
+                <div className="success-box" style={{ marginBottom: 12, fontSize: '0.9em' }}>
+                  <strong>Dados completados pelo SETA (vazios na planilha):</strong>
+                  <ul style={{ margin: "4px 0 0 20px" }}>
+                    {Object.entries(completadosSeta).map(([campo, qtd]) => (
+                      <li key={campo}>{qtd} cliente(s) sem {campo}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div
                 style={{
                   display: "flex",
@@ -465,7 +541,7 @@ export default function CampanhaDetail() {
                         setForm((f) => ({ ...f, todos_da_planilha: false }));
                       }}
                     >
-                      <IconTrash width={14} height={14} /> Tirar planilha
+                      <IconTrash width={14} height={14} /> Remover planilha
                     </button>
                   </>
                 )}
@@ -475,7 +551,7 @@ export default function CampanhaDetail() {
                       {campanha!.clientes_arquivo} · {campanha!.clientes_total} cliente(s)
                     </span>
                     <button type="button" className="danger small" onClick={removerPlanilha}>
-                      <IconTrash width={14} height={14} /> Tirar planilha
+                      <IconTrash width={14} height={14} /> Remover planilha
                     </button>
                   </>
                 )}
@@ -594,9 +670,20 @@ export default function CampanhaDetail() {
           </p>
           {previa && (
             <>
-              <p className="card-subtitle">
-                {previa.total} cliente(s) entrariam, de {previa.total_base} na base filtrada.
-              </p>
+                            <div style={{ marginBottom: 16 }}>
+                <p className="card-subtitle" style={{ margin: "0 0 8px 0" }}>
+                  <strong>{previa.total}</strong> cliente(s) entrariam na fila, de <strong>{previa.total_base}</strong> na base filtrada do SETA.
+                </p>
+                {previa.diagnostico && (
+                  <ul className="card-subtitle" style={{ margin: 0, paddingLeft: 20 }}>
+                    <li><strong>{previa.diagnostico.pronto}</strong> prontos para envio (na lista abaixo).</li>
+                    {previa.diagnostico.ja_recebeu > 0 && <li><strong>{previa.diagnostico.ja_recebeu}</strong> já receberam (na campanha ou bloqueados).</li>}
+                    {previa.diagnostico.blacklist > 0 && <li><strong>{previa.diagnostico.blacklist}</strong> na blacklist ou pausados.</li>}
+                    {previa.diagnostico.fora_por_decisao > 0 && <li><strong>{previa.diagnostico.fora_por_decisao}</strong> fora por decisão (valor em branco ou inválido).</li>}
+                    {previa.diagnostico.aguardando_decisao > 0 && <li><strong style={{color: 'var(--color-danger)'}}>{previa.diagnostico.aguardando_decisao}</strong> aguardando decisão (valor em branco ou inválido).</li>}
+                  </ul>
+                )}
+              </div>
               {previa.itens.length > 0 && (
                 <div className="table-wrap">
                   <table>

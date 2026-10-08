@@ -595,6 +595,39 @@ def telefones_por_codigo(codigos: list[str]) -> dict[str, dict[str, str | None]]
     return resultado
 
 
+def cadastro_por_codigo(codigos: list[str]) -> dict[str, dict]:
+    """Busca dados básicos do cliente pelo código.
+    Devolve codigo, nome, cpfcnpj e telefone1..4. Índice pk_pessoas, em lotes."""
+
+    resultado: dict[str, dict] = {}
+    if not codigos:
+        return resultado
+    engine = engine_ou_erro()
+    stmt = text(
+        "SELECT trim(codigo) AS codigo, trim(nome) AS nome, trim(cpfcnpj) AS cpfcnpj, "
+        "trim(telefone1) AS telefone1, trim(telefone2) AS telefone2, "
+        "trim(telefone3) AS telefone3, trim(telefone4) AS telefone4 "
+        "FROM pessoas WHERE codigo IN :codigos AND funcionario = false"
+    ).bindparams(bindparam("codigos", expanding=True))
+    try:
+        with engine.connect() as conn:
+            for i in range(0, len(codigos), 1000):
+                for r in conn.execute(stmt, {"codigos": codigos[i : i + 1000]}):
+                    resultado[r.codigo] = {
+                        "codigo": r.codigo,
+                        "nome": r.nome,
+                        "cpfcnpj": r.cpfcnpj,
+                        "telefone1": r.telefone1,
+                        "telefone2": r.telefone2,
+                        "telefone3": r.telefone3,
+                        "telefone4": r.telefone4,
+                    }
+    except SQLAlchemyError as exc:
+        logger.warning("Falha ao consultar o SETA: %s", exc.__class__.__name__)
+        raise SetaIndisponivel(f"Falha ao consultar o SETA ({exc.__class__.__name__})") from exc
+    return resultado
+
+
 def codigos_por_cpf(cpfs: list[str]) -> dict[str, str]:
     """CPF (só dígitos) -> código do cliente, para planilhas de campanha que
     trazem só o CPF. Uma consulta só, com todos os CPFs num array."""

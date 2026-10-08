@@ -527,12 +527,26 @@ export const api = {
   subirClientesCampanha: (id: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return request<{ clientes: number; ignoradas: number; coluna: string; colunas: string[] }>(
+    return request<{ 
+        clientes: number; 
+        ignoradas: number; 
+        coluna: string; 
+        colunas: string[];
+        pendentes: Record<string, number>;
+        completados_pelo_seta: Record<string, number>;
+        colunas_em_branco: ColunaEmBranco[];
+    }>(
       `/campanhas/${id}/clientes`,
       { method: "POST", body: form },
     );
   },
   removerClientesCampanha: (id: string) => request<void>(`/campanhas/${id}/clientes`, { method: "DELETE" }),
+  autorizarValorSetaCampanha: (id: string, autorizado: boolean) =>
+    request<Campanha>(`/campanhas/${id}/valor-seta`, { method: "PUT", body: JSON.stringify({ autorizado }) }),
+  getColunasEmBrancoCampanha: (id: string) =>
+    request<ColunaEmBranco[]>(`/campanhas/${id}/clientes/colunas-em-branco`),
+  salvarReservaVazioCampanha: (id: string, reservas: ReservaVazioItem[]) =>
+    request<ColunaEmBranco[]>(`/campanhas/${id}/variaveis/reserva`, { method: "PUT", body: JSON.stringify({ reservas }) }),
   previaCampanha: (id: string, params: { limit: number; offset: number } & OrdenacaoParams, signal?: AbortSignal) =>
     pollAsync<PreviaCampanha>((s) => request(`/campanhas/${id}/previa?${montarQuery(params)}`, { signal: s }), signal),
   executarCampanha: (id: string, signal?: AbortSignal) =>
@@ -1174,6 +1188,10 @@ export interface Campanha extends CampanhaIn {
   clientes_total: number;
   clientes_arquivo: string | null;
   planilha_colunas: string[];
+  /** Clientes da planilha sem valor válido. */
+  valor_invalido: number;
+  /** Para eles: true usa o valor do SETA, false deixa fora, null aguarda a decisão. */
+  valor_seta_autorizado: boolean | null;
   envios_ativos: number;
   templates: string[];
   ultima_execucao: string | null;
@@ -1191,6 +1209,13 @@ export interface Campanha extends CampanhaIn {
 export interface PreviaCampanha {
   total_base: number;
   total: number;
+  diagnostico?: {
+    pronto: number;
+    aguardando_decisao: number;
+    fora_por_decisao: number;
+    blacklist: number;
+    ja_recebeu: number;
+  };
   itens: {
     codigo: string;
     nome: string;
@@ -1458,6 +1483,18 @@ export interface SegmentoRemarketing extends SegmentoRemarketingIn {
   envios_ativos: number;
   ultima_execucao: string | null;
   ultimo_resultado: { encontrados?: number; na_fila?: number };
+}
+
+export interface ColunaEmBranco {
+  variavel_id: string;
+  coluna_nome: string;
+  qtd_afetados: number;
+  sugestao_campo: string | null;
+}
+
+export interface ReservaVazioItem {
+  template_variable_id: string;
+  reserva: string;
 }
 
 export interface PreviaRemarketing {

@@ -87,7 +87,9 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     await page.goto(`/campanhas/${campanha.id}`);
     const previa = card(page, "Quem entraria agora");
     await previa.getByRole("button", { name: "Ver prévia" }).click();
-    await expect(previa).toContainText("10 cliente(s) entrariam");
+    // base filtrada tem os 10; quem já está na fila ou foi cobrado hoje (specs anteriores) não entraria
+    await expect(previa).toContainText("de 10 na base filtrada");
+    const entrariam = Number((await previa.innerText()).match(/(\d+) cliente\(s\) entrariam/)![1]);
     await previa.locator("th", { hasText: "Valor a cobrar" }).click();
     await expect(previa.locator("th", { hasText: "Valor a cobrar" })).toHaveAttribute("aria-sort", "ascending");
     // a ordenação volta do servidor depois do clique: espera a tabela recarregar
@@ -104,7 +106,7 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     const confirmou = responderDialogo(page);
     await previa.getByRole("button", { name: "Colocar na fila agora" }).click();
     await confirmou;
-    await expect(page.locator(".success-box", { hasText: "encontrado" })).toContainText(/\d+ cliente\(s\) colocado\(s\) na fila \(de 10 encontrado\(s\)\)/);
+    await expect(page.locator(".success-box", { hasText: "encontrado" })).toContainText(new RegExp(`\\d+ cliente\\(s\\) colocado\\(s\\) na fila \\(de ${entrariam} encontrado\\(s\\)\\)`));
 
     const fila = await apiGet(page, `/faixas/${campanha.faixa_id}/queue?limit=100&offset=0`);
     const codigos = fila.itens.map((i: any) => i.codigo_cliente);
@@ -112,7 +114,7 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     expect(codigos).not.toContain("00000027"); // loja 06, mas valor acima de 900
 
     await previa.getByRole("button", { name: "Ver prévia" }).click();
-    await expect(previa).toContainText(`${10 - codigos.length} cliente(s) entrariam`);
+    await expect(previa).toContainText(`${entrariam - codigos.length} cliente(s) entrariam`);
   });
 
   test("quem recebeu a campanha vira lead da faixa de atraso e aparece filtrando pela campanha", async ({ page }) => {
@@ -210,7 +212,7 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     await page.getByLabel("Até (vazio = sem data final)").fill("2099-01-02");
     await page.getByRole("button", { name: "Criar campanha" }).click();
     await expect(page.getByRole("heading", { name: "Planilha promo" })).toBeVisible();
-    await expect(page.getByText("clientes_campanha.xlsx · 3 cliente(s)")).toBeVisible();
+    await expect(page.getByText("clientes_campanha.xlsx · 2 cliente(s)")).toBeVisible();
     await expect(page.getByLabel("Valor, celular e variáveis vêm")).toHaveValue("planilha");
     await expect(page.locator(".status-pill").first()).toHaveText("Automática");
     await expect(page.locator(".page-header .subtitle")).toContainText("Envio automático de 01/01/2099 a 02/01/2099");

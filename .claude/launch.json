@@ -1,0 +1,38 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "revisao-backend",
+      "runtimeExecutable": "C:/Users/TopFama/Documents/ProjetosDEV/FintechCRM/apps/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "C:/Users/TopFama/AppData/Local/Temp/claude/C--Users-TopFama-Documents-ProjetosDEV-FintechCRM/26f16753-d4ce-4bf8-84c8-96ed8c687d2c/scratchpad/serve_backend.py",
+        "C:/Users/TopFama/Documents/ProjetosDEV/FintechCRM/apps/backend"
+      ],
+      "port": 8010
+    },
+    {
+      "name": "revisao-frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "--prefix",
+        "C:/Users/TopFama/Documents/ProjetosDEV/FintechCRM/apps/frontend",
+        "vite",
+        "preview",
+        "--port",
+        "4174",
+        "--strictPort",
+        "C:/Users/TopFama/Documents/ProjetosDEV/FintechCRM/apps/frontend"
+      ],
+      "port": 4174
+    },
+    {
+      "name": "revisao-backend-meta-simulada",
+      "runtimeExecutable": "C:/Users/TopFama/Documents/ProjetosDEV/FintechCRM/apps/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "C:/Users/TopFama/AppData/Local/Temp/claude/C--Users-TopFama-Documents-ProjetosDEV-FintechCRM/26f16753-d4ce-4bf8-84c8-96ed8c687d2c/scratchpad/serve_backend_meta_mock.py",
+        "C:/Users/TopFama/Documents/ProjetosDEV/FintechCRM/apps/backend"
+      ],
+      "port": 8011
+    }
+  ]
+}

@@ -14,9 +14,31 @@ comments stay in Portuguese** (see §2).
    list or write any other directory — above all never open the main repo's `.env` or any credentials file.
 2. **Secrets**: you have no credentials for the SETA ERP, Google, Meta or Chatwoot, and must not look for
    them. Do not print environment variables; never put a secret in code, logs or docs. No task needs the
-   real services: test with simulated data.
-3. **No `git commit`, `git push`, `git rebase`, `git reset`, no branch switching.** Leave changes in the
-   working tree; the owner reviews the diff and commits. `git status/diff/log` are fine.
+   real services: test with simulated data. The only exception is the git/GitHub access already configured
+   in the environment, which you may use **solely** for the operations authorized under rule 3; never read,
+   print, copy or store tokens or credential files.
+3. **Git — default is read-only plus working tree.** By default: no `git commit`, `git push`,
+   `git rebase`, `git reset`, no branch switching, no opening PRs. Leave changes in the working tree; the
+   owner reviews the diff and commits. `git status/diff/log` are fine.
+   **Exception — explicit owner authorization.** If `TAREFA.md` or `REVISAO.md` explicitly authorizes
+   specific git operations (e.g. "commit authorized", "push authorized", "open PR authorized"), you may
+   perform **only** the operations listed there, under these limits:
+   - Authorization is per task and per operation: authorizing `commit` does not authorize `push`, and
+     authorizing `push` does not authorize opening a PR. A previous task's authorization does not carry over.
+     If in doubt, treat the operation as **not** authorized and ask in your report.
+   - Work only on the branch of your own worktree (or the branch name given in the task). Never push to
+     `main`/`master` or to any branch you did not create for this task.
+   - Never use `--force`, `--force-with-lease`, `--no-verify`, `reset --hard`, `rebase`, or rewrite history.
+     Never merge a PR, close/delete other people's branches or PRs, or change repository settings.
+   - Commits: small, in Portuguese, imperative message describing the "why"; stage only files within the
+     task's scope (never `git add -A` blindly — check `git status` first). Never commit `.env*`,
+     credentials, `dist/`, `node_modules/` or `tsconfig.tsbuildinfo`.
+   - Run the validations from §4 **before** committing/pushing. Never push a state that fails the build or tests.
+   - PRs (e.g. via `gh pr create`): target the base branch named in the task; title and description in
+     Portuguese, with summary, validation performed and out-of-scope notes (same content as §5). Leave
+     the PR for the owner to review and merge.
+   - If any git operation fails (auth, conflict, rejected push), stop and report the exact command and
+     error output. Do not try workarounds (no force, no alternate credentials, no other remotes).
 4. **No new dependencies** (nothing new in `requirements.txt` / `package.json` unless the task says so).
    `npm install` of what is already in `package.json` is fine.
 5. **Stay in scope**: touch only files the task names or forces you to touch. No drive-by refactors, no
@@ -114,7 +136,8 @@ npm run build        # tsc -b && vite build — any error is blocking
 ```
 
 No backend runs for you: validation is a clean build plus reviewing your code against the task's API
-contract. When done, delete `dist/`, `node_modules/` and `tsconfig.tsbuildinfo` from your workspace.
+contract. When done, delete `dist/`, `node_modules/` and `tsconfig.tsbuildinfo` from your workspace
+(**before** any authorized commit, so they never get staged).
 
 ## 5. Final report format (mandatory)
 
@@ -127,5 +150,8 @@ End every run with these short, factual sections:
 4. **Decisions and assumptions** — anything the task left open and you decided.
 5. **Out of scope / problems found** — wrong things you saw and did **not** touch.
 6. **Migration** (if any) — `revision`, `down_revision`.
+7. **Git** (only if the owner authorized git operations) — each operation performed (commit hashes and
+   messages, branch pushed, PR URL/number), plus any authorized operation you did **not** perform and why.
+   If no authorization was given, state "no git operations performed; changes left in the working tree".
 
 The owner re-runs your validations. Claiming something ran when it didn't is the worst possible outcome.
