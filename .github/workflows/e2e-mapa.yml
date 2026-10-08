@@ -71,6 +71,8 @@ jobs:
           node-version: "20"
       - name: Instalar dependências
         run: |
+          # índice do apt da imagem pode estar velho (pacote some do mirror e dá 404)
+          sudo apt-get update -q >/dev/null
           sudo apt-get install -y -q redis-tools >/dev/null
           python -m venv apps/backend/.venv
           apps/backend/.venv/bin/pip install -q -r apps/backend/requirements.txt
