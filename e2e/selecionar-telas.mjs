@@ -146,7 +146,7 @@ export const FUNCIONALIDADES = {
   campanhas: [
     `${F}pages/Campanhas.tsx`, `${F}pages/CampanhaDetail.tsx`, `${F}components/BarraFiltrosCobranca.tsx`, `${F}components/useRequisicaoUnica.ts`,
     `${F}components/CamposLoja.tsx`, `${F}components/CampoValorMaximo.tsx`, `${F}components/SelectCampanha.tsx`,
-    `${F}components/EnviosFaixa.tsx`, `${F}components/PreviaWhatsapp.tsx`, `${B}routers/campanhas.py`, `${B}campanhas.py`, `${B}campanhas_fixas.py`,
+    `${F}components/EnviosFaixa.tsx`, `${F}components/PreviaWhatsapp.tsx`, `${F}components/ModalDecisaoVariaveis.tsx`, `${B}routers/campanhas.py`, `${B}campanhas.py`, `${B}campanhas_fixas.py`,
     `${B}cobranca_base.py`, `${B}fila_automatica.py`, `${B}elegibilidade.py`, `${B}pausas.py`, `${B}routers/lojas.py`,
     `${B}lojas.py`, `${B}leads_service.py`, `${B}routers/comum.py`, `${B}routers/pausas.py`, `${B}seta_client.py`,
     `${B}cache.py`, `${B}services/compras_seta.py`, `${B}utils/valor.py`, `${B}routers/dashboard.py`, `${B}routers/reports.py`,
