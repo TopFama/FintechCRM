@@ -112,12 +112,23 @@ ClienteSortColumn = Literal[
 def ordenar_clientes(clientes: list[dict], sort_by: str, sort_dir: str, db: Session) -> list[dict]:
     """Ordena uma cópia da lista já carregada em memória (vinda do cache de
     `cobranca_base.buscar_base`) — não refaz a consulta ao SETA. `faixa`
-    ordena pela progressão do atraso, mesmo critério da tela."""
+    ordena pela progressão do atraso, mesmo critério da tela, e dentro da
+    faixa pelos dias de atraso (em Antecipado, o vencimento mais distante
+    primeiro). Faixa fora das regras (dia sem faixa na campanha com todos da
+    planilha) fica onde os dias dela cairiam."""
 
     if sort_by == "faixa":
-        nomes_faixa = carregar_regras(db).nomes_faixa
-        ordem_faixa = {nome: i for i, nome in enumerate(nomes_faixa)}
-        valor_fn = lambda c: ordem_faixa.get(c["faixa"], len(ordem_faixa))
+        regras = carregar_regras(db)
+        ordem_faixa = {nome: i for i, nome in enumerate(regras.nomes_faixa)}
+
+        def valor_fn(c):
+            if not c.get("faixa"):
+                return None
+            ordem = ordem_faixa.get(c["faixa"])
+            if ordem is None:
+                dias_min = [f.dia_min for f in regras.faixas]
+                ordem = sum(1 for d in dias_min if d <= c["dias_atraso"]) - 0.5
+            return (ordem, c["dias_atraso"])
     else:
         valor_fn = lambda c: c.get(sort_by)
 
