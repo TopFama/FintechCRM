@@ -203,6 +203,17 @@ export default function CampanhaDetail() {
     }
   }
 
+  async function autorizarValorSeta(autorizado: boolean) {
+    if (!id) return;
+    setErro(null);
+    try {
+      setCampanha(await api.autorizarValorSetaCampanha(id, autorizado));
+      setPrevia(null);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Erro ao salvar a decisão");
+    }
+  }
+
   async function removerPlanilha() {
     if (!id || !window.confirm("Remover a planilha de clientes? A campanha volta a usar só os filtros.")) return;
     try {
@@ -463,6 +474,26 @@ export default function CampanhaDetail() {
                   </ul>
                 </div>
               )}
+              {campanha?.fonte_valores === "planilha" && campanha.valor_invalido > 0 && (
+                <div className={campanha.valor_seta_autorizado === null ? "error-box" : "success-box"} style={{ marginBottom: 12, fontSize: "0.9em" }}>
+                  <strong>
+                    {campanha.valor_invalido} cliente(s) sem valor válido na planilha.{" "}
+                    {campanha.valor_seta_autorizado === null
+                      ? "Usar o valor do SETA para eles?"
+                      : campanha.valor_seta_autorizado
+                        ? "Usando o valor do SETA."
+                        : "Ficam fora da campanha."}
+                  </strong>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button type="button" className="small" disabled={campanha.valor_seta_autorizado === true} onClick={() => autorizarValorSeta(true)}>
+                      Usar o valor do SETA
+                    </button>
+                    <button type="button" className="secondary small" disabled={campanha.valor_seta_autorizado === false} onClick={() => autorizarValorSeta(false)}>
+                      Deixar fora
+                    </button>
+                  </div>
+                </div>
+              )}
               {Object.keys(completadosSeta).length > 0 && (
                 <div className="success-box" style={{ marginBottom: 12, fontSize: '0.9em' }}>
                   <strong>Dados completados pelo SETA (vazios na planilha):</strong>
@@ -648,8 +679,8 @@ export default function CampanhaDetail() {
                     <li><strong>{previa.diagnostico.pronto}</strong> prontos para envio (na lista abaixo).</li>
                     {previa.diagnostico.ja_recebeu > 0 && <li><strong>{previa.diagnostico.ja_recebeu}</strong> já receberam (na campanha ou bloqueados).</li>}
                     {previa.diagnostico.blacklist > 0 && <li><strong>{previa.diagnostico.blacklist}</strong> na blacklist ou pausados.</li>}
-                    {previa.diagnostico.fora_por_decisao > 0 && <li><strong>{previa.diagnostico.fora_por_decisao}</strong> fora por decisão (valor em branco).</li>}
-                    {previa.diagnostico.aguardando_decisao > 0 && <li><strong style={{color: 'var(--color-danger)'}}>{previa.diagnostico.aguardando_decisao}</strong> aguardando decisão de valor em branco.</li>}
+                    {previa.diagnostico.fora_por_decisao > 0 && <li><strong>{previa.diagnostico.fora_por_decisao}</strong> fora por decisão (valor em branco ou inválido).</li>}
+                    {previa.diagnostico.aguardando_decisao > 0 && <li><strong style={{color: 'var(--color-danger)'}}>{previa.diagnostico.aguardando_decisao}</strong> aguardando decisão (valor em branco ou inválido).</li>}
                   </ul>
                 )}
               </div>

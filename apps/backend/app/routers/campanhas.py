@@ -96,6 +96,8 @@ def _out(
         "clientes_total": len(c.clientes or []),
         "clientes_arquivo": c.clientes_arquivo,
         "planilha_colunas": c.planilha_colunas or [],
+        "valor_invalido": camp.valor_invalido(c),
+        "valor_seta_autorizado": c.valor_seta_autorizado,
         "envios_ativos": len(envios),
         "templates": sorted({e.template.name for e in envios if e.template}),
         "ultima_execucao": c.ultima_execucao,
@@ -426,6 +428,7 @@ async def subir_clientes(
     c.planilha_linhas = planilha_linhas
     c.planilha_colunas = lido["colunas"]
     c.clientes_arquivo = file.filename
+    c.valor_seta_autorizado = None
     c.ultima_execucao_dia = None
     db.commit()
     
@@ -450,6 +453,7 @@ def remover_clientes(campanha_id: str, db: Session = Depends(get_db), _user: mod
     c.planilha_linhas = {}
     c.planilha_colunas = []
     c.clientes_arquivo = None
+    c.valor_seta_autorizado = None
     c.fonte_valores = "seta"
     c.todos_da_planilha = False
     c.ultima_execucao_dia = None
@@ -590,3 +594,23 @@ def salvar_reserva(
         
     db.commit()
     return camp.colunas_em_branco(c, c.faixa.variable_mappings)
+
+
+class ValorSetaIn(BaseModel):
+    autorizado: bool
+
+
+@router.put("/{campanha_id}/valor-seta")
+def autorizar_valor_seta(
+    campanha_id: str,
+    payload: ValorSetaIn,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Cliente sem valor válido na planilha: usa o valor do SETA (autorizado)
+    ou fica fora da campanha."""
+
+    c = _get(db, campanha_id)
+    c.valor_seta_autorizado = payload.autorizado
+    db.commit()
+    return _out(c)

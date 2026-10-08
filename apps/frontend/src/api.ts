@@ -541,6 +541,8 @@ export const api = {
     );
   },
   removerClientesCampanha: (id: string) => request<void>(`/campanhas/${id}/clientes`, { method: "DELETE" }),
+  autorizarValorSetaCampanha: (id: string, autorizado: boolean) =>
+    request<Campanha>(`/campanhas/${id}/valor-seta`, { method: "PUT", body: JSON.stringify({ autorizado }) }),
   getColunasEmBrancoCampanha: (id: string) =>
     request<ColunaEmBranco[]>(`/campanhas/${id}/clientes/colunas-em-branco`),
   salvarReservaVazioCampanha: (id: string, reservas: ReservaVazioItem[]) =>
@@ -1186,6 +1188,10 @@ export interface Campanha extends CampanhaIn {
   clientes_total: number;
   clientes_arquivo: string | null;
   planilha_colunas: string[];
+  /** Clientes da planilha sem valor válido. */
+  valor_invalido: number;
+  /** Para eles: true usa o valor do SETA, false deixa fora, null aguarda a decisão. */
+  valor_seta_autorizado: boolean | null;
   envios_ativos: number;
   templates: string[];
   ultima_execucao: string | null;
