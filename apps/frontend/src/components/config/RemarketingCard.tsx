@@ -300,7 +300,9 @@ function SegmentoForm({
             <MultiSelect
               id={`${id}-faixas`}
               label="Faixas de atraso"
-              options={(opcoes.regras?.faixas ?? []).map((f) => ({ value: f, label: f }))}
+              options={(opcoes.regras?.faixas ?? [])
+                .filter((f) => !opcoes.regras?.faixas_so_campanhas?.includes(f))
+                .map((f) => ({ value: f, label: f }))}
               value={form.faixas_atraso}
               onChange={(v) => setForm({ ...form, faixas_atraso: v })}
               placeholder="Todas"

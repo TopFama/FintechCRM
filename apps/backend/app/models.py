@@ -543,6 +543,8 @@ class FaixaAtrasoCobranca(Base):
     nome: Mapped[str] = mapped_column(String)
     dia_min: Mapped[int] = mapped_column(Integer)
     dia_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Faixa só de campanhas (ex.: "Antecipado"): fora da matriz do WhatsApp e da rotina diária
+    so_campanhas: Mapped[bool] = mapped_column(Boolean, default=False)
 
     regras: Mapped[list["RegraWhatsapp"]] = relationship(
         back_populates="faixa", cascade="all, delete-orphan"

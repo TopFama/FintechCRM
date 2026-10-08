@@ -104,6 +104,18 @@ def main(url: str) -> None:
                 "INSERT INTO vendas VALUES (%s,%s,%s,'S','004')",
                 (f"{i + 1:06d}", codigo, hoje - timedelta(days=420)),
             )
+        # cliente em dia (parcela vencendo em 10 dias): só aparece na faixa
+        # Antecipado das campanhas; sem venda e sem pagamento, não mexe nos outros testes
+        conn.execute(
+            "INSERT INTO pessoas VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,true)",
+            ("00000099", "ANTONIO EM DIA", "", "(11) 98765-4321", "", "98765432100", "A", "01", 2500, 1000,
+             date(1985, 1, 1), date(2019, 1, 1), "RESTRICAO: NAO"),
+        )
+        conn.execute(
+            "INSERT INTO financeiro_titulos VALUES ('T800000099','00000099',120,%s,'01','001','R','A','4',"
+            "'VE000099','PARCELA',NULL,0)",
+            (hoje + timedelta(days=10),),
+        )
         # acordos do Renegocie (remarketing): RE000900 teve a entrada paga
         # (status B, pagamento antigo para não mexer na efetividade);
         # RE000901 está ativo com a entrada vencida e em aberto.

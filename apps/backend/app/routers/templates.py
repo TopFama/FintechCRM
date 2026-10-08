@@ -60,6 +60,7 @@ CLIENTE_EXEMPLO = {
     "valor_em_aberto": Decimal("1200.00"),
     "vencimento_mais_antigo": date(2026, 9, 21),
     "valor_parcela_amanha": Decimal("189.90"),
+    "valor_proxima_parcela": Decimal("189.90"),
     "valor_atraso": Decimal("1100.00"),
 }
 

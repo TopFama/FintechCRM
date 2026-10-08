@@ -34,7 +34,11 @@ test.describe("Configurações → Indicadores", { tag: "@indicadores" }, () => 
     const r = card(page, "Regras de cobrança");
     await expect(r.getByLabel("Nome do cluster")).toHaveCount(6);
     await expect(r.getByLabel("Nome do cluster").first()).toHaveValue("ESPECIAL");
-    await expect(r.getByLabel("Nome da faixa")).toHaveCount(13);
+    await expect(r.getByLabel("Nome da faixa")).toHaveCount(14);
+    // Antecipado (antes do vencimento) vem primeiro, é só de campanhas e fica fora da matriz
+    await expect(r.getByLabel("Nome da faixa").first()).toHaveValue("Antecipado");
+    await expect(r.getByText("Só campanhas")).toHaveCount(1);
+    await expect(r.getByLabel("ESPECIAL entra no WhatsApp na faixa Antecipado")).toHaveCount(0);
     await expect(r.getByLabel("Dia máximo").last()).toHaveValue("");
     await expect(r.getByLabel("ESPECIAL entra no WhatsApp na faixa 3 A 10")).toBeVisible();
   });
@@ -54,17 +58,17 @@ test.describe("Configurações → Indicadores", { tag: "@indicadores" }, () => 
   test("faixas sobrepostas são recusadas", async ({ page }) => {
     permitirErrosConsole(page, /4\d\d/);
     const r = card(page, "Regras de cobrança");
-    await r.getByLabel("Dia máximo").nth(2).fill("15"); // "3 A 10" passa a invadir "11 A 20"
+    await r.getByLabel("Dia máximo").nth(3).fill("15"); // "3 A 10" passa a invadir "11 A 20"
     await r.getByRole("button", { name: "Salvar faixas" }).click();
     await expect(page.locator(".error-box").first()).toBeVisible();
   });
 
   test("salvar um bloco não descarta o que foi digitado (e não salvo) em outro bloco", async ({ page }) => {
     const r = card(page, "Regras de cobrança");
-    await r.getByLabel("Nome da faixa").nth(2).fill("3 A 10 EDITADA");
+    await r.getByLabel("Nome da faixa").nth(3).fill("3 A 10 EDITADA");
     await r.getByRole("button", { name: "Salvar clusters" }).click();
     await expect(page.locator(".success-box").first()).toContainText("Clusters salvos");
-    await expect(r.getByLabel("Nome da faixa").nth(2)).toHaveValue("3 A 10 EDITADA");
+    await expect(r.getByLabel("Nome da faixa").nth(3)).toHaveValue("3 A 10 EDITADA");
   });
 
   test("regra do WhatsApp: marcar, salvar e desfazer", async ({ page }) => {

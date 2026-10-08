@@ -898,6 +898,7 @@ class CobrancaRegrasOut(BaseModel):
     faixas_whatsapp: dict[str, list[str]]  # cluster -> faixas que recebem WhatsApp
     primeiro_dia: dict[str, int]  # faixa -> primeiro dia
     faixas_compra: list[str]
+    faixas_so_campanhas: list[str] = []  # ex.: "Antecipado": só no filtro das campanhas
 
 
 class MatrizQuantidadeOut(BaseModel):
@@ -1142,6 +1143,7 @@ class FaixaAtrasoConfigOut(BaseModel):
     nome: str
     dia_min: int
     dia_max: int | None
+    so_campanhas: bool = False
 
 
 class CelulaMatrizOut(BaseModel):

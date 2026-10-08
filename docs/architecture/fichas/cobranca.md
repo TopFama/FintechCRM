@@ -75,6 +75,7 @@ WhatsApp, juros) e leads. Ordenado do arquivo com mais violações para o com me
 - **Domínio:** Cobrança
 - **Camada:** domínio (regras puras) / aplicação (`regras_db` carrega do banco)
 - **Responsabilidade:** representar as regras de cobrança (cluster, faixa de atraso, matriz, juros).
+- **Faixa só de campanhas:** `FaixaAtraso.so_campanhas` (coluna `config_faixas_atraso.so_campanhas`; a migration `c8e2a4f6b0d1` cria "Antecipado", -365 a -2). `entra_no_whatsapp` é sempre falso para ela e `nomes_faixa_regua` (o "todas as faixas" de `cobranca_base.buscar_base`, da matriz e do "Sincronizar faixas") a deixa de fora; só `buscar_base(incluir_so_campanhas=True)` (campanhas) aceita pedi-la.
 - **Violações encontradas:** nenhuma. `cobranca_regras` não importa nada do app; é o modelo do que o resto deveria ser.
 - **Churn:** 5 / 1 / 3 | **Linhas:** 169 / 55 / 65
 - **Ação sugerida:** travar a pureza no import-linter (Fase 7).

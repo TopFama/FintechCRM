@@ -45,6 +45,7 @@ Revisado em 27/09/2026 (depois dos PRs #3 a #10); churn e cobertura são os de 2
 - **Camada:** aplicação
 - **Responsabilidade:** executar uma campanha no dia.
 - **Motivos para mudar:** filtros, período, fonte de valores (SETA ou planilha), régua pós-campanha, leitura da planilha.
+- **Regras próprias:** `selecionar` só traz quem está em atraso (`dias_atraso >= 1`) ou numa faixa só de campanhas (Antecipado), pedida com `incluir_so_campanhas=True`; `erro_faixa_so_campanhas` (usado por `routers/campanhas` e por `routers/faixas._salvar_mapeamento`) deixa a faixa só de campanhas sozinha, sem filtro de valor em atraso e sem os campos de `CAMPOS_SO_EM_ATRASO`. Teste: `tests/test_faixa_antecipado.py`.
 - **Depende de:** `cobranca_base`, `elegibilidade`, `fila_automatica`, `leads_service`, `lojas`, `pausas`, `regras_db`, `seta_client`, `timezone`, `utils/phone`, `utils/valor`, `variaveis_template`.
 - **É usado por:** `worker`, `routers/campanhas`, `routers/lojas` (leitura de planilha).
 - **Violações encontradas:**

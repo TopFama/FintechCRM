@@ -22,6 +22,7 @@ CAMPOS_CLIENTE: dict[str, str] = {
     "valor_em_aberto": "Valor em aberto",
     "vencimento": "Vencimento da parcela mais antiga",
     "valor_parcela_amanha": "Valor da parcela que vence amanhã",
+    "valor_proxima_parcela": "Valor da próxima parcela",
     "valor_atraso": "Valor em atraso",
 }
 
@@ -153,6 +154,18 @@ def contexto_cliente(cliente: Mapping) -> dict[str, str]:
         )
         if valor_amanha == 0:
             valor_amanha = None
+    # Próxima parcela (faixa Antecipado): soma das parcelas da primeira data
+    # de vencimento a partir de hoje (GMT-3).
+    valor_proxima = cliente.get("valor_proxima_parcela")
+    if valor_proxima is None and cliente.get("parcelas") is not None:
+        hoje = hoje_br()
+        futuras = [p for p in cliente["parcelas"] if (v := _campo(p, "vencimento")) is not None and v >= hoje]
+        if futuras:
+            proxima = min(_campo(p, "vencimento") for p in futuras)
+            valor_proxima = sum(
+                (Decimal(str(_campo(p, "valor") or 0)) for p in futuras if _campo(p, "vencimento") == proxima),
+                Decimal("0"),
+            )
     # Valor em atraso: parcelas já vencidas (antes de hoje, GMT-3) com juros
     # e multa corridos até hoje pelos parâmetros de Configurações → Indicadores.
     valor_atraso = cliente.get("valor_atraso")
@@ -175,6 +188,7 @@ def contexto_cliente(cliente: Mapping) -> dict[str, str]:
         "valor_em_aberto": formatar_moeda(cliente.get("valor_em_aberto")),
         "vencimento": formatar_data(venc_val),
         "valor_parcela_amanha": formatar_moeda(valor_amanha),
+        "valor_proxima_parcela": formatar_moeda(valor_proxima),
         "valor_atraso": formatar_moeda(valor_atraso),
     }
 

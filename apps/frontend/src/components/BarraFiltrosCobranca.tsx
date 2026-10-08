@@ -45,12 +45,25 @@ interface Props {
   acaoDireita?: React.ReactNode; // botão extra alinhado à direita, na linha de Aplicar
   opcoes: OpcoesCobranca;
   idPrefixo: string;
+  // Campanha: oferece as faixas só de campanhas (ex.: Antecipado), que ficam sozinhas no filtro.
+  incluirSoCampanhas?: boolean;
 }
 
 // Mesmos filtros de GET /cobranca/clientes, /cobranca/relatorio e /leads/gerar.
-export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, carregando, opcoes, idPrefixo, acaoDireita }: Props) {
+export default function BarraFiltrosCobranca({
+  valor, onChange, onAplicar, carregando, opcoes, idPrefixo, acaoDireita, incluirSoCampanhas,
+}: Props) {
   const paraOpcoes = (valores: string[] = []) => valores.map((v) => ({ value: v, label: v }));
   const set = (parcial: Partial<FiltrosCobranca>) => onChange({ ...valor, ...parcial });
+  const soCampanhas = opcoes.regras?.faixas_so_campanhas ?? [];
+  const faixas = (opcoes.regras?.faixas ?? []).filter((f) => incluirSoCampanhas || !soCampanhas.includes(f));
+  // Faixa só de campanhas não tem atraso: fica sozinha e sem filtro de valor em atraso
+  const semAtraso = (valor.faixa ?? []).some((f) => soCampanhas.includes(f));
+  function escolherFaixas(v: string[]) {
+    const nova = v.find((f) => soCampanhas.includes(f) && !(valor.faixa ?? []).includes(f));
+    if (nova) set({ faixa: [nova], valor_atraso_min: "", valor_atraso_max: "" });
+    else set({ faixa: semAtraso ? v.filter((f) => !soCampanhas.includes(f)) : v });
+  }
 
   return (
     <>
@@ -76,9 +89,9 @@ export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, carre
       <div className="form-row" style={{ flexWrap: "wrap" }}>
         <MultiSelect
           label="Faixa de atraso"
-          options={paraOpcoes(opcoes.regras?.faixas)}
+          options={paraOpcoes(faixas)}
           value={valor.faixa ?? []}
-          onChange={(v) => set({ faixa: v })}
+          onChange={escolherFaixas}
         />
         <MultiSelect
           label="Cluster"
@@ -134,6 +147,7 @@ export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, carre
         </div>
       </div>
 
+      {!semAtraso && (<>
       <div className="form-row" style={{ flexWrap: "wrap", alignItems: "flex-start" }}>
         <div className="field" style={{ flex: "1 1 160px" }}>
           <label htmlFor={`${idPrefixo}-atraso-min`}>Valor em atraso de (R$)</label>
@@ -169,6 +183,7 @@ export default function BarraFiltrosCobranca({ valor, onChange, onAplicar, carre
       <div className="field-hint" style={{ marginBottom: 8 }}>
         Valor em atraso é a soma das parcelas já vencidas do cliente.
       </div>
+      </>)}
 
       {onAplicar && (
       <div className="actions-row">

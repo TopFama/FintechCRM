@@ -115,7 +115,7 @@ def salvar_segmento(
     if payload.valor_min is not None and payload.valor_max is not None and payload.valor_min > payload.valor_max:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "O valor mínimo é maior que o máximo")
     regras = carregar_regras(db)
-    invalidas = [f for f in payload.faixas_atraso if f not in regras.nomes_faixa] + [
+    invalidas = [f for f in payload.faixas_atraso if f not in regras.nomes_faixa_regua] + [
         c for c in payload.clusters if c not in regras.nomes_cluster
     ]
     if invalidas:

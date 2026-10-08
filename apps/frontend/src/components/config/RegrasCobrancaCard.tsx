@@ -88,7 +88,7 @@ export default function RegrasCobrancaCard() {
     try {
       const celulas: CelulaMatriz[] = [];
       for (const cl of config.clusters) {
-        for (const f of config.faixas) {
+        for (const f of faixasMatriz) {
           if (matriz.has(chave(cl.id, f.id))) {
             celulas.push({ cluster_id: cl.id, faixa_id: f.id });
           }
@@ -103,6 +103,9 @@ export default function RegrasCobrancaCard() {
       setSalvandoMatriz(false);
     }
   }
+
+  // Faixa só de campanhas (Antecipado) nunca entra no WhatsApp da régua
+  const faixasMatriz = (config?.faixas ?? []).filter((f) => !f.so_campanhas);
 
   function toggleCelula(clusterId: string, faixaId: string) {
     setMatriz((atual) => {
@@ -251,6 +254,9 @@ export default function RegrasCobrancaCard() {
                     }
                     style={{ minWidth: 140 }}
                   />
+                  {config.faixas.find((x) => x.id === f.id)?.so_campanhas && (
+                    <span className="badge" style={{ marginLeft: 8 }}>Só campanhas</span>
+                  )}
                 </td>
                 <td>
                   <input
@@ -318,7 +324,7 @@ export default function RegrasCobrancaCard() {
           <thead>
             <tr>
               <th scope="col">Cluster \ Faixa</th>
-              {config.faixas.map((f) => (
+              {faixasMatriz.map((f) => (
                 <th scope="col" key={f.id}>
                   {f.nome}
                 </th>
@@ -329,7 +335,7 @@ export default function RegrasCobrancaCard() {
             {config.clusters.map((cl) => (
               <tr key={cl.id}>
                 <td className="cell-strong">{cl.nome}</td>
-                {config.faixas.map((f) => (
+                {faixasMatriz.map((f) => (
                   <td key={f.id} style={{ textAlign: "center" }}>
                     <input
                       type="checkbox"

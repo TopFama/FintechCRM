@@ -160,7 +160,13 @@ resp = client.get("/config/cobranca", headers=headers)
 assert resp.status_code == 200, f"GET config falhou: {resp.text}"
 cfg = resp.json()
 assert len(cfg["clusters"]) == 6
-assert len(cfg["faixas"]) == 13
+assert len(cfg["faixas"]) == 14
+antecipado = next(f for f in cfg["faixas"] if f["nome"] == "Antecipado")
+assert (antecipado["dia_min"], antecipado["dia_max"], antecipado["so_campanhas"]) == (-365, -2, True)
+assert not any(f["so_campanhas"] for f in cfg["faixas"] if f["nome"] != "Antecipado")
+cr0 = client.get("/cobranca/regras", headers=headers).json()
+assert cr0["faixas_so_campanhas"] == ["Antecipado"] and "Antecipado" in cr0["faixas"]
+assert all("Antecipado" not in fs for fs in cr0["faixas_whatsapp"].values())
 assert cfg["parametros"]["juros_mes_percentual"] == "15.99"
 print("  GET /config/cobranca: OK")
 
