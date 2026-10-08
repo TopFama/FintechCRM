@@ -539,6 +539,8 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     const box = await o.locator("svg[role=img] rect").last().boundingBox();
     await page.mouse.move(box!.x + box!.width - 5, box!.y + box!.height / 2);
     await expect(o.locator("svg[role=img]")).toContainText("Acumulado:");
+    await expect(o.locator("svg[role=img]")).toContainText("Qtd mensagens:");
+    await expect(o.locator("svg[role=img]")).toContainText("Envios acumulados:");
     // mês corrente: a linha vai só até hoje (GMT-3) e termina numa bolinha
     const diaHoje = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", day: "2-digit" }).format(new Date()));
     const pontos = await o.locator("svg[role=img] polyline").getAttribute("points");

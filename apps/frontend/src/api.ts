@@ -1063,6 +1063,7 @@ export interface OrcamentoMes {
 export interface OrcamentoProgressaoDia {
   data: string;
   gasto_acumulado_brl: string | null; // null = dia que ainda não aconteceu
+  mensagens_acumuladas: number | null; // mensagens cobradas pela Meta até o dia
 }
 
 export interface OrcamentoProgressao {
