@@ -263,6 +263,7 @@ class FaixaVariableMapping(Base):
     fonte_tipo: Mapped[str] = mapped_column(String, default="coluna", server_default="coluna")
     column_name: Mapped[str | None] = mapped_column(String, nullable=True)
     expressao: Mapped[str | None] = mapped_column(String, nullable=True)
+    reserva_vazio: Mapped[str | None] = mapped_column(String, nullable=True)
 
     faixa: Mapped[Faixa] = relationship(back_populates="variable_mappings")
     template: Mapped[Template] = relationship()

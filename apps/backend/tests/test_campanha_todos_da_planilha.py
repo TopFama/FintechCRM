@@ -121,7 +121,7 @@ def _selecionar(campanha):
 
 
 planilha = [l["codigo"] for l in LINHAS]
-todos = _selecionar(SimpleNamespace(filtros={}, clientes=planilha, todos_da_planilha=True))
+todos = _selecionar(SimpleNamespace(filtros={}, clientes=planilha, todos_da_planilha=True, incluir_cobrados_hoje=False, faixa=SimpleNamespace(variable_mappings=[]), planilha_linhas={c: {} for c in planilha}))
 assert {c["codigo"]: c["faixa"] for c in todos["clientes"]} == {
     "00000001": "Antecipado",
     "00000002": "Antecipado",
@@ -129,7 +129,7 @@ assert {c["codigo"]: c["faixa"] for c in todos["clientes"]} == {
     "00000004": "1",
 }, todos
 assert todos["total_base"] == 5, "quem já recebeu da campanha conta na base, mas não entra"
-so_atraso = _selecionar(SimpleNamespace(filtros={}, clientes=planilha, todos_da_planilha=False))
+so_atraso = _selecionar(SimpleNamespace(filtros={}, clientes=planilha, todos_da_planilha=False, incluir_cobrados_hoje=False, faixa=SimpleNamespace(variable_mappings=[]), planilha_linhas={c: {} for c in planilha}))
 assert {c["codigo"] for c in so_atraso["clientes"]} == {"00000001", "00000004"}, "sem a opção, nada muda"
 print("  OK")
 

@@ -210,30 +210,18 @@ def ja_receberam(db: Session, campanha: models.Campanha, agora: datetime | None 
 
 def selecionar(db: Session, campanha: models.Campanha) -> dict:
     """{"status": "ready", "clientes": [...], "total_base": n} com quem entraria
-    hoje (base filtrada menos quem já recebeu da campanha), ou
+    hoje (base filtrada menos quem já recebeu, blacklist e sem decisão), ou
     {"status": "processing"} enquanto o SETA calcula a base em segundo plano."""
 
-    todos = bool(getattr(campanha, "todos_da_planilha", False) and campanha.clientes)
-    job = cobranca_base.buscar_base(
-        db, **filtros_para_busca(db, campanha.filtros or {}, campanha.clientes, todos_da_planilha=todos)
-    )
-    if job["status"] != "ready":
-        return {"status": "processing"}
-    regras = carregar_regras(db)
-    if todos:
-        # Todo cliente da planilha com parcela em aberto, inclusive o lembrete
-        base = [
-            {**c, "faixa": faixa}
-            for c in job["data"]
-            if (faixa := faixa_na_campanha(regras, c["dias_atraso"])) is not None
-        ]
-    else:
-        # Só quem está em atraso ou numa faixa só de campanhas (Antecipado): o
-        # lembrete (parcela vencendo amanhã ou hoje) fica de fora.
-        so_campanhas = regras.nomes_faixa_so_campanhas
-        base = [c for c in job["data"] if c["dias_atraso"] >= 1 or c["faixa"] in so_campanhas]
-    fora = ja_receberam(db, campanha)
-    return {"status": "ready", "total_base": len(base), "clientes": [c for c in base if c["codigo"] not in fora]}
+    resultado = diagnosticar(db, campanha)
+    if resultado["status"] != "ready":
+        return resultado
+
+    return {
+        "status": "ready",
+        "total_base": resultado["total_base"],
+        "clientes": resultado["clientes"]
+    }
 
 
 _COLUNAS_VALOR = ("VALOR", "VALOR EM ATRASO", "VALOR A COBRAR", "VALOR ATRASO", "VALOR EM ABERTO", "VALOR DIVIDA")
@@ -265,22 +253,141 @@ def _colunas_para_variaveis(linha: dict[str, str]) -> dict[str, str]:
     return contexto
 
 
-def com_valores_da_planilha(cliente: dict, campanha: models.Campanha) -> dict:
-    """Cliente do SETA com valor e celular trocados pelos da linha da
-    planilha (quando a planilha tem essas colunas preenchidas)."""
+def conferir_obrigatorios(linhas_por_codigo: dict[str, dict], cadastro: dict[str, dict]) -> tuple[dict[str, dict], dict[str, int], dict[str, int]]:
+    """Aplica as regras R1 a R3 aos clientes importados."""
+    from .utils.document import format_cpf
 
+    _COLUNAS_NOME = ("NOME", "NOME CLIENTE", "CLIENTE")
+    _COLUNAS_CPF = ("CPF", "CPF/CNPJ", "CPFCNPJ", "CPF CNPJ", "DOCUMENTO")
+    _COLUNAS_CELULAR = ("CELULAR", "TELEFONE", "FONE", "WHATSAPP")
+    ORDEM_TELEFONES = ("telefone2", "telefone4", "telefone3", "telefone1")
+
+    def _coluna(linha: dict, nomes: tuple) -> str:
+        for c, v in linha.items():
+            if lojas_base._normalizar(c) in nomes and str(v).strip():
+                return str(v).strip()
+        return ""
+
+    planilha_linhas = {}
+    pendentes: dict[str, int] = {}
+    completados_pelo_seta: dict[str, int] = {"nome": 0, "cpf": 0, "celular": 0}
+    
+    for codigo, linha in linhas_por_codigo.items():
+        cad = cadastro.get(codigo)
+        if not cad:
+            pendentes["código não encontrado no SETA"] = pendentes.get("código não encontrado no SETA", 0) + 1
+            continue
+
+        origem = {}
+        
+        # NOME
+        nome_seta = (cad.get("nome") or "").strip()
+        nome_planilha = _coluna(linha, _COLUNAS_NOME)
+        if nome_seta:
+            nome_final = nome_seta
+            origem["nome"] = "SETA"
+            if not nome_planilha:
+                completados_pelo_seta["nome"] += 1
+        elif nome_planilha:
+            nome_final = nome_planilha
+            origem["nome"] = "Planilha"
+        else:
+            pendentes["sem nome"] = pendentes.get("sem nome", 0) + 1
+            continue
+            
+        # CPF
+        cpf_seta = (cad.get("cpfcnpj") or "").strip()
+        cpf_planilha = _coluna(linha, _COLUNAS_CPF)
+        if cpf_seta:
+            cpf_final = cpf_seta
+            origem["cpf"] = "SETA"
+            if not cpf_planilha:
+                completados_pelo_seta["cpf"] += 1
+        elif cpf_planilha:
+            cpf_final = format_cpf(cpf_planilha)
+            origem["cpf"] = "Planilha"
+        else:
+            pendentes["sem CPF"] = pendentes.get("sem CPF", 0) + 1
+            continue
+            
+        # CELULAR
+        celular_planilha = _coluna(linha, _COLUNAS_CELULAR)
+        celular_final = ""
+        if celular_planilha and is_valid_phone(celular_planilha):
+            celular_final = celular_planilha
+            origem["celular"] = "Planilha"
+        else:
+            for tel in ORDEM_TELEFONES:
+                c = (cad.get(tel) or "").strip()
+                if c and is_valid_phone(c):
+                    celular_final = c
+                    origem["celular"] = "SETA"
+                    completados_pelo_seta["celular"] += 1
+                    break
+                    
+        if not celular_final:
+            pendentes["sem telefone válido"] = pendentes.get("sem telefone válido", 0) + 1
+            continue
+            
+        nova_linha = dict(linha)
+        nova_linha["_nome"] = nome_final
+        nova_linha["_cpf"] = cpf_final
+        nova_linha["_celular"] = celular_final
+        nova_linha["_origem"] = origem
+        planilha_linhas[codigo] = nova_linha
+
+    completados_pelo_seta = {k: v for k, v in completados_pelo_seta.items() if v > 0}
+    return planilha_linhas, pendentes, completados_pelo_seta
+
+
+def colunas_em_branco(campanha: models.Campanha, mapeamentos: list[models.FaixaVariableMapping]) -> list[dict]:
+    linhas = list((campanha.planilha_linhas or {}).values())
+    if not linhas:
+        return []
+        
+    resultado = []
+    for m in mapeamentos:
+        if m.fonte_tipo != "coluna" or not m.column_name:
+            continue
+            
+        col_name = m.column_name
+        qtd_afetados = 0
+        for linha in linhas:
+            if not str(linha.get(col_name, "")).strip():
+                qtd_afetados += 1
+                
+        if qtd_afetados > 0:
+            sugestao = None
+            norm_col = lojas_base._normalizar(col_name)
+            for k, v in CAMPOS_CLIENTE.items():
+                if lojas_base._normalizar(k) == norm_col or lojas_base._normalizar(v) == norm_col:
+                    sugestao = k
+                    break
+            
+            resultado.append({
+                "variavel_id": m.template_variable_id,
+                "coluna_nome": col_name,
+                "qtd_afetados": qtd_afetados,
+                "sugestao_campo": sugestao
+            })
+            
+    return resultado
+
+
+def com_dados_da_planilha(cliente: dict, campanha: models.Campanha) -> dict:
+    """Cliente do SETA com nome, CPF e celular conferidos pela planilha."""
     linha = (campanha.planilha_linhas or {}).get(cliente["codigo"])
     if not linha:
         return cliente
     novo = dict(cliente)
-    valor = _decimal_planilha(_coluna_da_linha(linha, _COLUNAS_VALOR) or "")
-    if valor is not None:
-        novo["valor_cobrar"] = valor
-        novo["valor_atraso"] = valor
-    celular = _coluna_da_linha(linha, _COLUNAS_CELULAR)
-    if celular and is_valid_phone(celular):
-        novo["celular"] = celular
-        novo["celular_original"] = celular
+    if "_nome" in linha:
+        novo["nome"] = linha["_nome"]
+    if "_cpf" in linha:
+        novo["cpfcnpj"] = linha["_cpf"]
+    if "_celular" in linha:
+        novo["celular"] = linha["_celular"]
+        novo["celular_original"] = linha["_celular"]
+    # Valor NUNCA é trocado pela planilha
     return novo
 
 
@@ -320,7 +427,7 @@ def executar(db: Session, campanha: models.Campanha, *, created_by: str | None =
     clientes = selecao["clientes"]
     extras = None
     if campanha.fonte_valores == "planilha":
-        clientes = [com_valores_da_planilha(c, campanha) for c in clientes]
+        clientes = [com_dados_da_planilha(c, campanha) for c in clientes]
         extras = {codigo: _colunas_para_variaveis(linha) for codigo, linha in (campanha.planilha_linhas or {}).items()}
     na_fila = 0
     if clientes:
@@ -564,4 +671,77 @@ def ler_clientes(filename: str, content: bytes) -> dict:
         "colunas": colunas,
         "ignoradas": ignoradas,
         "coluna": "CPF" if por_cpf else "Código",
+    }
+
+
+def diagnosticar(db: Session, campanha: models.Campanha) -> dict:
+    """Diagnóstico da campanha: pronto, aguardando_decisao, fora_por_decisao, blacklist, ja_recebeu.
+    Omitimos quem não tem parcela em aberto ou está fora dos filtros (R5)."""
+
+    todos = bool(getattr(campanha, "todos_da_planilha", False) and campanha.clientes)
+    job = cobranca_base.buscar_base(
+        db, **filtros_para_busca(db, campanha.filtros or {}, campanha.clientes, todos_da_planilha=todos)
+    )
+    if job["status"] != "ready":
+        return {"status": "processing"}
+        
+    regras = carregar_regras(db)
+    if todos:
+        base = [
+            {**c, "faixa": faixa}
+            for c in job["data"]
+            if (faixa := faixa_na_campanha(regras, c["dias_atraso"])) is not None
+        ]
+    else:
+        so_campanhas = regras.nomes_faixa_so_campanhas
+        base = [c for c in job["data"] if c["dias_atraso"] >= 1 or c["faixa"] in so_campanhas]
+        
+    ja_foram = ja_receberam(db, campanha)
+    bloqueados = _bloqueados(db, campanha)
+    
+    def status_variaveis(codigo: str) -> str:
+        linha = (campanha.planilha_linhas or {}).get(codigo)
+        if not linha:
+            return "pronto"
+            
+        for m in campanha.faixa.variable_mappings:
+            if m.fonte_tipo == "coluna" and m.column_name:
+                val = str(linha.get(m.column_name, "")).strip()
+                if not val:
+                    if m.reserva_vazio == "fora":
+                        return "fora_por_decisao"
+                    elif not m.reserva_vazio:
+                        return "aguardando_decisao"
+        return "pronto"
+
+    diagnostico = {
+        "pronto": 0,
+        "aguardando_decisao": 0,
+        "fora_por_decisao": 0,
+        "blacklist": 0,
+        "ja_recebeu": 0
+    }
+    
+    clientes_na_previa = []
+    
+    for c in base:
+        if campanha.clientes and c["codigo"] not in campanha.planilha_linhas:
+            continue
+            
+        codigo = c["codigo"]
+        if codigo in ja_foram:
+            diagnostico["ja_recebeu"] += 1
+        elif codigo in bloqueados:
+            diagnostico["blacklist"] += 1
+        else:
+            st = status_variaveis(codigo)
+            diagnostico[st] += 1
+            if st == "pronto":
+                clientes_na_previa.append(c)
+                
+    return {
+        "status": "ready",
+        "total_base": len(base),
+        "clientes": clientes_na_previa,
+        "diagnostico": diagnostico
     }
