@@ -332,9 +332,9 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     // Faixa fica à esquerda; as outras colunas, centralizadas
     const alinhamento = (sel: string) =>
       porFaixa.locator(sel).evaluateAll((els) => els.map((el) => getComputedStyle(el).textAlign));
-    expect(await alinhamento("thead th")).toEqual(["left", ...Array(9).fill("center")]);
-    expect(await alinhamento("tbody tr:first-child td")).toEqual(["left", ...Array(9).fill("center")]);
-    expect(await alinhamento("tfoot tr td")).toEqual(["left", ...Array(9).fill("center")]);
+    expect(await alinhamento("thead th")).toEqual(["left", ...Array(10).fill("center")]);
+    expect(await alinhamento("tbody tr:first-child td")).toEqual(["left", ...Array(10).fill("center")]);
+    expect(await alinhamento("tfoot tr td")).toEqual(["left", ...Array(10).fill("center")]);
 
     // O bloco do título (texto, dica e seta) fica no meio da célula, mesmo quebrado
     const desvios = await porFaixa.locator("thead th").evaluateAll((ths) =>
