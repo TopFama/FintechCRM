@@ -1,5 +1,6 @@
 """Gasto real com WhatsApp (Meta Pricing Analytics, USD → BRL) por dia, usado
-no orçamento do Dashboard e no "valor a pagar" do relatório de efetividade."""
+no orçamento do Dashboard, no "valor a pagar" do relatório de efetividade e,
+rateado por envio (`custo_por_envio`), no ROAS do "Por faixa" e da Efetividade."""
 
 import asyncio
 import logging
@@ -10,10 +11,14 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from .. import cambio, crypto, meta_client, models
+from .. import cache, cambio, consultas_fila, crypto, meta_client, models
 from ..timezone import BUSINESS_TZ
 
 logger = logging.getLogger(__name__)
+
+# Mesmo prazo do Orçamento: o resumo do Dashboard se recalcula a cada 15 s e não
+# pode ir à Meta a cada vez
+GASTO_TTL_SEGUNDOS = 600
 
 # Códigos de erro da Graph API que significam falta de acesso/permissão
 _CODIGOS_PERMISSAO = {10, 100, 190, 200, 294}
@@ -179,8 +184,39 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
 
 def gasto_diario_brl(db: Session, inicio: date, fim: date) -> tuple[dict[date, Decimal] | None, str | None]:
     """(gasto por dia em BRL, motivo) — gasto None quando não deu pra calcular
-    nada; o motivo explica por quê."""
+    nada; o motivo explica por quê. Guardado GASTO_TTL_SEGUNDOS no Redis (falha
+    não é guardada); sem Redis consulta a Meta direto."""
 
-    r = custo_detalhado(db, inicio, fim)
-    motivo = r.motivo or ("; ".join(f"WABA {a.waba_id}: {a.motivo}" for a in r.avisos) or None)
-    return r.por_dia, motivo
+    def calcular() -> dict:
+        r = custo_detalhado(db, inicio, fim)
+        motivo = r.motivo or ("; ".join(f"WABA {a.waba_id}: {a.motivo}" for a in r.avisos) or None)
+        por_dia = None if r.por_dia is None else {d.isoformat(): str(v) for d, v in r.por_dia.items()}
+        return {"por_dia": por_dia, "motivo": motivo}
+
+    try:
+        dados = cache.obter_ou_calcular(
+            cache.chave("custo-whatsapp-dia", {"inicio": inicio, "fim": fim}),
+            calcular,
+            GASTO_TTL_SEGUNDOS,
+            guardar_se=lambda d: d["por_dia"] is not None,
+        )
+    except (cache.CacheIndisponivel, cache.CacheOcupado):
+        dados = calcular()
+    if dados["por_dia"] is None:
+        return None, dados["motivo"]
+    return {date.fromisoformat(d): Decimal(v) for d, v in dados["por_dia"].items()}, dados["motivo"]
+
+
+def custo_por_envio(db: Session, inicio: date, fim: date) -> tuple[dict[date, Decimal] | None, str | None]:
+    """Custo médio de cada mensagem enviada pela fila, por dia: gasto do dia na
+    Meta ÷ mensagens enviadas no dia (todas as faixas). A Meta não dá custo por
+    mensagem nem por template, então o custo de uma faixa (ou de um lead) é este
+    valor vezes os envios dela no dia. Dia sem envio fica de fora."""
+
+    por_dia, motivo = gasto_diario_brl(db, inicio, fim)
+    if por_dia is None:
+        return None, motivo
+    envios: dict[date, int] = {}
+    for (dia, _faixa), n in consultas_fila.envios_por_dia(db, inicio, fim).items():
+        envios[dia] = envios.get(dia, 0) + n
+    return {dia: por_dia.get(dia, Decimal("0")) / n for dia, n in envios.items()}, motivo

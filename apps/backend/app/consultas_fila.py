@@ -8,6 +8,7 @@ from sqlalchemy import Numeric, and_, case, func, or_, select, true
 from sqlalchemy.orm import Session, contains_eager, selectinload
 
 from . import campanhas_fixas, models, pausas
+from .config import settings
 from .regras_db import carregar_regras
 from .timezone import dia_br, inicio_do_dia_utc
 
@@ -253,6 +254,29 @@ def clientes_com_envio_no_periodo(db: Session, de: date | None, ate: date | None
     for linha in db.execute(select(envios).where(envios.c.ordem == 1)):
         por_faixa.setdefault(linha.faixa, {})[linha.codigo_cliente] = linha
     return por_faixa
+
+
+def envios_por_dia(db: Session, de: date | None, ate: date | None) -> dict[tuple[date, str], int]:
+    """Mensagens enviadas (sent) com data de envio no período, por dia de
+    Brasília e faixa de nome_faixa(): base do rateio do custo do WhatsApp
+    (services/custo_whatsapp.custo_por_envio) e do custo por faixa do Dashboard."""
+
+    ini, fim = limites_utc(de, ate)
+    # sent_at é UTC ingênuo: vira timestamptz em UTC e depois o dia em Brasília
+    dia = func.date(func.timezone(settings.business_timezone, func.timezone("UTC", models.QueueItem.sent_at)))
+    # Agrupa por fora: no GROUP BY a expressão com parâmetros não casaria com a do SELECT
+    envios = (
+        select(dia.label("dia"), nome_faixa().label("faixa"))
+        .select_from(models.QueueItem)
+        .join(models.Faixa, models.QueueItem.faixa_id == models.Faixa.id)
+        .where(
+            models.QueueItem.status == models.QueueStatus.sent,
+            condicao_periodo(models.QueueItem.sent_at, ini, fim),
+        )
+        .subquery()
+    )
+    linhas = db.execute(select(envios.c.dia, envios.c.faixa, func.count()).group_by(envios.c.dia, envios.c.faixa))
+    return {(d, f): n for d, f, n in linhas}
 
 
 def dia_do_card(status: str, criado: datetime | None, enviado: datetime | None) -> date | None:

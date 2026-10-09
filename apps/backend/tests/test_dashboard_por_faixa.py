@@ -21,10 +21,10 @@ os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
 
 from fastapi.testclient import TestClient
 
-from app import models
+from app import consultas_fila, models
 from app.database import SessionLocal
 from app.main import app
-from app.services import pagamentos_service
+from app.services import custo_whatsapp, pagamentos_service
 from app.timezone import hoje_br, inicio_do_dia_utc
 
 with TestClient(app):  # sobe o schema e cria o admin
@@ -91,8 +91,11 @@ db.add_all([
 db.commit()
 
 
-def resumo(de, ate, pagaram=()):
-    with patch("app.services.pagamentos_service.clientes_que_pagaram", return_value=list(pagaram)) as pagos:
+def resumo(de, ate, pagaram=(), custo_por_envio=None):
+    # Sem WABA cadastrada o custo da Meta fica indisponível (None)
+    custo = (custo_por_envio, None)
+    with patch("app.services.pagamentos_service.clientes_que_pagaram", return_value=list(pagaram)) as pagos, \
+            patch("app.routers.dashboard.custo_whatsapp.custo_por_envio", return_value=custo):
         res = client.get(f"/dashboard/summary?de={de.isoformat()}&ate={ate.isoformat()}", headers=auth)
     assert res.status_code == 200, res.text
     assert pagos.call_args.kwargs["base"] == "envios", pagos.call_args
@@ -134,12 +137,32 @@ assert total == {
     "clientes_com_envio": 6,
     "pagaram": 2,  # 1 e 4
     "valor_pago": "35.00",
+    "custo_whatsapp": None,  # custo da Meta indisponível: ROAS "—"
 }, total
+assert all(r["custo_whatsapp"] is None for r in dados["por_faixa"]), dados
 assert dados["total_enviados"] == total["enviados_cobrados"], dados
 
 # Ontem e hoje: o cliente R recebeu duas mensagens, é um cliente (Frequência 2,0)
-f = {r["faixa"]: r for r in resumo(hoje - timedelta(days=1), hoje)["por_faixa"]}["FR"]
+dia_ontem = hoje - timedelta(days=1)
+dados = resumo(dia_ontem, hoje, custo_por_envio={dia_ontem: Decimal("0.20"), hoje: Decimal("0.10")})
+por_faixa = {r["faixa"]: r for r in dados["por_faixa"]}
+f = por_faixa["FR"]
 assert f["sent"] == 2 and f["enviados_cobrados"] == 2 and f["clientes_cobrados"] == 1, f
+# Custo da faixa (base do ROAS) = custo por envio de cada dia × envios da faixa no dia
+assert f["custo_whatsapp"] == "0.30", f  # um envio ontem (0,20) e um hoje (0,10)
+assert por_faixa["FA"]["custo_whatsapp"] == "0.60" and por_faixa["FB"]["custo_whatsapp"] == "0.20", por_faixa
+assert dados["total_por_faixa"]["custo_whatsapp"] == "1.10", dados["total_por_faixa"]
+
+# Rateio do custo da Meta: custo do dia ÷ mensagens enviadas no dia (todas as faixas);
+# dia sem envio fica de fora
+assert consultas_fila.envios_por_dia(db, dia_h, dia_h) == {(dia_h, "FH"): 1}  # 23:59 de Brasília conta no dia
+assert consultas_fila.envios_por_dia(db, hoje, hoje)[(hoje, "FA")] == 6
+dia_sem_envio = hoje - timedelta(days=3)
+with patch.object(custo_whatsapp, "gasto_diario_brl", return_value=({hoje: Decimal("1.80"), dia_sem_envio: Decimal("5")}, None)):
+    por_envio, _motivo = custo_whatsapp.custo_por_envio(db, dia_sem_envio, hoje)
+assert por_envio == {hoje: Decimal("0.20"), dia_ontem: Decimal("0")}, por_envio  # hoje: 9 envios
+with patch.object(custo_whatsapp, "gasto_diario_brl", return_value=(None, "Meta fora")):
+    assert custo_whatsapp.custo_por_envio(db, hoje, hoje) == (None, "Meta fora")
 
 # Limite do dia em Brasília: 23:59 conta, 00:01 do dia seguinte não
 f = {r["faixa"]: r for r in resumo(dia_h, dia_h)["por_faixa"]}["FH"]

@@ -9,7 +9,7 @@ import FiltroPeriodo, { OpcaoPeriodo, Periodo, periodoDe } from "../components/F
 import DicaIndicador from "../components/DicaIndicador";
 import SortableTh from "../components/SortableTh";
 import TabelaAjustavel from "../components/TabelaAjustavel";
-import { formatBRL, formatDecimal, formatHora, formatNumero, formatPercentual } from "../format";
+import { formatBRL, formatDecimal, formatHora, formatNumero, formatPercentual, formatRoas } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../components/useAtualizacaoAutomatica";
 import { usePainelTempoReal } from "../components/usePainelTempoReal";
@@ -417,7 +417,7 @@ function ResumoFila({
 type Dica = { texto: string; formula: string };
 
 const DICAS: Record<
-  "clientes_cobrados" | "frequencia" | "pagaram" | "conversao" | "representatividade" | "valor_pago",
+  "clientes_cobrados" | "frequencia" | "pagaram" | "conversao" | "representatividade" | "valor_pago" | "roas",
   Dica
 > = {
   clientes_cobrados: {
@@ -445,6 +445,11 @@ const DICAS: Record<
     texto:
       "Valor pago depois da cobrança pelos clientes cobrados no período. Cada pagamento conta uma vez por faixa e, no total, uma vez só, mesmo com o cliente em mais de uma faixa.",
     formula: "Σ valor pago após a cobrança",
+  },
+  roas: {
+    texto:
+      "Quanto voltou em pagamento para cada R$ 1 gasto com WhatsApp nesta faixa. O custo de cada dia na Meta é dividido pelas mensagens enviadas no dia.",
+    formula: "Valor pago ÷ Custo do WhatsApp das mensagens da faixa no período",
   },
 };
 
@@ -494,6 +499,7 @@ const COLUNAS: Record<
     total: (t) => formatPercentual(t.conversao),
   },
   valor_pago: { rotulo: "Valor pago", dica: DICAS.valor_pago, celula: (r) => formatBRL(r.valor_pago), total: (t) => formatBRL(t.valor_pago) },
+  roas: { rotulo: "ROAS", dica: DICAS.roas, celula: (r) => formatRoas(r.roas), total: (t) => formatRoas(t.roas) },
 };
 
 // Ordem de quem ainda não arrastou nenhuma coluna
@@ -516,6 +522,7 @@ const CAMPOS_NUMERICOS = [
   "clientes_com_envio",
   "pagaram",
   "valor_pago",
+  "custo_whatsapp",
 ] as const;
 type CampoNumerico = (typeof CAMPOS_NUMERICOS)[number];
 
@@ -524,8 +531,12 @@ type LinhaPorFaixa = Pick<DashboardPorFaixa, "faixa" | "faixa_id"> &
     frequencia: number | null;
     conversao: number | null;
     representatividade: number | null;
+    roas: number | null;
   };
-type ColunaPorFaixa = Exclude<keyof LinhaPorFaixa, "faixa" | "faixa_id" | "enviados_cobrados" | "clientes_com_envio">;
+type ColunaPorFaixa = Exclude<
+  keyof LinhaPorFaixa,
+  "faixa" | "faixa_id" | "enviados_cobrados" | "clientes_com_envio" | "custo_whatsapp"
+>;
 
 // Divisão por zero (faixa sem cliente cobrado) vira "—", não 0
 const razao = (a: number, b: number) => (b ? a / b : null);
@@ -544,6 +555,8 @@ function linhasPorFaixa(porFaixa: DashboardPorFaixa[]): LinhaPorFaixa[] {
     frequencia: razao(r.enviados_cobrados, r.clientes_com_envio),
     conversao: razao(r.pagaram, r.clientes_cobrados),
     representatividade: razao(r.pagaram, somaPagaram),
+    // sem custo da Meta (null vira 0) o ROAS fica "—"
+    roas: razao(r.valor_pago, r.custo_whatsapp),
   }));
 }
 
@@ -563,6 +576,7 @@ function totalPorFaixa(linhas: LinhaPorFaixa[], doBackend: DashboardTotalPorFaix
     ...t,
     frequencia: razao(doBackend.enviados_cobrados, doBackend.clientes_com_envio),
     conversao: razao(t.pagaram, t.clientes_cobrados),
+    roas: razao(t.valor_pago, Number(doBackend.custo_whatsapp ?? 0)),
   };
 }
 

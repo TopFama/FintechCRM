@@ -363,12 +363,17 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    Frequência (mensagens do período ÷ clientes cobrados), Pagaram após cobrança (clientes
    cobrados que pagaram depois do primeiro envio do período; o número abre Quem pagou com
    `base=envios`, a mesma lista), % Rep. (pagaram da faixa ÷ soma das
-   faixas, fecha 100%), % Conv. (pagaram ÷ cobrados) e Valor pago, com linha de total
+   faixas, fecha 100%), % Conv. (pagaram ÷ cobrados), Valor pago e ROAS (valor pago ÷ custo do
+   WhatsApp das mensagens da faixa), com linha de total
    (clientes e pagamentos contados uma vez, mesmo em mais de uma faixa) e um ícone 🛈 com a
    fórmula de cada indicador. Essa é a ordem padrão: cada usuário arrasta os títulos para
    reordenar as colunas (a Faixa fica sempre na primeira) e a ordem fica salva na conta dele
    (`users.colunas_por_faixa`, `GET`/`PUT /dashboard/colunas-por-faixa`), valendo em qualquer
-   navegador. A matriz **Base de cobrança — cluster × faixa** tem as abas
+   navegador. **ROAS** (aqui e na Efetividade, onde é Recebimento ÷ custo): a Meta só informa o custo por
+   dia e número, então o custo de cada dia é dividido pelas mensagens enviadas pela fila no dia
+   (`custo_whatsapp.custo_por_envio`, sobre `consultas_fila.envios_por_dia`) e cada faixa, lead ou loja
+   leva o custo dos seus envios; o gasto da Meta fica 10 min no Redis. Sem custo da Meta o ROAS
+   mostra "—". A matriz **Base de cobrança — cluster × faixa** tem as abas
    Clientes, SPC, Valor em aberto e Valor em atraso (só parcelas vencidas, original ou com multa
    e juros conforme o filtro "Valor considerado").
    As tabelas do Dashboard (Por faixa, Efetividade, gasto por número e a matriz) começam com no

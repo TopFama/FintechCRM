@@ -104,6 +104,7 @@ def obter_dados_efetividade(
     if codigos_loja is not None:
         lojas_filtro = set(codigos_loja)
         itens = [i for i in itens if i["empresa"] in lojas_filtro]
+    _aplicar_custo_whatsapp(db, itens)
 
     relatorio = montar_relatorio(itens, lojas_info=lojas_info, faixas_ordem=regras.nomes_faixa)
     relatorio["gerado_em"] = datetime.fromtimestamp(snap.gerado_em, tz=timezone.utc)
@@ -220,31 +221,15 @@ def _calcular_snapshot(
         # O SETA diz quanto o cliente pagou por (cliente, data da cobrança), não
         # por parcela: reparte proporcionalmente ao valor cobrado de cada parcela
         # daquela cobrança, pra somar certo por faixa e por loja.
-        cobrado_por_par: dict[tuple[str, date], Decimal] = {}
-        for p in parcelas_db:
+        indices_por_par: dict[tuple[str, date], list[int]] = {}
+        for i, p in enumerate(parcelas_db):
             if p.cobrado_em is not None:
-                par = (p.codigo_cliente, dia_br(p.cobrado_em))
-                cobrado_por_par[par] = cobrado_por_par.get(par, Decimal("0")) + Decimal(str(p.valor_cobrar or 0))
-        qtd_por_par: dict[tuple[str, date], int] = {}
-        for p in parcelas_db:
-            if p.cobrado_em is not None:
-                par = (p.codigo_cliente, dia_br(p.cobrado_em))
-                qtd_por_par[par] = qtd_por_par.get(par, 0) + 1
-        ja_repartido: dict[tuple[str, date], Decimal] = {}
-        vistos: dict[tuple[str, date], int] = {}
-
-        def _parte_paga(par: tuple[str, date], valor_cobrar) -> Decimal:
-            total = Decimal(str((valores_pagos.get(par) or {}).get("valor_pago") or 0))
-            vistos[par] = vistos.get(par, 0) + 1
-            if vistos[par] == qtd_por_par[par]:
-                # última parcela leva o resto do arredondamento
-                parte = total - ja_repartido.get(par, Decimal("0"))
-            else:
-                base = cobrado_por_par[par]
-                peso = Decimal(str(valor_cobrar or 0)) / base if base else Decimal(1) / qtd_por_par[par]
-                parte = (total * peso).quantize(Decimal("0.01"))
-            ja_repartido[par] = ja_repartido.get(par, Decimal("0")) + parte
-            return parte
+                indices_por_par.setdefault((p.codigo_cliente, dia_br(p.cobrado_em)), []).append(i)
+        parte_paga: dict[int, Decimal] = {}
+        for par, indices in indices_por_par.items():
+            if par in pagamentos:
+                total = Decimal(str((valores_pagos.get(par) or {}).get("valor_pago") or 0))
+                parte_paga.update(zip(indices, _repartir(total, [parcelas_db[i].valor_cobrar for i in indices])))
 
         nomes_campanha = {
             c.id: re.sub(r" \(arquivada \w+\)$", "", c.nome)
@@ -253,7 +238,7 @@ def _calcular_snapshot(
         nomes_campanha.update({c["id"]: c["nome"] for c in campanhas_fixas.listar(db)})
 
         itens = []
-        for p in parcelas_db:
+        for i, p in enumerate(parcelas_db):
             sit = situacoes.get(p.titulo_codigo)
             data_cobranca = dia_br(p.cobrado_em) if p.cobrado_em else None
             pago = False
@@ -262,7 +247,7 @@ def _calcular_snapshot(
 
             if data_cobranca and (p.codigo_cliente, data_cobranca) in pagamentos:
                 pago = True
-                valor_pago = _parte_paga((p.codigo_cliente, data_cobranca), p.valor_cobrar)
+                valor_pago = parte_paga[i]
             elif sit and sit.get("status") == "S":
                 renegociada = True
 
@@ -286,9 +271,41 @@ def _calcular_snapshot(
         return {"itens": itens, "leads_sem_parcelas": leads_sem_parcelas}
 
 
+def _repartir(total: Decimal, pesos: list) -> list[Decimal]:
+    """Reparte o total proporcionalmente aos pesos (em partes iguais se todos são
+    zero), em centavos; a última parte leva o resto do arredondamento."""
+
+    pesos = [Decimal(str(p or 0)) for p in pesos]
+    base = sum(pesos, Decimal("0"))
+    partes = [(total * (p / base if base else Decimal(1) / len(pesos))).quantize(Decimal("0.01")) for p in pesos[:-1]]
+    return partes + [total - sum(partes, Decimal("0"))]
+
+
+def _aplicar_custo_whatsapp(db: Session, itens: list[dict]) -> None:
+    """Custo do WhatsApp de cada parcela (base do ROAS): cada lead é um envio e
+    leva o custo por envio do dia da cobrança (custo_whatsapp.custo_por_envio),
+    repartido entre as parcelas dele pelo mesmo peso do valor pago. Fica fora do
+    snapshot: a Meta fora do ar não estraga o cache do SETA. Sem custo da Meta,
+    `custo_whatsapp` = None (ROAS "—")."""
+
+    dias = [i["data_cobranca"] for i in itens if i["data_cobranca"]]
+    por_envio = custo_whatsapp.custo_por_envio(db, min(dias), max(dias))[0] if dias else {}
+    por_lead: dict[str, list[dict]] = {}
+    for i in itens:
+        por_lead.setdefault(i["lead_id"], []).append(i)
+    for parcelas in por_lead.values():
+        if por_envio is None:
+            for i in parcelas:
+                i["custo_whatsapp"] = None
+            continue
+        custo = por_envio.get(parcelas[0]["data_cobranca"], Decimal("0"))
+        for i, parte in zip(parcelas, _repartir(custo, [i["valor_cobrar"] for i in parcelas])):
+            i["custo_whatsapp"] = parte
+
+
 COLUNAS_ORDENAVEIS = (
     "faixa", "campanha", "loja", "loja_nome", "regional", "cluster_inad", "qtd_envios", "clientes_cobrados",
-    "valor_cobrado", "clientes_pagaram", "valor_pago", "conversao_clientes", "recuperacao_valor",
+    "valor_cobrado", "clientes_pagaram", "valor_pago", "conversao_clientes", "recuperacao_valor", "roas",
 )
 
 
@@ -319,8 +336,9 @@ def ordenar_relatorio(relatorio: dict, sort_by: str, sort_dir: str, faixas_ordem
 def calcular_valor_a_pagar_brl(db: Session, cobrado_de: date | None, cobrado_ate: date | None) -> Decimal | None:
     """Custo das conversas de WhatsApp no período (Meta Pricing Analytics),
     somado entre todas as WABAs cadastradas e convertido pra BRL na cotação
-    atual. A Meta não permite quebrar esse custo por faixa/loja (é por
-    WABA/categoria de conversa), então só entra no total do relatório.
+    atual. A Meta não quebra esse custo por faixa/loja (é por WABA/número): o
+    total vem daqui e o ROAS de cada linha usa o rateio por envio
+    (`_aplicar_custo_whatsapp`).
     Best-effort: qualquer falha (token não configurado, Meta fora do ar,
     câmbio indisponível) faz o valor voltar None em vez de derrubar o
     relatório inteiro, já que é informação complementar."""

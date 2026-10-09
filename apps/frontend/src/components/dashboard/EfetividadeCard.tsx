@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { api, foiCancelada, mensagemErroSeta, FiltrosEfetividade, LinhaEfetividade, RelatorioEfetividade } from "../../api";
-import { formatBRL, formatDataHora, formatPercentual } from "../../format";
+import { formatBRL, formatDataHora, formatPercentual, formatRoas } from "../../format";
 import { IconAlert } from "../../icons";
 import CamposLoja from "../CamposLoja";
+import DicaIndicador from "../DicaIndicador";
 import MultiSelect from "../MultiSelect";
 import SelectCampanha from "../SelectCampanha";
 import SelectJanelaPagamento from "../SelectJanelaPagamento";
@@ -53,7 +54,7 @@ export function BadgeClusterInad({ valor }: { valor: string | null }) {
   return <span className={`badge cluster-inad-${tom}`}>{valor}</span>;
 }
 
-type ColunaMetrica = "qtd_envios" | "clientes_cobrados" | "clientes_pagaram" | "conversao_clientes" | "valor_pago";
+type ColunaMetrica = "qtd_envios" | "clientes_cobrados" | "clientes_pagaram" | "conversao_clientes" | "valor_pago" | "roas";
 type Coluna = ColunaMetrica | "faixa" | "campanha" | "loja" | "loja_nome" | "regional" | "cluster_inad";
 
 function Metricas({ linha }: { linha: LinhaEfetividade }) {
@@ -64,6 +65,7 @@ function Metricas({ linha }: { linha: LinhaEfetividade }) {
       <td>{linha.clientes_pagaram.toLocaleString("pt-BR")}</td>
       <td>{formatPercentual(linha.conversao_clientes)}</td>
       <td>{formatBRL(linha.valor_pago)}</td>
+      <td>{formatRoas(linha.roas)}</td>
     </>
   );
 }
@@ -74,7 +76,17 @@ const CABECALHO_METRICAS: [ColunaMetrica, string][] = [
   ["clientes_pagaram", "Clientes pagou"],
   ["conversao_clientes", "% Conv."],
   ["valor_pago", "Recebimento"],
+  ["roas", "ROAS"],
 ];
+
+// Texto do ícone de info, só nas colunas que precisam de explicação
+const DICAS: Partial<Record<Coluna, { texto: string; formula: string }>> = {
+  roas: {
+    texto:
+      "Quanto voltou em pagamento (Recebimento) para cada R$ 1 gasto com WhatsApp nos envios desta linha. O custo de cada dia na Meta é dividido pelas mensagens enviadas no dia.",
+    formula: "Recebimento ÷ Custo do WhatsApp dos envios da linha",
+  },
+};
 
 const COLUNAS_LOJA: [Coluna, string][] = [
   ["loja", "Código"],
@@ -105,7 +117,7 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
       (l) => {
         const v = (l as unknown as Record<string, string | number | null>)[chave];
         if (chave === "faixa") return ordemFaixa(v as string);
-        if (chave === "conversao_clientes" || chave === "valor_pago") return v == null ? null : Number(v);
+        if (chave === "conversao_clientes" || chave === "valor_pago" || chave === "roas") return v == null ? null : Number(v);
         return typeof v === "string" ? v.toUpperCase() : v;
       },
       ordenacao.sortDir
@@ -335,6 +347,9 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
                           onSort={() => ordenacao.toggleSort(coluna)}
                         >
                           {rotulo}
+                          {DICAS[coluna] && (
+                            <DicaIndicador titulo={rotulo} texto={DICAS[coluna].texto} formula={DICAS[coluna].formula} />
+                          )}
                         </SortableTh>
                       ))}
                   </tr>
