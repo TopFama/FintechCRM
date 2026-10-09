@@ -992,6 +992,7 @@ export interface DashboardTotalPorFaixa {
   clientes_com_envio: number;
   pagaram: number;
   valor_pago: string;
+  custo_whatsapp: string | null;
 }
 
 export interface DashboardPorFaixa {
@@ -1007,6 +1008,8 @@ export interface DashboardPorFaixa {
   clientes_com_envio: number;
   pagaram: number;
   valor_pago: string;
+  // custo do WhatsApp rateado pelos envios da faixa (base do ROAS); null = Meta indisponível
+  custo_whatsapp: string | null;
 }
 
 // --- Cobrança ---
@@ -1376,6 +1379,7 @@ export interface LinhaEfetividade {
   parcelas_renegociadas: number;
   conversao_clientes: string; // razão 0–1
   recuperacao_valor: string; // razão 0–1
+  roas: string | null; // recebimento ÷ custo do WhatsApp; null = sem custo
 }
 
 export interface LinhaEfetividadeFaixa extends LinhaEfetividade {

@@ -186,6 +186,20 @@ assert vazio["total"]["clientes_cobrados"] == 0
 assert vazio["total"]["valor_cobrado"] == Decimal("0.00")
 assert vazio["total"]["conversao_clientes"] == Decimal("0.0000")
 assert vazio["total"]["recuperacao_valor"] == Decimal("0.0000")
+assert vazio["total"]["roas"] is None
+
+# ROAS = recebimento ÷ custo do WhatsApp das parcelas da linha; sem custo
+# (Meta indisponível ou custo zero) não há ROAS
+assert res["total"]["roas"] is None  # itens sem custo_whatsapp
+com_custo = [{**it, "custo_whatsapp": Decimal("10.00")} for it in itens_4c]
+r_custo = montar_relatorio(com_custo)
+assert r_custo["total"]["roas"] == (Decimal("230") / Decimal("60")).quantize(Decimal("0.01"))  # 6 parcelas × 10
+assert {l["faixa"]: l["roas"] for l in r_custo["por_faixa"]} == {
+    "11 A 20": (Decimal("230") / Decimal("40")).quantize(Decimal("0.01")),
+    "21 A 30": Decimal("0.00"),
+}
+assert montar_relatorio([{**it, "custo_whatsapp": Decimal("0")} for it in itens_4c])["total"]["roas"] is None
+assert montar_relatorio([{**com_custo[0], "custo_whatsapp": None}, *com_custo[1:]])["total"]["roas"] is None
 
 
 # ============================================================================
@@ -493,6 +507,17 @@ with TestClient(app) as client:
     assert tot_api["parcelas_renegociadas"] == 1
     assert Decimal(str(tot_api["conversao_clientes"])) == Decimal("0.5000")
     assert Decimal(str(tot_api["recuperacao_valor"])) == (Decimal("165") / Decimal("550")).quantize(Decimal("0.0001"))
+    assert tot_api["roas"] is None  # sem WABA cadastrada não há custo da Meta
+
+    # ROAS: cada lead é um envio com o custo por envio do dia da cobrança
+    from app.services import efetividade_service
+    from unittest.mock import patch
+
+    with patch.object(efetividade_service.custo_whatsapp, "custo_por_envio", return_value=({hoje: Decimal("5.50")}, None)):
+        rep_roas = client.get("/reports/efetividade", headers=headers).json()
+    assert Decimal(str(rep_roas["total"]["roas"])) == Decimal("15.00"), rep_roas["total"]  # 165 ÷ (2 leads × 5,50)
+    roas_faixa = {l["faixa"]: l["roas"] for l in rep_roas["por_faixa"]}
+    assert all(v is not None for v in roas_faixa.values()), roas_faixa
 
     # Confere que a rota via /relatorios/efetividade dá o mesmo resultado
     rep_rel_res = client.get("/relatorios/efetividade", headers=headers)
@@ -579,6 +604,7 @@ with TestClient(app) as client:
         "Recebimento",
         "% Conv.",
         "Recuperação (%)",
+        "ROAS",
     ]
     assert [cell.value for cell in ws_f[1]] == headers_esperados_faixa
     # Linha Total em negrito
@@ -603,6 +629,7 @@ with TestClient(app) as client:
         "Recebimento",
         "% Conv.",
         "Recuperação (%)",
+        "ROAS",
     ]
     assert [cell.value for cell in ws_l[1]] == headers_esperados_loja
     linha_tot_l = [cell for cell in ws_l[ws_l.max_row]]

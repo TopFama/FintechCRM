@@ -108,6 +108,12 @@ export function formatPercentual(razao: string | number | null | undefined): str
   );
 }
 
+// ROAS (quanto voltou para cada R$ 1 gasto) → "4,25x"; sem custo vira "—"
+export function formatRoas(v: string | number | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "—";
+  return `${formatDecimal(Number(v), 2)}x`;
+}
+
 // Número com casas fixas (ex.: frequência 1,8); vazio vira "—"
 export function formatDecimal(v: number | null | undefined, casas = 1): string {
   if (v === null || v === undefined || isNaN(v)) return "—";

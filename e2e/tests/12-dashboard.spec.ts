@@ -236,7 +236,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     const porFaixa = card(page, "Por faixa");
     await expect(porFaixa.locator("thead th")).toHaveText([
       /^Faixa/, /^Pendente/, /^Erro/, /^Enviado/, /^Clientes cobrados/, /^Frequência/,
-      /^Pagaram após cobrança/, /^%\sRep\./, /^%\sConv\./, /^Valor pago/,
+      /^Pagaram após cobrança/, /^%\sRep\./, /^%\sConv\./, /^Valor pago/, /^ROAS/,
     ]);
     const linhas = porFaixa.locator("tbody tr");
     await expect(linhas.first()).toBeVisible();
@@ -269,6 +269,8 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     );
     await expect(total.nth(8)).toHaveText(convTotal);
     await expect(total.nth(7)).toHaveText("");
+    // ROAS: multiplicador ("4,25x") ou "—" sem custo da Meta
+    for (const t of [...(await col(10)), await total.nth(10).innerText()]) expect(t.trim()).toMatch(/^(\d[\d.]*,\d{2}x|—)$/);
 
     // 🛈 abre a dica com a fórmula e não reordena a tabela
     const ordemAntes = await col(0);
@@ -286,6 +288,8 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(page.getByRole("tooltip")).toContainText("Clientes cobrados × 100");
     await conv.click();
     await expect(page.getByRole("tooltip")).toHaveCount(0);
+    await porFaixa.getByRole("button", { name: /O que é ROAS/ }).hover();
+    await expect(page.getByRole("tooltip")).toContainText("Valor pago ÷ Custo do WhatsApp");
     expect(await col(0)).toEqual(ordemAntes);
   });
 
@@ -297,11 +301,12 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(titulos.nth(1)).toHaveText(/^Pendente/);
     const pendentes = await porFaixa.locator("tbody tr td:nth-child(2)").allInnerTexts();
     try {
-      // Arrastar "Pendente" para cima de "Valor pago" leva a coluna para depois dela, com os números junto
-      await pendente.dragTo(porFaixa.getByRole("columnheader", { name: /^Valor pago/ }));
+      // Arrastar "Pendente" para cima de "ROAS" (a última) leva a coluna para depois dela, com os números junto
+      await pendente.dragTo(porFaixa.getByRole("columnheader", { name: /^ROAS/ }));
       await expect(titulos.last()).toHaveText(/^Pendente/);
       await expect(titulos.nth(1)).toHaveText(/^Erro/);
       await expect(titulos.nth(8)).toHaveText(/^Valor pago/);
+      await expect(titulos.nth(9)).toHaveText(/^ROAS/);
       expect(await porFaixa.locator("tbody tr td:last-child").allInnerTexts()).toEqual(pendentes);
       await expect(porFaixa.locator("tfoot tr.linha-total td").last()).not.toContainText("R$");
       // Arrastar não ordena a tabela; clicar no título continua ordenando
@@ -447,6 +452,11 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(e.getByRole("columnheader", { name: /Regional/ })).toBeVisible();
     await expect(e.locator("tbody tr").first()).toBeVisible();
     await e.getByRole("columnheader", { name: /Recebimento/ }).click();
+    // ROAS nas três visões, com o 🛈 explicando a conta
+    await expect(e.getByRole("columnheader", { name: /^ROAS/ })).toBeVisible();
+    await e.getByRole("button", { name: /O que é ROAS/ }).hover();
+    await expect(page.getByRole("tooltip")).toContainText("Recebimento ÷ Custo do WhatsApp");
+    await expect(total.locator("td").last()).toHaveText(/^(\d[\d.]*,\d{2}x|—)$/);
   });
 
   test("efetividade: Aplicar fica desabilitado enquanto consulta e clique repetido não duplica o pedido ao SETA", { tag: ["@efetividade","@resiliencia"] }, async ({ page }) => {

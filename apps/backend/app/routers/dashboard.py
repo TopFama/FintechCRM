@@ -172,6 +172,7 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
     total_por_faixa = {
         **_somar_cobrados_por_faixa(db, de, ate, por_faixa),
         **_somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos),
+        **_somar_custo_por_faixa(db, de, ate, por_faixa),
     }
 
     return schemas.DashboardSummary(
@@ -241,6 +242,28 @@ def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], bus
         por_faixa[nome]["pagaram"] = len(clientes)
         por_faixa[nome]["valor_pago"] = str(sum(clientes.values(), Decimal("0")).quantize(Decimal("0.01")))
     return {"pagaram": len(total), "valor_pago": sum(total.values(), Decimal("0")).quantize(Decimal("0.01"))}
+
+
+def _somar_custo_por_faixa(db: Session, de: date | None, ate: date | None, por_faixa: dict[str, dict]) -> dict:
+    """Custo do WhatsApp de cada faixa no período (base do ROAS): em cada dia,
+    o custo por envio do dia (custo_whatsapp.custo_por_envio) vezes as mensagens
+    enviadas pela faixa. Custo da Meta indisponível = None na faixa e no total."""
+
+    envios = consultas_fila.envios_por_dia(db, de, ate)
+    for entry in por_faixa.values():
+        entry["custo_whatsapp"] = None
+    if not envios:
+        return {"custo_whatsapp": None}
+    dias = [dia for dia, _faixa in envios]
+    por_envio, _motivo = custo_whatsapp.custo_por_envio(db, de or min(dias), ate or max(dias))
+    if por_envio is None:
+        return {"custo_whatsapp": None}
+    custos: dict[str, Decimal] = {}
+    for (dia, faixa), n in envios.items():
+        custos[faixa] = custos.get(faixa, Decimal("0")) + por_envio.get(dia, Decimal("0")) * n
+    for nome, entry in por_faixa.items():
+        entry["custo_whatsapp"] = str(custos.get(nome, Decimal("0")).quantize(Decimal("0.01")))
+    return {"custo_whatsapp": sum(custos.values(), Decimal("0")).quantize(Decimal("0.01"))}
 
 
 @router.get("/orcamento-progressao", response_model=schemas.OrcamentoProgressaoOut)

@@ -23,6 +23,7 @@ def _calcular_metricas(itens_grupo: list[dict]) -> dict:
             "parcelas_renegociadas": 0,
             "conversao_clientes": Decimal("0.0000"),
             "recuperacao_valor": Decimal("0.0000"),
+            "roas": None,
         }
 
     clientes_cobrados_set = {it["codigo_cliente"] for it in itens_grupo}
@@ -57,6 +58,12 @@ def _calcular_metricas(itens_grupo: list[dict]) -> dict:
     else:
         recuperacao_valor = Decimal("0.0000")
 
+    # ROAS = recebimento ÷ custo do WhatsApp rateado nos envios (custo None =
+    # Meta indisponível; sem custo não há ROAS)
+    custos = [it.get("custo_whatsapp") for it in itens_grupo]
+    custo = None if None in custos else sum((Decimal(str(c)) for c in custos), Decimal("0"))
+    roas = (valor_pago / custo).quantize(Decimal("0.01")) if custo else None
+
     return {
         "qtd_envios": qtd_envios,
         "clientes_cobrados": clientes_cobrados,
@@ -68,6 +75,7 @@ def _calcular_metricas(itens_grupo: list[dict]) -> dict:
         "parcelas_renegociadas": parcelas_renegociadas,
         "conversao_clientes": conversao_clientes,
         "recuperacao_valor": recuperacao_valor,
+        "roas": roas,
     }
 
 
@@ -80,7 +88,8 @@ def montar_relatorio(
     """Consolida os dados de efetividade por faixa de atraso, por loja e total.
 
     - itens: lista de parcelas cobradas, com codigo_cliente, faixa, empresa,
-      valor_cobrar, pago, renegociada, valor_pago.
+      valor_cobrar, pago, renegociada, valor_pago e custo_whatsapp (opcional;
+      None = custo indisponível).
     - lojas_info: mapa filial -> {nome_com_cod, regional, cluster_inad}.
     - faixas_ordem: sequência de nomes de faixa para ordenação de por_faixa.
     """

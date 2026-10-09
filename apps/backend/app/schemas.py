@@ -656,6 +656,8 @@ class DashboardPorFaixa(BaseModel):
     clientes_com_envio: int = 0
     pagaram: int = 0
     valor_pago: Decimal = Decimal("0.00")
+    # custo do WhatsApp rateado pelos envios da faixa (base do ROAS); None = Meta indisponível
+    custo_whatsapp: Decimal | None = None
 
 
 class DashboardTotalPorFaixa(BaseModel):
@@ -667,6 +669,7 @@ class DashboardTotalPorFaixa(BaseModel):
     clientes_com_envio: int = 0
     pagaram: int = 0
     valor_pago: Decimal = Decimal("0.00")
+    custo_whatsapp: Decimal | None = None
 
 
 class ColunasPorFaixa(BaseModel):
@@ -704,6 +707,8 @@ class LinhaEfetividadeBase(BaseModel):
     parcelas_renegociadas: int
     conversao_clientes: Decimal
     recuperacao_valor: Decimal
+    # Recebimento ÷ custo do WhatsApp dos envios da linha; None = sem custo
+    roas: Decimal | None = None
 
 
 class LinhaEfetividadeFaixa(LinhaEfetividadeBase):

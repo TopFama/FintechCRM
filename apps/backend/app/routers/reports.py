@@ -25,6 +25,14 @@ api = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+FORMATO_ROAS = '0.00"x"'
+
+
+def _roas(v) -> float | None:
+    """ROAS da linha no Excel; sem custo do WhatsApp fica em branco."""
+    return None if v is None else float(v)
+
+
 def _build_efetividade_xlsx(relatorio: dict) -> bytes:
     """Gera o .xlsx de efetividade com duas abas ('Por faixa' e 'Por loja'),
     cabeçalho azul, congelamento de painel, autofiltro, linha Total em negrito,
@@ -45,6 +53,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
         "Recebimento",
         "% Conv.",
         "Recuperação (%)",
+        "ROAS",
     ]
     ws_faixa.append(headers_faixa)
 
@@ -59,6 +68,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
                 float(linha["valor_pago"]),
                 float(linha["conversao_clientes"]),
                 float(linha["recuperacao_valor"]),
+                _roas(linha["roas"]),
             ]
         )
 
@@ -73,6 +83,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
             float(tot["valor_pago"]),
             float(tot["conversao_clientes"]),
             float(tot["recuperacao_valor"]),
+            _roas(tot["roas"]),
         ]
     )
 
@@ -89,6 +100,8 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
                 cell.number_format = '"R$" #,##0.00'
             elif col_idx in (7, 8):
                 cell.number_format = "0.0%"
+            elif col_idx == 9:
+                cell.number_format = FORMATO_ROAS
 
     ws_faixa.freeze_panes = "A2"
     ws_faixa.auto_filter.ref = ws_faixa.dimensions
@@ -116,6 +129,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
         "Recebimento",
         "% Conv.",
         "Recuperação (%)",
+        "ROAS",
     ]
     ws_loja.append(headers_loja)
 
@@ -133,6 +147,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
                 float(linha["valor_pago"]),
                 float(linha["conversao_clientes"]),
                 float(linha["recuperacao_valor"]),
+                _roas(linha["roas"]),
             ]
         )
 
@@ -149,6 +164,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
             float(tot["valor_pago"]),
             float(tot["conversao_clientes"]),
             float(tot["recuperacao_valor"]),
+            _roas(tot["roas"]),
         ]
     )
 
@@ -165,6 +181,8 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
                 cell.number_format = '"R$" #,##0.00'
             elif col_idx in (10, 11):
                 cell.number_format = "0.0%"
+            elif col_idx == 12:
+                cell.number_format = FORMATO_ROAS
 
     ws_loja.freeze_panes = "A2"
     ws_loja.auto_filter.ref = ws_loja.dimensions
@@ -211,6 +229,7 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
                 float(linha["valor_pago"]),
                 float(linha["conversao_clientes"]),
                 float(linha["recuperacao_valor"]),
+                _roas(linha["roas"]),
             ]
         )
     for cell in ws_camp[1]:
@@ -224,6 +243,8 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
                 cell.number_format = '"R$" #,##0.00'
             elif col_idx in (7, 8):
                 cell.number_format = "0.0%"
+            elif col_idx == 9:
+                cell.number_format = FORMATO_ROAS
     ws_camp.freeze_panes = "A2"
     ws_camp.column_dimensions["A"].width = 40
 
