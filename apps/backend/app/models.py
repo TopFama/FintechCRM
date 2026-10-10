@@ -102,13 +102,6 @@ class TemplateHeaderType(str, enum.Enum):
     image = "image"
 
 
-_ROTULOS_CATEGORIA = {"UTILITY": "Utilidade", "MARKETING": "Marketing", "AUTHENTICATION": "Autenticação"}
-
-
-def _rotulo_categoria(categoria: str) -> str:
-    return _ROTULOS_CATEGORIA.get(categoria, categoria)
-
-
 class Template(Base):
     __tablename__ = "templates"
 
@@ -149,19 +142,14 @@ class Template(Base):
     @property
     def aviso_categoria(self) -> str | None:
         """Única regra de quando avisar da troca de categoria pela Meta (tabela
-        de Templates, subida de fila e Dashboard)."""
+        de Templates, subida de fila e Dashboard). Só avisa de Utilidade para
+        Marketing, a troca que encarece o envio."""
         if self.categoria_ciente:
             return None
-        if self.categoria_sugerida and self.categoria_sugerida != self.category:
-            return (
-                f"A Meta vai mudar a categoria de {_rotulo_categoria(self.category)} "
-                f"para {_rotulo_categoria(self.categoria_sugerida)}"
-            )
-        if self.categoria_anterior and self.categoria_anterior != self.category:
-            return (
-                f"A Meta mudou a categoria de {_rotulo_categoria(self.categoria_anterior)} "
-                f"para {_rotulo_categoria(self.category)}"
-            )
+        if self.category == "UTILITY" and self.categoria_sugerida == "MARKETING":
+            return "A Meta vai mudar a categoria de Utilidade para Marketing"
+        if self.categoria_anterior == "UTILITY" and self.category == "MARKETING":
+            return "A Meta mudou a categoria de Utilidade para Marketing"
         return None
 
 

@@ -269,7 +269,8 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    todo envio daquele template; se ela passar do limite do WhatsApp, o sistema mostra a versão
    otimizada para o usuário aprovar (ver "Limitações conhecidas").
    Quando a Meta muda (ou anuncia que vai mudar) a
-   categoria de um template (`previous_category`/`correct_category`), a coluna Tipo mostra o aviso,
+   categoria de um template de Utilidade para Marketing (`previous_category`/`correct_category`;
+   a troca contrária não avisa), a coluna Tipo mostra o aviso,
    o link para pedir revisão no WhatsApp Manager e o botão "Ciente", que esconde o aviso até a Meta
    fazer outra troca. Enquanto não houver Ciente, o aviso também aparece ao subir fila pela
    Cobrança, por uma campanha ou pelo remarketing e numa faixa no Dashboard
