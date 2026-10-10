@@ -1,5 +1,5 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
-import { api, CampoCliente, ImagemPendente, Template, TemplateCreate, urlImagemTemplate, WhatsappNumber } from "../../api";
+import { api, CampoCliente, ImagemPendente, MetaToken, Template, TemplateCreate, urlImagemTemplate, WhatsappNumber } from "../../api";
 import PreviaWhatsapp from "../PreviaWhatsapp";
 import SortableTh from "../SortableTh";
 import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTemplate } from "../../icons";
@@ -85,6 +85,7 @@ function rotuloStatusTemplate(status: string): string {
 export default function TemplatesCard() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [numbers, setNumbers] = useState<WhatsappNumber[]>([]);
+  const [tokensMeta, setTokensMeta] = useState<MetaToken[]>([]);
   const telefonesPorWaba = useMemo(() => {
     const mapa = new Map<string, string[]>();
     for (const n of numbers) {
@@ -141,10 +142,20 @@ export default function TemplatesCard() {
     () => Array.from(new Set(numbers.map((n) => n.waba_id))),
     [numbers]
   );
+  // Nome da WABA = nomes distintos dos tokens ativos dela (Tokens da Meta)
+  const nomesWaba = useMemo(() => {
+    const nomes = new Map<string, Set<string>>();
+    for (const t of tokensMeta) {
+      if (!t.ativo || !t.waba_id || !t.nome) continue;
+      nomes.set(t.waba_id, (nomes.get(t.waba_id) ?? new Set<string>()).add(t.nome));
+    }
+    return nomes;
+  }, [tokensMeta]);
 
   function load() {
     api.listTemplates().then(setTemplates).catch((e) => setError(e.message));
     api.listNumbers().then(setNumbers).catch(() => undefined);
+    api.listarTokensMeta().then(setTokensMeta).catch(() => undefined);
   }
 
   useEffect(load, []);
@@ -508,7 +519,7 @@ export default function TemplatesCard() {
                     <option value="">Selecione...</option>
                     {wabaIds.map((id) => (
                       <option key={id} value={id}>
-                        {id}
+                        {nomesWaba.has(id) ? `${Array.from(nomesWaba.get(id)!).join(" / ")} (${id})` : id}
                       </option>
                     ))}
                   </select>
