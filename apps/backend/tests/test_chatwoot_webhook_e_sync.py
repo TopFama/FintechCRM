@@ -440,8 +440,9 @@ class TestChatwootWebhookESync(unittest.TestCase):
             variables=[{"position": 1, "internal_name": "variavel_1"}],
         )
         self.assertFalse(hasattr(tc, "language"))
+        # Rascunho aceita incompleto, mas não sem nome interno
         with self.assertRaises(ValidationError):
-            TemplateCreate(name="teste", meta_template_name="Teste", body_text="Olá.")
+            TemplateCreate(name=" ", meta_template_name="teste", body_text="Olá.")
 
 
 if __name__ == "__main__":

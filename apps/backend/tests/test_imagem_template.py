@@ -89,7 +89,7 @@ def cenario(image_url, inbox=None):
     template = SimpleNamespace(
         id="tpl-1", name="Cobrança com imagem", meta_template_name="cobranca_img", language="pt_BR",
         category="UTILITY", body_text="Olá {{1}}", header_type=models.TemplateHeaderType.image,
-        image_url=image_url, variables=[SimpleNamespace(internal_name="nome", position=1)],
+        image_url=image_url, variables=[SimpleNamespace(internal_name="nome", position=1, botao_indice=None)], botoes=[],
     )
     number = SimpleNamespace(id="n1", phone_number_id="900001", chatwoot_inbox_id=inbox)
     envio = SimpleNamespace(id="e1", faixa_id="f1", whatsapp_number=number, template=template)

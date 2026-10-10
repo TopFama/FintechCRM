@@ -84,9 +84,11 @@ def _sem_imagem(template: models.Template) -> str:
     )
 
 
-def montar_parametros_envio(template: models.Template, variables_json: dict) -> tuple[list[str], str | None]:
-    """Body params (na ordem das variáveis do template) e link da imagem de
-    cabeçalho, a partir de um dict variavel.internal_name -> valor. Usado no
+def montar_parametros_envio(
+    template: models.Template, variables_json: dict
+) -> tuple[list[str], str | None, dict[int, str]]:
+    """Body params (na ordem das variáveis do template), link da imagem de
+    cabeçalho e valor de cada link variável (índice do botão -> valor), a partir de um dict variavel.internal_name -> valor. Usado no
     disparo de verdade (variables_json de QueueItem) e no teste de envio
     manual (Templates → Testar envio).
 
@@ -102,13 +104,16 @@ def montar_parametros_envio(template: models.Template, variables_json: dict) -> 
         dados = dados.get(template.id, {})
 
     ordered_variables = sorted(template.variables, key=lambda v: v.position)
-    body_params = [str(dados.get(v.internal_name, "")) for v in ordered_variables]
+    body_params = [str(dados.get(v.internal_name, "")) for v in ordered_variables if v.botao_indice is None]
+    botoes_params = {
+        v.botao_indice: str(dados.get(v.internal_name, "")) for v in ordered_variables if v.botao_indice is not None
+    }
 
     header_image_link = None
     if template.header_type == models.TemplateHeaderType.image:
         header_image_link = link_publico_imagem(template)
 
-    return body_params, header_image_link
+    return body_params, header_image_link, botoes_params
 
 
 async def enviar_item(envio: models.FaixaEnvio, item: models.QueueItem, db: Session) -> None:
@@ -134,10 +139,11 @@ async def enviar_item(envio: models.FaixaEnvio, item: models.QueueItem, db: Sess
     item.whatsapp_number_id = number.id
     item.reserved_by = envio.id
 
-    body_params, header_image_link = montar_parametros_envio(template, item.variables_json)
+    body_params, header_image_link, botoes_params = montar_parametros_envio(template, item.variables_json)
+    # As variáveis dos links vêm depois das do corpo na ordem (position)
     vazias = [
         v.internal_name
-        for v, valor in zip(sorted(template.variables, key=lambda v: v.position), body_params)
+        for v, valor in zip(sorted(template.variables, key=lambda v: v.position), body_params + list(botoes_params.values()))
         if not valor.strip()
     ]
     if vazias:
@@ -151,9 +157,9 @@ async def enviar_item(envio: models.FaixaEnvio, item: models.QueueItem, db: Sess
     # Número com inbox do Chatwoot vinculada (Configurações) envia por lá;
     # os demais seguem direto pela Graph API da Meta, como sempre.
     if number.chatwoot_inbox_id:
-        await _enviar_via_chatwoot(envio, item, db, number, template, body_params, header_image_link)
+        await _enviar_via_chatwoot(envio, item, db, number, template, body_params, header_image_link, botoes_params)
     else:
-        await _enviar_via_meta(envio, item, db, number, template, body_params, header_image_link)
+        await _enviar_via_meta(envio, item, db, number, template, body_params, header_image_link, botoes_params)
 
 
 def _marcar_lead_cobrado(db: Session, item: models.QueueItem) -> None:
@@ -215,6 +221,7 @@ async def _enviar_via_meta(
     template: models.Template,
     body_params: list[str],
     header_image_link: str | None,
+    botoes_params: dict[int, str],
 ) -> None:
     try:
         token = token_do_numero(db, number)
@@ -251,6 +258,7 @@ async def _enviar_via_meta(
             body_params=body_params,
             header_image_link=header_image_link,
             header_image_id=header_image_id,
+            botoes_params=botoes_params,
         )
         item.status = models.QueueStatus.sent
         item.sent_at = datetime.utcnow()
@@ -293,6 +301,7 @@ async def _enviar_via_chatwoot(
     template: models.Template,
     body_params: list[str],
     header_image_link: str | None,
+    botoes_params: dict[int, str],
 ) -> None:
     try:
         client = chatwoot_client.cliente_configurado(db)
@@ -327,6 +336,8 @@ async def _enviar_via_chatwoot(
             language=template.language,
             body_params=body_params,
             header_image_url=header_image_link,
+            botoes=template.botoes,
+            botoes_params=botoes_params,
         )
         result = result or {}
         if result.get("id") is not None:

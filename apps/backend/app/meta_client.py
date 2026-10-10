@@ -72,6 +72,10 @@ class MetaClient:
     async def create_template(self, waba_id: str, payload: dict) -> dict:
         return await self._request("POST", f"{waba_id}/message_templates", json=payload)
 
+    async def editar_template(self, meta_template_id: str, payload: dict) -> dict:
+        """Edição de template já cadastrado (volta para análise): só category e components."""
+        return await self._request("POST", meta_template_id, json=payload)
+
     async def app_id(self) -> str:
         """App da Meta dono do token: é nele que a Resumable Upload guarda o arquivo."""
         data = await self._request("GET", "app", params={"fields": "id"})
@@ -157,6 +161,7 @@ class MetaClient:
         body_params: list[str],
         header_image_link: str | None = None,
         header_image_id: str | None = None,
+        botoes_params: dict[int, str] | None = None,
     ) -> dict:
         components = []
         if header_image_id:
@@ -173,6 +178,11 @@ class MetaClient:
                     "type": "body",
                     "parameters": [{"type": "text", "text": str(value)} for value in body_params],
                 }
+            )
+        # Link variável: o valor completa a URL cadastrada no botão de mesmo índice
+        for indice, valor in sorted((botoes_params or {}).items()):
+            components.append(
+                {"type": "button", "sub_type": "url", "index": str(indice), "parameters": [{"type": "text", "text": valor}]}
             )
         payload = {
             "messaging_product": "whatsapp",

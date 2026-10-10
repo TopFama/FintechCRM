@@ -125,6 +125,8 @@ class ChatwootClient:
         language: str,
         body_params: list[str],
         header_image_url: str | None = None,
+        botoes: list[dict] | None = None,
+        botoes_params: dict[int, str] | None = None,
     ) -> dict:
         """`body_text` é o corpo do template ORIGINAL, com `{{1}}`, `{{2}}`...
         ainda não substituídos — com `content_mode: raw_template`, é o
@@ -136,6 +138,12 @@ class ChatwootClient:
         processed_params: dict = {"body": {str(i + 1): valor for i, valor in enumerate(body_params)}}
         if header_image_url:
             processed_params["header"] = {"media_url": header_image_url, "media_type": "image"}
+        if botoes_params:
+            # O Chatwoot usa a posição na lista como índice do botão: vai um item por botão do template
+            processed_params["buttons"] = [
+                {"type": "url", "parameter": botoes_params[i]} if i in botoes_params else {"type": b.get("tipo")}
+                for i, b in enumerate(botoes or [])
+            ]
 
         payload = {
             "content": body_text,

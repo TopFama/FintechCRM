@@ -78,16 +78,17 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
       "As variáveis precisam ser {{1}}, {{2}}… em sequência.",
       "O corpo não pode começar nem terminar com variável.",
     ]);
-    await expect(novo.getByRole("button", { name: "Salvar template" })).toBeDisabled();
+    // só avisa: o rascunho salva incompleto e a Meta só recebe quando estiver certo
+    await expect(novo.getByRole("button", { name: "Salvar rascunho" })).toBeEnabled();
 
     await campo(novo, /Corpo do template/).fill("Olá {{1}}, pague {{2}} até {{1}}.");
     await expect(novo.getByText(/Variáveis detectadas: variavel_1, variavel_2/)).toBeVisible();
     await expect(novo.locator(".field-error")).toHaveCount(0);
     await campo(novo, "Nome interno").fill("");
-    await novo.getByRole("button", { name: "Salvar template" }).click();
+    await novo.getByRole("button", { name: "Salvar rascunho" }).click();
     expect(await campo(novo, "Nome interno").evaluate((e: HTMLInputElement) => e.validity.valid)).toBe(false);
     await novo.getByRole("button", { name: "Cancelar" }).click();
-    await expect(novo.getByRole("button", { name: "Salvar template" })).toHaveCount(0);
+    await expect(novo.getByRole("button", { name: "Salvar rascunho" })).toHaveCount(0);
   });
 
   test("seletor de WABA mostra o nome do token e o waba_id", async ({ page }) => {
@@ -149,7 +150,7 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await campo(novo, /Corpo do template/).fill("Oi {{1}}, sua fatura {{2}} chegou.");
     await campo(novo, "Exemplo de {{1}}").fill("Maria");
     await campo(novo, "Exemplo de {{2}}").fill("189,90");
-    await novo.getByRole("button", { name: "Salvar template" }).click();
+    await novo.getByRole("button", { name: "Salvar rascunho" }).click();
     const linha = tabela.locator("tbody tr", { hasText: "Enviado Meta" });
     await expect(linha).toContainText("enviado_meta");
     await expect(linha.locator(".badge")).toHaveText(/draft|rascunho/i);
@@ -164,6 +165,82 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await expect(linha.locator(".badge")).toHaveText(/pending|pendente/i);
   });
 
+  test("rascunho incompleto, botões com prévia e edição até a reanálise", async ({ page }) => {
+    const tabela = card(page, "Templates cadastrados");
+    const linha = tabela.locator("tbody tr", { hasText: "Rascunho botões" });
+    permitirErrosConsole(page, "400");
+
+    // salva só com o nome; a Meta só recebe completo
+    await card(page, "Novo template").getByRole("button", { name: "Criar template" }).click();
+    await campo(card(page, "Novo template"), "Nome interno").fill("Rascunho botões");
+    await card(page, "Novo template").getByRole("button", { name: "Salvar rascunho" }).click();
+    await expect(linha.locator(".badge")).toHaveText(/rascunho/i);
+    await linha.getByRole("button", { name: "Enviar para aprovação" }).click();
+    await expect(page.locator(".error-box").first()).toContainText("corpo do template é obrigatório");
+
+    // completa o rascunho com link fixo, link variável e respostas rápidas
+    await linha.getByRole("button", { name: "Editar" }).click();
+    const edicao = card(page, "Editar rascunho");
+    await expect(campo(edicao, "Nome interno")).toHaveValue("Rascunho botões");
+    await campo(edicao, /Corpo do template/).fill("Oi {{1}}, veja seu boleto.");
+    await campo(edicao, "Exemplo de {{1}}").fill("Maria");
+    const botoes: [string, string, string?][] = [
+      ["Link fixo", "Site", "https://lojastopfama.com.br"],
+      ["Link variável", "Boleto", "https://lojastopfama.com.br/boleto/"],
+      ["Resposta rápida", "Já paguei"],
+      ["Resposta rápida", "Não sou eu"],
+    ];
+    for (const [i, [tipo, texto, url]] of botoes.entries()) {
+      await edicao.getByRole("button", { name: "Adicionar botão" }).click();
+      await campo(edicao, `Tipo do botão ${i + 1}`).selectOption({ label: tipo });
+      await campo(edicao, `Texto do botão ${i + 1}`).fill(texto);
+      if (url) await campo(edicao, `Link do botão ${i + 1}`).fill(url);
+    }
+    await campo(edicao, "Campo do cliente do botão 2").selectOption("codigo");
+    await expect(campo(edicao, "Exemplo do botão 2")).not.toHaveValue("");
+    // como no portal da Meta: com mais de 3 botões aparecem 2 e "Ver todas as opções"
+    await expect(edicao.locator(".template-preview-botao")).toHaveText(["Site", "Boleto", "Ver todas as opções"]);
+    await edicao.getByRole("button", { name: "Remover botão 4" }).click();
+    await expect(edicao.locator(".template-preview-botao")).toHaveText(["Site", "Boleto", "Já paguei"]);
+    await edicao.getByRole("button", { name: "Salvar rascunho" }).click();
+
+    const salvo = (await apiGet(page, "/templates")).find((t: any) => t.name === "Rascunho botões");
+    expect(salvo.botoes.map((b: any) => [b.tipo, b.url])).toEqual([
+      ["url", "https://lojastopfama.com.br"],
+      ["url", "https://lojastopfama.com.br/boleto/{{1}}"],
+      ["resposta_rapida", ""],
+    ]);
+    expect(salvo.variables.map((v: any) => [v.position, v.botao_indice, v.campo_sugerido])).toEqual([
+      [1, null, null],
+      [2, 1, "codigo"],
+    ]);
+    await linha.getByRole("button", { name: "Enviar para aprovação" }).click();
+    await expect(linha.locator(".badge")).toHaveText(/pendente/i);
+
+    // em análise a Meta não deixa editar: oferece cadastrar como novo
+    await linha.getByRole("button", { name: "Editar" }).click();
+    const enviado = card(page, "Editar template");
+    await expect(campo(enviado, "Nome na Meta")).toBeDisabled();
+    await enviado.getByRole("button", { name: "Enviar para reanálise" }).click();
+    await expect(page.locator(".error-box").first()).toContainText("salve como novo template");
+    await enviado.getByRole("button", { name: "Cadastrar como novo template" }).click();
+    const copia = card(page, "Novo template");
+    await expect(campo(copia, "Nome na Meta")).toHaveValue("rascunho_botoes_v2");
+    await expect(campo(copia, "Texto do botão 2")).toHaveValue("Boleto");
+    await copia.getByRole("button", { name: "Salvar rascunho" }).click();
+    await expect(tabela.locator("tbody tr", { hasText: "rascunho_botoes_v2" }).locator(".badge")).toHaveText(/rascunho/i);
+
+    // reprovado edita e volta para análise
+    const reprovado = tabela.locator("tbody tr", { hasText: "promo_reprovada" });
+    await reprovado.getByRole("button", { name: "Editar" }).click();
+    const editarReprovado = card(page, "Editar template");
+    await campo(editarReprovado, /Corpo do template/).fill("Promoção {{1}} só hoje.");
+    await campo(editarReprovado, "Exemplo de {{1}}").fill("relâmpago");
+    await editarReprovado.getByRole("button", { name: "Enviar para reanálise" }).click();
+    await expect(page.locator(".success-box").first()).toContainText("reanálise");
+    await expect(reprovado.locator(".badge")).toHaveText(/pendente/i);
+  });
+
   test("imagem do cabeçalho: subir e trocar", async ({ page }) => {
     // PNG 1x1
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
@@ -173,7 +250,7 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await campo(novo, "Cabeçalho com imagem?").selectOption("image");
     await campo(novo, /Corpo do template/).fill("Oi {{1}}, sua fatura chegou.");
     await campo(novo, "Exemplo de {{1}}").fill("Maria");
-    await novo.getByRole("button", { name: "Salvar template" }).click();
+    await novo.getByRole("button", { name: "Salvar rascunho" }).click();
     const linha = card(page, "Templates cadastrados").locator("tbody tr", { hasText: "Com imagem" });
 
     // sem imagem a Meta recusaria: o backend barra antes

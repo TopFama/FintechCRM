@@ -107,6 +107,9 @@ def _meta(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"pricing_analytics": {"data": [{"data_points": pontos}]}, "id": WABA})
     for t in TEMPLATES:
         if path == t["id"]:
+            if request.method == "POST":  # edição: volta para análise
+                t.update(json.loads(request.content or b"{}"), status="PENDING")
+                return httpx.Response(200, json={"success": True})
             return httpx.Response(200, json={"status": t["status"], "name": t["name"], "category": t["category"]})
     return httpx.Response(404, json={"error": {"message": f"rota simulada inexistente: {path}"}})
 

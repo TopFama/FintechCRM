@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
-import { urlImagemTemplate } from "../api";
+import { TemplateBotao, urlImagemTemplate } from "../api";
+import { IconExternalLink, IconList, IconReply } from "../icons";
 
 // *negrito*, _itálico_, ~tachado~ e `código`: como no WhatsApp, o marcador só
 // formata com o par na mesma linha, colado ao texto e fora do meio de palavra
@@ -63,16 +64,39 @@ export function formatarWhatsapp(texto: string): ReactNode[] {
   );
 }
 
-// Balão da mensagem como chega no WhatsApp: imagem do cabeçalho em cima e o
-// texto já com as variáveis trocadas por quem chama.
+// Botões como no portal da Meta: link com ícone de abrir e resposta rápida com
+// ícone de responder; com mais de 3, o WhatsApp mostra 2 e "Ver todas as opções".
+function BotoesWhatsapp({ botoes }: { botoes: TemplateBotao[] }) {
+  const visiveis = botoes.length > 3 ? botoes.slice(0, 2) : botoes;
+  return (
+    <div className="template-preview-botoes">
+      {visiveis.map((b, i) => (
+        <div key={i} className="template-preview-botao" title={b.tipo === "url" ? b.url : undefined}>
+          {b.tipo === "url" ? <IconExternalLink width={15} height={15} /> : <IconReply width={15} height={15} />}
+          {b.texto || "Botão sem texto"}
+        </div>
+      ))}
+      {botoes.length > 3 && (
+        <div className="template-preview-botao">
+          <IconList width={15} height={15} /> Ver todas as opções
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Balão da mensagem como chega no WhatsApp: imagem do cabeçalho em cima, o
+// texto já com as variáveis trocadas por quem chama e os botões embaixo.
 export default function PreviaWhatsapp({
   texto,
   cabecalhoImagem = false,
   imagemUrl,
+  botoes = [],
 }: {
   texto: string;
   cabecalhoImagem?: boolean;
   imagemUrl?: string | null;
+  botoes?: TemplateBotao[];
 }) {
   return (
     <div className="template-preview-bubble">
@@ -83,6 +107,7 @@ export default function PreviaWhatsapp({
           <div className="template-preview-sem-imagem">Imagem do cabeçalho</div>
         ))}
       {formatarWhatsapp(texto)}
+      {botoes.length > 0 && <BotoesWhatsapp botoes={botoes} />}
     </div>
   );
 }

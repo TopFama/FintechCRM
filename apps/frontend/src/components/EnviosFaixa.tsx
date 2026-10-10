@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, CampoCliente, Faixa, FaixaEnvio, FaixaVariableMappingIn, Template, TemplateVariable, WhatsappNumber } from "../api";
+import { api, CampoCliente, Faixa, FaixaEnvio, FaixaVariableMappingIn, rotuloVariavel, Template, TemplateVariable, WhatsappNumber } from "../api";
 import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTrash } from "../icons";
 import PreviaWhatsapp from "./PreviaWhatsapp";
 
@@ -445,7 +445,7 @@ export default function EnviosFaixa({
                     return (
                       <div className="field" key={v.id} style={{ minWidth: 260 }}>
                         <label htmlFor={`faixa-var-${v.id}`}>
-                          {`{{${v.position}}}`} ({v.internal_name})
+                          {rotuloVariavel(v)}
                         </label>
                         <div style={{ display: "flex", gap: 6, minWidth: 0, flexDirection: "column" }}>
                           <select id={`faixa-var-${v.id}`}
