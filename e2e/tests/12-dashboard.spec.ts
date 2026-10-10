@@ -181,9 +181,13 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
   test("SETA sem conexão: faixa no topo em todas as telas até o teste de conexão passar", { tag: ["@pagos-janela","@resiliencia"] }, async ({ page }) => {
     permitirErrosConsole(page, "503");
     // o backend avisa em toda resposta enquanto o SETA está sem conexão
+    let semConexao = true;
     await page.route(/localhost:8010\//, async (r) => {
+      if (!semConexao) return r.fallback();
       const resposta = await r.fetch();
-      await r.fulfill({ response: resposta, headers: { ...resposta.headers(), "x-seta-fora": "2026-10-10T17:32:00+00:00" } });
+      const headers = { ...resposta.headers() };
+      if (semConexao) headers["x-seta-fora"] = "2026-10-10T17:32:00+00:00";
+      await r.fulfill({ response: resposta, headers });
     });
     await page.route("**/dashboard/janela-pagamento*", (r) =>
       r.fulfill({
@@ -200,7 +204,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await page.getByRole("link", { name: "Relatórios" }).click();
     await expect(faixa).toBeVisible();
     // SETA voltou: o teste de conexão responde sem o aviso e a faixa some
-    await page.unroute(/localhost:8010\//);
+    semConexao = false;
     await faixa.getByRole("button", { name: "Testar conexão" }).click();
     await expect(faixa).toHaveCount(0);
   });
