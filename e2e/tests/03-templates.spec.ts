@@ -202,7 +202,10 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await expect(edicao.locator(".template-preview-botao")).toHaveText(["Site", "Boleto", "Ver todas as opções"]);
     await edicao.getByRole("button", { name: "Remover botão 4" }).click();
     await expect(edicao.locator(".template-preview-botao")).toHaveText(["Site", "Boleto", "Já paguei"]);
-    await edicao.getByRole("button", { name: "Salvar rascunho" }).click();
+    await Promise.all([
+      page.waitForResponse((r) => /\/templates\/[^/]+$/.test(new URL(r.url()).pathname) && r.request().method() === "PUT" && r.ok()),
+      edicao.getByRole("button", { name: "Salvar rascunho" }).click(),
+    ]);
 
     const salvo = (await apiGet(page, "/templates")).find((t: any) => t.name === "Rascunho botões");
     expect(salvo.botoes.map((b: any) => [b.tipo, b.url])).toEqual([
