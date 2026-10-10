@@ -236,7 +236,11 @@ export const api = {
       body: JSON.stringify({ phone_number_ids: phoneNumberIds }),
     }),
 
-  listTemplates: () => request<Template[]>("/templates"),
+  listTemplates: (incluirArquivados = false) =>
+    request<Template[]>(`/templates${incluirArquivados ? "?incluir_arquivados=true" : ""}`),
+  arquivarTemplate: (id: string) => request<Template>(`/templates/${id}/arquivar`, { method: "POST" }),
+  restaurarTemplate: (id: string) => request<Template>(`/templates/${id}/restaurar`, { method: "POST" }),
+  removerTemplate: (id: string) => request<void>(`/templates/${id}`, { method: "DELETE" }),
   createTemplate: (payload: TemplateCreate) =>
     request<Template>("/templates", { method: "POST", body: JSON.stringify(payload) }),
   // Rascunho só grava; já enviado à Meta grava e manda para reanálise
@@ -776,6 +780,7 @@ export interface Template {
   // Troca de categoria pela Meta ainda sem Ciente
   aviso_categoria: string | null;
   aviso_chatwoot?: string | null;
+  arquivado_em: string | null;
   variables: TemplateVariable[];
 }
 

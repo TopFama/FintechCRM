@@ -275,6 +275,13 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    fazer outra troca. Enquanto não houver Ciente, o aviso também aparece ao subir fila pela
    Cobrança, por uma campanha ou pelo remarketing e numa faixa no Dashboard
    (`GET /templates/avisos-categoria`; a regra é `Template.aviso_categoria`).
+   Cada linha tem "Arquivar" e "Remover". Arquivar (`POST /templates/{id}/arquivar`) tira o
+   template da tabela e dos seletores de envio sem mexer na Meta, e o sincronizar não o traz de
+   volta; ele aparece no filtro "Mostrar arquivados", com "Restaurar"
+   (`POST /templates/{id}/restaurar`). Remover (`DELETE /templates/{id}`) apaga no CRM e, se o
+   template já foi para a Meta, também lá (só aquele idioma); a Meta bloqueia o nome por 30 dias e
+   para as mensagens ainda não entregues. Template em uso numa faixa (régua, campanha ou
+   remarketing) não arquiva nem remove: o erro diz em quais faixas ele está.
 3. **Faixas de cobrança** (**Configurações → Faixas**) — as faixas da régua (faixas de atraso)
    podem ser sincronizadas a partir das faixas de atraso configuradas
    (`POST /faixas/sincronizar-faixas-atraso`) ou criadas pelo wizard em três passos: nome e

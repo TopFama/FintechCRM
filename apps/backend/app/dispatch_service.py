@@ -129,6 +129,7 @@ async def enviar_item(envio: models.FaixaEnvio, item: models.QueueItem, db: Sess
                 models.Template.waba_id == num_waba,
                 models.Template.meta_template_name == meta_name,
                 models.Template.status == models.TemplateStatus.approved,
+                models.Template.arquivado_em.is_(None),
             )
             .first()
         )
