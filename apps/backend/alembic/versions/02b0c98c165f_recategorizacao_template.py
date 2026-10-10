@@ -1,6 +1,6 @@
 """recategorização de template pela Meta (categoria anterior, sugerida e ciente)
 
-Revision ID: d4f7a2c9e1b5
+Revision ID: 02b0c98c165f
 Revises: b8d2f4a6c1e3
 Create Date: 2026-10-10
 
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "d4f7a2c9e1b5"
+revision: str = "02b0c98c165f"
 down_revision: Union[str, None] = "b8d2f4a6c1e3"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
