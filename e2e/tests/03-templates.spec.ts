@@ -125,6 +125,7 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await campo(novo, /Corpo do template/).fill("Olá *{{1}}*, pague ~R$ 10~ _hoje_ com `pix`.\n- boleto\n- cartão\n> TopFama\n```linha mono```");
     const bolha = novo.locator(".template-preview-bubble");
     await expect(bolha.locator("strong")).toHaveText("{{1}}");
+    await expect(campo(novo, "Campo do cliente de {{1}}").locator("option", { hasText: /nome/i }).first()).toBeAttached(); // campos carregados
     await campo(novo, "Campo do cliente de {{1}}").selectOption({ label: (await campo(novo, "Campo do cliente de {{1}}").locator("option").allInnerTexts()).find((o) => /nome/i.test(o))! });
     await expect(campo(novo, "Exemplo de {{1}}")).not.toHaveValue("");
     await campo(novo, "Exemplo de {{1}}").fill("Maria");
