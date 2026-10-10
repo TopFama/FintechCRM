@@ -652,7 +652,10 @@ Só é preciso refazer isto se a VPS, as chaves ou a conta do Tailscale mudarem.
   e de botões (até 10, no máximo 2 links, texto até 25 caracteres, `{{1}}` só no fim do link,
   respostas rápidas juntas) ficam em `schemas.pendencias_template`, conferidas antes de ir para a
   Meta; a tela só espelha para formatar e avisar. No envio, o link variável vai como parâmetro do
-  botão (`meta_client.send_template_message`) ou em `processed_params.buttons` no Chatwoot. Só Utilidade e
+  botão (`meta_client.send_template_message`) ou em `processed_params.buttons` no Chatwoot. O Chatwoot
+  só monta as variáveis com o template sincronizado na caixa de entrada; sem isso a Meta recusa com
+  132000, e o erro (`utils/erros.descrever_erro_chatwoot`) diz para sincronizar em Configurações →
+  Modelos do Chatwoot, com conta de admin. Só Utilidade e
   Marketing: Autenticação exige o formato próprio de código da Meta e não é cadastrada aqui.
 - **Retry de envio**: hoje, uma falha de envio marca o item como `error` e fica visível no
   dashboard; o único reprocessamento automático é o erro `131026` do Chatwoot, que tenta o próximo

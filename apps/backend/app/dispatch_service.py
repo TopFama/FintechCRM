@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from . import campanhas_fixas, chatwoot_client, models, telefones_invalidos
 from .config import settings
 from .meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_do_numero
-from .utils.erros import descrever_erro_envio
+from .utils.erros import descrever_erro_chatwoot, descrever_erro_envio
 
 logger = logging.getLogger("dispatch_worker")
 
@@ -352,7 +352,7 @@ async def _enviar_via_chatwoot(
         item.status = models.QueueStatus.error
         detalhe = telefones_invalidos.detalhe_telefone_invalido(exc.payload)
         item.error_message = (
-            telefones_invalidos.mensagem_telefone_invalido(detalhe) if detalhe else descrever_erro_envio(str(exc))
+            telefones_invalidos.mensagem_telefone_invalido(detalhe) if detalhe else descrever_erro_chatwoot(str(exc))
         )
         if detalhe:
             telefones_invalidos.registrar_falha(db, item, detalhe)

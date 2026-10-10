@@ -18,7 +18,7 @@ from ..deps import get_current_user
 from ..dispatch_service import arquivo_imagem, media_id_da_imagem, montar_parametros_envio
 from ..meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_da_waba, token_do_numero
 from ..utils import imagem
-from ..utils.erros import descrever_erro_envio
+from ..utils.erros import descrever_erro_chatwoot, descrever_erro_envio
 from ..utils.phone import is_valid_phone, normalize_phone
 from ..variaveis_template import CAMPOS_CLIENTE, contexto_cliente
 
@@ -863,7 +863,7 @@ async def testar_envio_template(
                     await asyncio.sleep(1)
                     status_msg, erro_ext = await client.buscar_status_mensagem(conversation_id, msg_id)
                     if status_msg == "failed":
-                        motivo_pt = descrever_erro_envio(erro_ext or "Mensagem recusada")
+                        motivo_pt = descrever_erro_chatwoot(erro_ext or "Mensagem recusada")
                         return schemas.ChatwootTestResult(
                             ok=False,
                             detalhe=f"Erro retornado pelo WhatsApp via Chatwoot: {motivo_pt}",
@@ -872,7 +872,7 @@ async def testar_envio_template(
                         break
             return schemas.ChatwootTestResult(ok=True, detalhe=f"Mensagem de teste enviada para {celular} via Chatwoot")
         except chatwoot_client.ChatwootAPIError as exc:
-            motivo_pt = descrever_erro_envio(f"{exc.status_code}: {exc.payload}")
+            motivo_pt = descrever_erro_chatwoot(f"{exc.status_code}: {exc.payload}")
             return schemas.ChatwootTestResult(ok=False, detalhe=f"Erro retornado pelo Chatwoot: {motivo_pt}")
         except Exception as exc:  # noqa: BLE001
             motivo_pt = descrever_erro_envio(str(exc))
