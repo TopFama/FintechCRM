@@ -153,6 +153,7 @@ async def sync_from_meta(
         )
 
     falhas: list[str] = []
+    aprovados: dict[str, str] = {}  # template id → WABA, dos que viraram aprovados agora
     for waba_id in waba_ids:
         try:
             client = MetaClient(access_token=token_da_waba(db, waba_id))
@@ -199,13 +200,12 @@ async def sync_from_meta(
                     .first()
                 )
 
-            status_value = _map_meta_status(remote.get("status"))
             header_type = _extract_header_type(remote)
             body_text = _extract_body_text(remote)
 
             if existing:
-                existing.status = status_value
-                existing.meta_status_raw = remote.get("status")
+                if _aplicar_status(existing, remote.get("status")):
+                    aprovados[existing.id] = waba_id
                 existing.meta_template_id = remote_id
                 _aplicar_categoria(existing, remote)
                 existing.waba_id = waba_id
@@ -238,16 +238,17 @@ async def sync_from_meta(
                     language=language,
                     category=remote.get("category", "UTILITY"),
                     header_type=header_type,
-                    status=status_value,
-                    meta_status_raw=remote.get("status"),
                     meta_template_id=remote_id,
                     waba_id=waba_id,
                     body_text=body_text,
                     botoes=_extract_botoes(remote),
                 )
                 _aplicar_categoria(template, remote)
+                aprovou = _aplicar_status(template, remote.get("status"))
                 db.add(template)
                 db.flush()
+                if aprovou:
+                    aprovados[template.id] = waba_id
                 for i, name, botao_indice in _extract_variables(remote):
                     db.add(
                         models.TemplateVariable(
@@ -259,9 +260,14 @@ async def sync_from_meta(
             status.HTTP_400_BAD_REQUEST, "Nenhuma WABA sincronizou — " + "; ".join(falhas)
         )
     db.commit()
-    return _with_variables(db.query(models.Template)).order_by(
+    aviso = await _sincronizar_no_chatwoot(db, set(aprovados.values()))
+    templates = _with_variables(db.query(models.Template)).order_by(
         models.Template.created_at.desc()
     ).all()
+    for t in templates:
+        if t.id in aprovados:
+            t.aviso_chatwoot = aviso
+    return templates
 
 
 def _map_meta_status(raw: str | None) -> models.TemplateStatus:
@@ -271,6 +277,59 @@ def _map_meta_status(raw: str | None) -> models.TemplateStatus:
         "REJECTED": models.TemplateStatus.rejected,
     }
     return mapping.get((raw or "").upper(), models.TemplateStatus.draft)
+
+
+def _aplicar_status(template: models.Template, status_meta: str | None) -> bool:
+    """Grava o status da Meta. True quando o template acabou de virar aprovado,
+    para pedir a sincronização no Chatwoot uma vez só por aprovação."""
+    novo = _map_meta_status(status_meta)
+    aprovou = novo == models.TemplateStatus.approved and template.status != novo
+    template.status = novo
+    template.meta_status_raw = status_meta
+    return aprovou
+
+
+async def _sincronizar_no_chatwoot(db: Session, waba_ids: set[str]) -> str | None:
+    """Template aprovado só aparece no Chatwoot depois que a caixa de entrada
+    busca os templates na Meta (sozinho ele faz isso a cada 3 h). Pede a busca
+    em cada caixa dos números ativos das WABAs. Falha não desfaz nada na Meta:
+    volta como aviso."""
+    if not waba_ids or not chatwoot_client.is_configured(db):
+        return None
+    caixas = sorted(
+        {
+            i
+            for (i,) in db.query(models.WhatsappNumber.chatwoot_inbox_id).filter(
+                models.WhatsappNumber.waba_id.in_(waba_ids),
+                models.WhatsappNumber.active.is_(True),
+                models.WhatsappNumber.chatwoot_inbox_id.is_not(None),
+            )
+        }
+    )
+    if not caixas:
+        return None
+    try:
+        cliente = chatwoot_client.cliente_configurado(db)
+    except chatwoot_client.ChatwootConfigError as exc:
+        return f"Template aprovado, mas não sincronizado no Chatwoot: {exc}"
+    falhas: list[str] = []
+    for caixa in caixas:
+        try:
+            await cliente.sincronizar_templates(caixa)
+        except chatwoot_client.ChatwootAPIError as exc:
+            if exc.status_code in (401, 403):
+                falhas.append(f"caixa {caixa}: o token salvo em Configurações → Chatwoot precisa ser de um administrador")
+            else:
+                falhas.append(f"caixa {caixa}: {exc}")
+        except Exception as exc:  # noqa: BLE001 - Chatwoot fora do ar não desfaz a aprovação
+            falhas.append(f"caixa {caixa}: {exc}")
+    if not falhas:
+        return None
+    logger.warning("Sincronização de templates no Chatwoot falhou: %s", "; ".join(falhas))
+    return (
+        "Template aprovado, mas o Chatwoot não sincronizou (" + "; ".join(falhas) + "). "
+        "Com conta de admin, abra Configurações → Modelos no Chatwoot e sincronize."
+    )
 
 
 def _extract_body_text(remote: dict) -> str:
@@ -492,11 +551,12 @@ def _botao_meta(botao: dict, exemplo: str | None) -> dict:
     return saida
 
 
-async def _cadastrar_na_meta(db: Session, template: models.Template, editar_categoria: bool = True) -> None:
+async def _cadastrar_na_meta(db: Session, template: models.Template, editar_categoria: bool = True) -> bool:
     """Manda o template para análise da Meta com os exemplos que ela exige: o
     valor de cada variável (example.body_text), o link de exemplo de cada botão
     de link variável e, com cabeçalho de imagem, a imagem já subida no template
-    (example.header_handle). Sem meta_template_id cadastra; com, edita (reanálise)."""
+    (example.header_handle). Sem meta_template_id cadastra; com, edita (reanálise).
+    True quando a Meta já devolve aprovado (ver _aplicar_status)."""
 
     if not template.waba_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "WABA não identificada para este template")
@@ -552,8 +612,7 @@ async def _cadastrar_na_meta(db: Session, template: models.Template, editar_cate
     except MetaAPIError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
-    template.status = _map_meta_status(status_meta)
-    template.meta_status_raw = status_meta
+    return _aplicar_status(template, status_meta)
 
 
 @router.post("/{template_id}/enviar-para-aprovacao", response_model=schemas.TemplateOut)
@@ -571,9 +630,11 @@ async def enviar_para_aprovacao(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
     if template.meta_template_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Este template já foi enviado para a Meta")
-    await _cadastrar_na_meta(db, template)
+    aprovou = await _cadastrar_na_meta(db, template)
     db.commit()
     db.refresh(template)
+    if aprovou:
+        template.aviso_chatwoot = await _sincronizar_no_chatwoot(db, {template.waba_id})
     return template
 
 
@@ -615,11 +676,12 @@ async def refresh_template_status(
         remote = await client.get_template_status(template.meta_template_id)
     except MetaAPIError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
-    template.status = _map_meta_status(remote.get("status"))
-    template.meta_status_raw = remote.get("status")
+    aprovou = _aplicar_status(template, remote.get("status"))
     _aplicar_categoria(template, remote)
     db.commit()
     db.refresh(template)
+    if aprovou:
+        template.aviso_chatwoot = await _sincronizar_no_chatwoot(db, {waba_id})
     return template
 
 

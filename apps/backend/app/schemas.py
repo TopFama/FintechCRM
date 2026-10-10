@@ -305,6 +305,8 @@ class TemplateOut(BaseModel):
     waba_id: str | None
     # Troca de categoria pela Meta ainda sem Ciente (models.Template.aviso_categoria)
     aviso_categoria: str | None = None
+    # Só na resposta de quem aprovou o template agora e o Chatwoot falhou (routers/templates._sincronizar_no_chatwoot)
+    aviso_chatwoot: str | None = None
     created_at: datetime
     updated_at: datetime
     variables: list[TemplateVariableOut] = []

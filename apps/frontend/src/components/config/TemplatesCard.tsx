@@ -180,6 +180,12 @@ export default function TemplatesCard() {
     return nomes;
   }, [tokensMeta]);
 
+  // Template que acabou de ser aprovado e o Chatwoot não sincronizou
+  function avisarChatwoot(lista: Template[]) {
+    const aviso = lista.find((t) => t.aviso_chatwoot)?.aviso_chatwoot;
+    if (aviso) setError(aviso);
+  }
+
   function load() {
     api.listTemplates().then(setTemplates).catch((e) => setError(e.message));
     api.listNumbers().then(setNumbers).catch(() => undefined);
@@ -190,6 +196,7 @@ export default function TemplatesCard() {
   useEffect(() => {
     api
       .syncTemplatesFromMeta()
+      .then(avisarChatwoot)
       .catch((err) => setError(err instanceof Error ? err.message : "Erro ao sincronizar com a Meta"))
       .finally(load);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -414,6 +421,7 @@ export default function TemplatesCard() {
       const atualizado = await api.enviarTemplateParaAprovacao(t.id);
       setTemplates((prev) => prev.map((item) => (item.id === t.id ? atualizado : item)));
       setAviso(`Template "${t.name}" enviado para aprovação na Meta.`);
+      avisarChatwoot([atualizado]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao enviar para aprovação");
     } finally {
@@ -432,7 +440,7 @@ export default function TemplatesCard() {
 
   async function handleRefreshStatus(id: string) {
     try {
-      await api.refreshTemplateStatus(id);
+      avisarChatwoot([await api.refreshTemplateStatus(id)]);
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao consultar status");

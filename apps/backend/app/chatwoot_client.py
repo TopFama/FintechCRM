@@ -59,6 +59,12 @@ class ChatwootClient:
     async def test_connection(self) -> dict:
         return await self._request("GET", "")
 
+    async def sincronizar_templates(self, inbox_id: int) -> None:
+        """Pede à caixa de entrada que busque de novo os templates na Meta. O
+        Chatwoot só enfileira (200 não garante que a Meta respondeu) e exige
+        token de administrador."""
+        await self._request("POST", f"inboxes/{inbox_id}/sync_templates")
+
     async def buscar_ou_criar_contato(self, inbox_id: int, celular: str, nome: str) -> tuple[str, str]:
         """Retorna (contact_id, source_id) do contato com esse celular nessa
         inbox — source_id é o identificador do "contact_inbox" (canal

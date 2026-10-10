@@ -775,6 +775,7 @@ export interface Template {
   waba_id: string | null;
   // Troca de categoria pela Meta ainda sem Ciente
   aviso_categoria: string | null;
+  aviso_chatwoot?: string | null;
   variables: TemplateVariable[];
 }
 
