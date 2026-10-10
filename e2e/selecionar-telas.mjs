@@ -122,7 +122,7 @@ export const FUNCIONALIDADES = {
     `${B}consultas_fila.py`, `${B}utils/xlsx.py`,
   ],
   resiliencia: [
-    `${F}components/useAtualizacaoAutomatica.ts`, `${F}components/useRequisicaoUnica.ts`, `${F}pages/Dashboard.tsx`,
+    `${F}components/AvisoSetaFora.tsx`, `${F}components/useAtualizacaoAutomatica.ts`, `${F}components/useRequisicaoUnica.ts`, `${F}pages/Dashboard.tsx`,
     `${F}components/config/NumerosCard.tsx`, `${F}components/config/TokensMetaCard.tsx`,
     `${B}routers/dashboard.py`, `${B}routers/numbers.py`, `${B}routers/meta_tokens.py`,
   ],

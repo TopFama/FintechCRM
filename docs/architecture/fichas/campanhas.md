@@ -9,7 +9,7 @@ Revisado em 27/09/2026 (depois dos PRs #3 a #10); churn e cobertura são os de 2
 - **Camada:** interface
 - **Responsabilidade:** expor o cadastro e a operação das campanhas.
 - **Motivos para mudar:** filtros da campanha, lista, pausa/parada, planilha de clientes, prévia.
-- **Depende de:** `campanhas`, `campanhas_fixas`, `cobranca_base`, `cobranca_regras`, `google_client`, `pausas`, `regras_db`, `seta_client`, `cache`, `timezone`, `routers/comum` (permitido: não é router).
+- **Depende de:** `campanhas`, `campanhas_fixas`, `cobranca_base`, `cobranca_regras`, `google_client`, `pausas`, `regras_db`, `seta_client`, `timezone`, `routers/comum` (permitido: não é router).
 - **É usado por:** `main`.
 - **Violações encontradas:**
   - [x] Mais de uma responsabilidade: validação da campanha, contagens da fila, filtro "enviadas no período" e pausa estão no router.

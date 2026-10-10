@@ -57,10 +57,7 @@ def atualizar_compras(db: Session = Depends(get_db), _user: models.User = Depend
     """Ao abrir o filtro de faixa de compra: relê no SETA as compras de quem teve
     venda hoje (no máximo uma vez por minuto; ver services/compras_seta.py)."""
 
-    try:
-        return {"clientes_atualizados": compras_seta.atualizar_incremental(db, forcar=False)}
-    except seta_client.SetaIndisponivel as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "SETA indisponível") from exc
+    return {"clientes_atualizados": compras_seta.atualizar_incremental(db, forcar=False)}
 
 
 @router.get("/clientes", response_model=schemas.ClientesCobrancaAsyncOut)
@@ -83,10 +80,7 @@ def listar_clientes(
     pagina = clientes[offset : offset + limit]
 
     # o texto do SPC é pesado: só se busca (para a data da consulta) de quem aparece na página
-    try:
-        spc = seta_client.buscar_spc([c["codigo"] for c in pagina])
-    except seta_client.SetaIndisponivel as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    spc = seta_client.buscar_spc([c["codigo"] for c in pagina])
     for c in pagina:
         _, c["spc_data_consulta"] = parse_spc(spc.get(c["codigo"]))
 

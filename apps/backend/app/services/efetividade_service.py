@@ -10,7 +10,7 @@ cliente derivam do mesmo snapshot (`obter_dados_efetividade`), e filtro de
 loja e ordenação são aplicados depois, sem nova consulta ao SETA.
 
 Falha do SETA ou do Redis sobe como veio (SetaIndisponivel, SetaOcupado,
-CacheIndisponivel...): quem traduz para HTTP é o router (routers/comum.py).
+CacheIndisponivel...): o handler do main.py responde 503/429 com o código do erro.
 Só o Google fora do ar (planilha de lojas) ainda vira HTTPException aqui."""
 
 import logging

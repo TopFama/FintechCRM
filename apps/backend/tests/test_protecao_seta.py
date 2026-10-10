@@ -30,6 +30,7 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
 
 import redis
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 
 from app import cache, models, seta_client
@@ -454,6 +455,7 @@ for url in (EFETIVIDADE, f"/dashboard/janela-pagamento?de={HOJE}&ate={HOJE}", "/
             f"/reports/pagamentos?cobrado_de={HOJE}&cobrado_ate={HOJE}"):
     r = get(url)
     assert r.status_code == 503 and "Redis" in r.json()["detail"], (url, r.status_code, r.text)
+    assert r.json()["codigo"] == "cache_indisponivel" and "x-seta-fora" not in r.headers, r.text
 r = get(f"/dashboard/summary?de={HOJE}&ate={HOJE}")  # só dados locais
 assert r.status_code == 200, r.text
 assert sum(chamadas.values()) == 0 and execucoes["total"] == 0, "Redis fora: nenhuma consulta ao SETA"
@@ -513,5 +515,35 @@ for t in segurando:
 seta_client.ESPERA_MAXIMA_SEGUNDOS = 60
 esperar(lambda: simultaneas["agora"] == 0)
 assert get(EFETIVIDADE).status_code == 200, "liberou a capacidade: o mesmo pedido agora passa"
+
+# --- SETA sem conexão: 503 com código e aviso em toda resposta até reconectar ---------------------
+
+limpar()
+
+
+@app.get("/_teste/seta-fora")
+def _seta_fora():
+    raise seta_client.SetaIndisponivel("Falha ao consultar o SETA (OperationalError)")
+
+
+r = get("/_teste/seta-fora")
+assert r.status_code == 503 and r.json()["codigo"] == "seta_indisponivel", r.text
+assert "x-seta-fora" not in r.headers, "erro de consulta sem falha de conexão não é SETA fora"
+
+seta_client.is_configured = lambda: True
+sem_conexao = create_engine("postgresql+psycopg://u:p@localhost:1/x", connect_args={"connect_timeout": 2})
+com_conexao = create_engine(os.environ["DATABASE_URL"])
+for motor in (sem_conexao, com_conexao):
+    seta_client._monitorar_conexao(motor)
+seta_client.engine_ou_erro = lambda: sem_conexao
+r = get("/seta/status")
+assert r.json()["conectado"] is False and r.headers["x-seta-fora"], (r.text, r.headers)
+desde = r.headers["x-seta-fora"]
+assert get("/dashboard/summary?de={0}&ate={0}".format(HOJE)).headers["x-seta-fora"] == desde, "toda resposta avisa"
+get("/seta/status")
+assert seta_client.fora_desde().isoformat() == desde, "nova falha não muda o início"
+seta_client.engine_ou_erro = lambda: com_conexao
+r = get("/seta/status")
+assert r.json()["conectado"] is True and "x-seta-fora" not in r.headers, (r.text, r.headers)
 
 print("OK")

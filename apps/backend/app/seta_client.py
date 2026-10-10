@@ -18,11 +18,11 @@ import threading
 import time
 from collections import Counter
 from contextlib import contextmanager
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from functools import lru_cache
 
-from sqlalchemy import bindparam, create_engine, text
+from sqlalchemy import bindparam, create_engine, event, text
 from sqlalchemy.engine import URL, Engine
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -37,6 +37,7 @@ class SetaIndisponivel(Exception):
     (não carrega host, usuário nem senha)."""
 
     mensagem_segura = True  # o cache pode repetir a mensagem ao usuário
+    codigo = "seta_indisponivel"  # o main.py responde 503 com este código
 
 
 class SetaOcupado(SetaIndisponivel):
@@ -127,6 +128,33 @@ def _recusar(nome: str, motivo: str):
     raise SetaOcupado("Há consultas pesadas ao SETA em andamento. Tente de novo em instantes")
 
 
+# --- Conexão fora do ar ----------------------------------------------------------
+# Quando a última tentativa de conexão ao SETA falhou (de tela ou de rotina em
+# segundo plano). Sai das próprias consultas, sem checagem periódica; volta a
+# None na primeira conexão que der certo. Fica no processo: backend e worker são
+# um processo só (AGENTS.md).
+_fora_desde: datetime | None = None
+
+
+def fora_desde() -> datetime | None:
+    return _fora_desde
+
+
+def _monitorar_conexao(engine: Engine) -> None:
+    @event.listens_for(engine, "engine_connect")
+    def _conectou(_conn):
+        global _fora_desde
+        _fora_desde = None
+
+    @event.listens_for(engine, "handle_error")
+    def _falhou(ctx):
+        # Sem conexão (não conectou ou caiu no meio). Erro da consulta, como o
+        # statement_timeout, não é SETA fora; o pre_ping que falha reconecta sozinho.
+        global _fora_desde
+        if (ctx.connection is None or ctx.is_disconnect) and not ctx.is_pre_ping and _fora_desde is None:
+            _fora_desde = datetime.now(timezone.utc)
+
+
 @lru_cache(maxsize=1)
 def _engine() -> Engine:
     url = URL.create(
@@ -138,7 +166,7 @@ def _engine() -> Engine:
         database=settings.seta_db_name,
     )
     timeout_ms = settings.seta_db_statement_timeout_seconds * 1000
-    return create_engine(
+    engine = create_engine(
         url,
         pool_size=3,
         max_overflow=2,
@@ -154,6 +182,8 @@ def _engine() -> Engine:
             ),
         },
     )
+    _monitorar_conexao(engine)
+    return engine
 
 
 def engine_ou_erro() -> Engine:

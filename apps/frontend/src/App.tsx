@@ -9,6 +9,7 @@ import Cobranca from "./pages/Cobranca";
 import Configuracoes from "./pages/Configuracoes";
 import Campanhas from "./pages/Campanhas";
 import CampanhaDetail from "./pages/CampanhaDetail";
+import AvisoSetaFora from "./components/AvisoSetaFora";
 import {
   IconDashboard,
   IconLogout,
@@ -65,7 +66,10 @@ function Layout({ children }: { children: JSX.Element }) {
           </button>
         </div>
       </aside>
-      <main className="content">{children}</main>
+      <main className="content">
+        <AvisoSetaFora />
+        {children}
+      </main>
     </div>
   );
 }

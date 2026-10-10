@@ -151,7 +151,8 @@ app.add_middleware(
     # em vez de "*" quando allow_credentials=True, como o CORS exige.
     allow_credentials=True,
     # sem isso o navegador esconde o nome do arquivo das exportações .xlsx
-    expose_headers=["Content-Disposition"],
+    # e o aviso de SETA fora do ar
+    expose_headers=["Content-Disposition", "X-Seta-Fora"],
 )
 
 
@@ -163,6 +164,26 @@ async def _consulta_ocupada(request: Request, exc: Exception):
     calculada): não é falha do ERP, é pedir de novo daqui a pouco (429, não 503)."""
 
     return JSONResponse({"detail": str(exc)}, status_code=429, headers={"Retry-After": "10"})
+
+
+@app.exception_handler(seta_client.SetaIndisponivel)
+@app.exception_handler(cache.CacheIndisponivel)
+async def _servico_indisponivel(request: Request, exc: Exception):
+    """SETA ou Redis fora do ar, em qualquer rota. O `codigo` diz qual dos dois
+    (a tela não confunde Redis fora com SETA fora)."""
+
+    return JSONResponse({"detail": str(exc), "codigo": exc.codigo}, status_code=503)
+
+
+@app.middleware("http")
+async def _aviso_seta_fora(request: Request, call_next):
+    """Toda resposta leva desde quando o SETA está sem conexão (se estiver): a
+    tela mostra a faixa de aviso sem consultar o SETA nem pedir nada a mais."""
+
+    response = await call_next(request)
+    if desde := seta_client.fora_desde():
+        response.headers["X-Seta-Fora"] = desde.isoformat()
+    return response
 
 
 app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")

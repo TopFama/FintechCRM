@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import cache, campanhas as camp, campanhas_fixas, cobranca_base, google_client, itens_fila, models, pausas, seta_client
+from .. import campanhas as camp, campanhas_fixas, cobranca_base, google_client, itens_fila, models, pausas, seta_client
 from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
@@ -415,8 +415,6 @@ async def subir_clientes(
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-    except seta_client.SetaIndisponivel as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
         
     clientes_validos = list(planilha_linhas.keys())
     
@@ -466,12 +464,7 @@ def _erro_base(exc: Exception) -> HTTPException:
     return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
 
 
-_ERROS_BASE = (
-    cobranca_base.FiltroInvalido,
-    seta_client.SetaIndisponivel,
-    cache.CacheIndisponivel,
-    google_client.GoogleIndisponivel,
-)
+_ERROS_BASE = (cobranca_base.FiltroInvalido, google_client.GoogleIndisponivel)
 
 
 @router.get("/{campanha_id}/previa")
