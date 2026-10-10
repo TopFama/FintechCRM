@@ -102,6 +102,13 @@ class TemplateHeaderType(str, enum.Enum):
     image = "image"
 
 
+_ROTULOS_CATEGORIA = {"UTILITY": "Utilidade", "MARKETING": "Marketing", "AUTHENTICATION": "Autenticação"}
+
+
+def _rotulo_categoria(categoria: str) -> str:
+    return _ROTULOS_CATEGORIA.get(categoria, categoria)
+
+
 class Template(Base):
     __tablename__ = "templates"
 
@@ -124,6 +131,12 @@ class Template(Base):
     meta_status_raw: Mapped[str | None] = mapped_column(String, nullable=True)
     meta_template_id: Mapped[str | None] = mapped_column(String, nullable=True)
     waba_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Recategorização da Meta (previous_category / correct_category do template):
+    # anterior = de onde a Meta tirou; sugerida = para onde a Meta vai mudar.
+    # Ciente esconde o aviso até a Meta fazer outra troca.
+    categoria_anterior: Mapped[str | None] = mapped_column(String, nullable=True)
+    categoria_sugerida: Mapped[str | None] = mapped_column(String, nullable=True)
+    categoria_ciente: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -132,6 +145,24 @@ class Template(Base):
     variables: Mapped[list["TemplateVariable"]] = relationship(
         back_populates="template", cascade="all, delete-orphan", order_by="TemplateVariable.position"
     )
+
+    @property
+    def aviso_categoria(self) -> str | None:
+        """Única regra de quando avisar da troca de categoria pela Meta (tabela
+        de Templates, subida de fila e Dashboard)."""
+        if self.categoria_ciente:
+            return None
+        if self.categoria_sugerida and self.categoria_sugerida != self.category:
+            return (
+                f"A Meta vai mudar a categoria de {_rotulo_categoria(self.category)} "
+                f"para {_rotulo_categoria(self.categoria_sugerida)}"
+            )
+        if self.categoria_anterior and self.categoria_anterior != self.category:
+            return (
+                f"A Meta mudou a categoria de {_rotulo_categoria(self.categoria_anterior)} "
+                f"para {_rotulo_categoria(self.category)}"
+            )
+        return None
 
 
 class TemplateVariable(Base):

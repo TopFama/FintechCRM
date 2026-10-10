@@ -53,7 +53,7 @@ class MetaClient:
         return await self._request("GET", "me", params={"fields": "id,name"})
 
     async def list_templates(self, waba_id: str) -> list[dict]:
-        params = {"limit": 200, "fields": "name,language,category,status,components,id"}
+        params = {"limit": 200, "fields": "name,language,category,previous_category,correct_category,status,components,id"}
         templates: list[dict] = []
         # Paginado pelo cursor: WABA com mais de 200 templates vem em várias páginas
         for _ in range(50):
@@ -67,7 +67,7 @@ class MetaClient:
         return templates
 
     async def get_template_status(self, meta_template_id: str) -> dict:
-        return await self._request("GET", meta_template_id, params={"fields": "status,name,category"})
+        return await self._request("GET", meta_template_id, params={"fields": "status,name,category,previous_category,correct_category"})
 
     async def create_template(self, waba_id: str, payload: dict) -> dict:
         return await self._request("POST", f"{waba_id}/message_templates", json=payload)

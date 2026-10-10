@@ -3,6 +3,8 @@ template ativo da faixa e em que formato elas ficam gravadas. Usado por
 todo caminho que põe cliente na fila (régua automática, campanha,
 remarketing, planilha) e pelo "reaplicar variáveis"."""
 
+from collections.abc import Iterable
+
 from sqlalchemy.orm import Session
 
 from . import models
@@ -15,6 +17,25 @@ def templates_ativos(faixa: models.Faixa) -> dict[str, models.Template]:
     pode acabar processando um item da fila (ver worker.run_dispatch_cycle)."""
 
     return {e.template_id: e.template for e in faixa.envios if e.active and e.template_id}
+
+
+def avisos_categoria(templates: Iterable[models.Template]) -> list[str]:
+    """Aviso de template recategorizado pela Meta e ainda sem Ciente, para quem
+    sobe a fila e para o Dashboard (a regra mora em Template.aviso_categoria)."""
+
+    return [
+        f'Template "{t.meta_template_name}": {t.aviso_categoria}. Para não ver mais este aviso, '
+        "vá em Configurações → Templates e clique em Ciente."
+        for t in templates
+        if t.aviso_categoria
+    ]
+
+
+def avisos_categoria_das_faixas(faixas: Iterable[models.Faixa]) -> list[str]:
+    """Avisos dos templates que podem enviar os itens dessas faixas."""
+
+    templates = {tid: t for f in faixas for tid, t in templates_ativos(f).items()}
+    return avisos_categoria(templates.values())
 
 
 def fontes(faixa: models.Faixa, template: models.Template) -> list[tuple[models.TemplateVariable, FonteVariavel | None]]:

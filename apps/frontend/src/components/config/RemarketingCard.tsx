@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import AvisosCategoria from "../AvisosCategoria";
 import EnviosFaixa from "../EnviosFaixa";
 import { api, Faixa, pareceAdmin, PreviaRemarketing, SegmentoRemarketing, SegmentoRemarketingIn } from "../../api";
 import { formatBRL, formatCelular, formatData, formatDataHora } from "../../format";
@@ -19,6 +20,7 @@ export default function RemarketingCard() {
   const [erro, setErro] = useState<string | null>(null);
   const [executando, setExecutando] = useState(false);
   const [sucesso, setSucesso] = useState<string | null>(null);
+  const [avisosCategoria, setAvisosCategoria] = useState<string[]>([]);
   const admin = pareceAdmin();
 
   function carregar() {
@@ -33,10 +35,12 @@ export default function RemarketingCard() {
   async function executar() {
     setErro(null);
     setSucesso(null);
+    setAvisosCategoria([]);
     setExecutando(true);
     try {
-      const r = await api.executarRemarketing();
+      const { segmentos: r, avisos_categoria } = await api.executarRemarketing();
       const total = Object.values(r).reduce((soma, s) => soma + s.na_fila, 0);
+      setAvisosCategoria(avisos_categoria);
       setSucesso(
         Object.keys(r).length === 0
           ? "Nenhum segmento ligado."
@@ -69,6 +73,7 @@ export default function RemarketingCard() {
           </div>
         )}
         {sucesso && <div className="success-box">{sucesso}</div>}
+        <AvisosCategoria avisos={avisosCategoria} />
       </div>
       {segmentos.map((s) => (
         <SegmentoForm

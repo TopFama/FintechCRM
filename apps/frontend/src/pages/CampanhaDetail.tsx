@@ -2,6 +2,7 @@ import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, Campanha, CampanhaIn, Faixa, FiltrosCobranca, foiCancelada, mensagemErroSeta, PreviaCampanha } from "../api";
 import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../components/BarraFiltrosCobranca";
+import AvisosCategoria from "../components/AvisosCategoria";
 import EnviosFaixa from "../components/EnviosFaixa";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
@@ -77,6 +78,7 @@ export default function CampanhaDetail() {
   const [form, setForm] = useState<CampanhaIn>(NOVA);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
+  const [avisosCategoria, setAvisosCategoria] = useState<string[]>([]);
   const [salvando, setSalvando] = useState(false);
   const [enviandoPlanilha, setEnviandoPlanilha] = useState(false);
   // Na criação, a planilha fica guardada e sobe logo depois de criar a campanha.
@@ -256,11 +258,13 @@ export default function CampanhaDetail() {
       return;
     setErro(null);
     setSucesso(null);
+    setAvisosCategoria([]);
     setExecutando(true);
     const signal = novaExecucao();
     try {
       const r = await api.executarCampanha(id, signal);
       setSucesso(`${r.na_fila} cliente(s) colocado(s) na fila (de ${r.encontrados} encontrado(s)).`);
+      setAvisosCategoria(r.avisos_categoria);
       setPrevia(null);
       recarregarCampanha();
     } catch (err) {
@@ -370,6 +374,7 @@ export default function CampanhaDetail() {
           <span>{sucesso}</span>
         </div>
       )}
+      <AvisosCategoria avisos={avisosCategoria} />
 
       <form onSubmit={salvar}>
         <div className="card">

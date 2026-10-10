@@ -27,6 +27,9 @@ const CATEGORIAS: { valor: TemplateCreate["category"]; rotulo: string }[] = [
   { valor: "MARKETING", rotulo: "Marketing" },
 ];
 
+// Onde a Meta mostra os templates e o pedido de revisão de categoria
+const LINK_TEMPLATES_META = "https://business.facebook.com/latest/settings/whatsapp_account/";
+
 // Sincronizados da Meta podem vir em categoria que o cadastro não oferece
 function rotuloCategoria(categoria: string): string {
   if (categoria === "AUTHENTICATION") return "Autenticação";
@@ -146,7 +149,6 @@ export default function TemplatesCard() {
   const [decidindo, setDecidindo] = useState(false);
   const [subindoImagem, setSubindoImagem] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testeTemplateId, setTesteTemplateId] = useState<string | null>(null);
   const [testeNumeroId, setTesteNumeroId] = useState("");
@@ -184,7 +186,14 @@ export default function TemplatesCard() {
     api.listarTokensMeta().then(setTokensMeta).catch(() => undefined);
   }
 
-  useEffect(load, []);
+  // Abrir a aba já sincroniza com a Meta (inclusive as trocas de categoria); não há botão
+  useEffect(() => {
+    api
+      .syncTemplatesFromMeta()
+      .catch((err) => setError(err instanceof Error ? err.message : "Erro ao sincronizar com a Meta"))
+      .finally(load);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     api.listCamposCliente().then(setCampos).catch(() => undefined);
   }, []);
@@ -267,19 +276,6 @@ export default function TemplatesCard() {
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar mapeamento da variável");
-    }
-  }
-
-  async function handleSync() {
-    setError(null);
-    setSyncing(true);
-    try {
-      await api.syncTemplatesFromMeta();
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao sincronizar com a Meta");
-    } finally {
-      setSyncing(false);
     }
   }
 
@@ -425,6 +421,15 @@ export default function TemplatesCard() {
     }
   }
 
+  async function handleCategoriaCiente(id: string) {
+    try {
+      await api.marcarCategoriaCiente(id);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao marcar ciente");
+    }
+  }
+
   async function handleRefreshStatus(id: string) {
     try {
       await api.refreshTemplateStatus(id);
@@ -559,24 +564,6 @@ export default function TemplatesCard() {
           </div>
         </div>
       )}
-
-      <div className="card">
-        <div className="card-header">
-          <h3>Sincronizar templates da Meta</h3>
-        </div>
-        <p className="card-subtitle">
-          Puxa os templates já aprovados/pendentes direto da Meta para as WABAs dos tokens cadastrados em
-          Configurações — não precisa informar o WABA ID na mão.
-        </p>
-        <button onClick={handleSync} disabled={syncing}>
-          {syncing ? "Sincronizando..." : "Sincronizar"}
-        </button>
-        {numbers.length === 0 && (
-          <p className="field-hint">
-            Se ainda não há token da Meta, cadastre um em Configurações → Tokens da Meta antes de sincronizar.
-          </p>
-        )}
-      </div>
 
       <div className="card" ref={formRef}>
         <div className="card-header">
@@ -848,7 +835,7 @@ export default function TemplatesCard() {
           <div className="empty-state">
             <IconTemplate width={28} height={28} />
             <div className="title">Nenhum template cadastrado</div>
-            <p>Sincronize com a Meta ou crie um template acima.</p>
+            <p>Os templates da Meta aparecem aqui ao abrir a aba; ou crie um template acima.</p>
           </div>
         ) : (
           <div className="table-wrap">
@@ -899,7 +886,27 @@ export default function TemplatesCard() {
                             </div>
                           )}
                         </td>
-                        <td>{rotuloCategoria(t.category)}</td>
+                        <td>
+                          {rotuloCategoria(t.category)}
+                          {t.aviso_categoria && (
+                            <div style={{ color: "var(--color-warning)", fontSize: 12, marginTop: 4, display: "grid", gap: 4 }}>
+                              <span>{t.aviso_categoria}</span>
+                              <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                                <a href={LINK_TEMPLATES_META} target="_blank" rel="noreferrer">
+                                  Pedir revisão na Meta
+                                </a>
+                                <button
+                                  type="button"
+                                  className="secondary small"
+                                  style={{ padding: "2px 8px", fontSize: 12 }}
+                                  onClick={() => handleCategoriaCiente(t.id)}
+                                >
+                                  Ciente
+                                </button>
+                              </span>
+                            </div>
+                          )}
+                        </td>
                         <td className="text-muted" style={{ fontFamily: "monospace", fontSize: 12 }}>
                           {t.waba_id || "—"}
                         </td>
@@ -945,7 +952,8 @@ export default function TemplatesCard() {
                           )}
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <div style={{ display: "inline-grid", gap: 4 }}>
+                          {/* grid de bloco: os botões ocupam a largura da coluna, igual em todas as linhas */}
+                          <div style={{ display: "grid", gap: 4 }}>
                             {t.meta_template_id ? (
                               <button
                                 type="button"
