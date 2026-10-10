@@ -15,7 +15,6 @@ from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from .comum import erros_de_consulta_pesada
 from .. import consultas_fila, fila_automatica, pausas
 from ..services import efetividade_service, pagamentos_service
 from ..timezone import hora_br
@@ -597,8 +596,7 @@ EfetividadeSortColumn = Literal[efetividade_service.COLUNAS_ORDENAVEIS]
 
 
 def _dados_efetividade(db, **filtros):
-    with erros_de_consulta_pesada():
-        return efetividade_service.obter_dados_efetividade(db, **filtros)
+    return efetividade_service.obter_dados_efetividade(db, **filtros)
 
 
 @api.get("/efetividade", response_model=schemas.RelatorioEfetividadeOut)
@@ -801,11 +799,10 @@ def _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela=N
     """Lista cacheada por conjunto de filtros (compartilhada entre usuários):
     ordenar, paginar e exportar com os mesmos filtros não reconsultam o SETA."""
 
-    with erros_de_consulta_pesada():
-        return pagamentos_service.snapshot_pagamentos(
-            cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate, faixa=faixa,
-            dias_janela=dias_janela, campanha=campanha, base=base, velho=pagamentos_service.PAGAMENTOS_VELHO_SEGUNDOS,
-        )
+    return pagamentos_service.snapshot_pagamentos(
+        cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate, faixa=faixa,
+        dias_janela=dias_janela, campanha=campanha, base=base, velho=pagamentos_service.PAGAMENTOS_VELHO_SEGUNDOS,
+    )
 
 
 PagamentoSortColumn = Literal[pagamentos_service.COLUNAS_ORDENAVEIS]

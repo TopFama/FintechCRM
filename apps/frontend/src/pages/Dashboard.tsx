@@ -186,7 +186,7 @@ function CardJanelaPagamento({ periodo, recarregar }: { periodo: Periodo; recarr
       .catch((e) => {
         if (foiCancelada(e)) return;
         setDados(null);
-        setErro(e instanceof ApiError && e.status === 503 ? "SETA indisponível" : e.message);
+        setErro(e instanceof ApiError && e.codigo === "seta_indisponivel" ? "SETA indisponível" : e.message);
       });
     return () => controle.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps

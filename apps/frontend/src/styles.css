@@ -1896,3 +1896,11 @@ button.dica-botao:active:not(:disabled) {
     height: 28px;
   }
 }
+
+.aviso-seta-fora {
+  align-items: center;
+}
+
+.aviso-seta-fora button {
+  margin-left: auto;
+}

@@ -15,6 +15,7 @@ import {
   ROTULO_TIPO_FAIXA,
   TipoFaixa,
 } from "../api";
+import { useSetaFora } from "../components/AvisoSetaFora";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import { AcaoPendentes, PainelAcao, PainelDescartar, PainelPausaLote, PausasAtivas } from "../components/PausasPendentes";
 import SelectCampanha from "../components/SelectCampanha";
@@ -119,6 +120,7 @@ export default function Relatorios() {
   const [pagoDe, setPagoDe] = useState("");
   const [pagoAte, setPagoAte] = useState("");
   const [pagamentos, setPagamentos] = useState<PagamentosPage | null>(null);
+  const setaFora = useSetaFora();
   const invalidosSort = useSort<ColunaInvalido>(null, (chave, dir) => {
     setOffset(0);
     load(0, limit, chave, dir);
@@ -546,7 +548,9 @@ export default function Relatorios() {
           <>
             {pagamentos?.desatualizado && (
               <div className="field-hint" style={{ marginBottom: 8 }}>
-                Dados do SETA de {formatDataHora(pagamentos.gerado_em)}: o relatório está sendo atualizado.
+                {setaFora
+                  ? `Sem conexão com o SETA: dados de ${formatDataHora(pagamentos.gerado_em)}.`
+                  : `Dados do SETA de ${formatDataHora(pagamentos.gerado_em)}: o relatório está sendo atualizado.`}
               </div>
             )}
             <TabelaPagamentos dados={pagamentos} ordenacao={pagamentosSort} />

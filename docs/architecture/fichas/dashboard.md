@@ -19,7 +19,7 @@ fila" chama `fila_automatica.descartar_pendentes` (Envios).
 - **Camada:** interface (com aplicação e formatação dentro)
 - **Responsabilidade (1 frase, sem "e"):** servir os relatórios da tela Relatórios.
 - **Motivos para mudar:** colunas de relatório, filtros, exportação .xlsx, cores do Excel da efetividade, descartar fila, pagamentos.
-- **Depende de:** `cache`, `consultas_fila`, `fila_automatica` (descartar fila), `pausas`, `regras_db`, `seta_client`, `services/efetividade_service`, `services/pagamentos_service`, `utils/xlsx`, `models`, `schemas`, `timezone`, `routers/comum` (`erros_de_consulta_pesada`: 429 quando ocupado, 503 só quando o SETA/Redis estão fora). Efetividade e Quem pagou leem o snapshot do cache; ordenar, paginar e exportar não consultam o SETA.
+- **Depende de:** `cache`, `consultas_fila`, `fila_automatica` (descartar fila), `pausas`, `regras_db`, `seta_client`, `services/efetividade_service`, `services/pagamentos_service`, `utils/xlsx`, `models`, `schemas`, `timezone`; SETA/Redis ocupado vira 429 e fora do ar vira 503 com `codigo` nos handlers do `main.py`. Efetividade e Quem pagou leem o snapshot do cache; ordenar, paginar e exportar não consultam o SETA.
 - **É usado por:** `main`.
 - **Violações encontradas:**
   - [x] Mais de uma responsabilidade: seis relatórios (telefones inválidos, envios, pendentes, erros, efetividade, pagamentos) num arquivo só (858 linhas; o maior do backend hoje é `seta_client.py`).

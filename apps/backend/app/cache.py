@@ -79,10 +79,14 @@ _contadores: Counter = Counter()
 class CacheIndisponivel(Exception):
     """Redis não configurado ou inalcançável. Mensagem segura para o usuário."""
 
+    codigo = "cache_indisponivel"  # o main.py responde 503 com este código
+
 
 class CalculoFalhou(CacheIndisponivel):
     """O cálculo falhou há pouco (quarentena): devolve a mesma mensagem sem
     refazer a consulta. Mensagem segura para o usuário."""
+
+    codigo = "calculo_falhou"  # não é o Redis fora: a mensagem é a do erro original
 
 
 class CacheOcupado(Exception):

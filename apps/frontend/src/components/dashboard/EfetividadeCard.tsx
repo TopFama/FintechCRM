@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, foiCancelada, mensagemErroSeta, FiltrosEfetividade, LinhaEfetividade, RelatorioEfetividade } from "../../api";
 import { formatBRL, formatDataHora, formatPercentual, formatRoas } from "../../format";
 import { IconAlert } from "../../icons";
+import { useSetaFora } from "../AvisoSetaFora";
 import CamposLoja from "../CamposLoja";
 import DicaIndicador from "../DicaIndicador";
 import MultiSelect from "../MultiSelect";
@@ -99,6 +100,7 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
   const [filtros, setFiltros] = useState<FiltrosEfetividade>(FILTROS_PADRAO);
   const [janela, setJanela] = useState<string | null>("7");
   const [relatorio, setRelatorio] = useState<RelatorioEfetividade | null>(null);
+  const setaFora = useSetaFora();
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [exportando, setExportando] = useState(false);
@@ -307,8 +309,9 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
         <>
           {relatorio.desatualizado && (
             <div className="field-hint" style={{ marginBottom: 8 }}>
-              Dados do SETA de {formatDataHora(relatorio.gerado_em)}: o relatório está sendo atualizado. Aplique de
-              novo daqui a pouco.
+              {setaFora
+                ? `Sem conexão com o SETA: dados de ${formatDataHora(relatorio.gerado_em)}.`
+                : `Dados do SETA de ${formatDataHora(relatorio.gerado_em)}: o relatório está sendo atualizado. Aplique de novo daqui a pouco.`}
             </div>
           )}
           {relatorio.valor_a_pagar_brl !== null && (

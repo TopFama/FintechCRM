@@ -168,7 +168,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
   test("card 'Pagaram em até 7 dias' com SETA fora avisa só nele", { tag: ["@pagos-janela","@pagamentos","@resiliencia"] }, async ({ page }) => {
     permitirErrosConsole(page, "503");
     await page.route("**/dashboard/janela-pagamento*", (r) =>
-      r.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "SETA indisponível" }) })
+      r.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Falha ao consultar o SETA (OperationalError)", codigo: "seta_indisponivel" }) })
     );
     await page.reload();
     // sem resposta não se sabe a janela: o rótulo fica só "Pagaram"
@@ -176,6 +176,53 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(cardPagos).toContainText("SETA indisponível");
     await expect(stat(page, "Cobranças")).not.toHaveText("…");
     await expect(page.locator(".error-box")).toHaveCount(0);
+  });
+
+  test("SETA sem conexão: faixa no topo em todas as telas até o teste de conexão passar", { tag: ["@pagos-janela","@resiliencia"] }, async ({ page }) => {
+    permitirErrosConsole(page, "503");
+    // o backend avisa em toda resposta enquanto o SETA está sem conexão
+    let semConexao = true;
+    await page.route(/localhost:8010\//, async (r) => {
+      if (!semConexao) return r.fallback();
+      const resposta = await r.fetch();
+      const headers = { ...resposta.headers() };
+      if (semConexao) headers["x-seta-fora"] = "2026-10-10T17:32:00+00:00";
+      await r.fulfill({ response: resposta, headers });
+    });
+    await page.route("**/dashboard/janela-pagamento*", (r) =>
+      r.fulfill({
+        status: 503,
+        contentType: "application/json",
+        headers: { "x-seta-fora": "2026-10-10T17:32:00+00:00", "access-control-expose-headers": "X-Seta-Fora" },
+        body: JSON.stringify({ detail: "Não foi possível conectar ao SETA (OperationalError)", codigo: "seta_indisponivel" }),
+      })
+    );
+    await page.reload();
+    const faixa = page.locator(".aviso-seta-fora");
+    await expect(faixa).toContainText(/Sem conexão com o SETA desde 10\/10\/2026,? 14:32/);
+    await expect(page.locator(".stat", { has: page.locator(".label", { hasText: /^Pagaram$/ }) })).toContainText("SETA indisponível");
+    await page.getByRole("link", { name: "Relatórios" }).click();
+    await expect(faixa).toBeVisible();
+    // SETA voltou: o teste de conexão é a primeira resposta sem o aviso e a faixa some
+    await page.route("**/seta/status", (r) => {
+      semConexao = false;
+      return r.continue();
+    });
+    await faixa.getByRole("button", { name: "Testar conexão" }).click();
+    await expect(faixa).toHaveCount(0);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
+  test("Redis fora tem mensagem própria, sem falar em SETA", { tag: ["@pagos-janela","@resiliencia"] }, async ({ page }) => {
+    permitirErrosConsole(page, "503");
+    await page.route("**/dashboard/janela-pagamento*", (r) =>
+      r.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Cache Redis indisponível (ConnectionError)", codigo: "cache_indisponivel" }) })
+    );
+    await page.reload();
+    const cardPagos = page.locator(".stat", { has: page.locator(".label", { hasText: /^Pagaram$/ }) });
+    await expect(cardPagos).toContainText("Cache Redis indisponível");
+    await expect(cardPagos).not.toContainText("SETA");
+    await expect(page.locator(".aviso-seta-fora")).toHaveCount(0);
   });
 
   test("números dos cards saem com separador de milhar e o card fica mais largo que alto", { tag: ["@visual"] }, async ({ page }) => {

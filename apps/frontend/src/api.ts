@@ -31,13 +31,36 @@ export function pareceAdmin(): boolean {
 
 export class ApiError extends Error {
   status: number;
+  codigo?: string; // 503: "seta_indisponivel", "cache_indisponivel" ou "calculo_falhou"
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, codigo?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.codigo = codigo;
   }
 }
+
+// Desde quando o SETA está sem conexão: o backend manda em toda resposta
+// (cabeçalho X-Seta-Fora) e para de mandar quando reconecta.
+let setaForaDesde: string | null = null;
+const ouvintesSetaFora = new Set<() => void>();
+
+function registrarSetaFora(desde: string | null) {
+  if (desde === setaForaDesde) return;
+  setaForaDesde = desde;
+  ouvintesSetaFora.forEach((ouvinte) => ouvinte());
+}
+
+export const setaFora = {
+  desde: () => setaForaDesde,
+  ouvir: (ouvinte: () => void) => {
+    ouvintesSetaFora.add(ouvinte);
+    return () => {
+      ouvintesSetaFora.delete(ouvinte);
+    };
+  },
+};
 
 // Erro de validação do FastAPI (422) vem como lista de objetos com nomes de
 // campo internos — não faz sentido para o usuário.
@@ -58,6 +81,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   // O token de sessão vive só num cookie httpOnly (setado por POST /auth/login) —
   // nunca em localStorage/JS, para não ficar exposto a um eventual XSS no frontend.
   const response = await fetch(`${API_URL}${path}`, { ...options, headers, credentials: "include" });
+  registrarSetaFora(response.headers.get("X-Seta-Fora"));
   if (response.status === 401) {
     if (path.startsWith("/auth/login")) {
       const body = await response.json().catch(() => ({}));
@@ -69,7 +93,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new ApiError(response.status, textoDoErro(body.detail) || `Erro ${response.status}`);
+    throw new ApiError(response.status, textoDoErro(body.detail) || `Erro ${response.status}`, body.codigo);
   }
   if (
     response.status === 204 ||
@@ -88,9 +112,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response as unknown as T;
 }
 
-// 503 nas rotas de cobrança = ERP fora do ar ou não configurado
+// SETA fora do ar ou não configurado; Redis fora segue com a própria mensagem
 export function mensagemErroSeta(e: unknown): string {
-  if (e instanceof ApiError && e.status === 503) {
+  if (e instanceof ApiError && e.codigo === "seta_indisponivel") {
     return e.message.startsWith("SETA") ? e.message : `SETA indisponível: ${e.message}`;
   }
   return e instanceof Error ? e.message : "Erro desconhecido";

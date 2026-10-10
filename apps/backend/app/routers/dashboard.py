@@ -20,7 +20,6 @@ from ..database import SessionLocal, get_db
 from ..deps import get_current_user, token_da_requisicao, usuario_do_token
 from ..security import decode_access_token, origem_permitida
 from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx
-from .comum import erros_de_consulta_pesada
 
 logger = logging.getLogger(__name__)
 
@@ -454,6 +453,5 @@ def janela_pagamento(
     em Indicadores (regra da Tarefa 5). Usa a mesma lista em cache do relatório Quem
     pagou (5 min), então não consulta o SETA de novo para o mesmo período."""
 
-    with erros_de_consulta_pesada():
-        dados = pagos_janela_service.resumo(db, de, ate)
+    dados = pagos_janela_service.resumo(db, de, ate)
     return schemas.PagosJanelaOut(**dados)
