@@ -210,6 +210,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     });
     await faixa.getByRole("button", { name: "Testar conexão" }).click();
     await expect(faixa).toHaveCount(0);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test("Redis fora tem mensagem própria, sem falar em SETA", { tag: ["@pagos-janela","@resiliencia"] }, async ({ page }) => {
