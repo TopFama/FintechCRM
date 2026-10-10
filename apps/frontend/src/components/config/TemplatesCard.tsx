@@ -27,6 +27,9 @@ const CATEGORIAS: { valor: TemplateCreate["category"]; rotulo: string }[] = [
   { valor: "MARKETING", rotulo: "Marketing" },
 ];
 
+// Onde a Meta mostra os templates e o pedido de revisão de categoria
+const LINK_TEMPLATES_META = "https://business.facebook.com/latest/settings/whatsapp_account/";
+
 // Sincronizados da Meta podem vir em categoria que o cadastro não oferece
 function rotuloCategoria(categoria: string): string {
   if (categoria === "AUTHENTICATION") return "Autenticação";
@@ -184,7 +187,11 @@ export default function TemplatesCard() {
     api.listarTokensMeta().then(setTokensMeta).catch(() => undefined);
   }
 
-  useEffect(load, []);
+  // Abrir a aba já sincroniza: traz as trocas de categoria feitas pela Meta
+  useEffect(() => {
+    handleSync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     api.listCamposCliente().then(setCampos).catch(() => undefined);
   }, []);
@@ -275,11 +282,11 @@ export default function TemplatesCard() {
     setSyncing(true);
     try {
       await api.syncTemplatesFromMeta();
-      load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao sincronizar com a Meta");
     } finally {
       setSyncing(false);
+      load();
     }
   }
 
@@ -422,6 +429,15 @@ export default function TemplatesCard() {
       setError(err instanceof Error ? err.message : "Erro ao enviar para aprovação");
     } finally {
       setEnviandoAprovacao(null);
+    }
+  }
+
+  async function handleCategoriaCiente(id: string) {
+    try {
+      await api.marcarCategoriaCiente(id);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao marcar ciente");
     }
   }
 
@@ -899,7 +915,27 @@ export default function TemplatesCard() {
                             </div>
                           )}
                         </td>
-                        <td>{rotuloCategoria(t.category)}</td>
+                        <td>
+                          {rotuloCategoria(t.category)}
+                          {t.aviso_categoria && (
+                            <div style={{ color: "var(--color-warning)", fontSize: 12, marginTop: 4, display: "grid", gap: 4 }}>
+                              <span>{t.aviso_categoria}</span>
+                              <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                                <a href={LINK_TEMPLATES_META} target="_blank" rel="noreferrer">
+                                  Pedir revisão na Meta
+                                </a>
+                                <button
+                                  type="button"
+                                  className="secondary small"
+                                  style={{ padding: "2px 8px", fontSize: 12 }}
+                                  onClick={() => handleCategoriaCiente(t.id)}
+                                >
+                                  Ciente
+                                </button>
+                              </span>
+                            </div>
+                          )}
+                        </td>
                         <td className="text-muted" style={{ fontFamily: "monospace", fontSize: 12 }}>
                           {t.waba_id || "—"}
                         </td>
@@ -945,7 +981,8 @@ export default function TemplatesCard() {
                           )}
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <div style={{ display: "inline-grid", gap: 4 }}>
+                          {/* grid de bloco: os botões ocupam a largura da coluna, igual em todas as linhas */}
+                          <div style={{ display: "grid", gap: 4 }}>
                             {t.meta_template_id ? (
                               <button
                                 type="button"

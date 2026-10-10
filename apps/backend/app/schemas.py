@@ -303,6 +303,8 @@ class TemplateOut(BaseModel):
     meta_status_raw: str | None
     meta_template_id: str | None
     waba_id: str | None
+    # Troca de categoria pela Meta ainda sem Ciente (models.Template.aviso_categoria)
+    aviso_categoria: str | None = None
     created_at: datetime
     updated_at: datetime
     variables: list[TemplateVariableOut] = []
@@ -1060,6 +1062,7 @@ class LeadsGerarResult(BaseModel):
     ja_existiam: int
     sem_celular: int  # entre os criados: sem telefone válido em nenhum dos campos
     na_fila: int = 0  # entraram na fila de disparo da faixa
+    avisos_categoria: list[str] = []  # templates da fila recategorizados pela Meta, sem Ciente
 
 
 class LeadsGerarAsyncOut(BaseModel):

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, Upload
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session, selectinload
 
-from .. import chatwoot_client, models, schemas
+from .. import chatwoot_client, itens_fila, models, schemas
 from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user
@@ -46,6 +46,34 @@ def list_templates(
     return _with_variables(db.query(models.Template)).order_by(
         models.Template.created_at.desc()
     ).all()
+
+
+@router.get("/avisos-categoria", response_model=list[str])
+def avisos_categoria(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+    """Faixa do Dashboard: templates que a Meta recategorizou e ainda sem Ciente."""
+    return itens_fila.avisos_categoria(db.query(models.Template).order_by(models.Template.meta_template_name))
+
+
+@router.post("/{template_id}/categoria-ciente", response_model=schemas.TemplateOut)
+def marcar_categoria_ciente(
+    template_id: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)
+):
+    template = db.get(models.Template, template_id)
+    if not template:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
+    template.categoria_ciente = True
+    db.commit()
+    return _recarregar(db, template_id)
+
+
+def _aplicar_categoria(template: models.Template, remote: dict) -> None:
+    """Categoria vinda da Meta (sync e Atualizar status). Troca nova de
+    categoria pela Meta volta a avisar, mesmo com Ciente de uma troca antiga."""
+    template.category = remote.get("category") or template.category
+    anterior, sugerida = remote.get("previous_category"), remote.get("correct_category")
+    if (anterior, sugerida) != (template.categoria_anterior, template.categoria_sugerida):
+        template.categoria_ciente = False
+    template.categoria_anterior, template.categoria_sugerida = anterior, sugerida
 
 
 CLIENTE_EXEMPLO = {
@@ -179,7 +207,7 @@ async def sync_from_meta(
                 existing.status = status_value
                 existing.meta_status_raw = remote.get("status")
                 existing.meta_template_id = remote_id
-                existing.category = remote.get("category", existing.category)
+                _aplicar_categoria(existing, remote)
                 existing.waba_id = waba_id
                 existing.header_type = header_type
                 existing.language = language
@@ -217,6 +245,7 @@ async def sync_from_meta(
                     body_text=body_text,
                     botoes=_extract_botoes(remote),
                 )
+                _aplicar_categoria(template, remote)
                 db.add(template)
                 db.flush()
                 for i, name, botao_indice in _extract_variables(remote):
@@ -588,6 +617,7 @@ async def refresh_template_status(
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
     template.status = _map_meta_status(remote.get("status"))
     template.meta_status_raw = remote.get("status")
+    _aplicar_categoria(template, remote)
     db.commit()
     db.refresh(template)
     return template

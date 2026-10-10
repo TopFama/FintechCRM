@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from .. import crypto, models
+from .. import crypto, itens_fila, models
 from .. import remarketing as rmk
 from ..database import get_db
 from ..deps import get_current_user, require_admin
@@ -194,8 +194,12 @@ def executar_agora(db: Session = Depends(get_db), _user: models.User = Depends(r
     """Busca e coloca na fila agora os segmentos ligados (o agendador faz isso sozinho todo dia)."""
 
     try:
-        return rmk.executar(db)
+        segmentos = rmk.executar(db)
     except rmk.RemarketingErro as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
     except SetaIndisponivel as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    com_fila = [seg for seg, r in segmentos.items() if r["na_fila"]]
+    regras = db.query(models.RemarketingSegmento).filter(models.RemarketingSegmento.segmento.in_(com_fila))
+    faixas = [r.faixa for r in regras]
+    return {"segmentos": segmentos, "avisos_categoria": itens_fila.avisos_categoria_das_faixas(faixas)}

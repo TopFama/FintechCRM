@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import cache, campanhas as camp, campanhas_fixas, cobranca_base, google_client, models, pausas, seta_client
+from .. import cache, campanhas as camp, campanhas_fixas, cobranca_base, google_client, itens_fila, models, pausas, seta_client
 from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
@@ -531,7 +531,11 @@ def executar_agora(campanha_id: str, db: Session = Depends(get_db), user: models
         raise _erro_base(exc) from exc
     if resultado["status"] != "ready":
         return {"status": "processing", "data": None}
-    return {"status": "ready", "data": {"encontrados": resultado["encontrados"], "na_fila": resultado["na_fila"]}}
+    avisos = itens_fila.avisos_categoria_das_faixas([c.faixa]) if resultado["na_fila"] else []
+    return {
+        "status": "ready",
+        "data": {"encontrados": resultado["encontrados"], "na_fila": resultado["na_fila"], "avisos_categoria": avisos},
+    }
 
 
 class ReservaVazioItem(BaseModel):

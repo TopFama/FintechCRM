@@ -8,10 +8,11 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await page.goto("/configuracoes?aba=templates");
   });
 
-  test("sincronizar com a Meta traz os templates e mostra o status", async ({ page }) => {
-    await expect(page.getByText("Nenhum template cadastrado")).toBeVisible();
-    await page.getByRole("button", { name: "Sincronizar", exact: true }).click();
+  test("abrir a aba sincroniza com a Meta, traz os templates e mostra o status", async ({ page }) => {
+    // sem clicar: a aba já sincroniza ao abrir
     const tabela = card(page, "Templates cadastrados");
+    await expect(tabela.locator("tbody tr")).toHaveCount(3);
+    await page.getByRole("button", { name: "Sincronizar", exact: true }).click();
     await expect(tabela.locator("tbody tr")).toHaveCount(3);
     const cobranca = (await apiGet(page, "/templates")).find((t: any) => t.meta_template_name === "cobranca_atraso");
     expect(cobranca.variables.map((v: any) => v.internal_name)).toEqual(["variavel_1", "variavel_2", "variavel_3", "variavel_4"]);

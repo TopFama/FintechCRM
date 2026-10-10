@@ -223,6 +223,8 @@ export const api = {
   syncTemplatesFromMeta: () => request<Template[]>("/templates/meta/sync", { method: "POST" }),
   refreshTemplateStatus: (id: string) =>
     request<Template>(`/templates/${id}/refresh-status`, { method: "POST" }),
+  marcarCategoriaCiente: (id: string) => request<Template>(`/templates/${id}/categoria-ciente`, { method: "POST" }),
+  avisosCategoria: () => request<string[]>("/templates/avisos-categoria"),
   listCamposCliente: () => request<CampoCliente[]>("/templates/variaveis/campos"),
   atualizarVariavelTemplate: (templateId: string, variavelId: string, campoSugerido: string | null) =>
     request<TemplateVariable>(`/templates/${templateId}/variaveis/${variavelId}`, {
@@ -424,7 +426,7 @@ export const api = {
 
   // --- Leads ---
   gerarLeads: (params: FiltrosCobranca, signal?: AbortSignal) =>
-    pollAsync<{ criados: number; ja_existiam: number; sem_celular: number; na_fila: number }>(
+    pollAsync<{ criados: number; ja_existiam: number; sem_celular: number; na_fila: number; avisos_categoria: string[] }>(
       (s) => request(`/leads/gerar?${montarQuery(params)}`, { method: "POST", signal: s }),
       signal
     ),
@@ -553,7 +555,7 @@ export const api = {
   previaCampanha: (id: string, params: { limit: number; offset: number } & OrdenacaoParams, signal?: AbortSignal) =>
     pollAsync<PreviaCampanha>((s) => request(`/campanhas/${id}/previa?${montarQuery(params)}`, { signal: s }), signal),
   executarCampanha: (id: string, signal?: AbortSignal) =>
-    pollAsync<{ encontrados: number; na_fila: number }>(
+    pollAsync<{ encontrados: number; na_fila: number; avisos_categoria: string[] }>(
       (s) => request(`/campanhas/${id}/executar`, { method: "POST", signal: s }),
       signal
     ),
@@ -572,7 +574,10 @@ export const api = {
   },
 
   executarRemarketing: () =>
-    request<Record<string, { encontrados: number; na_fila: number }>>("/remarketing/executar", { method: "POST" }),
+    request<{ segmentos: Record<string, { encontrados: number; na_fila: number }>; avisos_categoria: string[] }>(
+      "/remarketing/executar",
+      { method: "POST" }
+    ),
 
   // --- Regras de cobrança (clusters, faixas de atraso, matriz do WhatsApp) ---
   getConfigCobranca: () => request<ConfigCobrancaOut>("/config/cobranca"),
@@ -744,6 +749,8 @@ export interface Template {
   meta_status_raw: string | null;
   meta_template_id: string | null;
   waba_id: string | null;
+  // Troca de categoria pela Meta ainda sem Ciente
+  aviso_categoria: string | null;
   variables: TemplateVariable[];
 }
 

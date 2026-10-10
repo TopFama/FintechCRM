@@ -8,7 +8,7 @@ exceção é o Renegocie (ver `fichas/campanhas.md`).
 - **Domínio:** Templates
 - **Camada:** interface
 - **Responsabilidade:** expor o cadastro de templates.
-- **Motivos para mudar:** formato de template da Meta, cadastro e envio para aprovação, sincronização, imagem de cabeçalho, teste de envio.
+- **Motivos para mudar:** formato de template da Meta, cadastro e envio para aprovação, sincronização (inclui a recategorização pela Meta e o Ciente), imagem de cabeçalho, teste de envio.
 - **Depende de:** `meta_client`, `chatwoot_client`, `dispatch_service`, `variaveis_template`, `utils/phone`, `utils/imagem`, `config`.
 - **Violações encontradas:**
   - [x] Mais de uma responsabilidade: `sync_from_meta` (80 linhas) faz o upsert dos templates vindos da Meta e interpreta o JSON da Meta (`_map_meta_status`, `_extract_body_text`, `_extract_variables`, `_extract_botoes`, `_extract_header_type`) dentro do router; upload de imagem grava arquivo em disco e cuida da etapa de validação da imagem otimizada (pendente/confirmar/descartar); a otimização em si fica em `utils/imagem.py`.

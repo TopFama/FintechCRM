@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import case, false, or_
 from sqlalchemy.orm import Session
 
-from .. import google_client, lojas as lojas_base, models, schemas, seta_client
+from .. import google_client, itens_fila, lojas as lojas_base, models, schemas, seta_client
 from ..database import get_db
 from ..fila_automatica import enfileirar_leads
 from ..deps import get_current_user
@@ -47,10 +47,23 @@ def gerar_leads(
     except seta_client.SetaIndisponivel as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
+    avisos: list[str] = []
+    if na_fila:
+        faixas = db.query(models.Faixa).filter(
+            models.Faixa.active.is_(True),
+            models.Faixa.tipo == models.TIPO_REGUA,
+            models.Faixa.name.in_({c["faixa"] for c in clientes}),
+        )
+        avisos = itens_fila.avisos_categoria_das_faixas(faixas)
+
     return schemas.LeadsGerarAsyncOut(
         status="ready",
         data=schemas.LeadsGerarResult(
-            criados=criados, ja_existiam=ja_existiam, sem_celular=sem_celular, na_fila=na_fila
+            criados=criados,
+            ja_existiam=ja_existiam,
+            sem_celular=sem_celular,
+            na_fila=na_fila,
+            avisos_categoria=avisos,
         ),
     )
 

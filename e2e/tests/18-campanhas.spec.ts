@@ -386,7 +386,7 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     // existe e pode chegar antes deste pedido: o cliente entra uma vez, por um dos dois
     const resumo = await apiSend(page, "POST", "/remarketing/executar");
     expect(resumo.status).toBe(200);
-    expect([0, 1]).toContain(resumo.corpo.SO_IDENTIFICOU.na_fila);
+    expect([0, 1]).toContain(resumo.corpo.segmentos.SO_IDENTIFICOU.na_fila);
     const naFila = 1;
     expect((await apiSend(page, "POST", "/__e2e/campanhas/enviar")).status).toBe(200);
 

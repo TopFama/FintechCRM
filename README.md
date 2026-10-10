@@ -268,6 +268,12 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    da Meta continuam valendo em qualquer idioma. Templates com cabeçalho de imagem permitem subir a imagem, reaproveitada em
    todo envio daquele template; se ela passar do limite do WhatsApp, o sistema mostra a versão
    otimizada para o usuário aprovar (ver "Limitações conhecidas").
+   Abrir a aba Templates já sincroniza com a Meta. Quando a Meta muda (ou anuncia que vai mudar) a
+   categoria de um template (`previous_category`/`correct_category`), a coluna Tipo mostra o aviso,
+   o link para pedir revisão no WhatsApp Manager e o botão "Ciente", que esconde o aviso até a Meta
+   fazer outra troca. Enquanto não houver Ciente, o aviso também aparece ao subir fila pela
+   Cobrança, por uma campanha ou pelo remarketing e numa faixa no Dashboard
+   (`GET /templates/avisos-categoria`; a regra é `Template.aviso_categoria`).
 3. **Faixas de cobrança** (**Configurações → Faixas**) — as faixas da régua (faixas de atraso)
    podem ser sincronizadas a partir das faixas de atraso configuradas
    (`POST /faixas/sincronizar-faixas-atraso`) ou criadas pelo wizard em três passos: nome e

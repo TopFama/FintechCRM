@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError, DashboardPorFaixa, DashboardSummary, DashboardTotalPorFaixa, PagosJanela, foiCancelada } from "../api";
+import AvisosCategoria from "../components/AvisosCategoria";
 import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
@@ -19,6 +20,7 @@ import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
 export default function Dashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [avisosCategoria, setAvisosCategoria] = useState<string[]>([]);
   const opcoes = useOpcoesCobranca();
   const [opcaoPeriodo, setOpcaoPeriodo] = useState<OpcaoPeriodo | null>("hoje");
   const [periodo, setPeriodo] = useState<Periodo>(() => periodoDe("hoje"));
@@ -68,6 +70,11 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodo, recarregar, ciclo]);
 
+  // Filas que sobem sozinhas usam template recategorizado pela Meta sem Ciente
+  useEffect(() => {
+    api.avisosCategoria().then(setAvisosCategoria).catch(() => undefined);
+  }, [recarregar]);
+
   return (
     <div>
       <div className="page-header">
@@ -91,6 +98,7 @@ export default function Dashboard() {
           <span>{error}</span>
         </div>
       )}
+      <AvisosCategoria avisos={avisosCategoria} />
       <FiltroPeriodo
         opcoes={["hoje", "7dias", "mes", "personalizado"]}
         inicial="hoje"

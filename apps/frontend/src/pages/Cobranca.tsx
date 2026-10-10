@@ -4,6 +4,7 @@ import { api, ClienteCobranca, Faixa, FiltrosCobranca, foiCancelada, mensagemErr
 import { formatBRL, formatCpf, formatData } from "../format";
 import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../components/BarraFiltrosCobranca";
 import UploadPlanilhaFaixa from "../components/UploadPlanilhaFaixa";
+import AvisosCategoria from "../components/AvisosCategoria";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
@@ -47,6 +48,7 @@ export default function Cobranca() {
 
   const [gerandoLeads, setGerandoLeads] = useState(false);
   const [leadsResultado, setLeadsResultado] = useState<string | null>(null);
+  const [avisosCategoria, setAvisosCategoria] = useState<string[]>([]);
   const [leadsErro, setLeadsErro] = useState<string | null>(null);
 
   // Importação de planilha: escolher a faixa libera o upload dela.
@@ -143,6 +145,7 @@ export default function Cobranca() {
     setGerandoLeads(true);
     setLeadsErro(null);
     setLeadsResultado(null);
+    setAvisosCategoria([]);
     const signal = novoEnvio();
     try {
       const r = await api.gerarLeads(filtrosEdit, signal);
@@ -159,6 +162,7 @@ export default function Cobranca() {
       setTotalClientes(0);
       setConsultado(false);
       setLeadsResultado(`${r.na_fila.toLocaleString("pt-BR")} cliente(s) enviado(s) para a fila de cobrança.${semCelular}`);
+      setAvisosCategoria(r.avisos_categoria);
     } catch (e) {
       if (!foiCancelada(e)) setLeadsErro(e instanceof Error ? e.message : "Erro ao enviar para a fila de cobrança");
     } finally {
@@ -210,6 +214,7 @@ export default function Cobranca() {
         {leadsResultado && (
           <div className="success-box">{leadsResultado}</div>
         )}
+        <AvisosCategoria avisos={avisosCategoria} />
         {leadsErro && (
           <div className="error-box">
             <IconAlert width={16} height={16} />

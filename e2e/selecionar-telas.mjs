@@ -64,6 +64,7 @@ export const FUNCIONALIDADES = {
   templates: [
     `${F}pages/Configuracoes.tsx`, `${F}components/config/TemplatesCard.tsx`, `${F}components/PreviaWhatsapp.tsx`, `${B}routers/templates.py`,
     `${B}utils/imagem.py`, `${B}variaveis_template.py`, `${B}meta_client.py`,
+    `${F}components/AvisosCategoria.tsx`,
   ],
   faixas: [
     `${F}pages/Configuracoes.tsx`, `${F}pages/Faixas.tsx`, `${F}pages/FaixaWizard.tsx`, `${F}pages/FaixaDetail.tsx`,
