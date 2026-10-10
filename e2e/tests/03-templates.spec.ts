@@ -1,4 +1,4 @@
-import { apiGet, campo, card, expect, permitirErrosConsole, test } from "./fixtures";
+import { apiGet, apiSend, campo, card, expect, permitirErrosConsole, responderDialogo, test } from "./fixtures";
 import { prepararConexoes } from "./preparo";
 
 test.beforeAll(prepararConexoes);
@@ -310,6 +310,49 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await linha.getByRole("button", { name: "Enviar para aprovação" }).click();
     await expect(linha.locator(".badge").first()).toHaveText(/pending|pendente/i);
     await expect(linha.getByRole("button", { name: "Enviar para aprovação" })).toHaveCount(0);
+  });
+
+  test("arquivar some da tabela e dos seletores, Mostrar arquivados lista e Restaurar devolve", async ({ page }) => {
+    const tabela = card(page, "Templates cadastrados");
+    const linha = tabela.locator("tbody tr", { hasText: "promo_reprovada" });
+    await linha.getByRole("button", { name: "Arquivar" }).click();
+    await expect(linha).toHaveCount(0);
+    expect((await apiGet(page, "/templates")).some((t: any) => t.meta_template_name === "promo_reprovada")).toBe(false);
+
+    await tabela.getByLabel("Mostrar arquivados").check();
+    await expect(linha).toContainText("Arquivado");
+    // abrir a aba de novo sincroniza com a Meta e o template continua arquivado
+    await page.reload();
+    await tabela.getByLabel("Mostrar arquivados").check();
+    await expect(linha).toContainText("Arquivado");
+    await linha.getByRole("button", { name: "Restaurar" }).click();
+    await expect(linha).not.toContainText("Arquivado");
+    await tabela.getByLabel("Mostrar arquivados").uncheck();
+    await expect(linha).toBeVisible();
+  });
+
+  test("remover rascunho e template da Meta: some e não volta ao abrir a aba", async ({ page }) => {
+    const tabela = card(page, "Templates cadastrados");
+    const corpo = { category: "UTILITY", body_text: "Oi, sua parcela venceu.", variables: [] };
+    expect((await apiSend(page, "POST", "/templates", { ...corpo, name: "Rascunho remover", meta_template_name: "rascunho_remover" })).status).toBe(201);
+    const naMeta = await apiSend(page, "POST", "/templates", { ...corpo, name: "Meta remover", meta_template_name: "meta_remover" });
+    expect((await apiSend(page, "POST", `/templates/${naMeta.corpo.id}/enviar-para-aprovacao`)).status).toBe(200);
+    await page.reload();
+
+    const rascunho = tabela.locator("tbody tr", { hasText: "rascunho_remover" });
+    let dialogo = responderDialogo(page);
+    await rascunho.getByRole("button", { name: "Remover", exact: true }).click();
+    expect(await dialogo).toContain("Remover o rascunho");
+    await expect(rascunho).toHaveCount(0);
+
+    const meta = tabela.locator("tbody tr", { hasText: "meta_remover" });
+    dialogo = responderDialogo(page);
+    await meta.getByRole("button", { name: "Remover", exact: true }).click();
+    expect(await dialogo).toContain("30 dias");
+    await expect(meta).toHaveCount(0);
+    await page.reload();
+    await expect(tabela.locator("tbody tr", { hasText: "cobranca_atraso" })).toBeVisible();
+    await expect(meta).toHaveCount(0);
   });
 
   test("falha na sincronização ao abrir a aba aparece como erro e a lista continua", async ({ page }) => {

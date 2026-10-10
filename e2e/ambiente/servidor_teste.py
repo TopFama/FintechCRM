@@ -66,6 +66,13 @@ def _meta(request: httpx.Request) -> httpx.Response:
             novo = {**body, "id": f"tpl-{len(TEMPLATES) + 1}", "status": "PENDING"}
             TEMPLATES.append(novo)
             return httpx.Response(200, json={"id": novo["id"], "status": "PENDING", "category": body.get("category")})
+        if request.method == "DELETE":
+            # Como a Meta: o apagado segue na lista como PENDING_DELETION
+            for t in TEMPLATES:
+                if t["id"] == request.url.params.get("hsm_id") and t["name"] == request.url.params.get("name"):
+                    t["status"] = "PENDING_DELETION"
+                    return httpx.Response(200, json={"success": True})
+            return httpx.Response(400, json={"error": {"message": "Template não encontrado"}})
         return httpx.Response(200, json={"data": TEMPLATES})
     # Resumable Upload da imagem de exemplo do cabeçalho (envio para aprovação)
     if path == "app":

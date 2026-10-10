@@ -126,9 +126,11 @@ export default function TemplatesCard() {
     return mapa;
   }, [numbers]);
 
+  const [mostrarArquivados, setMostrarArquivados] = useState(false);
   const templatesSort = useSort<ColunaTemplate>();
+  const templatesVisiveis = mostrarArquivados ? templates : templates.filter((t) => !t.arquivado_em);
   const templatesOrdenados = ordenarPor(
-    templates,
+    templatesVisiveis,
     templatesSort.sortKey
       ? (t: Template) => {
           if (templatesSort.sortKey === "waba_id") return t.waba_id || "";
@@ -187,7 +189,7 @@ export default function TemplatesCard() {
   }
 
   function load() {
-    api.listTemplates().then(setTemplates).catch((e) => setError(e.message));
+    api.listTemplates(true).then(setTemplates).catch((e) => setError(e.message));
     api.listNumbers().then(setNumbers).catch(() => undefined);
     api.listarTokensMeta().then(setTokensMeta).catch(() => undefined);
   }
@@ -435,6 +437,28 @@ export default function TemplatesCard() {
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao marcar ciente");
+    }
+  }
+
+  async function handleArquivar(t: Template, arquivar: boolean) {
+    try {
+      const atualizado = arquivar ? await api.arquivarTemplate(t.id) : await api.restaurarTemplate(t.id);
+      setTemplates((prev) => prev.map((item) => (item.id === t.id ? atualizado : item)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao arquivar template");
+    }
+  }
+
+  async function handleRemover(t: Template) {
+    const pergunta = t.meta_template_id
+      ? `Remover o template "${t.meta_template_name}" do CRM e da Meta? A Meta bloqueia este nome por 30 dias e mensagens ainda não entregues com ele deixam de ser entregues.`
+      : `Remover o rascunho "${t.name}"?`;
+    if (!window.confirm(pergunta)) return;
+    try {
+      await api.removerTemplate(t.id);
+      setTemplates((prev) => prev.filter((item) => item.id !== t.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao remover template");
     }
   }
 
@@ -838,8 +862,12 @@ export default function TemplatesCard() {
       <div className="card">
         <div className="card-header">
           <h3>Templates cadastrados</h3>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input type="checkbox" checked={mostrarArquivados} onChange={(e) => setMostrarArquivados(e.target.checked)} />
+            Mostrar arquivados
+          </label>
         </div>
-        {templates.length === 0 ? (
+        {templatesVisiveis.length === 0 ? (
           <div className="empty-state">
             <IconTemplate width={28} height={28} />
             <div className="title">Nenhum template cadastrado</div>
@@ -923,6 +951,7 @@ export default function TemplatesCard() {
                         </td>
                         <td>
                           <span className={`badge ${t.status}`}>{rotuloStatusTemplate(t.status)}</span>
+                          {t.arquivado_em && <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>Arquivado</div>}
                         </td>
                         <td style={{ textAlign: "center" }}>
                           {t.header_type === "image" ? (
@@ -1007,6 +1036,22 @@ export default function TemplatesCard() {
                               onClick={() => abrirTesteTemplate(t)}
                             >
                               <IconTemplate width={14} height={14} /> {testeTemplateId === t.id ? "Fechar teste" : "Testar envio"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary small"
+                              style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap", justifyContent: "center" }}
+                              onClick={() => handleArquivar(t, !t.arquivado_em)}
+                            >
+                              {t.arquivado_em ? "Restaurar" : "Arquivar"}
+                            </button>
+                            <button
+                              type="button"
+                              className="danger small"
+                              style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap", justifyContent: "center" }}
+                              onClick={() => handleRemover(t)}
+                            >
+                              Remover
                             </button>
                           </div>
                         </td>

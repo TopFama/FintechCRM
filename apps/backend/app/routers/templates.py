@@ -4,7 +4,7 @@ import os
 import re
 import time
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
@@ -41,17 +41,26 @@ def _with_variables(query):
 
 @router.get("", response_model=list[schemas.TemplateOut])
 def list_templates(
-    db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)
+    incluir_arquivados: bool = False,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
 ):
-    return _with_variables(db.query(models.Template)).order_by(
-        models.Template.created_at.desc()
-    ).all()
+    """Arquivados só vêm com incluir_arquivados (filtro da aba Templates);
+    os seletores de envio nunca os veem."""
+    query = _with_variables(db.query(models.Template))
+    if not incluir_arquivados:
+        query = query.filter(models.Template.arquivado_em.is_(None))
+    return query.order_by(models.Template.created_at.desc()).all()
 
 
 @router.get("/avisos-categoria", response_model=list[str])
 def avisos_categoria(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
     """Faixa do Dashboard: templates que a Meta recategorizou e ainda sem Ciente."""
-    return itens_fila.avisos_categoria(db.query(models.Template).order_by(models.Template.meta_template_name))
+    return itens_fila.avisos_categoria(
+        db.query(models.Template)
+        .filter(models.Template.arquivado_em.is_(None))
+        .order_by(models.Template.meta_template_name)
+    )
 
 
 @router.post("/{template_id}/categoria-ciente", response_model=schemas.TemplateOut)
@@ -173,6 +182,8 @@ async def sync_from_meta(
                 continue
 
             remote_id = remote.get("id")
+            # Template removido continua na lista da Meta enquanto ela apaga: não volta ao CRM
+            apagado_na_meta = (remote.get("status") or "").upper() in _STATUS_APAGADO_META
             existing = None
             if remote_id:
                 existing = (
@@ -231,7 +242,7 @@ async def sync_from_meta(
                 for v in list(existing.variables):
                     if v.position not in posicoes_remotas:
                         db.delete(v)
-            else:
+            elif not apagado_na_meta:
                 template = models.Template(
                     name=remote["name"],
                     meta_template_name=remote["name"],
@@ -268,6 +279,9 @@ async def sync_from_meta(
         if t.id in aprovados:
             t.aviso_chatwoot = aviso
     return templates
+
+
+_STATUS_APAGADO_META = {"PENDING_DELETION", "DELETED"}
 
 
 def _map_meta_status(raw: str | None) -> models.TemplateStatus:
@@ -457,6 +471,76 @@ def _aplicar_formulario(db: Session, template: models.Template, payload: schemas
     db.flush()
 
 
+def _faixas_em_uso(db: Session, template_id: str) -> list[str]:
+    """Faixas (régua, campanha ou remarketing) que enviam com o template."""
+    return sorted(
+        {nome for (nome,) in db.query(models.Faixa.name).join(models.FaixaEnvio).filter(
+            models.FaixaEnvio.template_id == template_id
+        )}
+    )
+
+
+def _template_fora_de_uso(db: Session, template_id: str, acao: str) -> models.Template:
+    """Decisão do dono (2026-10-10): arquivar ou remover template em uso é
+    bloqueado, mostrando onde ele está em uso."""
+    template = db.get(models.Template, template_id)
+    if not template:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
+    em_uso = _faixas_em_uso(db, template_id)
+    if em_uso:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Não dá para {acao}: template em uso em {', '.join(em_uso)}. Troque o template nessas faixas antes",
+        )
+    return template
+
+
+@router.post("/{template_id}/arquivar", response_model=schemas.TemplateOut)
+def arquivar_template(
+    template_id: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)
+):
+    template = _template_fora_de_uso(db, template_id, "arquivar")
+    template.arquivado_em = template.arquivado_em or datetime.utcnow()
+    db.commit()
+    return _recarregar(db, template_id)
+
+
+@router.post("/{template_id}/restaurar", response_model=schemas.TemplateOut)
+def restaurar_template(
+    template_id: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)
+):
+    template = db.get(models.Template, template_id)
+    if not template:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
+    template.arquivado_em = None
+    db.commit()
+    return _recarregar(db, template_id)
+
+
+@router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remover_template(
+    template_id: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)
+):
+    """Apaga no CRM e, se já foi cadastrado, também na Meta (só este idioma).
+    A Meta bloqueia o nome por 30 dias e para as mensagens ainda não entregues."""
+    template = _template_fora_de_uso(db, template_id, "remover")
+    if template.meta_template_id:
+        if not template.waba_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "WABA não identificada para este template")
+        try:
+            client = MetaClient(access_token=token_da_waba(db, template.waba_id))
+            await client.apagar_template(template.waba_id, template.meta_template_id, template.meta_template_name)
+        except MetaTokenConfigError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        except MetaAPIError as exc:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    # Mapeamentos de variáveis que sobraram de faixas que já trocaram de template
+    db.query(models.FaixaVariableMapping).filter(models.FaixaVariableMapping.template_id == template_id).delete()
+    _apagar_arquivo_imagem(template)
+    db.delete(template)
+    db.commit()
+
+
 def _recarregar(db: Session, template_id: str) -> models.Template:
     db.expire_all()
     return _with_variables(db.query(models.Template)).filter(models.Template.id == template_id).first()
@@ -521,11 +605,7 @@ async def update_template(
     # nenhuma faixa (régua, campanha ou remarketing) ficar sem valor no envio
     variaveis_novas = sorted((v.position, v.botao_indice) for v in payload.variables)
     if variaveis_novas != sorted((v.position, v.botao_indice) for v in template.variables):
-        em_uso = sorted(
-            {nome for (nome,) in db.query(models.Faixa.name).join(models.FaixaEnvio).filter(
-                models.FaixaEnvio.template_id == template.id
-            )}
-        )
+        em_uso = _faixas_em_uso(db, template.id)
         if em_uso:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
@@ -851,6 +931,15 @@ def descartar_imagem_otimizada(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+def _apagar_arquivo_imagem(template: models.Template) -> None:
+    caminho = arquivo_imagem(template) if template.image_url else None
+    if caminho and os.path.isfile(caminho):
+        try:
+            os.remove(caminho)
+        except OSError:
+            pass
+
+
 @router.delete("/{template_id}/image", response_model=schemas.TemplateOut)
 def remover_imagem_do_template(
     template_id: str,
@@ -864,12 +953,7 @@ def remover_imagem_do_template(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
 
     if template.image_url:
-        caminho = arquivo_imagem(template)
-        if caminho and os.path.isfile(caminho):
-            try:
-                os.remove(caminho)
-            except OSError:
-                pass
+        _apagar_arquivo_imagem(template)
         template.image_url = None
         db.commit()
         db.refresh(template)

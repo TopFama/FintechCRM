@@ -76,6 +76,12 @@ class MetaClient:
         """Edição de template já cadastrado (volta para análise): só category e components."""
         return await self._request("POST", meta_template_id, json=payload)
 
+    async def apagar_template(self, waba_id: str, meta_template_id: str, nome: str) -> dict:
+        """Apaga só este idioma (hsm_id + name); o nome fica bloqueado 30 dias na Meta."""
+        return await self._request(
+            "DELETE", f"{waba_id}/message_templates", params={"hsm_id": meta_template_id, "name": nome}
+        )
+
     async def app_id(self) -> str:
         """App da Meta dono do token: é nele que a Resumable Upload guarda o arquivo."""
         data = await self._request("GET", "app", params={"fields": "id"})

@@ -85,6 +85,8 @@ def _get_template(db: Session, template_id: str, exigir_aprovado: bool = True) -
     )
     if not template:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
+    if template.arquivado_em:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Template arquivado: restaure em Configurações → Templates")
     if exigir_aprovado and template.status != models.TemplateStatus.approved:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "Só é possível usar template aprovado pela Meta"
@@ -155,6 +157,7 @@ def create_faixa(
                         models.Template.waba_id == number.waba_id,
                         models.Template.meta_template_name == template.meta_template_name,
                         models.Template.status == models.TemplateStatus.approved,
+                        models.Template.arquivado_em.is_(None),
                     )
                     .first()
                 )
@@ -230,6 +233,7 @@ def add_envio(
                 models.Template.waba_id == number.waba_id,
                 models.Template.meta_template_name == template.meta_template_name,
                 models.Template.status == models.TemplateStatus.approved,
+                models.Template.arquivado_em.is_(None),
             )
             .first()
         )
@@ -314,6 +318,7 @@ def update_envio(
                 models.Template.waba_id == number.waba_id,
                 models.Template.meta_template_name == template.meta_template_name,
                 models.Template.status == models.TemplateStatus.approved,
+                models.Template.arquivado_em.is_(None),
             )
             .first()
         )
