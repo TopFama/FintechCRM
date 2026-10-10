@@ -33,7 +33,7 @@ from app.config import settings
 from app.database import Base, get_db
 from app.main import app
 from app.schemas import TemplateCreate
-from app.utils.erros import descrever_erro_envio
+from app.utils.erros import descrever_erro_chatwoot, descrever_erro_envio
 from pydantic import ValidationError
 
 test_engine = create_engine(
@@ -87,6 +87,12 @@ class TestChatwootWebhookESync(unittest.TestCase):
         erro_params = "132000: Number of parameters does not match"
         desc = descrever_erro_envio(erro_params)
         self.assertIn("Quantidade de variáveis diverge", desc)
+
+        # Pelo Chatwoot, 132000 é template não sincronizado na caixa de entrada: diz onde sincronizar
+        desc = descrever_erro_chatwoot(erro_params)
+        self.assertIn("Template não sincronizado no Chatwoot", desc)
+        self.assertIn("Configurações → Modelos", desc)
+        self.assertIn("Template ou idioma não encontrado", descrever_erro_chatwoot(erro_132001))
 
         erro_desconhecido = "Erro customizado 9999"
         desc = descrever_erro_envio(erro_desconhecido)
@@ -440,8 +446,9 @@ class TestChatwootWebhookESync(unittest.TestCase):
             variables=[{"position": 1, "internal_name": "variavel_1"}],
         )
         self.assertFalse(hasattr(tc, "language"))
+        # Rascunho aceita incompleto, mas não sem nome interno
         with self.assertRaises(ValidationError):
-            TemplateCreate(name="teste", meta_template_name="Teste", body_text="Olá.")
+            TemplateCreate(name=" ", meta_template_name="teste", body_text="Olá.")
 
 
 if __name__ == "__main__":

@@ -115,6 +115,9 @@ class Template(Base):
     )
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     body_text: Mapped[str] = mapped_column(Text, default="")
+    # Botões do template, na ordem da Meta: {"tipo": "url"|"resposta_rapida", "texto", "url"};
+    # url com {{1}} no fim é link variável, preenchido pela variável com botao_indice
+    botoes: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
     status: Mapped[TemplateStatus] = mapped_column(
         Enum(TemplateStatus), default=TemplateStatus.draft
     )
@@ -145,6 +148,9 @@ class TemplateVariable(Base):
     campo_sugerido: Mapped[str | None] = mapped_column(String, nullable=True)
     # Valor de exemplo que vai para a Meta ao enviar o template para aprovação
     exemplo: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Variável do link de um botão (índice em Template.botoes); nulo = variável do corpo.
+    # Fica depois das do corpo na ordem (position), para o corpo seguir {{1}}, {{2}}…
+    botao_indice: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     template: Mapped[Template] = relationship(back_populates="variables")
 

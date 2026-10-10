@@ -829,6 +829,23 @@ label {
   color: var(--color-text-muted);
 }
 
+.template-preview-botoes {
+  margin: 10px -14px -12px;
+  white-space: normal;
+}
+
+.template-preview-botao {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-primary);
+  font-weight: 600;
+  text-align: center;
+}
+
 .template-preview-vars {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));

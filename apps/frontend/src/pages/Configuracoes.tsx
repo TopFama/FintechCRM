@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
-import { api, CampoCliente, ChatwootTestResult, pareceAdmin, StatusChatwoot, StatusGoogle, StatusSeta, Template, WhatsappNumber } from "../api";
+import { api, CampoCliente, ChatwootTestResult, pareceAdmin, rotuloVariavel, StatusChatwoot, StatusGoogle, StatusSeta, Template, WhatsappNumber } from "../api";
 import BlacklistCard from "../components/config/BlacklistCard";
 import DisparoCard from "../components/config/DisparoCard";
 import Faixas from "./Faixas";
@@ -595,7 +595,7 @@ export default function Configuracoes() {
                       <div className="template-preview-vars">
                         {testeTemplate.variables.map((v) => (
                           <div className="field" key={v.id}>
-                            <label htmlFor={`config-var-${v.id}`}>{`{{${v.position}}}`} ({v.internal_name})</label>
+                            <label htmlFor={`config-var-${v.id}`}>{rotuloVariavel(v)}</label>
                             <input id={`config-var-${v.id}`}
                               value={testeVariaveis[v.internal_name] || ""}
                               onChange={(e) =>

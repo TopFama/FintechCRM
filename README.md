@@ -255,9 +255,16 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
    template pelo portal. O cadastro é sempre em português (pt_BR, sem edição), com categoria
    Utilidade ou Marketing, nome na Meta formatado em snake_case enquanto se digita, exemplo de cada
    variável (como na tela da Meta) e prévia com a formatação do WhatsApp (*negrito*, _itálico_,
-   ~tachado~, ```mono```, listas e citação). O template nasce rascunho; o botão "Enviar para
-   aprovação" da tabela manda para a Meta com os exemplos e, se tiver cabeçalho, a imagem já subida
-   (por isso a imagem vem antes do envio), e o status é acompanhado depois. Templates sincronizados
+   ~tachado~, ```mono```, listas e citação). Botões como no portal da Meta: link fixo, link variável
+   (o valor do cliente entra no fim do link e é mapeado como as variáveis do corpo) e resposta
+   rápida, com a prévia embaixo do balão. O template nasce rascunho, que pode ser salvo incompleto
+   (só o nome interno é obrigatório) e editado pelo botão "Editar"; o botão "Enviar para
+   aprovação" da tabela confere as regras da Meta e manda com os exemplos e, se tiver cabeçalho, a
+   imagem já subida (por isso a imagem vem antes do envio), e o status é acompanhado depois.
+   Template já enviado também edita e volta para reanálise, nas regras da Meta (só aprovado,
+   reprovado ou pausado; nome e idioma fixos; categoria fixa depois de aprovado; aprovado edita
+   1 vez a cada 24 h e 10 a cada 30 dias) e, se estiver em uso numa faixa, sem mudar as variáveis;
+   fora disso, "Cadastrar como novo template" copia o conteúdo para um rascunho novo. Templates sincronizados
    da Meta continuam valendo em qualquer idioma. Templates com cabeçalho de imagem permitem subir a imagem, reaproveitada em
    todo envio daquele template; se ela passar do limite do WhatsApp, o sistema mostra a versão
    otimizada para o usuário aprovar (ver "Limitações conhecidas").
@@ -635,12 +642,20 @@ Só é preciso refazer isto se a VPS, as chaves ou a conta do Tailscale mudarem.
   aprovar (`POST /templates/{id}/image/confirmar`) ou recusar
   (`DELETE /templates/{id}/image/pendente`); recusando, o template fica com a imagem anterior e o
   aviso pede uma imagem de até 5 MB.
-- **Envio de template para aprovação** (`POST /templates/{id}/enviar-para-aprovacao`): manda
-  `example.body_text` com o exemplo gravado de cada variável e, com cabeçalho de imagem,
+- **Envio de template para aprovação** (`POST /templates/{id}/enviar-para-aprovacao`, e a
+  reanálise de `PUT /templates/{id}` em template já enviado): manda `example.body_text` com o
+  exemplo gravado de cada variável do corpo, os botões em `BUTTONS` (link variável com o link
+  completo de exemplo) e, com cabeçalho de imagem,
   `example.header_handle` com a imagem do template subida pela Resumable Upload API da Meta (o app
   vem de `GET /app` com o próprio token, sem configuração a mais). As regras de cadastro da Meta
   (nome `[a-z0-9_]`, corpo até 1024 caracteres, variáveis em sequência e fora do começo e do fim)
-  ficam em `schemas.TemplateCreate`; a tela só espelha para formatar e avisar. Só Utilidade e
+  e de botões (até 10, no máximo 2 links, texto até 25 caracteres, `{{1}}` só no fim do link,
+  respostas rápidas juntas) ficam em `schemas.pendencias_template`, conferidas antes de ir para a
+  Meta; a tela só espelha para formatar e avisar. No envio, o link variável vai como parâmetro do
+  botão (`meta_client.send_template_message`) ou em `processed_params.buttons` no Chatwoot. O Chatwoot
+  só monta as variáveis com o template sincronizado na caixa de entrada; sem isso a Meta recusa com
+  132000, e o erro (`utils/erros.descrever_erro_chatwoot`) diz para sincronizar em Configurações →
+  Modelos do Chatwoot, com conta de admin. Só Utilidade e
   Marketing: Autenticação exige o formato próprio de código da Meta e não é cadastrada aqui.
 - **Retry de envio**: hoje, uma falha de envio marca o item como `error` e fica visível no
   dashboard; o único reprocessamento automático é o erro `131026` do Chatwoot, que tenta o próximo

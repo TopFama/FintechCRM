@@ -1,8 +1,8 @@
-import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
-import { api, CampoCliente, ImagemPendente, MetaToken, Template, TemplateCreate, urlImagemTemplate, WhatsappNumber } from "../../api";
+import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { api, CampoCliente, ImagemPendente, MetaToken, rotuloVariavel, Template, TemplateBotao, TemplateCreate, urlImagemTemplate, WhatsappNumber } from "../../api";
 import PreviaWhatsapp from "../PreviaWhatsapp";
 import SortableTh from "../SortableTh";
-import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTemplate } from "../../icons";
+import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTemplate, IconTrash } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 
 type ColunaTemplate = "meta_template_name" | "waba_id" | "category" | "status";
@@ -41,8 +41,30 @@ const FORM_VAZIO = {
   body_text: "",
 };
 
-// Espelho das regras da Meta que o backend confere (schemas.TemplateCreate):
-// aqui só formatam o nome enquanto digita e avisam antes de salvar.
+// Botões como no portal da Meta; o link variável guarda só o começo do endereço
+// e o {{1}} entra no fim ao salvar (schemas.pendencias_template confere o resto).
+type TipoBotaoForm = "link_fixo" | "link_variavel" | "resposta_rapida";
+type BotaoForm = { tipo: TipoBotaoForm; texto: string; url: string; campo: string; exemplo: string };
+const TIPOS_BOTAO: { valor: TipoBotaoForm; rotulo: string }[] = [
+  { valor: "link_fixo", rotulo: "Link fixo" },
+  { valor: "link_variavel", rotulo: "Link variável" },
+  { valor: "resposta_rapida", rotulo: "Resposta rápida" },
+];
+const VARIAVEL_LINK = "{{1}}";
+const LIMITE_BOTOES = 10;
+
+function botaoParaMeta(b: BotaoForm): TemplateBotao {
+  if (b.tipo === "resposta_rapida") return { tipo: "resposta_rapida", texto: b.texto, url: "" };
+  return { tipo: "url", texto: b.texto, url: b.tipo === "link_variavel" ? b.url + VARIAVEL_LINK : b.url };
+}
+
+// Editor só conhece link e resposta rápida; outros tipos da Meta (ex.: telefone) não editam aqui
+function editavelNoFormulario(t: Template): boolean {
+  return t.botoes.every((b) => b.tipo === "url" || b.tipo === "resposta_rapida");
+}
+
+// Espelho das regras da Meta que o backend confere (schemas.pendencias_template):
+// aqui só formatam o nome enquanto digita e avisam; o rascunho salva assim mesmo.
 function formatarNomeTemplate(texto: string): string {
   return texto
     .normalize("NFD")
@@ -137,6 +159,10 @@ export default function TemplatesCard() {
   const [nomeMetaEditado, setNomeMetaEditado] = useState(false);
   const [exemplos, setExemplos] = useState<Record<number, { exemplo: string; campo: string }>>({});
   const [enviandoAprovacao, setEnviandoAprovacao] = useState<string | null>(null);
+  const [botoes, setBotoes] = useState<BotaoForm[]>([]);
+  // Template aberto no formulário para editar (rascunho ou já enviado à Meta)
+  const [editando, setEditando] = useState<Template | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   const wabaIds = useMemo(
     () => Array.from(new Set(numbers.map((n) => n.waba_id))),
@@ -275,25 +301,110 @@ export default function TemplatesCard() {
     }));
   }
 
-  async function handleCreate(e: FormEvent) {
-    e.preventDefault();
-    if (avisosForm.length > 0) return;
+  function montarPayload(): TemplateCreate {
+    const variaveisCorpo = variaveisForm.map((v) => ({
+      ...v,
+      exemplo: exemplos[v.position]?.exemplo ?? "",
+      campo_sugerido: exemplos[v.position]?.campo || null,
+      botao_indice: null,
+    }));
+    // As variáveis dos links vêm depois das do corpo
+    const ultimaDoCorpo = Math.max(0, ...variaveisForm.map((v) => v.position));
+    const variaveisLinks = botoes
+      .map((b, i) => ({ b, i }))
+      .filter(({ b }) => b.tipo === "link_variavel")
+      .map(({ b, i }, k) => ({
+        position: ultimaDoCorpo + k + 1,
+        internal_name: `link_botao_${i + 1}`,
+        exemplo: b.exemplo,
+        campo_sugerido: b.campo || null,
+        botao_indice: i,
+      }));
+    return {
+      ...form,
+      variables: [...variaveisCorpo, ...variaveisLinks],
+      botoes: botoes.map(botaoParaMeta),
+      waba_id: wabaIds.length > 1 ? selectedWabaId : undefined,
+    };
+  }
+
+  function fecharFormulario() {
+    setShowCreate(false);
+    setEditando(null);
+    setForm(FORM_VAZIO);
+    setNomeMetaEditado(false);
+    setExemplos({});
+    setBotoes([]);
+  }
+
+  function abrirEdicao(t: Template) {
     setError(null);
+    setAviso(null);
+    setEditando(t);
+    setShowCreate(true);
+    setNomeMetaEditado(true);
+    setForm({
+      name: t.name,
+      meta_template_name: t.meta_template_name,
+      category: t.category as TemplateCreate["category"],
+      header_type: t.header_type,
+      body_text: t.body_text,
+    });
+    if (t.waba_id) setSelectedWabaId(t.waba_id);
+    const doCorpo: Record<number, { exemplo: string; campo: string }> = {};
+    for (const v of t.variables) {
+      if (v.botao_indice === null) doCorpo[v.position] = { exemplo: v.exemplo ?? "", campo: v.campo_sugerido ?? "" };
+    }
+    setExemplos(doCorpo);
+    setBotoes(
+      t.botoes.map((b, i) => {
+        const variavel = t.variables.find((v) => v.botao_indice === i);
+        const variavelNoLink = b.tipo === "url" && b.url.endsWith(VARIAVEL_LINK);
+        return {
+          tipo: b.tipo === "resposta_rapida" ? "resposta_rapida" : variavelNoLink ? "link_variavel" : "link_fixo",
+          texto: b.texto,
+          url: variavelNoLink ? b.url.slice(0, -VARIAVEL_LINK.length) : b.url,
+          campo: variavel?.campo_sugerido ?? "",
+          exemplo: variavel?.exemplo ?? "",
+        };
+      })
+    );
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // A Meta não deixa editar (em análise, nome, categoria aprovada, limite de edições):
+  // o mesmo conteúdo vira um rascunho novo, com outro nome na Meta
+  function cadastrarComoNovo() {
+    setEditando(null);
+    setNomeMetaEditado(true);
+    setForm((atual) => ({ ...atual, meta_template_name: formatarNomeTemplate(`${atual.meta_template_name}_v2`) }));
+    setError(null);
+    setAviso("Conteúdo copiado para um rascunho novo: confira o nome na Meta e salve.");
+  }
+
+  function alterarBotao(indice: number, mudanca: Partial<BotaoForm>) {
+    setBotoes((atual) => atual.map((b, i) => (i === indice ? { ...b, ...mudanca } : b)));
+  }
+
+  async function handleSalvar(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setAviso(null);
     setSaving(true);
     try {
-      const variables = variaveisForm.map((v) => ({
-        ...v,
-        exemplo: exemplos[v.position]?.exemplo ?? "",
-        campo_sugerido: exemplos[v.position]?.campo || null,
-      }));
-      await api.createTemplate({ ...form, variables, waba_id: wabaIds.length > 1 ? selectedWabaId : undefined });
-      setShowCreate(false);
-      setForm(FORM_VAZIO);
-      setNomeMetaEditado(false);
-      setExemplos({});
+      const payload = montarPayload();
+      if (editando?.meta_template_id) {
+        await api.atualizarTemplate(editando.id, payload);
+        setAviso(`Template "${payload.name}" enviado para reanálise na Meta.`);
+      } else if (editando) {
+        await api.atualizarTemplate(editando.id, payload);
+      } else {
+        await api.createTemplate(payload);
+      }
+      fecharFormulario();
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao criar template");
+      setError(err instanceof Error ? err.message : "Erro ao salvar template");
     } finally {
       setSaving(false);
     }
@@ -467,10 +578,10 @@ export default function TemplatesCard() {
         )}
       </div>
 
-      <div className="card">
+      <div className="card" ref={formRef}>
         <div className="card-header">
-          <h3>Novo template</h3>
-          <button className="secondary" onClick={() => setShowCreate((v) => !v)}>
+          <h3>{editando ? (editando.meta_template_id ? "Editar template" : "Editar rascunho") : "Novo template"}</h3>
+          <button className="secondary" onClick={() => (showCreate ? fecharFormulario() : setShowCreate(true))}>
             {showCreate ? "Cancelar" : (
               <>
                 <IconPlus width={16} height={16} /> Criar template
@@ -479,7 +590,7 @@ export default function TemplatesCard() {
           </button>
         </div>
         {showCreate && (
-          <form onSubmit={handleCreate}>
+          <form onSubmit={handleSalvar}>
             <div className="form-row">
               <div className="field">
                 <label htmlFor="tpl-nome-interno">Nome interno</label>
@@ -506,13 +617,13 @@ export default function TemplatesCard() {
                   }}
                   pattern="[a-z0-9_]+"
                   maxLength={512}
-                  required
+                  disabled={!!editando?.meta_template_id}
                 />
                 <p className="field-hint">Letras minúsculas, números e _</p>
               </div>
             </div>
             <div className="form-row">
-              {wabaIds.length > 1 && (
+              {wabaIds.length > 1 && !editando?.meta_template_id && (
                 <div className="field">
                   <label htmlFor="tpl-waba">WABA</label>
                   <select id="tpl-waba" value={selectedWabaId} onChange={(e) => setSelectedWabaId(e.target.value)} required>
@@ -535,6 +646,7 @@ export default function TemplatesCard() {
                 <label htmlFor="tpl-categoria">Categoria</label>
                 <select
                   id="tpl-categoria"
+                  disabled={editando?.meta_status_raw?.toUpperCase() === "APPROVED"}
                   value={form.category}
                   onChange={(e) => setForm({ ...form, category: e.target.value as TemplateCreate["category"] })}
                 >
@@ -563,7 +675,6 @@ export default function TemplatesCard() {
                 value={form.body_text}
                 onChange={(e) => setForm({ ...form, body_text: e.target.value })}
                 maxLength={1024}
-                required
               />
               <p className="field-hint">
                 *negrito* _itálico_ ~tachado~ ```mono``` · {form.body_text.trim().length}/1024 · Variáveis detectadas:{" "}
@@ -605,19 +716,126 @@ export default function TemplatesCard() {
                             [v.position]: { campo: atual[v.position]?.campo ?? "", exemplo: e.target.value },
                           }))
                         }
-                        required
                       />
                     </div>
                   </Fragment>
                 ))}
               </div>
             )}
-            <div className="template-preview">
-              <PreviaWhatsapp texto={textoPreviaForm} cabecalhoImagem={form.header_type === "image"} />
+            <div style={{ marginBottom: 16 }}>
+              <h4 style={{ margin: "0 0 8px" }}>Botões</h4>
+              {botoes.map((b, i) => (
+                <div key={i} className="template-preview-vars">
+                  <div className="field">
+                    <label htmlFor={`tpl-botao-tipo-${i}`}>{`Tipo do botão ${i + 1}`}</label>
+                    <select
+                      id={`tpl-botao-tipo-${i}`}
+                      value={b.tipo}
+                      onChange={(e) => alterarBotao(i, { tipo: e.target.value as TipoBotaoForm })}
+                    >
+                      {TIPOS_BOTAO.map((t) => (
+                        <option key={t.valor} value={t.valor}>
+                          {t.rotulo}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`tpl-botao-texto-${i}`}>{`Texto do botão ${i + 1}`}</label>
+                    <input
+                      id={`tpl-botao-texto-${i}`}
+                      value={b.texto}
+                      maxLength={25}
+                      onChange={(e) => alterarBotao(i, { texto: e.target.value })}
+                    />
+                  </div>
+                  {b.tipo !== "resposta_rapida" && (
+                    <div className="field">
+                      <label htmlFor={`tpl-botao-url-${i}`}>{`Link do botão ${i + 1}`}</label>
+                      <input
+                        id={`tpl-botao-url-${i}`}
+                        value={b.url}
+                        placeholder="https://"
+                        onChange={(e) => alterarBotao(i, { url: e.target.value.trim() })}
+                      />
+                      {b.tipo === "link_variavel" && <p className="field-hint">O valor do cliente entra no fim do link</p>}
+                    </div>
+                  )}
+                  {b.tipo === "link_variavel" && (
+                    <>
+                      <div className="field">
+                        <label htmlFor={`tpl-botao-campo-${i}`}>{`Campo do cliente do botão ${i + 1}`}</label>
+                        <select
+                          id={`tpl-botao-campo-${i}`}
+                          value={b.campo}
+                          onChange={(e) =>
+                            alterarBotao(i, {
+                              campo: e.target.value,
+                              exemplo: campos.find((c) => c.campo === e.target.value)?.exemplo ?? b.exemplo,
+                            })
+                          }
+                        >
+                          <option value="">Não mapeado</option>
+                          {campos.map((c) => (
+                            <option key={c.campo} value={c.campo}>
+                              {c.rotulo}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`tpl-botao-exemplo-${i}`}>{`Exemplo do botão ${i + 1}`}</label>
+                        <input
+                          id={`tpl-botao-exemplo-${i}`}
+                          value={b.exemplo}
+                          onChange={(e) => alterarBotao(i, { exemplo: e.target.value })}
+                        />
+                      </div>
+                    </>
+                  )}
+                  <div className="field" style={{ alignSelf: "end" }}>
+                    <button
+                      type="button"
+                      className="ghost small"
+                      aria-label={`Remover botão ${i + 1}`}
+                      onClick={() => setBotoes((atual) => atual.filter((_, j) => j !== i))}
+                    >
+                      <IconTrash width={14} height={14} /> Remover
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <div>
+                <button
+                  type="button"
+                  className="secondary small"
+                  disabled={botoes.length >= LIMITE_BOTOES}
+                  onClick={() =>
+                    setBotoes((atual) => [...atual, { tipo: "link_fixo", texto: "", url: "", campo: "", exemplo: "" }])
+                  }
+                >
+                  <IconPlus width={14} height={14} /> Adicionar botão
+                </button>
+              </div>
             </div>
-            <button type="submit" disabled={saving || avisosForm.length > 0}>
-              {saving ? "Salvando..." : "Salvar template"}
-            </button>
+            <div className="template-preview">
+              <PreviaWhatsapp
+                texto={textoPreviaForm}
+                cabecalhoImagem={form.header_type === "image"}
+                imagemUrl={editando?.image_url}
+                botoes={botoes.map(botaoParaMeta)}
+              />
+            </div>
+            <div className="actions-row">
+              <button type="submit" disabled={saving}>
+                {saving ? "Salvando..." : editando?.meta_template_id ? "Enviar para reanálise" : "Salvar rascunho"}
+              </button>
+              {editando?.meta_template_id && (
+                <button type="button" className="secondary" onClick={cadastrarComoNovo}>
+                  Cadastrar como novo template
+                </button>
+              )}
+            </div>
           </form>
         )}
       </div>
@@ -748,6 +966,16 @@ export default function TemplatesCard() {
                                 {enviandoAprovacao === t.id ? "Enviando..." : "Enviar para aprovação"}
                               </button>
                             )}
+                            {editavelNoFormulario(t) && (
+                              <button
+                                type="button"
+                                className="secondary small"
+                                style={{ padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap", justifyContent: "center" }}
+                                onClick={() => abrirEdicao(t)}
+                              >
+                                Editar
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="secondary small"
@@ -775,6 +1003,7 @@ export default function TemplatesCard() {
                                 texto={renderizarPreview(t)}
                                 cabecalhoImagem={t.header_type === "image"}
                                 imagemUrl={t.image_url}
+                                botoes={t.botoes}
                               />
                               {t.variables.length === 0 ? (
                                 <p className="field-hint">Este template não tem variáveis.</p>
@@ -782,7 +1011,7 @@ export default function TemplatesCard() {
                                 <div className="template-preview-vars">
                                   {t.variables.map((v) => (
                                     <div className="field" key={v.id}>
-                                      <label htmlFor={`tpl-var-${v.id}`}>{`{{${v.position}}}`} ({v.internal_name})</label>
+                                      <label htmlFor={`tpl-var-${v.id}`}>{rotuloVariavel(v)}</label>
                                       <select id={`tpl-var-${v.id}`}
                                         value={v.campo_sugerido || ""}
                                         onChange={(e) => handleCampoSugerido(t.id, v.id, e.target.value)}
@@ -861,7 +1090,7 @@ export default function TemplatesCard() {
                                   {t.variables.map((v) => (
                                     <div className="field" key={v.id} style={{ minWidth: 200, flex: "1 1 200px" }}>
                                       <label htmlFor={`teste-var-${v.id}`}>
-                                        {`{{${v.position}}}`} ({v.internal_name})
+                                        {rotuloVariavel(v)}
                                       </label>
                                       <input
                                         id={`teste-var-${v.id}`}
@@ -882,6 +1111,7 @@ export default function TemplatesCard() {
                                 texto={renderizarPreviewComValores(t, testeVariaveis)}
                                 cabecalhoImagem={t.header_type === "image"}
                                 imagemUrl={t.image_url}
+                                botoes={t.botoes}
                               />
                             </div>
 

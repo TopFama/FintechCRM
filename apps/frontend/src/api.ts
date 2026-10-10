@@ -215,6 +215,9 @@ export const api = {
   listTemplates: () => request<Template[]>("/templates"),
   createTemplate: (payload: TemplateCreate) =>
     request<Template>("/templates", { method: "POST", body: JSON.stringify(payload) }),
+  // Rascunho só grava; já enviado à Meta grava e manda para reanálise
+  atualizarTemplate: (id: string, payload: TemplateCreate) =>
+    request<Template>(`/templates/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   enviarTemplateParaAprovacao: (id: string) =>
     request<Template>(`/templates/${id}/enviar-para-aprovacao`, { method: "POST" }),
   syncTemplatesFromMeta: () => request<Template[]>("/templates/meta/sync", { method: "POST" }),
@@ -665,6 +668,20 @@ export interface TemplateVariable {
   internal_name: string;
   campo_sugerido: string | null;
   exemplo: string | null;
+  /** Variável do link de um botão (índice em Template.botoes); null = do corpo */
+  botao_indice: number | null;
+}
+
+// Sincronizados podem trazer outros tipos da Meta (ex.: phone_number)
+export interface TemplateBotao {
+  tipo: "url" | "resposta_rapida" | string;
+  texto: string;
+  url: string;
+}
+
+// Variável do corpo: {{n}} (nome); do link: Link do botão n
+export function rotuloVariavel(v: { position: number; internal_name: string; botao_indice: number | null }): string {
+  return v.botao_indice === null ? `{{${v.position}}} (${v.internal_name})` : `Link do botão ${v.botao_indice + 1}`;
 }
 
 export interface TemplateCreate {
@@ -674,7 +691,14 @@ export interface TemplateCreate {
   header_type: "none" | "image";
   body_text: string;
   waba_id?: string;
-  variables: { position: number; internal_name: string; exemplo: string; campo_sugerido: string | null }[];
+  variables: {
+    position: number;
+    internal_name: string;
+    exemplo: string;
+    campo_sugerido: string | null;
+    botao_indice: number | null;
+  }[];
+  botoes: TemplateBotao[];
 }
 
 // Campo do cliente disponível pra mapear numa variável de template — "exemplo"
@@ -715,6 +739,7 @@ export interface Template {
   header_type: "none" | "image";
   image_url: string | null;
   body_text: string;
+  botoes: TemplateBotao[];
   status: "draft" | "pending" | "approved" | "rejected";
   meta_status_raw: string | null;
   meta_template_id: string | null;

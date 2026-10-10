@@ -50,6 +50,22 @@ _MAPA_ERROS_META: list[tuple[re.Pattern, str]] = [
 ]
 
 
+# O Chatwoot só monta as variáveis (corpo e botões) com o template sincronizado na
+# caixa de entrada; sem ele, manda o template sem parâmetros e a Meta recusa com 132000
+_TEMPLATE_FORA_DO_CHATWOOT = re.compile(r"132000|Number of parameters does not match", re.IGNORECASE)
+
+
+def descrever_erro_chatwoot(erro_bruto: str | None) -> str:
+    """Como descrever_erro_envio, para envio pelo Chatwoot: aponta onde sincronizar o template."""
+    texto = str(erro_bruto or "").strip()
+    if _TEMPLATE_FORA_DO_CHATWOOT.search(texto):
+        return (
+            "Template não sincronizado no Chatwoot: com conta de admin, abra Configurações → Modelos "
+            f"no Chatwoot e sincronize — Detalhes: {texto}"
+        )
+    return descrever_erro_envio(erro_bruto)
+
+
 def descrever_erro_envio(erro_bruto: str | None) -> str:
     """Transforma mensagens técnicas de erro da Meta/WhatsApp/Chatwoot em uma
     descrição clara em português, mantendo a referência original."""

@@ -12,7 +12,7 @@ from ..config import settings
 from ..database import SessionLocal, get_db
 from ..deps import get_current_user
 from ..dispatch_service import desmarcar_lead_cobrado
-from ..utils.erros import descrever_erro_envio
+from ..utils.erros import descrever_erro_chatwoot
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +142,7 @@ def _processar_webhook_chatwoot(payload: dict) -> dict:
             db.commit()
             return {"status": "ok", "action": "marked_error", "item_id": item.id}
 
-        motivo = descrever_erro_envio(external_error or msg_status or "Falha no envio via Chatwoot")
+        motivo = descrever_erro_chatwoot(external_error or msg_status or "Falha no envio via Chatwoot")
         item.status = models.QueueStatus.error
         item.error_message = f"Chatwoot: {motivo}"
         item.sent_at = None

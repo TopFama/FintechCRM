@@ -164,46 +164,110 @@ class TemplateVariableIn(BaseModel):
     internal_name: str
     exemplo: str | None = None
     campo_sugerido: str | None = None
+    botao_indice: int | None = None
 
     _validar_campo = field_validator("campo_sugerido")(_validar_campo_cliente)
 
 
+# Botões da Meta: até 10, no máximo 2 de link, texto até 25 caracteres; o link
+# variável tem um único {{1}} no fim da URL; as respostas rápidas ficam juntas.
+LIMITE_BOTOES = 10
+LIMITE_BOTOES_LINK = 2
+LIMITE_TEXTO_BOTAO = 25
+_URL_BOTAO = re.compile(r"^https?://[^\s{}]+(\{\{1\}\})?$")
+
+
+class TemplateBotao(BaseModel):
+    # Sincronizados podem trazer outros tipos da Meta (ex.: phone_number); o cadastro só cria url e resposta_rapida
+    tipo: str
+    texto: str = ""
+    url: str = ""
+
+
+class TemplateBotaoIn(TemplateBotao):
+    tipo: Literal["url", "resposta_rapida"]
+
+
 class TemplateCreate(BaseModel):
-    """Template criado na plataforma: sempre rascunho em pt_BR; vai para a Meta
-    pelo botão "Enviar para aprovação"."""
+    """Rascunho de template criado na plataforma, sempre em pt_BR: pode ser
+    salvo incompleto (só o nome interno é obrigatório); `pendencias_template`
+    confere tudo antes de ir para a Meta pelo botão "Enviar para aprovação"."""
 
     name: str
-    meta_template_name: str
+    meta_template_name: str = ""
     category: Literal["UTILITY", "MARKETING"] = "UTILITY"
     header_type: TemplateHeaderType = TemplateHeaderType.none
-    body_text: str
+    body_text: str = ""
     waba_id: str | None = None
     variables: list[TemplateVariableIn] = []
+    botoes: list[TemplateBotaoIn] = []
 
-    @field_validator("meta_template_name")
+    @field_validator("name")
     @classmethod
-    def validar_nome_meta(cls, valor: str) -> str:
+    def validar_nome(cls, valor: str) -> str:
         valor = valor.strip()
-        if not NOME_TEMPLATE_META.match(valor):
-            raise ValueError("Nome na Meta: use só letras minúsculas sem acento, números e _ (até 512 caracteres)")
+        if not valor:
+            raise ValueError("O nome interno é obrigatório")
         return valor
 
+    @field_validator("meta_template_name", "body_text")
+    @classmethod
+    def sem_espacos_nas_pontas(cls, valor: str) -> str:
+        return valor.strip()
+
     @model_validator(mode="after")
-    def validar_corpo(self):
-        corpo = self.body_text.strip()
-        if not corpo:
-            raise ValueError("O corpo do template é obrigatório")
+    def validar_variaveis(self):
+        if len({v.position for v in self.variables}) != len(self.variables):
+            raise ValueError("Variáveis com posição repetida")
+        return self
+
+
+def pendencias_template(template) -> list[str]:
+    """O que impede o template (rascunho gravado) de ir para a Meta, com as
+    regras de cadastro dela. Vazio = pode enviar para aprovação."""
+
+    pendencias: list[str] = []
+    if not NOME_TEMPLATE_META.match(template.meta_template_name or ""):
+        pendencias.append("Nome na Meta: use só letras minúsculas sem acento, números e _ (até 512 caracteres)")
+    corpo = (template.body_text or "").strip()
+    variaveis_corpo = sorted(v.position for v in template.variables if v.botao_indice is None)
+    if not corpo:
+        pendencias.append("O corpo do template é obrigatório")
+    else:
         if len(corpo) > LIMITE_CORPO_TEMPLATE:
-            raise ValueError(f"O corpo do template passa de {LIMITE_CORPO_TEMPLATE} caracteres")
+            pendencias.append(f"O corpo do template passa de {LIMITE_CORPO_TEMPLATE} caracteres")
         posicoes = sorted({int(p) for p in _VARIAVEL_TEMPLATE.findall(corpo)})
         if posicoes != list(range(1, len(posicoes) + 1)):
-            raise ValueError("As variáveis precisam ser {{1}}, {{2}}… em sequência")
+            pendencias.append("As variáveis precisam ser {{1}}, {{2}}… em sequência")
         if _VARIAVEL_TEMPLATE.match(corpo) or re.search(r"\{\{\d+\}\}$", corpo):
-            raise ValueError("O corpo do template não pode começar nem terminar com variável")
-        if sorted(v.position for v in self.variables) != posicoes:
-            raise ValueError("As variáveis informadas não batem com as do corpo do template")
-        self.body_text = corpo
-        return self
+            pendencias.append("O corpo do template não pode começar nem terminar com variável")
+        if variaveis_corpo != posicoes:
+            pendencias.append("As variáveis informadas não batem com as do corpo do template")
+
+    botoes = template.botoes or []
+    if len(botoes) > LIMITE_BOTOES:
+        pendencias.append(f"No máximo {LIMITE_BOTOES} botões")
+    if sum(b["tipo"] == "url" for b in botoes) > LIMITE_BOTOES_LINK:
+        pendencias.append(f"No máximo {LIMITE_BOTOES_LINK} botões de link")
+    tipos = [b["tipo"] for b in botoes]
+    respostas = [i for i, t in enumerate(tipos) if t == "resposta_rapida"]
+    if respostas and respostas != list(range(respostas[0], respostas[-1] + 1)):
+        pendencias.append("As respostas rápidas precisam ficar juntas, antes ou depois dos links")
+    for i, botao in enumerate(botoes, start=1):
+        texto = (botao.get("texto") or "").strip()
+        if not texto:
+            pendencias.append(f"Botão {i}: preencha o texto")
+        elif len(texto) > LIMITE_TEXTO_BOTAO:
+            pendencias.append(f"Botão {i}: o texto passa de {LIMITE_TEXTO_BOTAO} caracteres")
+        if botao["tipo"] == "url" and not _URL_BOTAO.match(botao.get("url") or ""):
+            pendencias.append(f"Botão {i}: o link precisa começar com https:// e só pode ter {{{{1}}}} no fim")
+    links_variaveis = sorted(i for i, b in enumerate(botoes) if b["tipo"] == "url" and (b.get("url") or "").endswith("{{1}}"))
+    if sorted(v.botao_indice for v in template.variables if v.botao_indice is not None) != links_variaveis:
+        pendencias.append("As variáveis dos links não batem com os botões")
+
+    if any(not (v.exemplo or "").strip() for v in template.variables):
+        pendencias.append("Preencha o exemplo de todas as variáveis")
+    return pendencias
 
 
 class TemplateVariableOut(BaseModel):
@@ -214,6 +278,7 @@ class TemplateVariableOut(BaseModel):
     internal_name: str
     campo_sugerido: str | None = None
     exemplo: str | None = None
+    botao_indice: int | None = None
 
 
 class TemplateVariableUpdate(BaseModel):
@@ -233,6 +298,7 @@ class TemplateOut(BaseModel):
     header_type: TemplateHeaderType
     image_url: str | None
     body_text: str
+    botoes: list[TemplateBotao] = []
     status: TemplateStatus
     meta_status_raw: str | None
     meta_template_id: str | None

@@ -301,3 +301,22 @@ export function IconInfo(props: IconProps) {
     </svg>
   );
 }
+
+export function IconExternalLink(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M14 4h6v6" />
+      <path d="M20 4 11 13" />
+      <path d="M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10" />
+    </svg>
+  );
+}
+
+export function IconReply(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M9.5 6 4 11.5 9.5 17" />
+      <path d="M4.5 11.5h9a6.5 6.5 0 0 1 6.5 6.5" />
+    </svg>
+  );
+}

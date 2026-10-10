@@ -18,7 +18,7 @@ from ..deps import get_current_user
 from ..dispatch_service import arquivo_imagem, media_id_da_imagem, montar_parametros_envio
 from ..meta_client import MetaAPIError, MetaClient, MetaTokenConfigError, token_da_waba, token_do_numero
 from ..utils import imagem
-from ..utils.erros import descrever_erro_envio
+from ..utils.erros import descrever_erro_chatwoot, descrever_erro_envio
 from ..utils.phone import is_valid_phone, normalize_phone
 from ..variaveis_template import CAMPOS_CLIENTE, contexto_cliente
 
@@ -184,18 +184,22 @@ async def sync_from_meta(
                 existing.header_type = header_type
                 existing.language = language
                 existing.body_text = body_text
+                existing.botoes = _extract_botoes(remote)
 
-                # Sincroniza variáveis com o texto atualizado do template
+                # Sincroniza variáveis com o texto e os botões atualizados do template
                 posicoes_remotas = set()
-                for i, name in enumerate(_extract_variable_count(remote), start=1):
+                for i, name, botao_indice in _extract_variables(remote):
                     posicoes_remotas.add(i)
                     var_existente = next((v for v in existing.variables if v.position == i), None)
                     if not var_existente:
                         db.add(
                             models.TemplateVariable(
-                                template_id=existing.id, position=i, internal_name=name
+                                template_id=existing.id, position=i, internal_name=name, botao_indice=botao_indice
                             )
                         )
+                    elif var_existente.botao_indice != botao_indice:
+                        var_existente.internal_name = name
+                        var_existente.botao_indice = botao_indice
                 for v in list(existing.variables):
                     if v.position not in posicoes_remotas:
                         db.delete(v)
@@ -211,13 +215,14 @@ async def sync_from_meta(
                     meta_template_id=remote_id,
                     waba_id=waba_id,
                     body_text=body_text,
+                    botoes=_extract_botoes(remote),
                 )
                 db.add(template)
                 db.flush()
-                for i, name in enumerate(_extract_variable_count(remote), start=1):
+                for i, name, botao_indice in _extract_variables(remote):
                     db.add(
                         models.TemplateVariable(
-                            template_id=template.id, position=i, internal_name=name
+                            template_id=template.id, position=i, internal_name=name, botao_indice=botao_indice
                         )
                     )
     if len(falhas) == len(waba_ids):
@@ -246,12 +251,30 @@ def _extract_body_text(remote: dict) -> str:
     return ""
 
 
-def _extract_variable_count(remote: dict) -> list[str]:
-    body_text = _extract_body_text(remote)
-    import re
+def _extract_botoes(remote: dict) -> list[dict]:
+    """Botões do template na Meta, na ordem dela (o índice é o do envio)."""
 
+    for component in remote.get("components", []):
+        if component.get("type") == "BUTTONS":
+            tipos = {"URL": "url", "QUICK_REPLY": "resposta_rapida"}
+            return [
+                {"tipo": tipos.get(b.get("type"), (b.get("type") or "").lower()), "texto": b.get("text", ""), "url": b.get("url", "")}
+                for b in component.get("buttons", [])
+            ]
+    return []
+
+
+def _extract_variables(remote: dict) -> list[tuple[int, str, int | None]]:
+    """(position, internal_name, botao_indice): as do corpo em {{1}}, {{2}}…
+    e, depois delas, uma por botão de link variável."""
+
+    body_text = _extract_body_text(remote)
     positions = sorted({int(m) for m in re.findall(r"\{\{(\d+)\}\}", body_text)})
-    return [f"variavel_{p}" for p in positions]
+    variaveis = [(p, f"variavel_{p}", None) for p in positions]
+    links = [i for i, b in enumerate(_extract_botoes(remote)) if b["tipo"] == "url" and "{{1}}" in b["url"]]
+    for n, indice in enumerate(links, start=len(variaveis) + 1):
+        variaveis.append((n, f"link_botao_{indice + 1}", indice))
+    return variaveis
 
 
 def _extract_header_type(remote: dict) -> models.TemplateHeaderType:
@@ -292,6 +315,65 @@ def _resolve_waba_id(db: Session, waba_id: str | None) -> str:
 IDIOMA_TEMPLATE = "pt_BR"
 
 
+def _aplicar_formulario(db: Session, template: models.Template, payload: schemas.TemplateCreate) -> None:
+    """Passa o formulário para o template (sem commit), mesmo incompleto."""
+
+    waba_id = template.waba_id if template.meta_template_id else _resolve_waba_id(db, payload.waba_id)
+    if payload.meta_template_name:
+        repetido = (
+            db.query(models.Template.id)
+            .filter(
+                models.Template.id != template.id,
+                models.Template.waba_id == waba_id,
+                models.Template.meta_template_name == payload.meta_template_name,
+                models.Template.language == IDIOMA_TEMPLATE,
+            )
+            .first()
+        )
+        if repetido:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Já existe um template com esse nome nesta WABA")
+
+    template.name = payload.name
+    template.meta_template_name = payload.meta_template_name
+    template.category = payload.category
+    template.header_type = payload.header_type
+    template.body_text = payload.body_text
+    template.botoes = [b.model_dump() for b in payload.botoes]
+    template.waba_id = waba_id
+    if not template.meta_template_id:
+        template.language = IDIOMA_TEMPLATE
+        template.status = models.TemplateStatus.draft
+    db.add(template)
+    db.flush()
+
+    # Atualiza as variáveis no lugar (mesmo id), para não perder o mapeamento das faixas;
+    # a que sai leva junto o mapeamento dela
+    posicoes = {v.position for v in payload.variables}
+    existentes = {}
+    for var in list(template.variables):
+        if var.position in posicoes:
+            existentes[var.position] = var
+        else:
+            db.query(models.FaixaVariableMapping).filter(
+                models.FaixaVariableMapping.template_variable_id == var.id
+            ).delete(synchronize_session=False)
+            template.variables.remove(var)
+    for var in payload.variables:
+        atual = existentes.get(var.position) or models.TemplateVariable(template_id=template.id, position=var.position)
+        atual.internal_name = var.internal_name
+        atual.campo_sugerido = var.campo_sugerido
+        atual.exemplo = (var.exemplo or "").strip() or None
+        atual.botao_indice = var.botao_indice
+        if var.position not in existentes:
+            template.variables.append(atual)
+    db.flush()
+
+
+def _recarregar(db: Session, template_id: str) -> models.Template:
+    db.expire_all()
+    return _with_variables(db.query(models.Template)).filter(models.Template.id == template_id).first()
+
+
 @router.post("", response_model=schemas.TemplateOut, status_code=status.HTTP_201_CREATED)
 def create_template(
     payload: schemas.TemplateCreate,
@@ -301,68 +383,97 @@ def create_template(
     """Salva o template como rascunho; a Meta só recebe pelo
     `POST /{id}/enviar-para-aprovacao`, depois da imagem do cabeçalho."""
 
-    waba_id = _resolve_waba_id(db, payload.waba_id)
-    repetido = (
-        db.query(models.Template.id)
-        .filter(
-            models.Template.waba_id == waba_id,
-            models.Template.meta_template_name == payload.meta_template_name,
-            models.Template.language == IDIOMA_TEMPLATE,
-        )
-        .first()
-    )
-    if repetido:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Já existe um template com esse nome nesta WABA")
-
-    template = models.Template(
-        name=payload.name,
-        meta_template_name=payload.meta_template_name,
-        language=IDIOMA_TEMPLATE,
-        category=payload.category,
-        header_type=payload.header_type,
-        body_text=payload.body_text,
-        waba_id=waba_id,
-        status=models.TemplateStatus.draft,
-    )
-    db.add(template)
-    db.flush()
-    for var in payload.variables:
-        db.add(
-            models.TemplateVariable(
-                template_id=template.id,
-                position=var.position,
-                internal_name=var.internal_name,
-                campo_sugerido=var.campo_sugerido,
-                exemplo=(var.exemplo or "").strip() or None,
-            )
-        )
+    template = models.Template()
+    _aplicar_formulario(db, template, payload)
     db.commit()
-    return _with_variables(db.query(models.Template)).filter(models.Template.id == template.id).first()
+    return _recarregar(db, template.id)
 
 
-@router.post("/{template_id}/enviar-para-aprovacao", response_model=schemas.TemplateOut)
-async def enviar_para_aprovacao(
+# Regras de edição da Meta: só aprovado, reprovado ou pausado; nome e idioma
+# nunca mudam e a categoria não muda depois de aprovado. Aprovado ainda tem
+# limite de edições (1 a cada 24 h, 10 a cada 30 dias), que a própria Meta recusa.
+_STATUS_EDITAVEIS_META = {"APPROVED", "REJECTED", "PAUSED"}
+
+
+@router.put("/{template_id}", response_model=schemas.TemplateOut)
+async def update_template(
     template_id: str,
+    payload: schemas.TemplateCreate,
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    """Cadastra o rascunho na Meta com os exemplos que a análise exige: o valor
-    de cada variável (example.body_text) e, com cabeçalho de imagem, a imagem
-    já subida no template (example.header_handle)."""
+    """Rascunho: só grava. Já enviado para a Meta: grava e manda a edição para
+    reanálise; o que a Meta não deixa editar volta com o motivo, para o
+    usuário salvar como template novo."""
 
-    template = _with_variables(db.query(models.Template)).filter(
-        models.Template.id == template_id
-    ).first()
+    template = _with_variables(db.query(models.Template)).filter(models.Template.id == template_id).first()
     if not template:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
-    if template.meta_template_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Este template já foi enviado para a Meta")
+    if not template.meta_template_id:
+        _aplicar_formulario(db, template, payload)
+        db.commit()
+        return _recarregar(db, template.id)
+
+    status_meta = (template.meta_status_raw or "").upper()
+    if status_meta not in _STATUS_EDITAVEIS_META:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "A Meta só deixa editar template aprovado, reprovado ou pausado; salve como novo template",
+        )
+    if payload.meta_template_name != template.meta_template_name:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "A Meta não deixa mudar o nome do template; salve como novo template"
+        )
+    if status_meta == "APPROVED" and payload.category != template.category:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "A Meta não deixa mudar a categoria de template aprovado; salve como novo template",
+        )
+    # Decisão do dono (2026-10-10): template em uso não muda de variáveis, para
+    # nenhuma faixa (régua, campanha ou remarketing) ficar sem valor no envio
+    variaveis_novas = sorted((v.position, v.botao_indice) for v in payload.variables)
+    if variaveis_novas != sorted((v.position, v.botao_indice) for v in template.variables):
+        em_uso = sorted(
+            {nome for (nome,) in db.query(models.Faixa.name).join(models.FaixaEnvio).filter(
+                models.FaixaEnvio.template_id == template.id
+            )}
+        )
+        if em_uso:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Template em uso em {', '.join(em_uso)}: mantenha as mesmas variáveis ou salve como novo template",
+            )
+    try:
+        _aplicar_formulario(db, template, payload)
+        await _cadastrar_na_meta(db, template, editar_categoria=status_meta != "APPROVED")
+    except HTTPException:
+        db.rollback()
+        raise
+    db.commit()
+    return _recarregar(db, template.id)
+
+
+def _botao_meta(botao: dict, exemplo: str | None) -> dict:
+    if botao["tipo"] == "resposta_rapida":
+        return {"type": "QUICK_REPLY", "text": botao["texto"]}
+    saida = {"type": "URL", "text": botao["texto"], "url": botao["url"]}
+    if exemplo is not None:
+        # A Meta pede o link completo de exemplo, com a variável trocada
+        saida["example"] = [botao["url"].replace("{{1}}", exemplo)]
+    return saida
+
+
+async def _cadastrar_na_meta(db: Session, template: models.Template, editar_categoria: bool = True) -> None:
+    """Manda o template para análise da Meta com os exemplos que ela exige: o
+    valor de cada variável (example.body_text), o link de exemplo de cada botão
+    de link variável e, com cabeçalho de imagem, a imagem já subida no template
+    (example.header_handle). Sem meta_template_id cadastra; com, edita (reanálise)."""
+
     if not template.waba_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "WABA não identificada para este template")
-    if any(not v.exemplo for v in template.variables):
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Preencha o exemplo de todas as variáveis antes de enviar para aprovação"
-        )
+    pendencias = schemas.pendencias_template(template)
+    if pendencias:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "; ".join(pendencias))
     caminho_imagem = None
     if template.header_type == models.TemplateHeaderType.image:
         caminho_imagem = arquivo_imagem(template)
@@ -377,9 +488,13 @@ async def enviar_para_aprovacao(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
     corpo: dict = {"type": "BODY", "text": template.body_text}
-    if template.variables:
-        corpo["example"] = {"body_text": [[v.exemplo for v in template.variables]]}
+    exemplos_corpo = [v.exemplo for v in template.variables if v.botao_indice is None]
+    if exemplos_corpo:
+        corpo["example"] = {"body_text": [exemplos_corpo]}
     componentes = [corpo]
+    if template.botoes:
+        exemplos_link = {v.botao_indice: v.exemplo for v in template.variables if v.botao_indice is not None}
+        componentes.append({"type": "BUTTONS", "buttons": [_botao_meta(b, exemplos_link.get(i)) for i, b in enumerate(template.botoes)]})
     try:
         if caminho_imagem:
             with open(caminho_imagem, "rb") as f:
@@ -387,21 +502,47 @@ async def enviar_para_aprovacao(
             mime = "image/png" if caminho_imagem.endswith(".png") else "image/jpeg"
             handle = await client.subir_arquivo_template(os.path.basename(caminho_imagem), conteudo, mime)
             componentes.insert(0, {"type": "HEADER", "format": "IMAGE", "example": {"header_handle": [handle]}})
-        result = await client.create_template(
-            template.waba_id,
-            {
-                "name": template.meta_template_name,
-                "language": template.language,
-                "category": template.category,
-                "components": componentes,
-            },
-        )
+        if template.meta_template_id:
+            edicao: dict = {"components": componentes}
+            if editar_categoria:
+                edicao["category"] = template.category
+            await client.editar_template(template.meta_template_id, edicao)
+            status_meta = "PENDING"
+        else:
+            result = await client.create_template(
+                template.waba_id,
+                {
+                    "name": template.meta_template_name,
+                    "language": template.language,
+                    "category": template.category,
+                    "components": componentes,
+                },
+            )
+            template.meta_template_id = result.get("id")
+            status_meta = result.get("status") or "PENDING"
     except MetaAPIError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
-    template.meta_template_id = result.get("id")
-    template.status = _map_meta_status(result.get("status") or "PENDING")
-    template.meta_status_raw = result.get("status") or "PENDING"
+    template.status = _map_meta_status(status_meta)
+    template.meta_status_raw = status_meta
+
+
+@router.post("/{template_id}/enviar-para-aprovacao", response_model=schemas.TemplateOut)
+async def enviar_para_aprovacao(
+    template_id: str,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Cadastra o rascunho na Meta (ver _cadastrar_na_meta)."""
+
+    template = _with_variables(db.query(models.Template)).filter(
+        models.Template.id == template_id
+    ).first()
+    if not template:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Template não encontrado")
+    if template.meta_template_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Este template já foi enviado para a Meta")
+    await _cadastrar_na_meta(db, template)
     db.commit()
     db.refresh(template)
     return template
@@ -690,7 +831,7 @@ async def testar_envio_template(
     if not is_valid_phone(payload.celular):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Celular de destino inválido")
 
-    body_params, header_image_link = montar_parametros_envio(template_envio, payload.variables)
+    body_params, header_image_link, botoes_params = montar_parametros_envio(template_envio, payload.variables)
 
     # 1. Envio via Chatwoot (se o número estiver configurado para Chatwoot)
     if numero.chatwoot_inbox_id:
@@ -712,6 +853,8 @@ async def testar_envio_template(
                 language=template_envio.language,
                 body_params=body_params,
                 header_image_url=header_image_link,
+                botoes=template_envio.botoes,
+                botoes_params=botoes_params,
             )
             msg_id = msg.get("id") if isinstance(msg, dict) else None
             if msg_id:
@@ -720,7 +863,7 @@ async def testar_envio_template(
                     await asyncio.sleep(1)
                     status_msg, erro_ext = await client.buscar_status_mensagem(conversation_id, msg_id)
                     if status_msg == "failed":
-                        motivo_pt = descrever_erro_envio(erro_ext or "Mensagem recusada")
+                        motivo_pt = descrever_erro_chatwoot(erro_ext or "Mensagem recusada")
                         return schemas.ChatwootTestResult(
                             ok=False,
                             detalhe=f"Erro retornado pelo WhatsApp via Chatwoot: {motivo_pt}",
@@ -729,7 +872,7 @@ async def testar_envio_template(
                         break
             return schemas.ChatwootTestResult(ok=True, detalhe=f"Mensagem de teste enviada para {celular} via Chatwoot")
         except chatwoot_client.ChatwootAPIError as exc:
-            motivo_pt = descrever_erro_envio(f"{exc.status_code}: {exc.payload}")
+            motivo_pt = descrever_erro_chatwoot(f"{exc.status_code}: {exc.payload}")
             return schemas.ChatwootTestResult(ok=False, detalhe=f"Erro retornado pelo Chatwoot: {motivo_pt}")
         except Exception as exc:  # noqa: BLE001
             motivo_pt = descrever_erro_envio(str(exc))
@@ -762,6 +905,7 @@ async def testar_envio_template(
             body_params=body_params,
             header_image_link=header_image_link,
             header_image_id=header_image_id,
+            botoes_params=botoes_params,
         )
         return schemas.ChatwootTestResult(ok=True, detalhe=f"Mensagem de teste enviada para {celular} via Meta")
     except MetaAPIError as exc:
