@@ -1083,6 +1083,14 @@ export interface OrcamentoProgressaoDia {
   data: string;
   gasto_acumulado_brl: string | null; // null = dia que ainda não aconteceu
   mensagens_acumuladas: number | null; // mensagens cobradas pela Meta até o dia
+  por_categoria: Partial<Record<CategoriaGasto, GastoCategoria>>; // do dia, não acumulado
+}
+
+export type CategoriaGasto = "utilitario" | "marketing" | "servico";
+
+export interface GastoCategoria {
+  gasto_brl: string;
+  qtd_mensagens: number;
 }
 
 export interface OrcamentoProgressao {
@@ -1092,7 +1100,8 @@ export interface OrcamentoProgressao {
   valor_gasto_brl: string | null;
   motivo_sem_gasto: string | null;
   avisos: { waba_id: string; numeros: string[]; motivo: string }[];
-  gasto_por_numero: { numero: string; gasto_brl: string; qtd_mensagens: number }[];
+  // gasto_brl = total do número, inclusive categorias fora da quebra (ex.: autenticação)
+  gasto_por_numero: { numero: string; gasto_brl: string; por_categoria: Partial<Record<CategoriaGasto, GastoCategoria>> }[];
   dias: OrcamentoProgressaoDia[];
 }
 

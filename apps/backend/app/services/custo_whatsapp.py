@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 # pode ir à Meta a cada vez
 GASTO_TTL_SEGUNDOS = 600
 
+# pricing_category da Meta → categoria do Orçamento. Autenticação e outras ficam
+# de fora da quebra por categoria (continuam no gasto total).
+CATEGORIAS = {"UTILITY": "utilitario", "MARKETING": "marketing", "MARKETING_LITE": "marketing", "SERVICE": "servico"}
+
 # Códigos de erro da Graph API que significam falta de acesso/permissão
 _CODIGOS_PERMISSAO = {10, 100, 190, 200, 294}
 
@@ -38,10 +42,10 @@ class CustoWhatsapp:
     avisos: list[AvisoWaba] = field(default_factory=list)
     # número exibido (ou phone_number da Meta) → gasto em BRL no período
     por_numero: dict[str, Decimal] = field(default_factory=dict)
-    # número → mensagens que geraram custo no período
-    mensagens_por_numero: dict[str, int] = field(default_factory=dict)
     # (dia, WABA, número) → [gasto em BRL, mensagens cobradas]: exportação por dia
     por_dia_numero: dict[tuple[date, str, str], list] = field(default_factory=dict)
+    # (dia, número, categoria de CATEGORIAS) → [gasto em BRL, mensagens cobradas]
+    por_categoria: dict[tuple[date, str, str], list] = field(default_factory=dict)
 
 
 def _digitos(numero: str | None) -> str:
@@ -157,7 +161,7 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
         _digitos(n): n for numeros in numeros_por_waba.values() for n in numeros
     }
     por_dia: dict[date, Decimal] = {}
-    mensagens: dict[str, int] = {}
+    por_categoria: dict[tuple[date, str, str], list] = {}
     por_numero: dict[str, Decimal] = {n: Decimal("0") for numeros in numeros_por_waba.values() for n in numeros}
     por_dia_numero: dict[tuple[date, str, str], list] = {}
     for p in pontos:
@@ -175,11 +179,14 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
         linha = por_dia_numero.setdefault((dia, p.get("waba_id", ""), chave), [Decimal("0"), 0])
         linha[0] += custo
         linha[1] += cobradas
+        categoria = CATEGORIAS.get(p.get("pricing_category"))
+        if categoria:
+            linha = por_categoria.setdefault((dia, chave, categoria), [Decimal("0"), 0])
+            linha[0] += custo
+            linha[1] += cobradas
         if telefone:
             por_numero[chave] = por_numero.get(chave, Decimal("0")) + custo
-            if cobradas:
-                mensagens[chave] = mensagens.get(chave, 0) + cobradas
-    return CustoWhatsapp(por_dia, None, avisos, por_numero, mensagens, por_dia_numero)
+    return CustoWhatsapp(por_dia, None, avisos, por_numero, por_dia_numero, por_categoria)
 
 
 def gasto_diario_brl(db: Session, inicio: date, fim: date) -> tuple[dict[date, Decimal] | None, str | None]:

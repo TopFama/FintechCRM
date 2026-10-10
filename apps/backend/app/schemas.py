@@ -748,6 +748,8 @@ class OrcamentoProgressaoDiaOut(BaseModel):
     data: date
     gasto_acumulado_brl: Decimal | None  # None = dia que ainda não aconteceu
     mensagens_acumuladas: int | None = None  # mensagens cobradas pela Meta até o dia
+    # gasto e mensagens cobradas do dia (não acumulados) por categoria: o filtro do card soma no navegador
+    por_categoria: dict[str, "GastoCategoriaOut"] = {}
 
 
 class OrcamentoProgressaoOut(BaseModel):
@@ -767,10 +769,15 @@ class AvisoCustoWabaOut(BaseModel):
     motivo: str
 
 
-class GastoNumeroOut(BaseModel):
-    numero: str
+class GastoCategoriaOut(BaseModel):
     gasto_brl: Decimal
     qtd_mensagens: int = 0
+
+
+class GastoNumeroOut(BaseModel):
+    numero: str
+    gasto_brl: Decimal  # total do número, inclusive categorias fora da quebra (ex.: autenticação)
+    por_categoria: dict[str, GastoCategoriaOut] = {}
 
 
 class LinhaEfetividadeClienteOut(BaseModel):

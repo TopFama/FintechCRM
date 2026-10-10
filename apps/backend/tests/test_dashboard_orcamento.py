@@ -1,7 +1,9 @@
 """Gráfico do card Orçamento do Dashboard (GET /dashboard/orcamento-progressao):
 a linha de realizado vai só até hoje (GMT-3). Dia que ainda não aconteceu fica
 no eixo com gasto_acumulado_brl nulo, e o total realizado não muda. As
-mensagens cobradas acumulam do mesmo jeito (mensagens_acumuladas).
+mensagens cobradas acumulam do mesmo jeito (mensagens_acumuladas). Cada dia e
+cada número trazem gasto e mensagens por categoria (Utilitário, Marketing,
+Serviço), que o filtro do card soma no navegador.
 
 Executa com assert simples, sem pytest. Encerra imprimindo 'OK'.
 """
@@ -40,9 +42,17 @@ def orcamento(inicio: date, fim: date):
     por_dia_numero = {
         (d, "waba", tel): [Decimal("0.50"), 1] for d in por_dia for tel in ("5511999990001", "5511999990002")
     }
+    # cada número numa categoria: R$ 0,30 utilitário e R$ 0,70 marketing por dia
+    por_categoria = {
+        (d, tel, cat): [Decimal(v), 1]
+        for d in por_dia
+        for tel, cat, v in (("5511999990001", "utilitario", "0.30"), ("5511999990002", "marketing", "0.70"))
+    }
+    por_numero = {"5511999990001": Decimal("0.30") * len(por_dia), "5511999990002": Decimal("0.70") * len(por_dia)}
+    custo = CustoWhatsapp(por_dia, por_numero=por_numero, por_dia_numero=por_dia_numero, por_categoria=por_categoria)
     with (
         patch.object(dashboard, "hoje_br", lambda: HOJE),
-        patch.object(dashboard.custo_whatsapp, "custo_detalhado", lambda db, i, f: CustoWhatsapp(por_dia, por_dia_numero=por_dia_numero)),
+        patch.object(dashboard.custo_whatsapp, "custo_detalhado", lambda db, i, f: custo),
     ):
         db = SessionLocal()
         try:
@@ -59,12 +69,24 @@ assert all(d.gasto_acumulado_brl is None for d in o.dias[4:]), o.dias[4:]
 assert [d.mensagens_acumuladas for d in o.dias[:4]] == [2, 4, 6, 8]
 assert all(d.mensagens_acumuladas is None for d in o.dias[4:])
 assert o.valor_gasto_brl == Decimal("4.00")
+# categorias do dia (não acumuladas); dia futuro sem categoria
+assert {c: (v.gasto_brl, v.qtd_mensagens) for c, v in o.dias[0].por_categoria.items()} == {
+    "utilitario": (Decimal("0.30"), 1),
+    "marketing": (Decimal("0.70"), 1),
+}
+assert o.dias[10].por_categoria == {}
 
 # Mês passado: todos os dias com valor
 o = orcamento(date(2026, 9, 1), date(2026, 9, 30))
 assert all(d.gasto_acumulado_brl is not None for d in o.dias)
 assert o.valor_gasto_brl == Decimal("30.00")
 assert o.dias[-1].mensagens_acumuladas == 60
+# por número: gasto total e categorias somadas no período
+numeros = {g.numero: g for g in o.gasto_por_numero}
+assert numeros["5511999990002"].gasto_brl == Decimal("21.00")
+assert numeros["5511999990002"].por_categoria["marketing"].gasto_brl == Decimal("21.00")
+assert numeros["5511999990002"].por_categoria["marketing"].qtd_mensagens == 30
+assert set(numeros["5511999990001"].por_categoria) == {"utilitario"}
 
 # Período que ainda não começou (personalizado): nenhum valor, total zero
 o = orcamento(date(2026, 11, 1), date(2026, 11, 5))
