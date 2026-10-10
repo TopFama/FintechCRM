@@ -67,6 +67,7 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
 
   test("estado vazio de envios com filtro não diz 'ainda' como se nunca tivesse havido envio", async ({ page }) => {
     await aba(page, "Envios realizados").click();
+    await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
     await page.locator("select").first().selectOption({ label: "11 A 20" });
     await expect(page.getByText("Carregando...")).toHaveCount(0);
     await expect(page.locator(".empty-state")).toBeVisible();
