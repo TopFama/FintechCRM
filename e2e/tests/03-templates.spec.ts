@@ -90,12 +90,42 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await expect(novo.getByRole("button", { name: "Salvar template" })).toHaveCount(0);
   });
 
+  test("seletor de WABA mostra o nome do token e o waba_id", async ({ page }) => {
+    // Acrescenta uma segunda WABA (com dois tokens) e uma sem token às respostas reais
+    await page.route("**/numbers", async (r) => {
+      const numeros = await (await r.fetch()).json();
+      const extra = (waba: string, i: number) => ({ ...numeros[0], id: `extra-${i}`, phone_number_id: `extra-${i}`, waba_id: waba });
+      await r.fulfill({ json: [...numeros, extra("WABA-VENDAS", 1), extra("WABA-SEM-NOME", 2)] });
+    });
+    await page.route("**/meta-tokens", async (r) => {
+      const tokens = await (await r.fetch()).json();
+      const token = (nome: string, ativo: boolean) => ({ ...tokens[0], id: nome, nome, ativo, waba_id: "WABA-VENDAS" });
+      await r.fulfill({ json: [...tokens, token("Vendas", true), token("Vendas 2", true), token("Antigo", false)] });
+    });
+    await page.reload();
+    const novo = card(page, "Novo template");
+    await novo.getByRole("button", { name: "Criar template" }).click();
+    const tokens = await apiGet(page, "/meta-tokens");
+    const numeros = await apiGet(page, "/numbers");
+    const wabaReal = numeros[0].waba_id;
+    const nomeReal = [...new Set(tokens.filter((t: any) => t.ativo && t.waba_id === wabaReal).map((t: any) => t.nome))].join(" / ");
+    await expect(campo(novo, "WABA").locator("option")).toHaveText([
+      "Selecione...",
+      `${nomeReal} (${wabaReal})`,
+      "Vendas / Vendas 2 (WABA-VENDAS)",
+      "WABA-SEM-NOME",
+    ]);
+    await campo(novo, "WABA").selectOption({ label: "Vendas / Vendas 2 (WABA-VENDAS)" });
+    await expect(campo(novo, "WABA")).toHaveValue("WABA-VENDAS");
+  });
+
   test("prévia com a formatação do WhatsApp e exemplos das variáveis", async ({ page }) => {
     const novo = card(page, "Novo template");
     await novo.getByRole("button", { name: "Criar template" }).click();
     await campo(novo, /Corpo do template/).fill("Olá *{{1}}*, pague ~R$ 10~ _hoje_ com `pix`.\n- boleto\n- cartão\n> TopFama\n```linha mono```");
     const bolha = novo.locator(".template-preview-bubble");
     await expect(bolha.locator("strong")).toHaveText("{{1}}");
+    await expect(campo(novo, "Campo do cliente de {{1}}").locator("option", { hasText: /nome/i }).first()).toBeAttached(); // campos carregados
     await campo(novo, "Campo do cliente de {{1}}").selectOption({ label: (await campo(novo, "Campo do cliente de {{1}}").locator("option").allInnerTexts()).find((o) => /nome/i.test(o))! });
     await expect(campo(novo, "Exemplo de {{1}}")).not.toHaveValue("");
     await campo(novo, "Exemplo de {{1}}").fill("Maria");
