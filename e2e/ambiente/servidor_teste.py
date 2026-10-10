@@ -94,8 +94,16 @@ def _meta(request: httpx.Request) -> httpx.Response:
             if inicio >= fim_janela:
                 continue
             for n in NUMEROS:
-                pontos.append({"start": inicio, "end": inicio + 86400, "phone_number": n["display_phone_number"],
-                               "volume": 10 + d, "cost": 0.5 + d / 10, "pricing_type": "REGULAR"})
+                # categorias como a Meta (dimensão PRICING_CATEGORY): serviço grátis não conta
+                # mensagem cobrada e autenticação só entra no gasto total
+                for categoria, tipo, volume, custo in (
+                    ("UTILITY", "REGULAR", 10 + d, 0.5 + d / 10),
+                    ("MARKETING", "REGULAR", 2, 0.3),
+                    ("SERVICE", "FREE_CUSTOMER_SERVICE", 4, 0),
+                    ("AUTHENTICATION", "REGULAR", 1, 0.1),
+                ):
+                    pontos.append({"start": inicio, "end": inicio + 86400, "phone_number": n["display_phone_number"],
+                                   "volume": volume, "cost": custo, "pricing_type": tipo, "pricing_category": categoria})
         return httpx.Response(200, json={"pricing_analytics": {"data": [{"data_points": pontos}]}, "id": WABA})
     for t in TEMPLATES:
         if path == t["id"]:

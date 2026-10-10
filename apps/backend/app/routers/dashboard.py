@@ -362,6 +362,7 @@ def _orcamento(db: Session, inicio: date, fim: date) -> schemas.OrcamentoProgres
         msgs_dia: dict[date, int] = {}
         for (dia, _waba, _tel), (_gasto, mensagens) in custo.por_dia_numero.items():
             msgs_dia[dia] = msgs_dia.get(dia, 0) + mensagens
+        cat_dia = _somar_categorias(custo.por_categoria, lambda dia, _tel: dia)
         acumulado = Decimal("0.00")
         msgs = 0
         hoje = hoje_br()
@@ -375,11 +376,15 @@ def _orcamento(db: Session, inicio: date, fim: date) -> schemas.OrcamentoProgres
                 msgs += msgs_dia.get(d, 0)
                 dias.append(
                     schemas.OrcamentoProgressaoDiaOut(
-                        data=d, gasto_acumulado_brl=acumulado.quantize(Decimal("0.01")), mensagens_acumuladas=msgs
+                        data=d,
+                        gasto_acumulado_brl=acumulado.quantize(Decimal("0.01")),
+                        mensagens_acumuladas=msgs,
+                        por_categoria=cat_dia.get(d, {}),
                     )
                 )
             d += timedelta(days=1)
         valor_gasto_brl = acumulado.quantize(Decimal("0.01"))
+    cat_numero = _somar_categorias(custo.por_categoria, lambda _dia, tel: tel, Decimal("0.01"))
 
     return schemas.OrcamentoProgressaoOut(
         de=inicio,
@@ -390,12 +395,26 @@ def _orcamento(db: Session, inicio: date, fim: date) -> schemas.OrcamentoProgres
         dias=dias,
         avisos=[schemas.AvisoCustoWabaOut(waba_id=a.waba_id, numeros=a.numeros, motivo=a.motivo) for a in custo.avisos],
         gasto_por_numero=[
-            schemas.GastoNumeroOut(
-                numero=n, gasto_brl=v.quantize(Decimal("0.01")), qtd_mensagens=custo.mensagens_por_numero.get(n, 0)
-            )
+            schemas.GastoNumeroOut(numero=n, gasto_brl=v.quantize(Decimal("0.01")), por_categoria=cat_numero.get(n, {}))
             for n, v in sorted(custo.por_numero.items(), key=lambda kv: -kv[1])
         ],
     )
+
+
+def _somar_categorias(por_categoria, agrupar, casas=Decimal("0.0001")) -> dict:
+    """{grupo: {categoria: GastoCategoriaOut}} a partir de (dia, número, categoria)
+    do custo da Meta; o grupo sai de agrupar(dia, número). O gasto do dia vai com
+    4 casas para a soma das categorias no navegador bater com o total do dia."""
+
+    somas: dict = {}
+    for (dia, tel, categoria), (gasto, mensagens) in por_categoria.items():
+        linha = somas.setdefault(agrupar(dia, tel), {}).setdefault(categoria, [Decimal("0"), 0])
+        linha[0] += gasto
+        linha[1] += mensagens
+    return {
+        g: {c: schemas.GastoCategoriaOut(gasto_brl=v.quantize(casas), qtd_mensagens=m) for c, (v, m) in cats.items()}
+        for g, cats in somas.items()
+    }
 
 
 @router.get("/colunas-por-faixa", response_model=schemas.ColunasPorFaixa)

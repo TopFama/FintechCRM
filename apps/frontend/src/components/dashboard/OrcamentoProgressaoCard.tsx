@@ -1,13 +1,39 @@
 import { useEffect, useRef, useState } from "react";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../useAtualizacaoAutomatica";
-import { api, OrcamentoProgressao } from "../../api";
+import { api, CategoriaGasto, OrcamentoProgressao } from "../../api";
 import { formatBRL, formatData, formatNumero, hojeBR } from "../../format";
 import { IconAlert, IconDownload } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
+import MultiSelect from "../MultiSelect";
 import SortableTh from "../SortableTh";
 import TabelaAjustavel from "../TabelaAjustavel";
 
-type ColunaNumero = "numero" | "gasto_brl" | "qtd_mensagens";
+// Categorias da Meta separadas no card; autenticação e outras só entram no gasto total
+const CATEGORIAS: [CategoriaGasto, string][] = [
+  ["utilitario", "Utilitário"],
+  ["marketing", "Marketing"],
+  ["servico", "Serviço"],
+];
+
+type ColunaNumero = "numero" | "gasto_brl" | `gasto_${CategoriaGasto}` | `qtd_${CategoriaGasto}`;
+
+// Refaz o acumulado (gráfico, Realizado e tooltip) só com as categorias marcadas;
+// nenhuma marcada = gasto total da Meta, como vem da API.
+function somenteCategorias(dados: OrcamentoProgressao, categorias: string[]): OrcamentoProgressao {
+  if (categorias.length === 0) return dados;
+  let gasto = 0;
+  let msgs = 0;
+  const dias = dados.dias.map((d) => {
+    if (d.gasto_acumulado_brl === null) return d;
+    for (const c of categorias) {
+      const v = d.por_categoria[c as CategoriaGasto];
+      gasto += Number(v?.gasto_brl ?? 0);
+      msgs += v?.qtd_mensagens ?? 0;
+    }
+    return { ...d, gasto_acumulado_brl: gasto.toFixed(2), mensagens_acumuladas: msgs };
+  });
+  return { ...dados, dias, valor_gasto_brl: gasto.toFixed(2) };
+}
 
 const NOMES_MES = [
   "janeiro", "fevereiro", "março", "abril", "maio", "junho",
@@ -31,6 +57,7 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
   const [selecao, setSelecao] = useState(meses[0].valor);
   const [de, setDe] = useState("");
   const [ate, setAte] = useState("");
+  const [categorias, setCategorias] = useState<string[]>([]);
   const [dados, setDados] = useState<OrcamentoProgressao | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [exportando, setExportando] = useState(false);
@@ -110,6 +137,14 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
           </div>
         </>
       )}
+      <MultiSelect
+        id="orcamento-categorias"
+        label="Categorias no gráfico"
+        options={CATEGORIAS.map(([value, label]) => ({ value, label }))}
+        value={categorias}
+        onChange={setCategorias}
+        placeholder="Todas"
+      />
     </div>
   );
 
@@ -160,6 +195,7 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
   }
 
   const gastoInfo = dados.valor_gasto_brl !== null;
+  const grafico = somenteCategorias(dados, categorias);
 
   return (
     <div className="card">
@@ -193,7 +229,7 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
           <div className="orcamento-totais">
             <div className="stat">
               <div>
-                <div className="value">{formatBRL(dados.valor_gasto_brl!)}</div>
+                <div className="value">{formatBRL(grafico.valor_gasto_brl!)}</div>
                 <div className="label">Realizado (gasto acumulado)</div>
               </div>
             </div>
@@ -204,7 +240,7 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
               </div>
             </div>
           </div>
-          <GraficoGasto dados={dados} />
+          <GraficoGasto dados={grafico} />
           {dados.gasto_por_numero.length > 0 && (
             <TabelaAjustavel id="orcamento-por-numero" rotulo="Gasto por número" style={{ marginTop: 16 }}>
               <table>
@@ -213,8 +249,9 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
                     {(
                       [
                         ["numero", "Número"],
+                        ...CATEGORIAS.map(([c, nome]) => [`gasto_${c}`, `${nome} (R$)`]),
                         ["gasto_brl", "Gasto no período"],
-                        ["qtd_mensagens", "Qtd mensagens"],
+                        ...CATEGORIAS.map(([c, nome]) => [`qtd_${c}`, `${nome} (qtd)`]),
                       ] as [ColunaNumero, string][]
                     ).map(([coluna, rotulo]) => (
                       <SortableTh
@@ -231,23 +268,29 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
                 <tbody>
                   {ordenarPor(
                     dados.gasto_por_numero,
-                    ordenacao.sortKey === "gasto_brl"
-                      ? (g) => Number(g.gasto_brl)
-                      : ordenacao.sortKey
-                      ? (g) => g[ordenacao.sortKey as "numero" | "qtd_mensagens"]
-                      : null,
+                    valorColuna(ordenacao.sortKey),
                     ordenacao.sortDir
                   ).map((g) => (
                     <tr key={g.numero}>
                       <td className="cell-strong">{g.numero}</td>
+                      {CATEGORIAS.map(([c]) => (
+                        <td key={c}>{formatBRL(g.por_categoria[c]?.gasto_brl ?? 0)}</td>
+                      ))}
                       <td>{formatBRL(g.gasto_brl)}</td>
-                      <td>{g.qtd_mensagens.toLocaleString("pt-BR")}</td>
+                      {CATEGORIAS.map(([c]) => (
+                        <td key={c}>{formatNumero(g.por_categoria[c]?.qtd_mensagens ?? 0)}</td>
+                      ))}
                     </tr>
                   ))}
                   <tr className="linha-total">
                     <td className="cell-strong">Total</td>
-                    <td>{formatBRL(dados.gasto_por_numero.reduce((t, g) => t + Number(g.gasto_brl), 0))}</td>
-                    <td>{dados.gasto_por_numero.reduce((t, g) => t + g.qtd_mensagens, 0).toLocaleString("pt-BR")}</td>
+                    {CATEGORIAS.map(([c]) => (
+                      <td key={c}>{formatBRL(somar(dados, (g) => Number(g.por_categoria[c]?.gasto_brl ?? 0)))}</td>
+                    ))}
+                    <td>{formatBRL(somar(dados, (g) => Number(g.gasto_brl)))}</td>
+                    {CATEGORIAS.map(([c]) => (
+                      <td key={c}>{formatNumero(somar(dados, (g) => g.por_categoria[c]?.qtd_mensagens ?? 0))}</td>
+                    ))}
                   </tr>
                 </tbody>
               </table>
@@ -257,6 +300,23 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
       )}
     </div>
   );
+}
+
+type GastoNumero = OrcamentoProgressao["gasto_por_numero"][number];
+
+function somar(dados: OrcamentoProgressao, valor: (g: GastoNumero) => number): number {
+  return dados.gasto_por_numero.reduce((t, g) => t + valor(g), 0);
+}
+
+// Valor da coluna para ordenar a tabela por número
+function valorColuna(coluna: ColunaNumero | null): ((g: GastoNumero) => string | number) | null {
+  if (!coluna) return null;
+  if (coluna === "numero") return (g) => g.numero;
+  if (coluna === "gasto_brl") return (g) => Number(g.gasto_brl);
+  const [tipo, c] = coluna.split("_") as ["gasto" | "qtd", CategoriaGasto];
+  return tipo === "gasto"
+    ? (g) => Number(g.por_categoria[c]?.gasto_brl ?? 0)
+    : (g) => g.por_categoria[c]?.qtd_mensagens ?? 0;
 }
 
 // Largura mínima do desenho: no celular o gráfico rola na horizontal em vez de espremer.

@@ -115,8 +115,9 @@ class MetaClient:
         jul/2025 a Meta cobra por mensagem e o antigo conversation_analytics não
         traz mais custo — por isso este endpoint. Sem filtro de phone_numbers a
         Meta devolve todos os números da WABA; a dimensão PHONE quebra o custo
-        por número (campo phone_number). Retorna os "data_points"
-        (start, end, phone_number, volume, cost)."""
+        por número (campo phone_number) e PRICING_CATEGORY por categoria do
+        template (pricing_category). Retorna os "data_points"
+        (start, end, phone_number, pricing_type, pricing_category, volume, cost)."""
 
         data = await self._request(
             "GET",
@@ -124,7 +125,7 @@ class MetaClient:
             params={
                 "fields": (
                     'pricing_analytics.start(%d).end(%d).granularity(%s)'
-                    '.metric_types(["COST","VOLUME"]).dimensions(["PHONE","PRICING_TYPE"])'
+                    '.metric_types(["COST","VOLUME"]).dimensions(["PHONE","PRICING_TYPE","PRICING_CATEGORY"])'
                 )
                 % (start_unix, end_unix, granularity)
             },
