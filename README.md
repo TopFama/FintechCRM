@@ -662,7 +662,11 @@ Só é preciso refazer isto se a VPS, as chaves ou a conta do Tailscale mudarem.
   botão (`meta_client.send_template_message`) ou em `processed_params.buttons` no Chatwoot. O Chatwoot
   só monta as variáveis com o template sincronizado na caixa de entrada; sem isso a Meta recusa com
   132000, e o erro (`utils/erros.descrever_erro_chatwoot`) diz para sincronizar em Configurações →
-  Modelos do Chatwoot, com conta de admin. Só Utilidade e
+  Modelos do Chatwoot, com conta de admin. Por isso, quando um template vira aprovado (Sincronizar,
+  Atualizar status ou envio aprovado na hora), o CRM pede ao Chatwoot o `sync_templates` de cada
+  caixa de entrada dos números ativos da WABA (`routers/templates._sincronizar_no_chatwoot`); o
+  token salvo em Configurações → Chatwoot precisa ser de administrador, e a falha volta como aviso
+  na tela de Templates sem desfazer a aprovação. Só Utilidade e
   Marketing: Autenticação exige o formato próprio de código da Meta e não é cadastrada aqui.
 - **Retry de envio**: hoje, uma falha de envio marca o item como `error` e fica visível no
   dashboard; o único reprocessamento automático é o erro `131026` do Chatwoot, que tenta o próximo

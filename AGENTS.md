@@ -33,7 +33,7 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
   `cobranca_regras.py`.
 - `meta_client.py` — **único** ponto de integração com a Graph API da Meta. Qualquer chamada nova
   à Meta entra aqui, nunca direto num router. Mesma regra para `seta_client.py` (ERP SETA, só
-  leitura), `google_client.py` (OAuth2 + Sheets) e `chatwoot_client.py` (envio pelo Chatwoot).
+  leitura), `google_client.py` (OAuth2 + Sheets) e `chatwoot_client.py` (envio pelo Chatwoot e sincronização de templates).
 - `cache.py` — cache Redis e proteção do SETA: relatório pesado é *snapshot* com single-flight
   (`obter_snapshot`/`obter_ou_calcular` esperam o resultado; `buscar_ou_iniciar` devolve "processing"),
   trava com dono, fila limitada, quarentena de erro e `chave()` determinística (sem usuário na chave).
