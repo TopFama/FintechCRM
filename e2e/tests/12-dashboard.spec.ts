@@ -203,8 +203,11 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(page.locator(".stat", { has: page.locator(".label", { hasText: /^Pagaram$/ }) })).toContainText("SETA indisponível");
     await page.getByRole("link", { name: "Relatórios" }).click();
     await expect(faixa).toBeVisible();
-    // SETA voltou: o teste de conexão responde sem o aviso e a faixa some
-    semConexao = false;
+    // SETA voltou: o teste de conexão é a primeira resposta sem o aviso e a faixa some
+    await page.route("**/seta/status", (r) => {
+      semConexao = false;
+      return r.continue();
+    });
     await faixa.getByRole("button", { name: "Testar conexão" }).click();
     await expect(faixa).toHaveCount(0);
   });
