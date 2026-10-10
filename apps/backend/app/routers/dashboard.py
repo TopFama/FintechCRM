@@ -385,6 +385,9 @@ def _orcamento(db: Session, inicio: date, fim: date) -> schemas.OrcamentoProgres
             d += timedelta(days=1)
         valor_gasto_brl = acumulado.quantize(Decimal("0.01"))
     cat_numero = _somar_categorias(custo.por_categoria, lambda _dia, tel: tel, Decimal("0.01"))
+    msgs_numero: dict[str, int] = {}
+    for (_dia, _waba, tel), (_gasto, mensagens) in custo.por_dia_numero.items():
+        msgs_numero[tel] = msgs_numero.get(tel, 0) + mensagens
 
     return schemas.OrcamentoProgressaoOut(
         de=inicio,
@@ -395,7 +398,12 @@ def _orcamento(db: Session, inicio: date, fim: date) -> schemas.OrcamentoProgres
         dias=dias,
         avisos=[schemas.AvisoCustoWabaOut(waba_id=a.waba_id, numeros=a.numeros, motivo=a.motivo) for a in custo.avisos],
         gasto_por_numero=[
-            schemas.GastoNumeroOut(numero=n, gasto_brl=v.quantize(Decimal("0.01")), por_categoria=cat_numero.get(n, {}))
+            schemas.GastoNumeroOut(
+                numero=n,
+                gasto_brl=v.quantize(Decimal("0.01")),
+                qtd_mensagens=msgs_numero.get(n, 0),
+                por_categoria=cat_numero.get(n, {}),
+            )
             for n, v in sorted(custo.por_numero.items(), key=lambda kv: -kv[1])
         ],
     )

@@ -1100,8 +1100,13 @@ export interface OrcamentoProgressao {
   valor_gasto_brl: string | null;
   motivo_sem_gasto: string | null;
   avisos: { waba_id: string; numeros: string[]; motivo: string }[];
-  // gasto_brl = total do número, inclusive categorias fora da quebra (ex.: autenticação)
-  gasto_por_numero: { numero: string; gasto_brl: string; por_categoria: Partial<Record<CategoriaGasto, GastoCategoria>> }[];
+  // gasto_brl e qtd_mensagens = totais do número, inclusive categorias fora da quebra (ex.: autenticação)
+  gasto_por_numero: {
+    numero: string;
+    gasto_brl: string;
+    qtd_mensagens: number;
+    por_categoria: Partial<Record<CategoriaGasto, GastoCategoria>>;
+  }[];
   dias: OrcamentoProgressaoDia[];
 }
 

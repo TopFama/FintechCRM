@@ -87,6 +87,8 @@ assert numeros["5511999990002"].gasto_brl == Decimal("21.00")
 assert numeros["5511999990002"].por_categoria["marketing"].gasto_brl == Decimal("21.00")
 assert numeros["5511999990002"].por_categoria["marketing"].qtd_mensagens == 30
 assert set(numeros["5511999990001"].por_categoria) == {"utilitario"}
+# total enviado do número: mensagens cobradas de todas as categorias (1 por dia)
+assert numeros["5511999990001"].qtd_mensagens == 30
 
 # Período que ainda não começou (personalizado): nenhum valor, total zero
 o = orcamento(date(2026, 11, 1), date(2026, 11, 5))

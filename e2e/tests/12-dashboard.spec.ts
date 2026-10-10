@@ -538,40 +538,42 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(linhas).toHaveCount(2);
     const brl = (t: string) => Number(t.replace(/[^\d,]/g, "").replace(",", "."));
     const qtd = (t: string) => Number(t.replace(/\D/g, ""));
-    // Número | Utilitário, Marketing, Serviço (R$) | Gasto no período | Utilitário, Marketing, Serviço (qtd)
+    // Número | Qtd e R$ de Utilitário, Marketing e Serviço | Total gasto | Total enviado
     const titulos = o.locator("thead th");
     await expect(titulos).toHaveText([
-      /^Número/, /^Utilitário \(R\$\)/, /^Marketing \(R\$\)/, /^Serviço \(R\$\)/, /^Gasto no período/,
-      /^Utilitário \(qtd\)/, /^Marketing \(qtd\)/, /^Serviço \(qtd\)/,
+      /^Número/, /^Utilitário \(qtd\)/, /^Utilitário \(R\$\)/, /^Marketing \(qtd\)/, /^Marketing \(R\$\)/,
+      /^Serviço \(qtd\)/, /^Serviço \(R\$\)/, /^Total gasto/, /^Total enviado/,
     ]);
-    const coluna = async (n: number, conv: (t: string) => number) => (await linhas.locator(`td:nth-child(${n})`).allInnerTexts()).map(conv);
-    const totalDa = async (n: number, conv: (t: string) => number) => conv(await o.locator(`tr.linha-total td:nth-child(${n})`).innerText());
-    for (let n = 2; n <= 8; n++) {
-      const conv = n <= 5 ? brl : qtd;
-      expect(await totalDa(n, conv)).toBeCloseTo((await coluna(n, conv)).reduce((a, b) => a + b, 0), 2);
+    const C = { utilQtd: 2, utilRs: 3, mktQtd: 4, mktRs: 5, servQtd: 6, servRs: 7, gasto: 8, enviado: 9 };
+    const ehRs = (n: number) => [C.utilRs, C.mktRs, C.servRs, C.gasto].includes(n);
+    const coluna = async (n: number) => (await linhas.locator(`td:nth-child(${n})`).allInnerTexts()).map(ehRs(n) ? brl : qtd);
+    const totalDa = async (n: number) => (ehRs(n) ? brl : qtd)(await o.locator(`tr.linha-total td:nth-child(${n})`).innerText());
+    for (let n = 2; n <= 9; n++) {
+      expect(await totalDa(n)).toBeCloseTo((await coluna(n)).reduce((a, b) => a + b, 0), 2);
     }
     // Serviço só conta mensagem cobrada (a Meta não cobra serviço)
-    expect(await totalDa(8, qtd)).toBe(0);
-    expect(await totalDa(6, qtd)).toBeGreaterThan(0);
-    expect(await totalDa(7, qtd)).toBeGreaterThan(0);
-    // Gasto no período é o total da Meta: inclui autenticação, que fica fora das categorias
-    expect(await totalDa(5, brl)).toBeGreaterThan((await totalDa(2, brl)) + (await totalDa(3, brl)) + (await totalDa(4, brl)));
-    await o.getByRole("columnheader", { name: /Gasto no período/ }).click();
-    const ord = await coluna(5, brl);
+    expect(await totalDa(C.servQtd)).toBe(0);
+    expect(await totalDa(C.utilQtd)).toBeGreaterThan(0);
+    expect(await totalDa(C.mktQtd)).toBeGreaterThan(0);
+    // Totais são da Meta inteira: incluem autenticação, que fica fora das categorias
+    expect(await totalDa(C.gasto)).toBeGreaterThan((await totalDa(C.utilRs)) + (await totalDa(C.mktRs)) + (await totalDa(C.servRs)));
+    expect(await totalDa(C.enviado)).toBeGreaterThan((await totalDa(C.utilQtd)) + (await totalDa(C.mktQtd)) + (await totalDa(C.servQtd)));
+    await o.getByRole("columnheader", { name: /Total gasto/ }).click();
+    const ord = await coluna(C.gasto);
     expect(ord).toEqual([...ord].sort((a, b) => a - b));
     await o.getByRole("columnheader", { name: /Marketing \(qtd\)/ }).click();
-    const ordQtd = await coluna(7, qtd);
+    const ordQtd = await coluna(C.mktQtd);
     expect(ordQtd).toEqual([...ordQtd].sort((a, b) => a - b));
     // Filtro de categorias: Realizado e linha do gráfico passam a somar só Marketing
     const realizado = async () => brl(await o.locator(".stat", { hasText: "Realizado" }).locator(".value").innerText());
     const pontosAntes = await o.locator("svg[role=img] polyline").getAttribute("points");
     // 1 casa: o Realizado soma por dia e a tabela por número, cada um arredondado em centavos
-    expect(await realizado()).toBeCloseTo(await totalDa(5, brl), 1);
+    expect(await realizado()).toBeCloseTo(await totalDa(C.gasto), 1);
     await escolherMulti(o, "Categorias no gráfico", ["Marketing"]);
-    await expect.poll(realizado).toBeCloseTo(await totalDa(3, brl), 1);
+    await expect.poll(realizado).toBeCloseTo(await totalDa(C.mktRs), 1);
     expect(await o.locator("svg[role=img] polyline").getAttribute("points")).not.toBe(pontosAntes);
     await escolherMulti(o, "Categorias no gráfico", ["Utilitário"]);
-    await expect.poll(realizado).toBeCloseTo((await totalDa(2, brl)) + (await totalDa(3, brl)), 1);
+    await expect.poll(realizado).toBeCloseTo((await totalDa(C.utilRs)) + (await totalDa(C.mktRs)), 1);
     // hover no gráfico mostra o tooltip do dia
     const box = await o.locator("svg[role=img] rect").last().boundingBox();
     await page.mouse.move(box!.x + box!.width - 5, box!.y + box!.height / 2);
