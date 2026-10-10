@@ -149,7 +149,6 @@ export default function TemplatesCard() {
   const [decidindo, setDecidindo] = useState(false);
   const [subindoImagem, setSubindoImagem] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testeTemplateId, setTesteTemplateId] = useState<string | null>(null);
   const [testeNumeroId, setTesteNumeroId] = useState("");
@@ -187,9 +186,12 @@ export default function TemplatesCard() {
     api.listarTokensMeta().then(setTokensMeta).catch(() => undefined);
   }
 
-  // Abrir a aba já sincroniza: traz as trocas de categoria feitas pela Meta
+  // Abrir a aba já sincroniza com a Meta (inclusive as trocas de categoria); não há botão
   useEffect(() => {
-    handleSync();
+    api
+      .syncTemplatesFromMeta()
+      .catch((err) => setError(err instanceof Error ? err.message : "Erro ao sincronizar com a Meta"))
+      .finally(load);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
@@ -274,19 +276,6 @@ export default function TemplatesCard() {
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar mapeamento da variável");
-    }
-  }
-
-  async function handleSync() {
-    setError(null);
-    setSyncing(true);
-    try {
-      await api.syncTemplatesFromMeta();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao sincronizar com a Meta");
-    } finally {
-      setSyncing(false);
-      load();
     }
   }
 
@@ -576,24 +565,6 @@ export default function TemplatesCard() {
         </div>
       )}
 
-      <div className="card">
-        <div className="card-header">
-          <h3>Sincronizar templates da Meta</h3>
-        </div>
-        <p className="card-subtitle">
-          Puxa os templates já aprovados/pendentes direto da Meta para as WABAs dos tokens cadastrados em
-          Configurações — não precisa informar o WABA ID na mão.
-        </p>
-        <button onClick={handleSync} disabled={syncing}>
-          {syncing ? "Sincronizando..." : "Sincronizar"}
-        </button>
-        {numbers.length === 0 && (
-          <p className="field-hint">
-            Se ainda não há token da Meta, cadastre um em Configurações → Tokens da Meta antes de sincronizar.
-          </p>
-        )}
-      </div>
-
       <div className="card" ref={formRef}>
         <div className="card-header">
           <h3>{editando ? (editando.meta_template_id ? "Editar template" : "Editar rascunho") : "Novo template"}</h3>
@@ -864,7 +835,7 @@ export default function TemplatesCard() {
           <div className="empty-state">
             <IconTemplate width={28} height={28} />
             <div className="title">Nenhum template cadastrado</div>
-            <p>Sincronize com a Meta ou crie um template acima.</p>
+            <p>Os templates da Meta aparecem aqui ao abrir a aba; ou crie um template acima.</p>
           </div>
         ) : (
           <div className="table-wrap">

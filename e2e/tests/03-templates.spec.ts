@@ -12,8 +12,7 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     // sem clicar: a aba já sincroniza ao abrir
     const tabela = card(page, "Templates cadastrados");
     await expect(tabela.locator("tbody tr")).toHaveCount(3);
-    await page.getByRole("button", { name: "Sincronizar", exact: true }).click();
-    await expect(tabela.locator("tbody tr")).toHaveCount(3);
+    await expect(page.getByRole("button", { name: "Sincronizar", exact: true })).toHaveCount(0);
     const cobranca = (await apiGet(page, "/templates")).find((t: any) => t.meta_template_name === "cobranca_atraso");
     expect(cobranca.variables.map((v: any) => v.internal_name)).toEqual(["variavel_1", "variavel_2", "variavel_3", "variavel_4"]);
     await expect(tabela.locator("thead th")).toHaveText([/Template/, /Tipo/, /WABA/, /Telefones/, /Status/, /Imagem/, ""]);
@@ -310,14 +309,14 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await expect(linha.getByRole("button", { name: "Enviar para aprovação" })).toHaveCount(0);
   });
 
-  test("falha na sincronização aparece como erro e o botão volta ao normal", async ({ page }) => {
+  test("falha na sincronização ao abrir a aba aparece como erro e a lista continua", async ({ page }) => {
     permitirErrosConsole(page, "400");
     await page.route("**/templates/meta/sync", (r) =>
       r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ detail: "Nenhuma WABA sincronizou — WABA 1: token expirado" }) })
     );
-    await page.getByRole("button", { name: "Sincronizar", exact: true }).click();
+    await page.reload();
     await expect(page.locator(".error-box").first()).toContainText("token expirado");
-    await expect(page.getByRole("button", { name: "Sincronizar", exact: true })).toBeEnabled();
+    await expect(card(page, "Templates cadastrados").locator("tbody tr", { hasText: "cobranca_atraso" })).toBeVisible();
   });
 });
 
