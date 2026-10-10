@@ -776,7 +776,9 @@ class GastoCategoriaOut(BaseModel):
 
 class GastoNumeroOut(BaseModel):
     numero: str
-    gasto_brl: Decimal  # total do número, inclusive categorias fora da quebra (ex.: autenticação)
+    # totais do número, inclusive categorias fora da quebra (ex.: autenticação)
+    gasto_brl: Decimal
+    qtd_mensagens: int = 0  # mensagens cobradas
     por_categoria: dict[str, GastoCategoriaOut] = {}
 
 
