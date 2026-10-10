@@ -2,9 +2,9 @@
 
 Confere que o Sincronizar e o Atualizar status gravam previous_category e
 correct_category, que o aviso aparece na tabela, no Dashboard e na subida de
-fila (avisos_categoria_das_faixas), que o Ciente esconde o aviso e que uma
-troca nova da Meta volta a avisar. Executado com asserts simples sem pytest,
-encerrando com 'OK'.
+fila (avisos_categoria_das_faixas), que o Ciente esconde o aviso, que uma
+troca nova da Meta volta a avisar e que a troca de Marketing para Utilidade
+não avisa. Executado com asserts simples sem pytest, encerrando com 'OK'.
 """
 
 import os
@@ -119,7 +119,15 @@ assert r.status_code == 200, r.text
 assert r.json()["aviso_categoria"] == "A Meta vai mudar a categoria de Utilidade para Marketing", r.json()
 assert len(avisos_da_faixa()) == 1
 
-# 5. Template inexistente
+# 5. Troca de Marketing para Utilidade não avisa, nem mudada nem anunciada
+REMOTO.update(category="UTILITY", previous_category="MARKETING", correct_category=None)
+assert sincronizar()["aviso_categoria"] is None
+REMOTO.update(category="MARKETING", previous_category=None, correct_category="UTILITY")
+assert sincronizar()["aviso_categoria"] is None
+assert client.get("/templates/avisos-categoria", headers=h).json() == []
+assert avisos_da_faixa() == []
+
+# 6. Template inexistente
 assert client.post("/templates/nao-existe/categoria-ciente", headers=h).status_code == 404
 
 print("OK")
