@@ -1,9 +1,10 @@
 # FintechCRM — CRM de Cobrança via WhatsApp
 
-Portal web da TopFama para gerir cobrança via WhatsApp (API oficial da Meta) sem depender do n8n:
-o próprio backend fala diretamente com a Graph API da Meta para listar/criar templates, listar
-números, enviar mensagens e controlar agendamento/lote de disparo. Os dados vivem num Postgres
-próprio, rodando em container — não há dependência do Supabase.
+Portal web da TopFama para gerir cobrança via WhatsApp (API oficial da Meta): o próprio backend
+fala com a Graph API da Meta para listar/criar templates, listar números, enviar mensagens e
+controlar agendamento/lote de disparo, e também envia pela inbox do Chatwoot, lê o ERP SETA (só
+leitura), a planilha Google de lojas e chama o TopFamaRenegocie. Os dados vivem num Postgres
+próprio, com Redis para cache e tempo real, tudo em containers.
 
 ## Estrutura (monorepo)
 
@@ -97,7 +98,7 @@ definida) ou pelo `docker-compose.yml`/build do frontend.
 | `GOOGLE_REDIRECT_URI` / `GOOGLE_FRONTEND_URL` | backend | não | `http://localhost:8000/google/oauth/callback` / `http://localhost:5173` | A primeira precisa estar cadastrada, idêntica, nas URIs de redirecionamento autorizadas do cliente OAuth; a segunda é para onde o navegador volta depois do consentimento. |
 | `GOOGLE_SHEET_LOJAS_ID` / `GOOGLE_SHEET_LOJAS_GID` | backend | não | planilha de lojas da TopFama | ID da planilha (trecho da URL entre `/d/` e `/edit`) e `gid` da aba (`#gid=…`). Colunas lidas: FILIAL, NOME COM COD, REGIONAL, ESTADO, CLUSTER INAD e CLUSTER POPULAÇÃO. |
 | `REDIS_URL` | backend | não | `redis://redis:6379/0` | Cache e trava das consultas pesadas ao SETA (base de cobrança, efetividade, Quem pagou, card de pagamentos, resumo e orçamento do Dashboard — a tabela de títulos tem mais de 27 milhões de linhas). Redis fora do ar = essas telas respondem 503 "cache indisponível"; o backend **não** cai para consulta direta ao SETA. Ver `app/cache.py`. |
-| `CORS_ALLOWED_ORIGINS` | backend | não | `*` | Origens liberadas no CORS, separadas por vírgula (ex: `https://crm.topfama.com.br`). O padrão `*` mantém o comportamento anterior; em produção, restrinja ao(s) domínio(s) real(is) do frontend. |
+| `CORS_ALLOWED_ORIGINS` | backend | não | `*` | Origens liberadas no CORS, separadas por vírgula (ex: `https://crm.topfama.com.br`). O padrão `*` libera qualquer origem; em produção, restrinja ao(s) domínio(s) real(is) do frontend. |
 | `ALLOWED_HOSTS` | backend | não | `lojastopfama.com.br,*.lojastopfama.com.br,localhost,127.0.0.1,testserver` | Domínios aceitos no cabeçalho `Host` e, quando o navegador manda, no `Origin`; qualquer outro recebe **403 Forbidden** (`security.origem_permitida`, usada pelo middleware de `main.py` e pelo WebSocket do Dashboard). `*.dominio` libera os subdomínios. Sem `Origin` passa (webhook do Chatwoot, `/media`, healthcheck). O proxy reverso precisa repassar o `Host` do domínio (padrão do Nginx/Caddy) ou chamar o backend pelo endereço interno (`127.0.0.1:porta`); um `Host` interno de outro nome (ex. `backend:8000`) precisa entrar nesta lista. |
 | `COOKIE_SECURE` | backend | não | `true` | Atributo `Secure` do cookie httpOnly de sessão (ver "Limitações conhecidas / próximos passos" abaixo). Exige `https`; em desenvolvimento local sobre `http` puro, defina como `false`, senão o navegador descarta o cookie. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | backend | não | `720` | Validade do JWT de login (12 h). |
@@ -213,7 +214,7 @@ mesmo via npm workspaces, se preferir rodar da raiz do repo.
 O schema do banco é versionado com [Alembic](https://alembic.sqlalchemy.org/) — o backend roda
 `alembic upgrade head` automaticamente a cada subida (dentro do `lifespan` do FastAPI, em
 `app/main.py`), então `docker compose up` continua sendo o único passo necessário em
-desenvolvimento; não existe mais `Base.metadata.create_all()`.
+desenvolvimento.
 
 - **Criar uma migration nova** depois de alterar `app/models.py`:
 
@@ -233,19 +234,6 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
   alembic downgrade -1      # desfaz a última
   alembic check             # confere se o models.py bate com o schema do banco (sem diffs pendentes)
   ```
-- **Banco já existente antes desta versão** (schema criado via `create_all()`, sem histórico do
-  Alembic): a migration `3bd1d89aa92f` (baseline) cria tudo do zero e vai falhar em cima de tabelas
-  que já existem. Se o schema já bate com `app/models.py` atual, marque o banco como já estando na
-  baseline **sem rodar a migration**:
-
-  ```bash
-  alembic stamp head
-  ```
-
-  Se o schema estiver desatualizado (schema anterior à faixa de mapeamento de planilha/código do
-  cliente/telefones inválidos), aplique manualmente o `ALTER TABLE`/tabela nova equivalente ao
-  diff antes do `stamp head` — ou, em ambiente sem dados que valha a pena preservar, derrube e
-  recrie o banco e deixe o `upgrade head` automático cuidar do resto.
 
 ## Fluxo do sistema
 
@@ -317,7 +305,8 @@ desenvolvimento; não existe mais `Base.metadata.create_all()`.
 6. O ritmo e a janela de disparo são **globais** (**Configurações → Horário**,
    `global_dispatch_config`): **intervalo entre rodadas**, **quantidade de cobranças por rodada** e
    **janela de agendamento** (dias/horário, em horário de Brasília), valendo para todas as faixas e
-   envios. Na mesma aba, **"Cobrar esta base agora"** (`POST /faixas/{id}/dispatch-now`) roda a
+   envios; `dispatch_configs` guarda, por envio, se ele está ativo, a última rodada e o "rodar
+   agora". Na mesma aba, **"Cobrar esta base agora"** (`POST /faixas/{id}/dispatch-now`) roda a
    faixa imediatamente, sem esperar o agendamento. A fila da faixa é acompanhada quase em tempo
    real (atualização automática a cada poucos segundos).
 7. O **worker interno** (`app/worker.py`, APScheduler dentro do próprio processo do backend) roda o
@@ -693,20 +682,6 @@ Só é preciso refazer isto se a VPS, as chaves ou a conta do Tailscale mudarem.
   sensíveis guardados no banco (tokens de acesso da Meta e refresh token do Google OAuth) são cifrados
   simetricamente com a chave dedicada `ENCRYPTION_KEY`. A perda dessa chave impede a leitura desses segredos
   e exige cadastrar novamente os tokens da Meta e reconectar a conta Google.
-
-## Migração a partir do n8n
-
-Este sistema foi desenhado a partir do fluxo `FINTECH - FLUXO DE COBRANÇA` que rodava no n8n:
-- `templates_wpp` (Supabase) → tabelas `templates` + `template_variables` (Postgres próprio).
-- `cobranca_wpp` (fila) → tabela `cobranca_fila`.
-- Regras de normalização/validação de telefone → `app/utils/phone.py` (mesma lógica do Code node).
-- Rotação de números por faixa e reserva antes do envio → `app/worker.py` (vários envios
-  número + template por faixa, `faixa_envios`, disputando a mesma fila) e `app/dispatch_service.py`
-  (envio de cada item).
-- Schedule Trigger (cron fixo) → `global_dispatch_config` (janela de dias/horário, intervalo e
-  lote únicos para toda a operação, editáveis em Configurações → Horário, sem precisar editar
-  workflow nenhum); `dispatch_configs` guarda, por envio, se ele está ativo, a última rodada e o
-  "rodar agora".
 
 ## Para agentes de IA
 
