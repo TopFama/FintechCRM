@@ -422,6 +422,7 @@ export default function EnviosFaixa({
                   texto={renderizarPreviewForm(templateFinal)}
                   cabecalhoImagem={templateFinal.header_type === "image"}
                   imagemUrl={templateFinal.image_url}
+                  botoes={templateFinal.botoes}
                 />
                 <p className="field-hint">
                   Valores entre colchetes vêm de "Coluna da planilha" (só o nome sugerido — o valor real é o da

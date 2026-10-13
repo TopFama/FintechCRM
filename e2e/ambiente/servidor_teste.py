@@ -45,7 +45,9 @@ TEMPLATES = [
     {"id": "tpl-1", "name": "cobranca_atraso", "language": "pt_BR", "category": "UTILITY", "status": "APPROVED",
      "components": [{"type": "BODY", "text": "Olá {{1}}, seu débito de R$ {{2}} venceu em {{3}}. Código {{4}}."}]},
     {"id": "tpl-2", "name": "lembrete_vencimento", "language": "pt_BR", "category": "UTILITY", "status": "APPROVED",
-     "components": [{"type": "BODY", "text": "Oi {{1}}, sua parcela vence amanhã."}]},
+     "components": [{"type": "BODY", "text": "Oi {{1}}, sua parcela vence amanhã."},
+                    {"type": "BUTTONS", "buttons": [{"type": "URL", "text": "Ver boleto", "url": "https://topfama.teste/boleto"},
+                                                    {"type": "QUICK_REPLY", "text": "Já paguei"}]}]},
     {"id": "tpl-3", "name": "promo_reprovada", "language": "pt_BR", "category": "MARKETING", "status": "REJECTED",
      "components": [{"type": "BODY", "text": "Promoção {{1}}"}]},
 ]
