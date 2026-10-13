@@ -129,10 +129,11 @@ export default function EnviosFaixa({
     return tplWaba || templateDoForm;
   }, [templateDoForm, numeroDoForm, templatesMesmoNome]);
 
-  // Templates aprovados para a lista suspensa (únicos por nome)
-  const templatesAprovados = templates.filter(
-    (t, idx, arr) => t.status === "approved" && arr.findIndex((x) => x.name === t.name) === idx
-  );
+  // Templates aprovados para a lista suspensa (únicos por nome entre os aprovados,
+  // para um rascunho ou pendente mais novo com o mesmo nome não esconder o aprovado)
+  const templatesAprovados = templates
+    .filter((t) => t.status === "approved")
+    .filter((t, idx, arr) => arr.findIndex((x) => x.name === t.name) === idx);
 
   // Telefones disponíveis: libera telefones das WABAs que têm este template aprovado,
   // exceto números que já estão configurados nesta faixa (exceto o que está sendo editado).

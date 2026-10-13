@@ -1,6 +1,6 @@
 # Testes ponta a ponta (Playwright)
 
-Agente de QA do FintechCRM: 185 cenários (mais o login de setup, `tests/auth.setup.ts`) que usam o app pelo navegador, tela por tela, contra um
+Agente de QA do FintechCRM: 186 cenários (mais o login de setup, `tests/auth.setup.ts`) que usam o app pelo navegador, tela por tela, contra um
 ambiente **de teste** montado do zero. Nada aqui fala com produção: o SETA é um Postgres local com
 clientes fictícios, e a Meta, o Chatwoot, o Google Sheets, o câmbio e o portal TopFamaRenegocie são simulados dentro do
 próprio backend de teste. Nenhuma mensagem de WhatsApp sai de verdade.
