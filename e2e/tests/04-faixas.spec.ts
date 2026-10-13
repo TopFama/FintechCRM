@@ -1,4 +1,4 @@
-import { apiGet, campo, card, expect, permitirErrosConsole, responderDialogo, test } from "./fixtures";
+import { apiGet, apiSend, campo, card, expect, permitirErrosConsole, responderDialogo, test } from "./fixtures";
 import { prepararTemplates } from "./preparo";
 
 test.beforeAll(prepararTemplates);
@@ -118,6 +118,21 @@ test.describe("Configurações → Faixas de cobrança", { tag: "@faixas" }, () 
     await linha.locator("button.danger").click();
     expect(await msg).toContain("Remover Cobrança 01 (cobranca_atraso) desta faixa?");
     await expect(linha).toBeVisible();
+  });
+
+  test("detalhe: rascunho mais novo com o mesmo nome não esconde o template aprovado", async ({ page }) => {
+    // "Cadastrar como novo template" cria um rascunho com o mesmo nome interno
+    const rascunho = await apiSend(page, "POST", "/templates", { name: "cobranca_atraso", meta_template_name: "cobranca_atraso_v2" });
+    expect(rascunho.status).toBe(201);
+    try {
+      await page.goto("/configuracoes?aba=faixas");
+      await page.locator(".faixa-row", { hasText: "3 A 10" }).getByRole("link").click();
+      await page.getByRole("button", { name: "Adicionar número e template" }).click();
+      const templates = await campo(page.locator(".sub-card"), "Template").locator("option").allInnerTexts();
+      expect(templates.slice(1).sort()).toEqual(["cobranca_atraso", "lembrete_vencimento"]);
+    } finally {
+      expect((await apiSend(page, "DELETE", `/templates/${rascunho.corpo.id}`)).status).toBe(204);
+    }
   });
 
   test("detalhe: mensagem de erro some depois de um salvamento bem-sucedido", async ({ page }) => {
