@@ -135,6 +135,20 @@ test.describe("Configurações → Faixas de cobrança", { tag: "@faixas" }, () 
     }
   });
 
+  test("detalhe: pré-visualização mostra os botões do template na ordem", async ({ page }) => {
+    await page.goto("/configuracoes?aba=faixas");
+    await page.locator(".faixa-row", { hasText: "3 A 10" }).getByRole("link").click();
+    await page.getByRole("button", { name: "Adicionar número e template" }).click();
+    const form = page.locator(".sub-card");
+    await campo(form, "Número de envio").selectOption({ label: "Lembrete 02 (+55 11 4000-0002)" });
+    await campo(form, "Template").selectOption({ label: "lembrete_vencimento" });
+    await form.getByRole("button", { name: "Pré-visualizar" }).click();
+    await expect(form.locator(".template-preview-botao")).toHaveText(["Ver boleto", "Já paguei"]);
+    await expect(form.locator(".template-preview-botao").first()).toHaveAttribute("title", "https://topfama.teste/boleto");
+    await campo(form, "Template").selectOption({ label: "cobranca_atraso" });
+    await expect(form.locator(".template-preview-botao")).toHaveCount(0);
+  });
+
   test("detalhe: mensagem de erro some depois de um salvamento bem-sucedido", async ({ page }) => {
     await page.goto("/configuracoes?aba=faixas");
     await page.locator(".faixa-row", { hasText: "11 A 20" }).getByRole("link").click();
