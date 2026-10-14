@@ -96,8 +96,8 @@ def obter_dados_efetividade(
         campanha=campanha,
     )
     snap = cache.obter_snapshot(
-        # Prefixo novo: snapshot de quando a base era o lead (sem envio_id) não é reaproveitado
-        cache.chave("efetividade:envios", filtros),
+        # Prefixo novo: snapshot com o pagamento repetido em cada cobrança do cliente não é reaproveitado
+        cache.chave("efetividade:baixa-unica", filtros),
         lambda: _calcular_snapshot(**filtros),
         ttl_segundos=EFETIVIDADE_TTL_SEGUNDOS,
         velho=EFETIVIDADE_VELHO_SEGUNDOS,
@@ -206,7 +206,7 @@ def _calcular_snapshot(
             # Recebimento = o que entrou de fato no SETA na janela (mesma soma do
             # relatório Quem pagou e do card do Dashboard), não o valor cobrado.
             pagamentos, valores_pagos = pagamentos_seta.analisar_pos_cobranca(
-                db, sorted(pares_cobranca), dias_janela
+                db, sorted(pares_cobranca), dias_janela, baixa_so_na_ultima=True
             )
 
         # A situação no SETA só serve para marcar "renegociada" a parcela que não foi

@@ -390,7 +390,9 @@ desenvolvimento.
    dívida e não se repete na mesma faixa e vencimento: quando o cliente é cobrado de novo (outra
    planilha da mesma faixa, por exemplo), o lead já cobrado é reaproveitado e o `cobrado_em` dele
    não muda, mas o envio conta no dia em que saiu. Qtd. de envios = envios; Clientes cobrados =
-   clientes distintos. Envio cujo lead não tem parcelas registradas (ou sem lead) fica de fora e
+   clientes distintos. Cliente cobrado mais de uma vez no período entra uma vez só no Valor
+   cobrado (cada parcela com o valor da cobrança mais recente) e no Recebimento (cada pagamento
+   vai para a última cobrança antes dele, `baixa_so_na_ultima` de `pagamentos_seta`). Envio cujo lead não tem parcelas registradas (ou sem lead) fica de fora e
    aparece no aviso abaixo do card. A matriz **Base de cobrança — cluster × faixa** tem as abas
    Clientes, SPC, Valor em aberto e Valor em atraso (só parcelas vencidas, original ou com multa
    e juros conforme o filtro "Valor considerado").

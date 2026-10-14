@@ -286,13 +286,16 @@ def analisar_pos_cobranca(
     pago_de: date | None = None,
     pago_ate: date | None = None,
     buscar_novos: bool = True,
+    baixa_so_na_ultima: bool = False,
 ) -> tuple[dict[tuple[str, date], date], dict[tuple[str, date], dict]]:
     """Pra cada (codigo_cliente, data_cobranca): (1) a primeira data em que o
     cliente quitou QUALQUER título (status 'B') a partir da cobrança (e até
     data_cobranca + dias_janela, se informado) — só entra quem pagou; (2) quanto
     pagou: soma dos títulos a receber (rp 'R', valor > 0) quitados na mesma
     janela e dentro de [pago_de, pago_ate]. Lê baixas e horários uma vez só.
-    `buscar_novos=False` não vai ao SETA nem para cliente ainda não copiado."""
+    `buscar_novos=False` não vai ao SETA nem para cliente ainda não copiado.
+    `baixa_so_na_ultima=True`: cliente cobrado mais de uma vez tem cada baixa
+    contada só na cobrança mais recente antes dela, para a soma não repetir."""
 
     if not pares:
         return {}, {}
@@ -302,9 +305,16 @@ def analisar_pos_cobranca(
     envios = _horarios_envio(db, pares)
     pagou: dict[tuple[str, date], date] = {}
     valores: dict[tuple[str, date], dict] = {}
-    for codigo, data_cobranca in pares:
-        envio = envios.get((codigo, data_cobranca))
-        na_janela = [b for b in baixas.get(codigo, []) if _na_janela(b, data_cobranca, dias_janela, envio)]
+    por_par = {
+        par: [b for b in baixas.get(par[0], []) if _na_janela(b, par[1], dias_janela, envios.get(par))]
+        for par in pares
+    }
+    if baixa_so_na_ultima:
+        dono: dict[int, tuple[str, date]] = {}
+        for par in sorted(por_par, key=lambda p: p[1]):
+            dono.update((id(b), par) for b in por_par[par])
+        por_par = {par: [b for b in bs if dono[id(b)] == par] for par, bs in por_par.items()}
+    for (codigo, data_cobranca), na_janela in por_par.items():
         if not na_janela:
             continue
         pagou[(codigo, data_cobranca)] = min(b.pagamento for b in na_janela)
