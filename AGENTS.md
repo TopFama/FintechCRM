@@ -49,7 +49,8 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
   `clientes_com_envio_no_periodo`, os envios `sent` do período. A Efetividade usa a mesma base
   (envios `sent` pelo `sent_at`, `consultas_fila.limites_utc`), com as parcelas do lead que cada
   envio cobrou (`QueueItem.lead_id`, gravado em `dispatch_service._marcar_lead_cobrado`): não
-  volte a contá-la por `Lead.cobrado_em`, que não muda quando o mesmo lead é cobrado de novo.
+  volte a contá-la por `Lead.cobrado_em`, que não muda quando o mesmo lead é cobrado de novo. Cliente cobrado mais de uma vez no período não soma duas vezes: valor cobrado por parcela
+  (`relatorio_efetividade`) e recebimento por baixa (`baixa_so_na_ultima`) contam uma vez só.
 - `worker.py` — agendamento do disparo e das rotinas diárias, roda com APScheduler **dentro do
   mesmo processo** do backend (não é um serviço/container separado); o envio de cada item em si
   fica em `dispatch_service.py`.

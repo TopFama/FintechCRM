@@ -4,6 +4,7 @@ Puro e sem banco: recebe as parcelas cobradas e a situação de liquidação e
 calcula as métricas por faixa de atraso, por loja e o total consolidado.
 """
 
+from datetime import date
 from decimal import Decimal
 from typing import Sequence
 
@@ -37,16 +38,30 @@ def _calcular_metricas(itens_grupo: list[dict]) -> dict:
     # cobrado mais de uma vez no período, mesmo com o mesmo lead.
     qtd_envios = len(envios_set) if envios_set else clientes_cobrados
 
-    valor_cobrado = sum((Decimal(str(it["valor_cobrar"])) for it in itens_grupo), Decimal("0.00")).quantize(
+    # Cliente cobrado mais de uma vez no período: cada parcela dele entra uma vez
+    # só no valor cobrado, com o valor da cobrança mais recente (o envio repete a
+    # mesma dívida, não cria outra)
+    parcelas: dict[tuple, list[dict]] = {}
+    for it in itens_grupo:
+        titulo = it.get("titulo_codigo")
+        chave = (it["codigo_cliente"], titulo) if titulo else (id(it),)
+        parcelas.setdefault(chave, []).append(it)
+    ultimas = [max(grupo, key=lambda it: it.get("data_cobranca") or date.min) for grupo in parcelas.values()]
+
+    valor_cobrado = sum((Decimal(str(it["valor_cobrar"])) for it in ultimas), Decimal("0.00")).quantize(
         Decimal("0.01")
     )
+    # Já sem repetição: cada pagamento vai para uma cobrança só (efetividade_service)
     valor_pago = sum(
         (Decimal(str(it.get("valor_pago", 0))) for it in itens_grupo if it.get("pago")), Decimal("0.00")
     ).quantize(Decimal("0.01"))
 
-    parcelas_cobradas = len(itens_grupo)
-    parcelas_pagas = sum(1 for it in itens_grupo if it.get("pago"))
-    parcelas_renegociadas = sum(1 for it in itens_grupo if it.get("renegociada"))
+    pagas = [g for g in parcelas.values() if any(it.get("pago") for it in g)]
+    parcelas_cobradas = len(parcelas)
+    parcelas_pagas = len(pagas)
+    parcelas_renegociadas = sum(
+        1 for g in parcelas.values() if any(it.get("renegociada") for it in g) and not any(it.get("pago") for it in g)
+    )
 
     if clientes_cobrados > 0:
         conversao_clientes = (Decimal(clientes_pagaram) / Decimal(clientes_cobrados)).quantize(Decimal("0.0001"))

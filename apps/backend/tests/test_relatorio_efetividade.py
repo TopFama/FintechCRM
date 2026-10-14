@@ -188,6 +188,21 @@ assert vazio["total"]["conversao_clientes"] == Decimal("0.0000")
 assert vazio["total"]["recuperacao_valor"] == Decimal("0.0000")
 assert vazio["total"]["roas"] is None
 
+# Cliente cobrado duas vezes no período (mesmas parcelas, dias diferentes): o
+# valor cobrado e as parcelas contam uma vez só, com o valor da cobrança mais recente
+recobrado = [
+    {**itens_4c[0], "titulo_codigo": "T1", "data_cobranca": date(2026, 10, 1), "valor_cobrar": Decimal("90.00"),
+     "pago": False, "valor_pago": Decimal("0.00"), "envio_id": "e1"},
+    {**itens_4c[0], "titulo_codigo": "T1", "data_cobranca": date(2026, 10, 3), "envio_id": "e2"},
+    {**itens_4c[4], "titulo_codigo": "T9", "data_cobranca": date(2026, 10, 1), "envio_id": "e3"},
+    {**itens_4c[4], "titulo_codigo": "T9", "data_cobranca": date(2026, 10, 3), "envio_id": "e4"},
+]
+r_recobrado = montar_relatorio(recobrado)["total"]
+assert r_recobrado["qtd_envios"] == 4 and r_recobrado["clientes_cobrados"] == 2, r_recobrado
+assert r_recobrado["valor_cobrado"] == Decimal("300.00"), r_recobrado  # 100 (T1, última cobrança) + 200 (T9)
+assert r_recobrado["valor_pago"] == Decimal("100.00"), r_recobrado
+assert (r_recobrado["parcelas_cobradas"], r_recobrado["parcelas_pagas"], r_recobrado["parcelas_renegociadas"]) == (2, 1, 1)
+
 # ROAS = recebimento ÷ custo do WhatsApp das parcelas da linha; sem custo
 # (Meta indisponível ou custo zero) não há ROAS
 assert res["total"]["roas"] is None  # itens sem custo_whatsapp
@@ -691,6 +706,21 @@ with TestClient(app) as client:
         f"/reports/efetividade?cobrado_de={ontem.isoformat()}&cobrado_ate={hoje.isoformat()}", headers=headers
     ).json()
     assert rf_dois_dias["total"]["qtd_envios"] == 3 and rf_dois_dias["total"]["clientes_cobrados"] == 2
+    # Cobrado duas vezes no período, o cliente entra uma vez só no valor
+    # cobrado e no recebimento (o pagamento de hoje vai para a cobrança de hoje)
+    tot_dois_dias = rf_dois_dias["total"]
+    assert Decimal(str(tot_dois_dias["valor_cobrado"])) == Decimal("550.00"), tot_dois_dias
+    assert Decimal(str(tot_dois_dias["valor_pago"])) == Decimal("165.00"), tot_dois_dias
+    assert tot_dois_dias["parcelas_cobradas"] == 3 and tot_dois_dias["parcelas_pagas"] == 2, tot_dois_dias
+    linhas_cliente = client.get(
+        f"/reports/efetividade/clientes?cobrado_de={ontem.isoformat()}&cobrado_ate={hoje.isoformat()}",
+        headers=headers,
+    ).json()
+    pago_por_dia = {}
+    for l in linhas_cliente:
+        if l["codigo_cliente"] == "00100001":
+            pago_por_dia[l["data_cobranca"]] = pago_por_dia.get(l["data_cobranca"], 0) + Decimal(str(l["valor_pago"]))
+    assert pago_por_dia == {ontem.isoformat(): 0, hoje.isoformat(): Decimal("165.00")}, pago_por_dia
     # Envio que não saiu (erro) não conta
     db = database.SessionLocal()
     try:
