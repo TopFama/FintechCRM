@@ -717,6 +717,13 @@ from alembic.config import Config
 backend_dir = Path(__file__).resolve().parent.parent
 alembic_cfg = Config(str(backend_dir / "alembic.ini"))
 alembic_cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+# Os envios do cenário saem antes: o downgrade de f1a2b3c4d5e6 apaga faixas sem template
+db = database.SessionLocal()
+try:
+    db.query(models.QueueItem).delete()
+    db.commit()
+finally:
+    db.close()
 command.downgrade(alembic_cfg, "base")
 command.upgrade(alembic_cfg, "head")
 command.check(alembic_cfg)
