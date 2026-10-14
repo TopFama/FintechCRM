@@ -166,7 +166,11 @@ async def enviar_item(envio: models.FaixaEnvio, item: models.QueueItem, db: Sess
 def _marcar_lead_cobrado(db: Session, item: models.QueueItem) -> None:
     """Envio real marca o lead como cobrado — é o que alimenta "Leads enviados".
     Envio de campanha marca o lead da campanha (que fica na faixa de atraso do
-    cliente); envio da régua, o lead da régua daquela faixa."""
+    cliente); envio da régua, o lead da régua daquela faixa.
+
+    O envio também guarda qual lead cobrou (`lead_id`): o novo, se houver, senão
+    o mais recente. Recobrança na mesma faixa reaproveita o lead já cobrado,
+    que não muda de cobrado_em; é pelo envio que a Efetividade a conta."""
     faixa = db.get(models.Faixa, item.faixa_id)
     if faixa is None:
         return
@@ -176,6 +180,16 @@ def _marcar_lead_cobrado(db: Session, item: models.QueueItem) -> None:
         filtro = [models.Lead.campanha_id == campanhas_fixas.id_campanha(faixa.remarketing_segmento)]
     else:
         filtro = [models.Lead.faixa == faixa.name, models.Lead.campanha_id == ""]
+    lead_id = (
+        db.query(models.Lead.id)
+        .filter(models.Lead.codigo_cliente == item.codigo_cliente, *filtro)
+        .order_by((models.Lead.status == "novo").desc(), models.Lead.created_at.desc())
+        .limit(1)
+        .scalar()
+    )
+    if lead_id is None:
+        return
+    item.lead_id = lead_id
     db.query(models.Lead).filter(
         models.Lead.codigo_cliente == item.codigo_cliente,
         *filtro,

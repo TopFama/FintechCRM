@@ -164,6 +164,16 @@ lead.parcelas = [
     models.LeadParcela(titulo_codigo="TIT2", empresa="02", vencimento=hoje - timedelta(days=15), valor=Decimal("50"), valor_cobrar=Decimal("55")),
 ]
 db.add(lead)
+# A Efetividade conta os envios: a mensagem enviada que cobrou o lead
+faixa_envio = db.query(models.Faixa).filter_by(name="Envios proteção SETA").one_or_none()
+if faixa_envio is None:
+    faixa_envio = models.Faixa(name="Envios proteção SETA")
+    db.add(faixa_envio)
+db.flush()
+db.add(models.QueueItem(
+    faixa_id=faixa_envio.id, codigo_cliente="00100001", celular="5563999990001", celular_original="63999990001",
+    status=models.QueueStatus.sent, sent_at=lead.cobrado_em, lead_id=lead.id,
+))
 db.commit()
 db.close()
 

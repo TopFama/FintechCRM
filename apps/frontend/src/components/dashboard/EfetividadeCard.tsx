@@ -321,8 +321,8 @@ export default function EfetividadeCard({ opcoes }: { opcoes: OpcoesCobranca }) 
           )}
           {relatorio.leads_sem_parcelas > 0 && (
             <div className="field-hint" style={{ marginBottom: 8 }}>
-              {relatorio.leads_sem_parcelas} lead(s) antigo(s) não entram no relatório (foram gerados antes do registro
-              das parcelas).
+              {relatorio.leads_sem_parcelas} envio(s) do período não entram no relatório (o lead cobrado não tem as
+              parcelas registradas ou não foi encontrado).
             </div>
           )}
           {relatorio.total.clientes_cobrados === 0 ? (

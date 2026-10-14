@@ -383,7 +383,15 @@ desenvolvimento.
    dia e número, então o custo de cada dia é dividido pelas mensagens enviadas pela fila no dia
    (`custo_whatsapp.custo_por_envio`, sobre `consultas_fila.envios_por_dia`) e cada faixa, lead ou loja
    leva o custo dos seus envios; o gasto da Meta fica 10 min no Redis. Sem custo da Meta o ROAS
-   mostra "—". A matriz **Base de cobrança — cluster × faixa** tem as abas
+   mostra "—".
+   A **Efetividade** parte da mesma base dos cards: as mensagens enviadas (`sent`) com data de
+   envio no período, cada uma com as parcelas do lead que ela cobrou (`cobranca_fila.lead_id`,
+   gravado no envio; migration `c4e8a2f6b0d1` preencheu os envios antigos). O lead é o retrato da
+   dívida e não se repete na mesma faixa e vencimento: quando o cliente é cobrado de novo (outra
+   planilha da mesma faixa, por exemplo), o lead já cobrado é reaproveitado e o `cobrado_em` dele
+   não muda, mas o envio conta no dia em que saiu. Qtd. de envios = envios; Clientes cobrados =
+   clientes distintos. Envio cujo lead não tem parcelas registradas (ou sem lead) fica de fora e
+   aparece no aviso abaixo do card. A matriz **Base de cobrança — cluster × faixa** tem as abas
    Clientes, SPC, Valor em aberto e Valor em atraso (só parcelas vencidas, original ou com multa
    e juros conforme o filtro "Valor considerado").
    As tabelas do Dashboard (Por faixa, Efetividade, gasto por número e a matriz) começam com no

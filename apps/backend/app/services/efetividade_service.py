@@ -19,11 +19,12 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException, status
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from .. import cache, campanhas_fixas, google_client, lojas as lojas_base, models, seta_client
+from .. import cache, campanhas_fixas, consultas_fila, google_client, lojas as lojas_base, models, seta_client
 from ..database import SessionLocal
-from ..timezone import dia_br, hoje_br, inicio_do_dia_utc
+from ..timezone import dia_br, hoje_br
 from . import custo_whatsapp, pagamentos_seta
 from ..regras_db import carregar_regras
 from ..relatorio_efetividade import montar_relatorio
@@ -95,7 +96,8 @@ def obter_dados_efetividade(
         campanha=campanha,
     )
     snap = cache.obter_snapshot(
-        cache.chave("efetividade", filtros),
+        # Prefixo novo: snapshot de quando a base era o lead (sem envio_id) não é reaproveitado
+        cache.chave("efetividade:envios", filtros),
         lambda: _calcular_snapshot(**filtros),
         ttl_segundos=EFETIVIDADE_TTL_SEGUNDOS,
         velho=EFETIVIDADE_VELHO_SEGUNDOS,
@@ -138,55 +140,55 @@ def _calcular_snapshot(
 ) -> dict:
     """Parcelas cobradas do período, já com pago/renegociada/valor pago, de todas
     as lojas. Pode rodar em segundo plano depois que a requisição acabou, por
-    isso abre a própria sessão de banco."""
+    isso abre a própria sessão de banco.
+
+    A base são os envios (mensagens `sent` com data de envio no período, a mesma
+    dos cards do Dashboard), cada um com as parcelas do lead que ele cobrou: o
+    lead cobrado de novo noutro dia conta de novo, no dia do envio."""
+
+    ini, fim = consultas_fila.limites_utc(cobrado_de, cobrado_ate)
+
+    def _filtrar(query):
+        query = query.filter(
+            models.QueueItem.status == models.QueueStatus.sent,
+            consultas_fila.condicao_periodo(models.QueueItem.sent_at, ini, fim),
+        )
+        if faixa:
+            query = query.filter(models.Lead.faixa.in_(faixa))
+        if cluster:
+            query = query.filter(models.Lead.cluster.in_(cluster))
+        return filtrar_campanha(query, campanha)
 
     with SessionLocal() as db:
-        leads_query = db.query(models.Lead).filter(models.Lead.status == "cobrado")
-        if cobrado_de:
-            leads_query = leads_query.filter(
-                models.Lead.cobrado_em >= inicio_do_dia_utc(cobrado_de)
-            )
-        if cobrado_ate:
-            leads_query = leads_query.filter(
-                models.Lead.cobrado_em < inicio_do_dia_utc(cobrado_ate + timedelta(days=1))
-            )
-        if faixa:
-            leads_query = leads_query.filter(models.Lead.faixa.in_(faixa))
-        if cluster:
-            leads_query = leads_query.filter(models.Lead.cluster.in_(cluster))
-        leads_query = filtrar_campanha(leads_query, campanha)
+        # Envio que não entra: lead sem parcelas registradas (antigo) ou envio sem
+        # lead (apagado, ou nenhum lead do cliente naquela faixa/campanha)
+        leads_sem_parcelas = (
+            _filtrar(db.query(func.count(models.QueueItem.id)).outerjoin(
+                models.Lead, models.QueueItem.lead_id == models.Lead.id
+            ))
+            .filter(or_(models.Lead.id.is_(None), ~models.Lead.parcelas.any()))
+            .scalar()
+            or 0
+        )
 
-        leads_sem_parcelas = leads_query.filter(~models.Lead.parcelas.any()).count()
-
-        parc_query = (
+        parc_query = _filtrar(
             db.query(
                 models.LeadParcela.titulo_codigo,
                 models.LeadParcela.empresa,
                 models.LeadParcela.valor,
                 models.LeadParcela.valor_cobrar,
+                models.QueueItem.id.label("envio_id"),
                 models.Lead.id.label("lead_id"),
                 models.Lead.codigo_cliente,
                 models.Lead.nome,
                 models.Lead.faixa,
-                models.Lead.cobrado_em,
+                models.QueueItem.sent_at.label("cobrado_em"),
                 models.Lead.campanha_id,
             )
-            .join(models.Lead, models.LeadParcela.lead_id == models.Lead.id)
-            .filter(models.Lead.status == "cobrado")
+            .select_from(models.QueueItem)
+            .join(models.Lead, models.QueueItem.lead_id == models.Lead.id)
+            .join(models.LeadParcela, models.LeadParcela.lead_id == models.Lead.id)
         )
-        if cobrado_de:
-            parc_query = parc_query.filter(
-                models.Lead.cobrado_em >= inicio_do_dia_utc(cobrado_de)
-            )
-        if cobrado_ate:
-            parc_query = parc_query.filter(
-                models.Lead.cobrado_em < inicio_do_dia_utc(cobrado_ate + timedelta(days=1))
-            )
-        if faixa:
-            parc_query = parc_query.filter(models.Lead.faixa.in_(faixa))
-        if cluster:
-            parc_query = parc_query.filter(models.Lead.cluster.in_(cluster))
-        parc_query = filtrar_campanha(parc_query, campanha)
         # Sem filtro de loja: o valor pago é do cliente (todas as lojas) e é
         # repartido entre todas as parcelas da cobrança; filtrar antes jogava o
         # pagamento inteiro nas parcelas da loja filtrada (o recorte é de quem usa o snapshot)
@@ -253,6 +255,7 @@ def _calcular_snapshot(
 
             itens.append(
                 {
+                    "envio_id": p.envio_id,
                     "lead_id": p.lead_id,
                     "codigo_cliente": p.codigo_cliente,
                     "nome": p.nome,
@@ -282,18 +285,18 @@ def _repartir(total: Decimal, pesos: list) -> list[Decimal]:
 
 
 def _aplicar_custo_whatsapp(db: Session, itens: list[dict]) -> None:
-    """Custo do WhatsApp de cada parcela (base do ROAS): cada lead é um envio e
-    leva o custo por envio do dia da cobrança (custo_whatsapp.custo_por_envio),
-    repartido entre as parcelas dele pelo mesmo peso do valor pago. Fica fora do
+    """Custo do WhatsApp de cada parcela (base do ROAS): cada envio leva o custo
+    por envio do dia da cobrança (custo_whatsapp.custo_por_envio), repartido
+    entre as parcelas dele pelo mesmo peso do valor pago. Fica fora do
     snapshot: a Meta fora do ar não estraga o cache do SETA. Sem custo da Meta,
     `custo_whatsapp` = None (ROAS "—")."""
 
     dias = [i["data_cobranca"] for i in itens if i["data_cobranca"]]
     por_envio = custo_whatsapp.custo_por_envio(db, min(dias), max(dias))[0] if dias else {}
-    por_lead: dict[str, list[dict]] = {}
+    por_envio_id: dict[str, list[dict]] = {}
     for i in itens:
-        por_lead.setdefault(i["lead_id"], []).append(i)
-    for parcelas in por_lead.values():
+        por_envio_id.setdefault(i["envio_id"], []).append(i)
+    for parcelas in por_envio_id.values():
         if por_envio is None:
             for i in parcelas:
                 i["custo_whatsapp"] = None

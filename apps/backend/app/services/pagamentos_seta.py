@@ -88,10 +88,19 @@ def _cobrancas(db: Session, codigos: set[str] | None = None) -> dict[str, tuple[
     else:
         lista = sorted(codigos)
         lotes = [lista[i : i + LOTE] for i in range(0, len(lista), LOTE)]
+    # Recobrança com o mesmo lead não muda o cobrado_em: a última vem dos envios
+    envios = db.query(models.QueueItem.codigo_cliente, func.max(models.QueueItem.sent_at)).filter(
+        models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.lead_id.isnot(None)
+    )
     for lote in lotes:
         q = query if lote is None else query.filter(models.Lead.codigo_cliente.in_(lote))
         for codigo, primeira, ultima in q.group_by(models.Lead.codigo_cliente):
             resultado[codigo] = (dia_br(primeira), dia_br(ultima))
+        e = envios if lote is None else envios.filter(models.QueueItem.codigo_cliente.in_(lote))
+        for codigo, ultimo_envio in e.group_by(models.QueueItem.codigo_cliente):
+            if codigo in resultado and ultimo_envio is not None:
+                primeira, ultima = resultado[codigo]
+                resultado[codigo] = (primeira, max(ultima, dia_br(ultimo_envio)))
     return resultado
 
 

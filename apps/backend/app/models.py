@@ -336,6 +336,12 @@ class QueueItem(Base):
     # fila é da faixa própria delas): é por ela que o Dashboard agrupa "Por
     # faixa". Nulo nos itens da régua (a própria faixa já é a de atraso).
     faixa_atraso: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Lead (retrato da dívida) que este envio cobrou, gravado quando a mensagem
+    # sai. O mesmo lead pode ser cobrado em vários envios (recobrança na mesma
+    # faixa): é por aqui que a Efetividade conta cada envio no dia em que saiu.
+    lead_id: Mapped[str | None] = mapped_column(
+        ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     # Dashboard e relatórios filtram a fila pelo período (envio ou entrada)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)

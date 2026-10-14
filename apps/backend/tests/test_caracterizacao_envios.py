@@ -423,6 +423,14 @@ assert it.variables_json == {"nome": "Joao", "valor": "120,00"}, it.variables_js
 assert it.valor == "120.00"
 db.refresh(antigo)
 assert antigo.valor_cobrar == Decimal("300.00") and antigo.parcelas == []  # o lead não muda
+# Recobrança com o lead já cobrado: o envio guarda o lead que cobrou (é por ele
+# que a Efetividade conta o envio) e o lead continua como estava
+it.status, it.sent_at = models.QueueStatus.sent, datetime.utcnow()
+dispatch_service._marcar_lead_cobrado(db, it)
+db.commit()
+assert it.lead_id == antigo.id
+db.refresh(antigo)
+assert antigo.status == "cobrado" and antigo.cobrado_em is None
 
 # =============================================================================
 print("=== 10. Upload de planilha na faixa ===")
