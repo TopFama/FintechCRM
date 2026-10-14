@@ -28,13 +28,13 @@ def _calcular_metricas(itens_grupo: list[dict]) -> dict:
 
     clientes_cobrados_set = {it["codigo_cliente"] for it in itens_grupo}
     clientes_pagaram_set = {it["codigo_cliente"] for it in itens_grupo if it.get("pago")}
-    envios_set = {it["lead_id"] for it in itens_grupo if it.get("lead_id")}
+    envios_set = {it["envio_id"] for it in itens_grupo if it.get("envio_id")}
 
     clientes_cobrados = len(clientes_cobrados_set)
     clientes_pagaram = len(clientes_pagaram_set)
-    # QTD DE ENVIOS: mensagens de WhatsApp mandadas (1 por lead marcado
-    # "cobrado") — pode ser maior que clientes_cobrados se o mesmo cliente
-    # tiver sido cobrado mais de uma vez no período (leads diferentes).
+    # QTD DE ENVIOS: mensagens de WhatsApp mandadas (cada envio da fila) —
+    # pode ser maior que clientes_cobrados se o mesmo cliente tiver sido
+    # cobrado mais de uma vez no período, mesmo com o mesmo lead.
     qtd_envios = len(envios_set) if envios_set else clientes_cobrados
 
     valor_cobrado = sum((Decimal(str(it["valor_cobrar"])) for it in itens_grupo), Decimal("0.00")).quantize(

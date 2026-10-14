@@ -290,6 +290,7 @@ with TestClient(app) as client:
     # Limpa dados anteriores na base de teste
     db: Session = database.SessionLocal()
     try:
+        db.query(models.QueueItem).delete()
         db.query(models.LeadParcela).delete()
         db.query(models.Lead).delete()
         db.commit()
@@ -445,6 +446,7 @@ with TestClient(app) as client:
         )
         db.add(lead_antigo)
         db.commit()
+        lead_antigo_id = lead_antigo.id
     finally:
         db.close()
 
@@ -456,6 +458,31 @@ with TestClient(app) as client:
     )
     assert marcar_res.status_code == 200, marcar_res.text
     assert marcar_res.json()["atualizados"] == 2
+
+    # A Efetividade parte dos envios (mensagens enviadas no período, a mesma
+    # base dos cards do Dashboard), cada um ligado ao lead que cobrou
+    def enviar(lead_id: str, codigo: str, quando: datetime) -> None:
+        db = database.SessionLocal()
+        try:
+            faixa_envio = db.query(models.Faixa).filter_by(name="Envios efetividade").one_or_none()
+            if faixa_envio is None:
+                faixa_envio = models.Faixa(name="Envios efetividade")
+                db.add(faixa_envio)
+                db.flush()
+            db.add(
+                models.QueueItem(
+                    faixa_id=faixa_envio.id, codigo_cliente=codigo, celular="5563999990000",
+                    celular_original="63999990000", status=models.QueueStatus.sent, sent_at=quando, lead_id=lead_id,
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+    agora_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    enviar(lead1_id, "00100001", agora_utc)
+    enviar(lead2_id, "00100002", agora_utc)
+    enviar(lead_antigo_id, "00109999", agora_utc)  # lead sem parcelas: não entra
 
     # 3. Simula situação dos títulos no SETA
     hoje = hoje_br()
@@ -488,13 +515,17 @@ with TestClient(app) as client:
 
     seta_client.baixas_de_clientes = mock_baixas_de_clientes
 
+    def tot_envios(rel: dict) -> int:
+        return rel["total"]["qtd_envios"]
+
     # 4. Consulta /reports/efetividade
     rep_res = client.get("/reports/efetividade", headers=headers)
     assert rep_res.status_code == 200, rep_res.text
     rep_data = rep_res.json()
 
-    # Valida leads_sem_parcelas
+    # Envio cujo lead não tem parcelas fica de fora e é contado à parte
     assert rep_data["leads_sem_parcelas"] == 1
+    assert tot_envios(rep_data) == 2
 
     # Valida números do total consolidado
     tot_api = rep_data["total"]
@@ -509,13 +540,13 @@ with TestClient(app) as client:
     assert Decimal(str(tot_api["recuperacao_valor"])) == (Decimal("165") / Decimal("550")).quantize(Decimal("0.0001"))
     assert tot_api["roas"] is None  # sem WABA cadastrada não há custo da Meta
 
-    # ROAS: cada lead é um envio com o custo por envio do dia da cobrança
+    # ROAS: cada envio leva o custo por envio do dia da cobrança
     from app.services import efetividade_service
     from unittest.mock import patch
 
     with patch.object(efetividade_service.custo_whatsapp, "custo_por_envio", return_value=({hoje: Decimal("5.50")}, None)):
         rep_roas = client.get("/reports/efetividade", headers=headers).json()
-    assert Decimal(str(rep_roas["total"]["roas"])) == Decimal("15.00"), rep_roas["total"]  # 165 ÷ (2 leads × 5,50)
+    assert Decimal(str(rep_roas["total"]["roas"])) == Decimal("15.00"), rep_roas["total"]  # 165 ÷ (2 envios × 5,50)
     roas_faixa = {l["faixa"]: l["roas"] for l in rep_roas["por_faixa"]}
     assert all(v is not None for v in roas_faixa.values()), roas_faixa
 
@@ -646,6 +677,35 @@ with TestClient(app) as client:
     assert total_regras == 3  # CLUSTER TOP, CLUSTER UTI e CLUSTER UTI +
 
 
+    # 9. Recobrança com o mesmo lead (ex.: planilha da mesma faixa em outro dia):
+    # o lead já cobrado não muda de cobrado_em, mas o envio conta no dia em que
+    # saiu, como no card de Cobranças do Dashboard
+    ontem = hoje - timedelta(days=1)
+    enviar(lead1_id, "00100001", datetime.combine(ontem, datetime.min.time()) + timedelta(hours=15))
+    rf_ontem = client.get(
+        f"/reports/efetividade?cobrado_de={ontem.isoformat()}&cobrado_ate={ontem.isoformat()}", headers=headers
+    ).json()
+    assert rf_ontem["total"]["qtd_envios"] == 1 and rf_ontem["total"]["clientes_cobrados"] == 1, rf_ontem["total"]
+    assert Decimal(str(rf_ontem["total"]["valor_cobrado"])) == Decimal("330.00")
+    rf_dois_dias = client.get(
+        f"/reports/efetividade?cobrado_de={ontem.isoformat()}&cobrado_ate={hoje.isoformat()}", headers=headers
+    ).json()
+    assert rf_dois_dias["total"]["qtd_envios"] == 3 and rf_dois_dias["total"]["clientes_cobrados"] == 2
+    # Envio que não saiu (erro) não conta
+    db = database.SessionLocal()
+    try:
+        recobranca = db.query(models.QueueItem).filter_by(codigo_cliente="00100001").order_by(models.QueueItem.sent_at).first()
+        recobranca.status = models.QueueStatus.error
+        db.commit()
+    finally:
+        db.close()
+    rf_ontem_erro = client.get(
+        f"/reports/efetividade?cobrado_de={ontem.isoformat()}&cobrado_ate={ontem.isoformat()}&dias_janela=1",
+        headers=headers,
+    ).json()
+    assert rf_ontem_erro["total"]["qtd_envios"] == 0, rf_ontem_erro["total"]
+
+
 # ============================================================================
 # 4. Ciclo de migration Alembic e verificação de schema
 # ============================================================================
@@ -657,6 +717,13 @@ from alembic.config import Config
 backend_dir = Path(__file__).resolve().parent.parent
 alembic_cfg = Config(str(backend_dir / "alembic.ini"))
 alembic_cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+# Os envios do cenário saem antes: o downgrade de f1a2b3c4d5e6 apaga faixas sem template
+db = database.SessionLocal()
+try:
+    db.query(models.QueueItem).delete()
+    db.commit()
+finally:
+    db.close()
 command.downgrade(alembic_cfg, "base")
 command.upgrade(alembic_cfg, "head")
 command.check(alembic_cfg)
