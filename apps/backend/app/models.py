@@ -398,6 +398,8 @@ class InvalidPhoneRecord(Base):
     celular_original: Mapped[str] = mapped_column(String)
     celular_normalizado: Mapped[str | None] = mapped_column(String, nullable=True)
     motivo: Mapped[str] = mapped_column(String)
+    # Mesmo formato e mesma origem de QueueItem.lojas (",01,07,")
+    lojas: Mapped[str] = mapped_column(String, default=",", server_default=",")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     faixa: Mapped[Faixa] = relationship()

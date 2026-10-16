@@ -452,6 +452,7 @@ item(faixa_b, "00000040", "5511911110040")  # pendente em outra faixa
 db.add(models.ClienteBloqueado(tipo="seta", valor="00000041", motivo="t"))
 db.commit()
 lead("00000043", lojas=",05,")  # tem Lead na faixa, com loja
+lead("00000042", faixa="outra", lojas=",08,")  # telefone inválido também leva a loja
 conteudo = planilha([
     ["40", "Bia Souza", "11122233344", "11911110040", "10,00"],  # já na fila hoje
     ["41", "Caio Lima", "11122233345", "11911110041", "20,00"],  # blacklist
@@ -489,7 +490,7 @@ assert itens["00000043"].lojas == ",05,"
 assert itens["00000044"].lojas == ","
 assert itens["00000044"].status == models.QueueStatus.error
 assert itens["00000044"].error_message.startswith("Faltando coluna(s)")
-assert db.query(models.InvalidPhoneRecord).filter_by(codigo_cliente="00000042").count() == 1
+assert db.query(models.InvalidPhoneRecord).filter_by(codigo_cliente="00000042").one().lojas == ",08,"
 
 # Valor zerado não entra: volta para o usuário escolher um valor do sistema
 # ou descartar. Texto com número vira número ("1 500,00", "10,00 reais").

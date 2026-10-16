@@ -954,6 +954,7 @@ export interface InvalidPhoneRecord {
   celular_original: string;
   celular_normalizado: string | null;
   motivo: string;
+  lojas: string[];
   created_at: string;
 }
 

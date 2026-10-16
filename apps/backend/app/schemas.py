@@ -591,7 +591,14 @@ class InvalidPhoneOut(BaseModel):
     celular_original: str
     celular_normalizado: str | None
     motivo: str
+    lojas: list[str] = []
     created_at: datetime
+
+    @field_validator("lojas", mode="before")
+    @classmethod
+    def _dividir(cls, valor):
+        # no banco fica como ",01,07," (ver models.QueueItem.lojas)
+        return [v for v in valor.split(",") if v] if isinstance(valor, str) else valor
 
 
 class InvalidPhonePage(BaseModel):

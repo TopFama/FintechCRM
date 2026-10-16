@@ -260,11 +260,14 @@ def _build_efetividade_xlsx(relatorio: dict) -> bytes:
 
 
 
-InvalidPhoneSortColumn = Literal["codigo_cliente", "cpf", "celular_original", "celular_normalizado", "motivo", "created_at"]
+InvalidPhoneSortColumn = Literal[
+    "codigo_cliente", "cpf", "loja", "celular_original", "celular_normalizado", "motivo", "created_at"
+]
 
 _INVALID_PHONE_SORT_COLUNAS = {
     "codigo_cliente": models.InvalidPhoneRecord.codigo_cliente,
     "cpf": models.InvalidPhoneRecord.cpf,
+    "loja": models.InvalidPhoneRecord.lojas,
     "celular_original": models.InvalidPhoneRecord.celular_original,
     "celular_normalizado": models.InvalidPhoneRecord.celular_normalizado,
     "motivo": models.InvalidPhoneRecord.motivo,
@@ -332,11 +335,12 @@ def export_invalid_phones(
         .options(selectinload(models.InvalidPhoneRecord.faixa))
         .all()
     )
-    headers = ["Código do cliente", "CPF", "Faixa", "Telefone informado", "Telefone normalizado", "Motivo", "Data/hora"]
+    headers = ["Código do cliente", "CPF", "Lojas", "Faixa", "Telefone informado", "Telefone normalizado", "Motivo", "Data/hora"]
     rows = [
         [
             r.codigo_cliente,
             r.cpf,
+            (r.lojas or "").strip(","),
             r.faixa.name if r.faixa else "",
             formula_safe(r.celular_original),
             r.celular_normalizado or "",

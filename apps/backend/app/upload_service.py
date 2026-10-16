@@ -351,9 +351,9 @@ def importar_planilha(
 
     faixa.upload_field_mapping = field_mapping.model_dump()
 
-    # Loja do item vem do Lead do cliente (qualquer faixa, o mais recente com
+    # Loja do item (e do telefone inválido) vem do Lead do cliente (qualquer faixa, o mais recente com
     # loja), numa consulta só. Sem Lead fica "," e pausa por loja não o pega.
-    novos = [o for o in db.new if isinstance(o, models.QueueItem)]
+    novos = [o for o in db.new if isinstance(o, (models.QueueItem, models.InvalidPhoneRecord))]
     if novos:
         lojas_por_codigo: dict[str, str] = {}
         for codigo, lojas in (

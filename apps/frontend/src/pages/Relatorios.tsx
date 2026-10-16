@@ -45,7 +45,7 @@ type ColunaFila =
   | "entrou_em"
   | "quando"
   | "mensagem";
-type ColunaInvalido = "codigo_cliente" | "cpf" | "celular_original" | "celular_normalizado" | "motivo" | "created_at";
+type ColunaInvalido = "codigo_cliente" | "cpf" | "loja" | "celular_original" | "celular_normalizado" | "motivo" | "created_at";
 type ColunaPagamento =
   | "codigo_cliente"
   | "nome"
@@ -585,6 +585,7 @@ export default function Relatorios() {
                       [
                         ["codigo_cliente", "Código do cliente"],
                         ["cpf", "CPF"],
+                        ["loja", "Loja"],
                         ["celular_original", "Telefone informado"],
                         ["celular_normalizado", "Normalizado"],
                         ["motivo", "Motivo"],
@@ -607,6 +608,7 @@ export default function Relatorios() {
                     <tr key={r.id}>
                       <td className="cell-strong">{r.codigo_cliente}</td>
                       <td>{formatCpf(r.cpf)}</td>
+                      <td className="text-muted">{r.lojas.length ? r.lojas.join(", ") : "—"}</td>
                       <td>{r.celular_original}</td>
                       <td className="text-muted">{r.celular_normalizado || "—"}</td>
                       <td className="text-muted">{r.motivo}</td>

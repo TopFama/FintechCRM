@@ -150,7 +150,7 @@ def reprocessar_erros_chatwoot(db: Session, limite: int = 200) -> int:
             db.add(models.InvalidPhoneRecord(
                 id=registro_id, faixa_id=item.faixa_id, codigo_cliente=item.codigo_cliente,
                 cpf=item.cpf or "", celular_original=item.celular_original or item.celular,
-                celular_normalizado=anterior, motivo=mensagem_telefone_invalido(detalhe),
+                celular_normalizado=anterior, motivo=mensagem_telefone_invalido(detalhe), lojas=item.lojas,
             ))
         db.flush()
     db.commit()

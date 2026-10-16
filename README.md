@@ -332,7 +332,8 @@ desenvolvimento.
    Havendo alternativa, volta à fila sem log de erro; só entra em **Telefones inválidos**
    quando as opções se esgotam. Retornos são recebidos pelo webhook e consultados pelo ID
    exato da mensagem. Erros 131026 já gravados no CRM são reprocessados após a atualização.
-   O relatório e o Excel de telefones inválidos incluem CPF após o código do cliente.
+   O relatório e o Excel de telefones inválidos incluem CPF após o código do cliente e, em seguida,
+   a loja do cliente (mesma origem da loja do item da fila).
 8. **Dashboard** — pendentes (e quantos estão pausados), enviados, erros, telefones inválidos,
    "Pagaram em até N dias" (via SETA; a janela vem de Configurações → Indicadores, padrão 7,
    e "Qualquer data após a cobrança" vira "Pagaram após a cobrança") e por faixa. Cada card abre o

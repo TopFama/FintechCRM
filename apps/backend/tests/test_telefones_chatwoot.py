@@ -40,7 +40,7 @@ def item(codigo, **campos):
 
 cadastro = {"telefone2": "11999990001", "telefone1": "11999990001",
             "telefone3": "1133334444", "telefone4": "11999990002"}
-q = item("00000001", created_at=datetime.utcnow() - timedelta(days=3))
+q = item("00000001", created_at=datetime.utcnow() - timedelta(days=3), lojas=",07,")
 identificador = q.id
 with patch.object(fluxo.seta_client, "telefones_por_codigo", return_value={q.codigo_cliente: cadastro}):
     assert fluxo.reprocessar_erros_chatwoot(db) == 1
@@ -55,7 +55,7 @@ with patch.object(fluxo.seta_client, "telefones_por_codigo", return_value={q.cod
     db.commit()
     fluxo.reprocessar_erros_chatwoot(db)
     assert q.status == models.QueueStatus.invalid_phone
-    assert db.query(models.InvalidPhoneRecord).count() == 1
+    assert db.query(models.InvalidPhoneRecord).one().lojas == ",07,"
     assert fluxo.reprocessar_erros_chatwoot(db) == 0
     assert db.query(models.QueueItem).count() == 1
 
@@ -92,11 +92,12 @@ assert res["id"] == 10 and res["status"] == "delivered"
 
 pagina = list_invalid_phones(faixa_id=None, campanha=None, de=None, ate=None,
                             limit=50, offset=0, sort_by="cpf", sort_dir="asc", db=db, _user=None)
-assert pagina.itens[0].cpf == "123.456.789-01"
+assert pagina.itens[0].cpf == "123.456.789-01" and pagina.itens[0].lojas == ["07"]
 import io
 import openpyxl
 arquivo = export_invalid_phones(faixa_id=None, campanha=None, de=None, ate=None, db=db, _user=None)
 ws = openpyxl.load_workbook(io.BytesIO(arquivo.body)).active
 assert ws.cell(1, 2).value == "CPF"
+assert ws.cell(1, 3).value == "Lojas" and ws.cell(2, 3).value == "07"
 db.close()
 print("OK")
