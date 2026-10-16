@@ -27,6 +27,17 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
     const { nome, linhas } = await baixar(page, () => page.getByRole("button", { name: /Baixar Excel/ }).click());
     expect(nome).toMatch(/\.xlsx$/);
     expect(linhas.length).toBeGreaterThan(1);
+    expect(linhas[0]).toContain("Lojas");
+  });
+
+  test("telefones inválidos: coluna Loja ordena no servidor", async ({ page }) => {
+    await aba(page, "Telefones inválidos").click();
+    await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
+    const pedido = page.waitForRequest((r) => r.url().includes("/relatorios/telefones-invalidos?") && r.url().includes("sort_by=loja"));
+    await tabela(page).getByRole("columnheader", { name: /^Loja/ }).click();
+    await pedido;
+    await expect(page.getByText("Carregando...")).toHaveCount(0);
+    await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
   });
 
   test("envios realizados: lista o que o worker enviou; ordenar por nome", async ({ page }) => {
