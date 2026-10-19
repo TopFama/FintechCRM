@@ -228,11 +228,11 @@ def put_parametros(
     }
     enviados = body.model_dump(include=body.model_fields_set)
     for campo, valor in enviados.items():
-        minimo, maximo, mensagem = limites[campo]
         if campo == "mesma_carencia_multa_juros":
             if valor is None:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe se a carência é a mesma para multa e juros")
             continue
+        minimo, maximo, mensagem = limites[campo]
         # só a janela aceita nulo (= qualquer data após a cobrança)
         if valor is None and campo == "dias_janela_dashboard":
             continue
