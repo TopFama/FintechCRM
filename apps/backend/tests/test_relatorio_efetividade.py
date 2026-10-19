@@ -236,10 +236,11 @@ def _simular_sql_base(titulos_abertos: list[dict], hoje: date, juros) -> tuple[i
     soma = Decimal("0.00")
     for t in cobradas:
         dias = (hoje - t["vencimento"]).days
+        soma += t["valor"]
         if dias > juros.dias_min:
-            soma += t["valor"] + t["valor"] * juros.juros_dia * dias + t["valor"] * juros.multa
-        else:
-            soma += t["valor"]
+            soma += t["valor"] * juros.juros_dia * dias
+        if dias > juros.dias_min_multa:
+            soma += t["valor"] * juros.multa
     return qtd, soma.quantize(Decimal("0.01"))
 
 
@@ -257,10 +258,12 @@ def _simular_sql_parcelas(titulos_abertos: list[dict], hoje: date, juros) -> lis
     for t in validos:
         if t["vencimento"] <= limite:
             dias = (hoje - t["vencimento"]).days
+            val_cob = t["valor"]
             if dias > juros.dias_min:
-                val_cob = (t["valor"] + t["valor"] * juros.juros_dia * dias + t["valor"] * juros.multa).quantize(Decimal("0.01"))
-            else:
-                val_cob = t["valor"].quantize(Decimal("0.01"))
+                val_cob += t["valor"] * juros.juros_dia * dias
+            if dias > juros.dias_min_multa:
+                val_cob += t["valor"] * juros.multa
+            val_cob = val_cob.quantize(Decimal("0.01"))
             resultado.append({**t, "valor_cobrar": val_cob})
     return resultado
 

@@ -1218,6 +1218,8 @@ class ParametrosCobrancaIn(BaseModel):
     juros_mes_percentual: Decimal | None = None
     multa_percentual: Decimal | None = None
     dias_min_juros: int | None = None
+    dias_min_multa: int | None = None
+    mesma_carencia_multa_juros: bool | None = None
     dias_janela_dashboard: int | None = None
 
 
@@ -1252,6 +1254,8 @@ class ParametrosCobrancaOut(BaseModel):
     juros_mes_percentual: Decimal
     multa_percentual: Decimal
     dias_min_juros: int
+    dias_min_multa: int
+    mesma_carencia_multa_juros: bool
     dias_janela_dashboard: int | None
 
 

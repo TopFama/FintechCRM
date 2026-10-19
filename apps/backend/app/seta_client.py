@@ -281,9 +281,11 @@ abertos AS (
            -- parcelas guardadas no lead (buscar_parcelas_cobranca)
            sum(
                CASE WHEN vencimento <= GREATEST(current_date, vencimento_min) THEN
-                   round(CASE WHEN current_date - vencimento > :dias_min_juros
-                              THEN valor + valor * :juros_dia * (current_date - vencimento) + valor * :multa
-                              ELSE valor END, 2)
+                   round(valor
+                         + CASE WHEN current_date - vencimento > :dias_min_juros
+                                THEN valor * :juros_dia * (current_date - vencimento) ELSE 0 END
+                         + CASE WHEN current_date - vencimento > :dias_min_multa
+                                THEN valor * :multa ELSE 0 END, 2)
                END
            )                              AS valor_cobrar,
            -- só as já vencidas (antes de hoje): filtro "valor em atraso" da
@@ -291,9 +293,11 @@ abertos AS (
            COALESCE(sum(valor) FILTER (WHERE vencimento < current_date), 0)
                                           AS valor_atraso_original,
            COALESCE(sum(
-               round(CASE WHEN current_date - vencimento > :dias_min_juros
-                          THEN valor + valor * :juros_dia * (current_date - vencimento) + valor * :multa
-                          ELSE valor END, 2)
+               round(valor
+                     + CASE WHEN current_date - vencimento > :dias_min_juros
+                            THEN valor * :juros_dia * (current_date - vencimento) ELSE 0 END
+                     + CASE WHEN current_date - vencimento > :dias_min_multa
+                            THEN valor * :multa ELSE 0 END, 2)
            ) FILTER (WHERE vencimento < current_date), 0)
                                           AS valor_atraso_juros
       FROM parcelas
@@ -445,6 +449,7 @@ def buscar_base_cobranca(
         "descricao_seguro": DESCRICAO_SEGURO,
         "valor_minimo_atraso": VALOR_MINIMO_ATRASO,
         "dias_min_juros": juros.dias_min,
+        "dias_min_multa": juros.dias_min_multa,
         "juros_dia": juros.juros_dia,
         "multa": juros.multa,
     }
@@ -704,10 +709,11 @@ SELECT pessoa,
        vencimento,
        valor,
        round(
-           CASE WHEN current_date - vencimento > :dias_min_juros
-                THEN valor + valor * :juros_dia * (current_date - vencimento) + valor * :multa
-                ELSE valor
-           END, 2
+           valor
+           + CASE WHEN current_date - vencimento > :dias_min_juros
+                  THEN valor * :juros_dia * (current_date - vencimento) ELSE 0 END
+           + CASE WHEN current_date - vencimento > :dias_min_multa
+                  THEN valor * :multa ELSE 0 END, 2
        ) AS valor_cobrar
   FROM parcelas
  WHERE vencimento <= GREATEST(current_date, vencimento_min)
@@ -731,6 +737,7 @@ def buscar_parcelas_cobranca(
     engine = engine_ou_erro()
     params_base = {
         "dias_min_juros": juros.dias_min,
+        "dias_min_multa": juros.dias_min_multa,
         "juros_dia": juros.juros_dia,
         "multa": juros.multa,
     }

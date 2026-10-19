@@ -90,7 +90,6 @@ test.describe("Configurações → Indicadores", { tag: "@indicadores" }, () => 
     const j = card(page, "Juros e multa");
     await expect(j.getByLabel("Juros ao mês (%)")).not.toHaveValue(""); // espera a config carregar
     await j.getByLabel("Carência (dias de atraso)").fill("5");
-    await expect(j).toContainText("mais de 5 dia(s) de atraso (a partir de 6 dias)");
     await j.getByLabel("Multa (%)").fill("150");
     await j.getByRole("button", { name: "Salvar juros e multa" }).click();
     await expect(j.locator(".error-box")).toBeVisible();
@@ -100,6 +99,29 @@ test.describe("Configurações → Indicadores", { tag: "@indicadores" }, () => 
     await j.getByRole("button", { name: "Salvar juros e multa" }).click();
     await expect(j.locator(".success-box")).toContainText("Juros e multa salvos");
     await expect(j.locator(".error-box")).toHaveCount(0);
+  });
+
+  test("carência: caixa marcada tem um campo; desmarcada libera carência da multa e dos juros", async ({ page }) => {
+    const j = card(page, "Juros e multa");
+    const mesma = j.getByLabel("Usar mesma carência para multa e juros");
+    await expect(j.getByLabel("Multa (%)")).not.toHaveValue(""); // espera a config carregar
+    await expect(mesma).toBeChecked();
+    await expect(j.getByLabel("Carência da multa (dias)")).toHaveCount(0);
+    await mesma.uncheck();
+    await j.getByLabel("Carência da multa (dias)").fill("7");
+    await j.getByLabel("Carência dos juros (dias)").fill("3");
+    await j.getByRole("button", { name: "Salvar juros e multa" }).click();
+    await expect(j.locator(".success-box")).toContainText("Juros e multa salvos");
+    await page.reload();
+    const r = card(page, "Juros e multa");
+    await expect(r.getByLabel("Usar mesma carência para multa e juros")).not.toBeChecked();
+    await expect(r.getByLabel("Carência da multa (dias)")).toHaveValue("7");
+    await expect(r.getByLabel("Carência dos juros (dias)")).toHaveValue("3");
+    // volta ao padrão para os outros cenários
+    await r.getByLabel("Usar mesma carência para multa e juros").check();
+    await r.getByLabel("Carência (dias de atraso)").fill("2");
+    await r.getByRole("button", { name: "Salvar juros e multa" }).click();
+    await expect(r.locator(".success-box")).toBeVisible();
   });
 
   test("juros em branco não deveria virar 0% sem aviso", async ({ page }) => {

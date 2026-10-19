@@ -351,6 +351,32 @@ resp = client.put("/config/cobranca/parametros", json={"dias_janela_dashboard": 
 assert resp.status_code == 200
 print("  PUT /parametros parcial e janela do Dashboard: OK")
 
+# Carência da multa: padrão = mesma dos juros, caixa marcada; PUT parcial e limites
+p = client.get("/config/cobranca", headers=headers).json()["parametros"]
+assert p["mesma_carencia_multa_juros"] is True and p["dias_min_juros"] == 5
+resp = client.put("/config/cobranca/parametros", json={
+    "mesma_carencia_multa_juros": False, "dias_min_juros": 4, "dias_min_multa": 9,
+}, headers=headers)
+assert resp.status_code == 200, resp.text
+p = resp.json()["parametros"]
+assert p["mesma_carencia_multa_juros"] is False and p["dias_min_juros"] == 4 and p["dias_min_multa"] == 9
+resp = client.put("/config/cobranca/parametros", json={"multa_percentual": "3"}, headers=headers)
+assert resp.json()["parametros"]["dias_min_multa"] == 9 and resp.json()["parametros"]["mesma_carencia_multa_juros"] is False
+for invalido in ({"dias_min_multa": -1}, {"dias_min_multa": 3651}, {"dias_min_multa": None}, {"mesma_carencia_multa_juros": None}):
+    assert client.put("/config/cobranca/parametros", json=invalido, headers=headers).status_code == 400, invalido
+# desmarcada, o cálculo usa as duas carências; marcada, a da multa acompanha a dos juros
+with Session() as _db:
+    j = carregar_regras(_db).juros
+assert (j.dias_min, j.dias_min_multa) == (4, 9)
+resp = client.put("/config/cobranca/parametros", json={"mesma_carencia_multa_juros": True}, headers=headers)
+assert resp.status_code == 200
+with Session() as _db:
+    j = carregar_regras(_db).juros
+assert (j.dias_min, j.dias_min_multa) == (4, 4)
+resp = client.put("/config/cobranca/parametros", json={"dias_min_juros": 5, "multa_percentual": "1.5"}, headers=headers)
+assert resp.status_code == 200
+print("  PUT /parametros carência da multa: OK")
+
 # Sem token → 401
 resp = client.get("/config/cobranca")
 assert resp.status_code == 401

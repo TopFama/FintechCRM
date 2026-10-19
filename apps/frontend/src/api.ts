@@ -1125,6 +1125,8 @@ export interface ParametrosCobranca {
   juros_mes_percentual: string;
   multa_percentual: string;
   dias_min_juros: number;
+  dias_min_multa: number;
+  mesma_carencia_multa_juros: boolean;
   // janela do card de pagamentos do Dashboard; null = qualquer data após a cobrança
   dias_janela_dashboard: number | null;
 }
