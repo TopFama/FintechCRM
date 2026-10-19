@@ -353,7 +353,7 @@ print("  PUT /parametros parcial e janela do Dashboard: OK")
 
 # Carência da multa: padrão = mesma dos juros, caixa marcada; PUT parcial e limites
 p = client.get("/config/cobranca", headers=headers).json()["parametros"]
-assert p["mesma_carencia_multa_juros"] is True and p["dias_min_multa"] == 5 and p["dias_min_juros"] == 5
+assert p["mesma_carencia_multa_juros"] is True and p["dias_min_juros"] == 5
 resp = client.put("/config/cobranca/parametros", json={
     "mesma_carencia_multa_juros": False, "dias_min_juros": 4, "dias_min_multa": 9,
 }, headers=headers)

@@ -50,7 +50,7 @@ with engine.begin() as conn:
     conn.execute(text("""
         CREATE TABLE financeiro_titulos (
             pessoa char(8), valor numeric, vencimento date, empresa char(3), portador char(3),
-            rp char(1), status char(1), tipo char(1), descricao char(40)
+            rp char(1), status char(1), tipo char(1), descricao char(40), codigo char(10)
         )"""))
 
 hoje = hoje_br()
