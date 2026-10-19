@@ -168,4 +168,32 @@ exato = buscar(faixas=[], dias_exatos=[-1])
 assert set(exato) == {lembrete_amanha}, set(exato)  # seguro_a_vencer (também -1) fica de fora
 print("  por códigos e por dias exatos: mesmas regras")
 
+# carência da multa separada da dos juros: fronteira (dias == carência não cobra, carência + 1 cobra)
+from decimal import ROUND_HALF_UP
+
+from app.cobranca_regras import ParametrosJuros
+
+separadas = cliente([("100.00", NORMAL, d) for d in (5, 6, 10, 11)])
+
+
+def esperado(valor: Decimal, dias: int, p: ParametrosJuros) -> Decimal:
+    total = valor
+    if dias > p.dias_min:
+        total += valor * p.juros_dia * dias
+    if dias > p.dias_min_multa:
+        total += valor * p.multa
+    return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+for p in (ParametrosJuros(dias_min=5, dias_min_multa=10), ParametrosJuros(dias_min=10, dias_min_multa=5)):
+    with patch.object(seta_client, "engine_ou_erro", return_value=engine):
+        parcelas = seta_client.buscar_parcelas_cobranca([separadas], p)[separadas]
+    por_dias = {(hoje - x["vencimento"]).days: x["valor_cobrar"] for x in parcelas}
+    for dias in (5, 6, 10, 11):
+        assert por_dias[dias] == esperado(Decimal("100"), dias, p), (p, dias, por_dias[dias])
+    r = buscar(juros=p, codigos=[separadas])[separadas]
+    assert r["valor_cobrar"] == sum(por_dias.values()), (p, r["valor_cobrar"])
+    assert r["valor_atraso_juros"] == sum(por_dias.values()), (p, r["valor_atraso_juros"])
+print("  carência da multa e dos juros separadas (fronteira): OK")
+
 print("\nOK")

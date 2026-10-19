@@ -626,6 +626,10 @@ class ParametrosCobranca(Base):
     juros_mes_percentual: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     multa_percentual: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     dias_min_juros: Mapped[int] = mapped_column(Integer)
+    # com a caixa marcada a multa usa a carência dos juros (regras_db resolve);
+    # dias_min_multa só vale desmarcada
+    dias_min_multa: Mapped[int] = mapped_column(Integer)
+    mesma_carencia_multa_juros: Mapped[bool] = mapped_column(Boolean, default=True)
     # janela do card de pagamentos do Dashboard; nulo = qualquer data após a cobrança
     dias_janela_dashboard: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

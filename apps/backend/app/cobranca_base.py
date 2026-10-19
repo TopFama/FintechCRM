@@ -149,10 +149,12 @@ def buscar_base(
             "juros_mes_percentual": str(regras.juros.juros_mes_percentual),
             "multa_percentual": str(regras.juros.multa_percentual),
             "dias_min_juros": regras.juros.dias_min,
+            "dias_min_multa": regras.juros.dias_min_multa,
             "codigos": sorted(codigos) if codigos else None,
             # linhas com valor em atraso (sem e com juros); não reaproveita cache de antes
             # 3: linhas trazem telefone4 (quarta opção de celular)
-            "versao": 3,
+            # 4: carência da multa separada da dos juros
+            "versao": 4,
         },
     )
 

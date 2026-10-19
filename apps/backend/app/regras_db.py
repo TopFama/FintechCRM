@@ -50,6 +50,9 @@ def carregar_regras(db: Session) -> Regras:
             juros_mes_percentual=Decimal(str(params_db.juros_mes_percentual)),
             multa_percentual=Decimal(str(params_db.multa_percentual)),
             dias_min=params_db.dias_min_juros,
+            dias_min_multa=(
+                params_db.dias_min_juros if params_db.mesma_carencia_multa_juros else params_db.dias_min_multa
+            ),
         )
 
     return Regras(clusters=clusters, faixas=faixas, whatsapp=whatsapp, juros=juros)

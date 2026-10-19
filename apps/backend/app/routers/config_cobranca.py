@@ -221,13 +221,18 @@ def put_parametros(
     limites = {
         "juros_mes_percentual": (Decimal(0), Decimal(1000), "Juros ao mês deve estar entre 0% e 1000%"),
         "multa_percentual": (Decimal(0), Decimal(100), "Multa deve estar entre 0% e 100%"),
-        "dias_min_juros": (0, 3650, "Carência deve estar entre 0 e 3650 dias"),
+        "dias_min_juros": (0, 3650, "Carência dos juros deve estar entre 0 e 3650 dias"),
+        "dias_min_multa": (0, 3650, "Carência da multa deve estar entre 0 e 3650 dias"),
         # mesma faixa do filtro dias_janela dos relatórios
         "dias_janela_dashboard": (0, 365, "Janela de pagamento deve estar entre 0 e 365 dias"),
     }
     enviados = body.model_dump(include=body.model_fields_set)
     for campo, valor in enviados.items():
         minimo, maximo, mensagem = limites[campo]
+        if campo == "mesma_carencia_multa_juros":
+            if valor is None:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe se a carência é a mesma para multa e juros")
+            continue
         # só a janela aceita nulo (= qualquer data após a cobrança)
         if valor is None and campo == "dias_janela_dashboard":
             continue
