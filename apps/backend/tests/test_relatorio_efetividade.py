@@ -630,6 +630,25 @@ with TestClient(app) as client:
     assert client.get("/relatorios/envios/export", headers=headers).status_code == 200
     assert client.get("/relatorios/telefones-invalidos/export", headers=headers).status_code == 200
 
+    # Telefones inválidos contam números distintos: o mesmo número recusado duas
+    # vezes é uma linha e um no total (do relatório e do card do Dashboard)
+    db_inv = database.SessionLocal()
+    try:
+        faixa_inv = models.Faixa(name="Inválidos distintos")
+        db_inv.add(faixa_inv)
+        db_inv.flush()
+        for codigo, quando in (("901", datetime.utcnow() - timedelta(hours=1)), ("901", datetime.utcnow())):
+            db_inv.add(models.InvalidPhoneRecord(
+                faixa_id=faixa_inv.id, codigo_cliente=codigo, celular_original="6399", celular_normalizado="556399",
+                motivo="x", created_at=quando,
+            ))
+        db_inv.commit()
+        faixa_inv_id = faixa_inv.id
+    finally:
+        db_inv.close()
+    lista_inv = client.get(f"/relatorios/telefones-invalidos?faixa_id={faixa_inv_id}", headers=headers).json()
+    assert lista_inv["total"] == 1 and len(lista_inv["itens"]) == 1
+
     # 8. Exportação Excel: GET /reports/efetividade.xlsx
     xlsx_res = client.get("/reports/efetividade.xlsx", headers=headers)
     assert xlsx_res.status_code == 200, xlsx_res.text
