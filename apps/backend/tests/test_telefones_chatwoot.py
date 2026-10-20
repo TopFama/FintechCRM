@@ -90,12 +90,12 @@ class Cliente(chatwoot_client.ChatwootClient):
 res = asyncio.run(Cliente("https://teste", "1", "teste").obter_mensagem(2, 10))
 assert res["id"] == 10 and res["status"] == "delivered"
 
-pagina = list_invalid_phones(faixa_id=None, campanha=None, de=None, ate=None,
-                            limit=50, offset=0, sort_by="cpf", sort_dir="asc", db=db, _user=None)
+pagina = list_invalid_phones(de=None, ate=None, limit=50, offset=0, sort_by="cpf", sort_dir="asc", filtros={},
+                            db=db, _user=None)
 assert pagina.itens[0].cpf == "123.456.789-01" and pagina.itens[0].lojas == ["07"]
 import io
 import openpyxl
-arquivo = export_invalid_phones(faixa_id=None, campanha=None, de=None, ate=None, db=db, _user=None)
+arquivo = export_invalid_phones(de=None, ate=None, filtros={}, db=db, _user=None)
 ws = openpyxl.load_workbook(io.BytesIO(arquivo.body)).active
 assert ws.cell(1, 2).value == "CPF"
 assert ws.cell(1, 3).value == "Lojas" and ws.cell(2, 3).value == "07"

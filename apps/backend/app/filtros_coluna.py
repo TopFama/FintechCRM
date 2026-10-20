@@ -146,6 +146,8 @@ def valores_distintos(query, mapa: dict[str, Coluna], filtros: dict | None, colu
         return itens[:LIMITE_VALORES], len(itens) > LIMITE_VALORES
     linhas = [str(r.v) if r.v is not None else "" for r in q.order_by(v).limit(LIMITE_VALORES + 1).all()]
     valores = list(dict.fromkeys(linhas))
+    if "" in valores:  # o vazio vem primeiro (no Postgres o NULL ordena por último)
+        valores.insert(0, valores.pop(valores.index("")))
     return valores[:LIMITE_VALORES], len(valores) > LIMITE_VALORES
 
 
