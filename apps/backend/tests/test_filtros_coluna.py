@@ -184,7 +184,7 @@ linhas_pagou = [
     {"codigo_cliente": "C1", "nome": "Ana", "cpf": None, "loja": "LOJA 07, LOJA 09", "faixa": "1 A 10, 11 A 20",
      "data_cobranca": date.today(), "valor_cobrado": Decimal("100.00"), "valor_pago": Decimal("100.00"),
      "qtd_titulos_pagos": 1, "primeiro_pagamento": date.today(), "ultimo_pagamento": date.today()},
-    {"codigo_cliente": "C2", "nome": None, "cpf": None, "loja": "", "faixa": "11 A 20",
+    {"codigo_cliente": "C2", "nome": "", "cpf": None, "loja": "", "faixa": "11 A 20",
      "data_cobranca": date.today(), "valor_cobrado": Decimal("900.00"), "valor_pago": Decimal("50.00"),
      "qtd_titulos_pagos": 1, "primeiro_pagamento": date.today(), "ultimo_pagamento": date.today()},
 ]
