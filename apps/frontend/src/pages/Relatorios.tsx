@@ -22,7 +22,7 @@ import SelectCampanha from "../components/SelectCampanha";
 import SelectJanelaPagamento from "../components/SelectJanelaPagamento";
 import SortableTh from "../components/SortableTh";
 import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
-import { formatBRL, formatCpf, formatData, formatDataHora, formatNumero, formatValorFila } from "../format";
+import { formatBRL, formatCelular, formatCpf, formatData, formatDataHora, formatNumero, formatValorFila } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
 import { SortDirection, useSort } from "../sort";
 
@@ -55,7 +55,7 @@ type ColunaPagamento =
   | "valor_cobrado"
   | "valor_pago"
   | "primeiro_pagamento";
-type ColunaEnvio = "codigo_cliente" | "faixa" | "nome" | "loja" | "valor" | "telefone" | "enviado_em";
+type ColunaEnvio = "codigo_cliente" | "faixa" | "nome" | "loja" | "valor" | "celular" | "telefone" | "enviado_em";
 
 export default function Relatorios() {
   // Aba, período e faixa vivem na URL: um link do Dashboard abre direto no
@@ -646,6 +646,7 @@ export default function Relatorios() {
                       ["nome", "Nome"],
                       ["loja", "Loja"],
                       ["valor", "Valor cobrado"],
+                      ["celular", "Telefone cobrado"],
                       ["telefone", "Telefone que cobrou"],
                       ["enviado_em", "Data/hora"],
                     ] as [ColunaEnvio, string][]
@@ -669,6 +670,7 @@ export default function Relatorios() {
                     <td>{r.nome || "—"}</td>
                     <td className="text-muted">{r.lojas.length ? r.lojas.join(", ") : "—"}</td>
                     <td>{formatValorFila(r.valor)}</td>
+                    <td className="text-muted">{formatCelular(r.celular)}</td>
                     <td className="text-muted">{r.telefone}</td>
                     <td className="text-faint">{formatDataHora(r.enviado_em)}</td>
                   </tr>

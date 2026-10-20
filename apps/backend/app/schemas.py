@@ -612,6 +612,7 @@ class DispatchReportItemOut(BaseModel):
     nome: str
     lojas: list[str] = []
     valor: str | None
+    celular: str
     telefone: str
     enviado_em: datetime
 
