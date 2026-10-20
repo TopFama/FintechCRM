@@ -249,7 +249,8 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     const enviados = (await linha.locator("td").nth(3).innerText()).trim();
     await linha.locator("td").nth(3).getByRole("link").click();
     await expect(page).toHaveURL(/aba=envios.*faixa_id=/);
-    await expect(page.locator("select").first()).toHaveValue(/.+/);
+    await expect(page.getByRole("button", { name: "Filtrar Faixa de atraso", exact: true })).toHaveClass(/ativo/);
+    await expect(page).not.toHaveURL(/faixa_id=/);
     await expect(page.getByText("Carregando...")).toHaveCount(0);
     if (enviados !== "0") await expect(page.locator(".paginacao-info")).toContainText(`de ${enviados}`);
   });
@@ -265,6 +266,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(linha.locator("td").nth(9)).toContainText(/R\$\s?[1-9]/);
     await linha.locator("td").nth(6).getByRole("link").click();
     await expect(page).toHaveURL(/aba=pagamentos.*faixa_id=.*base=envios/);
+    await expect(page.getByRole("button", { name: "Filtrar Faixa", exact: true })).toHaveClass(/ativo/);
     await expect(page.locator(".stat", { hasText: "Clientes que pagaram" }).locator(".value")).toHaveText(
       pagaram.toLocaleString("pt-BR"),
       { timeout: 30_000 }

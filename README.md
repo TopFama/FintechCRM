@@ -410,14 +410,21 @@ desenvolvimento.
    dias é relido uma vez por dia. Cliente cobrado depois da última rodada é buscado na hora, só
    ele. Ver `app/services/pagamentos_seta.py`.
 9. **Relatórios** — abas na ordem dos cards do Dashboard (pendentes, envios realizados, erros,
-   telefones inválidos e quem pagou), com filtro por período, faixa e **Campanha** (na URL) e
-   exportação em Excel (.xlsx) já formatado. Na fila, "Campanha" filtra pela faixa da campanha
-   (`filtro_campanha`); em "Quem pagou", por `Lead.campanha_id`, como na Efetividade.
+   telefones inválidos e quem pagou), com período (na URL) e **filtro em cada coluna, estilo Excel**
+   (funil no cabeçalho: pesquisa, "Selecionar tudo", valores marcáveis; colunas de valor também
+   têm "de, até" e a de data dos Erros, de/até). Um só mecanismo (`app/filtros_coluna.py`): o
+   parâmetro `filtros` (JSON `{coluna: {valores, de, ate}}`) vale na lista, na exportação em Excel
+   e no descarte da fila, e `GET /relatorios/<relatório>/valores` lista os valores da coluna dentro
+   dos demais filtros. O mapa de colunas de cada relatório fica ao lado da query dele
+   (`consultas_fila`, `routers/reports.py`); "Quem pagou" é uma lista em memória, filtrada com o
+   mesmo contrato (a Faixa filtra antes do cache, em `faixa`). A seleção fica no `sessionStorage`
+   enquanto o usuário está em Relatórios; `faixa_id` de links do Dashboard vira o filtro da coluna Faixa.
+   Exportação em Excel (.xlsx) já formatada.
 10. **Pausas** — na aba Pendentes, qualquer usuário pode pausar (motivo obrigatório, data final
    opcional), retomar ou parar o envio por cliente, régua (faixa) ou loja. Pausa não muda o status
    do item: o worker só deixa de pegar o que está retido, inclusive o que entrar na fila depois.
    Parar marca os pendentes do escopo como `cancelled` (com quem parou e quando), sem apagar.
-   **Descartar fila** apaga os pendentes que batem com os filtros da tela (faixa, campanha, loja e
+   **Descartar fila** apaga os pendentes que batem com os filtros da tela (colunas e
    período), como a expiração do fim do dia faz: não fica registro de parado e o cliente pode voltar
    à fila (`POST /relatorios/pendentes/descartar`). Item já reservado por um envio em andamento fica.
 11. **Campanhas** (menu logo abaixo de Cobrança) — cobranças fora das faixas de atraso, cada uma

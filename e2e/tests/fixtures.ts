@@ -39,6 +39,19 @@ export const test = base.extend({
 export { expect };
 
 /** Aceita (ou recusa) o próximo window.confirm/prompt e devolve o texto dele. */
+/** Filtra uma coluna de relatório pelo funil do cabeçalho (lista estilo Excel): só os valores dados ficam marcados. */
+export async function filtrarColuna(page: Page, rotulo: string, valores: string[]) {
+  await page.getByRole("button", { name: `Filtrar ${rotulo}`, exact: true }).click();
+  const caixa = page.getByRole("dialog", { name: `Filtro de ${rotulo}` });
+  await caixa.getByLabel("Selecionar tudo").uncheck();
+  for (const v of valores) await caixa.getByLabel(v, { exact: true }).check();
+  await caixa.getByRole("button", { name: "OK" }).click();
+}
+
+/** Parâmetro `filtros` das rotas de relatório: {coluna: valores marcados}. */
+export const filtrosApi = (colunas: Record<string, string[]>) =>
+  encodeURIComponent(JSON.stringify(Object.fromEntries(Object.entries(colunas).map(([c, valores]) => [c, { valores }]))));
+
 export function responderDialogo(page: Page, aceitar = true, valor?: string): Promise<string> {
   return new Promise((resolve) => {
     page.once("dialog", async (d) => {
