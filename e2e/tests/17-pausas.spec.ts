@@ -1,4 +1,4 @@
-import { apiGet, expect, filtrarColuna, filtrosApi, test } from "./fixtures";
+import { apiGet, expect, filtrosApi, test } from "./fixtures";
 import type { Page } from "@playwright/test";
 import { prepararOperacao } from "./preparo";
 
@@ -121,8 +121,8 @@ test.describe.serial("Pendentes: pausar, retomar e parar", { tag: "@pausas" }, (
     const primeiro = (await apiGet(page, "/reports/pendentes?limit=1&offset=0")).itens[0];
     const filtro = filtrosApi({ faixa: [primeiro.faixa] });
     const daFaixa = await apiGet(page, `/reports/pendentes?filtros=${filtro}&limit=500&offset=0`);
-    await page.goto("/relatorios?aba=pendentes");
-    await filtrarColuna(page, "Faixa de atraso (régua)", [primeiro.faixa]);
+    // link do Dashboard: o faixa_id da URL vira o filtro da coluna Faixa
+    await page.goto(`/relatorios?aba=pendentes&faixa_id=${primeiro.faixa_id}`);
     await page.getByRole("button", { name: "Descartar fila" }).click();
     const confirmar = page.getByRole("alertdialog");
     await expect(confirmar).toContainText("Descartar a fila (os pendentes com os filtros desta tela)?");
