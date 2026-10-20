@@ -290,6 +290,7 @@ def _invalid_phones_query(
     if campanha:
         query = query.filter(consultas_fila.filtro_campanha(db, models.InvalidPhoneRecord.faixa_id, campanha))
     query = consultas_fila.no_periodo(query, models.InvalidPhoneRecord.created_at, de, ate)
+    query = consultas_fila.um_por_telefone(db, query)
     coluna = _INVALID_PHONE_SORT_COLUNAS.get(sort_by) if sort_by else None
     if coluna is not None:
         query = query.order_by(

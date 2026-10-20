@@ -40,6 +40,17 @@ def no_periodo(query, coluna, de: date | None, ate: date | None):
         query = query.filter(coluna < inicio_do_dia_utc(ate + timedelta(days=1)))
     return query
 
+def um_por_telefone(db: Session, filtrada):
+    """Telefones inválidos já filtrados, um registro por número (o mais recente),
+    para relatório, exportação e card contarem números e não tentativas."""
+    r = models.InvalidPhoneRecord
+    ultimas = filtrada.with_entities(r.id, func.row_number().over(
+        partition_by=func.coalesce(r.celular_normalizado, r.celular_original),
+        order_by=(r.created_at.desc(), r.id.desc()),
+    ).label("pos")).subquery()
+    return db.query(r).filter(r.id.in_(select(ultimas.c.id).where(ultimas.c.pos == 1)))
+
+
 def envios_realizados(
     db: Session,
     faixa_id: str | None,
@@ -294,11 +305,17 @@ def contar_cards(db: Session, de: date | None, ate: date | None) -> dict[str, in
         "total_pendentes": contar(db, periodo, models.QueueStatus.pending, models.QueueStatus.reserved),
         "total_enviados": contar(db, periodo, models.QueueStatus.sent),
         "total_erros": contar(db, periodo, models.QueueStatus.error),
-        "total_telefones_invalidos": db.query(func.count(models.InvalidPhoneRecord.id))
-        .filter(condicao_periodo(models.InvalidPhoneRecord.created_at, ini, fim))
-        .scalar()
-        or 0,
     }
+
+
+def contar_telefones_invalidos(db: Session, de: date | None, ate: date | None) -> int:
+    """Números distintos no período, igual ao total do relatório. Fora de
+    contar_cards porque não é soma de eventos por dia (o painel em tempo real
+    soma): o mesmo número em dois dias conta uma vez."""
+    ini, fim = limites_utc(de, ate)
+    return um_por_telefone(
+        db, db.query(models.InvalidPhoneRecord).filter(condicao_periodo(models.InvalidPhoneRecord.created_at, ini, fim))
+    ).count()
 
 
 def contar(db: Session, periodo, *status_values: models.QueueStatus) -> int:

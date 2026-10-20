@@ -15,7 +15,8 @@ fora não fica).
 O WebSocket só lê: dia ainda não carregado vira um pedido ao ouvinte (aviso
 "carregar" no mesmo canal) e os números saem quando ele publica. Pausados não
 é contador (pausa não muda o status do item): é recontado com cache curto,
-renovado na hora a cada mudança de pausa.
+renovado na hora a cada mudança de pausa. Telefones inválidos idem (contam
+números distintos, não soma de linhas), renovados a cada aviso de inválido.
 """
 
 import asyncio
@@ -52,7 +53,6 @@ _CAMPO = {
     "reserved": "total_pendentes",
     "sent": "total_enviados",
     "error": "total_erros",
-    "invalido": "total_telefones_invalidos",
 }
 _CAMPOS = sorted(set(_CAMPO.values()))
 # só soma em dia carregado: dia que venceu no Redis não vira contador parcial
@@ -148,7 +148,16 @@ def numeros(de: date | None, ate: date | None) -> dict[str, int] | None:
             lambda: consultas_fila.contar_pausados(db, consultas_fila.periodo_dos_cards(de, ate)),
             PAUSADOS_TTL_SEGUNDOS,
         )
-    return {**{campo: totais[campo] for campo in _CAMPOS}, "total_pausados": pausados}
+        invalidos = cache.obter_ou_calcular(
+            cache.chave("painel-invalidos", {"de": de, "ate": ate, "versao": r.get(_VERSAO_PAUSAS)}),
+            lambda: consultas_fila.contar_telefones_invalidos(db, de, ate),
+            PAUSADOS_TTL_SEGUNDOS,
+        )
+    return {
+        **{campo: totais[campo] for campo in _CAMPOS},
+        "total_pausados": pausados,
+        "total_telefones_invalidos": invalidos,
+    }
 
 
 def _hora(valor: str | None) -> datetime | None:
@@ -173,6 +182,8 @@ def aplicar(aviso: str) -> None:
     else:
         xid = int(dados["x"])
         saldo: Counter = Counter()
+        if any(d["s"] == "invalido" for d in dados["d"]):
+            r.incr(_VERSAO_PAUSAS)  # inválidos são recontados (números distintos), como pausados
         for d in dados["d"]:
             dia = consultas_fila.dia_do_card(d["s"], _hora(d["c"]), _hora(d["e"]))
             if dia in _cargas and d["s"] in _CAMPO and not _ja_contada(xid, _cargas[dia]):

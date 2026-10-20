@@ -98,9 +98,15 @@ db.commit()
 assert painel_tempo_real.numeros(anteontem, hoje) == {}  # pediu a carga
 numeros = prontos(anteontem, hoje)
 esperado = consultas_fila.contar_cards(db, anteontem, hoje)
-assert numeros == {**esperado, "total_pausados": 0}, numeros
+assert numeros == {**esperado, "total_pausados": 0, "total_telefones_invalidos": 1}, numeros
 assert numeros["total_pendentes"] == 3 and numeros["total_erros"] == 1 and numeros["total_telefones_invalidos"] == 1
 conferir("carga inicial")
+
+# O mesmo número recusado de novo é outra linha, mas continua sendo um número só
+db.add(invalido())
+db.commit()
+assert db.query(models.InvalidPhoneRecord).count() == 2
+assert consultas_fila.contar_telefones_invalidos(db, anteontem, hoje) == 1
 
 # Item novo e pendente de ontem enviado hoje: sai de pendentes de ontem, entra em enviados de hoje
 db.add(item(S.pending, codigo="5"))

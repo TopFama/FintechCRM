@@ -177,6 +177,7 @@ def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool =
     return schemas.DashboardSummary(
         **consultas_fila.contar_cards(db, de, ate),
         total_pausados=consultas_fila.contar_pausados(db, periodo),
+        total_telefones_invalidos=consultas_fila.contar_telefones_invalidos(db, de, ate),
         por_faixa=list(por_faixa.values()),
         total_por_faixa=schemas.DashboardTotalPorFaixa(**total_por_faixa),
     )
