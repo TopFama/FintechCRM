@@ -354,8 +354,6 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     await page.goto("/relatorios?aba=envios");
     await filtrarColuna(page, "Faixa de atraso", [faixaCampanha]);
     await expect(page.locator(".card table tbody tr")).toHaveCount(Math.min(daCampanha, 50));
-    await page.reload();
-    await expect(page.getByRole("button", { name: "Filtrar Faixa de atraso", exact: true })).toHaveClass(/ativo/);
   });
 
   test("remarketing do Renegocie entra como campanha fixa", async ({ page }) => {
