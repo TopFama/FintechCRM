@@ -66,14 +66,16 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
   });
 
-  test("envios: filtro por faixa e por período", async ({ page }) => {
+  test("envios: filtro da faixa lista as faixas com envio e o período filtra", async ({ page }) => {
     await aba(page, "Envios realizados").click();
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
-    await filtrarColuna(page, "Faixa de atraso", ["11 A 20"]);
-    await expect(page.getByText("Nenhum envio encontrado com esses filtros")).toBeVisible();
     await page.getByRole("button", { name: "Filtrar Faixa de atraso", exact: true }).click();
-    await page.getByRole("dialog", { name: "Filtro de Faixa de atraso" }).getByRole("button", { name: "Limpar" }).click();
-    await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
+    const caixa = page.getByRole("dialog", { name: "Filtro de Faixa de atraso" });
+    await expect(caixa.getByLabel("3 A 10", { exact: true })).toBeChecked();
+    await caixa.getByLabel("Pesquisar em Faixa de atraso").fill("3 A");
+    await expect(caixa.getByLabel("3 A 10", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(caixa).toHaveCount(0);
     await page.locator('input[type="date"]').first().fill("2020-01-01");
     await page.locator('input[type="date"]').nth(1).fill("2020-01-02");
     await expect(page.getByText("Nenhum envio encontrado com esses filtros")).toBeVisible();
@@ -82,7 +84,8 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
   test("estado vazio de envios com filtro não diz 'ainda' como se nunca tivesse havido envio", async ({ page }) => {
     await aba(page, "Envios realizados").click();
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
-    await filtrarColuna(page, "Faixa de atraso", ["11 A 20"]);
+    await page.locator('input[type="date"]').first().fill("2020-01-01");
+    await page.locator('input[type="date"]').nth(1).fill("2020-01-02");
     await expect(page.getByText("Carregando...")).toHaveCount(0);
     await expect(page.locator(".empty-state")).toBeVisible();
     await expect(page.getByText("Nenhum envio realizado ainda")).toHaveCount(0);
@@ -100,10 +103,11 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
     await caixa.getByLabel("Pesquisar em Nome").fill("zzzz-inexistente");
     await expect(caixa.getByText("Nada encontrado")).toBeVisible();
     await caixa.getByLabel("Pesquisar em Nome").fill("");
-    // desmarcar tudo e marcar um só valor
+    const valor = (await caixa.locator("label.ms-option").last().innerText()).trim();
+    // desmarcar tudo e marcar um só valor (a pesquisa mantém o filtro mesmo que só exista um nome)
+    await caixa.getByLabel("Pesquisar em Nome").fill(valor);
     await caixa.getByLabel("Selecionar tudo").uncheck();
     await expect(caixa.getByRole("button", { name: "OK" })).toBeDisabled();
-    const valor = (await caixa.locator("label.ms-option").last().innerText()).trim();
     await caixa.getByLabel(valor, { exact: true }).check();
     const pedido = page.waitForRequest((r) => r.url().includes("/relatorios/envios?") && r.url().includes("filtros="));
     await caixa.getByRole("button", { name: "OK" }).click();
