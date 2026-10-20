@@ -628,6 +628,15 @@ with TestClient(app) as client:
     assert client.get("/reports/envios/export", headers=headers).status_code == 200
     assert client.get("/reports/telefones-invalidos/export", headers=headers).status_code == 200
     assert client.get("/relatorios/envios/export", headers=headers).status_code == 200
+
+    # Telefone cobrado: o número do cliente para onde o envio saiu (QueueItem.celular)
+    envios = client.get("/relatorios/envios?sort_by=celular", headers=headers)
+    assert envios.status_code == 200, envios.text
+    assert envios.json()["itens"] and {i["celular"] for i in envios.json()["itens"]} == {"5563999990000"}
+    export = client.get("/relatorios/envios/export", headers=headers)
+    linhas_envios = list(openpyxl.load_workbook(io.BytesIO(export.content)).active.iter_rows(values_only=True))
+    assert "Telefone cobrado" in linhas_envios[0]
+    assert linhas_envios[1][linhas_envios[0].index("Telefone cobrado")] == "5563999990000"
     assert client.get("/relatorios/telefones-invalidos/export", headers=headers).status_code == 200
 
     # Telefones inválidos contam números distintos: o mesmo número recusado duas

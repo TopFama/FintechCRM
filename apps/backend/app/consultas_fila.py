@@ -93,7 +93,7 @@ def envios_realizados(
         )
     elif sort_by == "valor":
         query = query.order_by(_ordenado(valor_numerico()).nulls_last(), models.QueueItem.id)
-    elif sort_by in ("codigo_cliente", "nome"):
+    elif sort_by in ("codigo_cliente", "nome", "celular"):
         query = query.order_by(_ordenado(getattr(models.QueueItem, sort_by)), models.QueueItem.id)
     elif sort_by == "loja":
         query = query.order_by(_ordenado(models.QueueItem.lojas), models.QueueItem.id)

@@ -964,6 +964,7 @@ export interface DispatchReportItem {
   nome: string;
   lojas: string[];
   valor: string | null;
+  celular: string;
   telefone: string;
   enviado_em: string;
 }
