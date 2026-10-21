@@ -557,7 +557,7 @@ export default function CampanhaDetail() {
                   <IconUpload width={14} height={14} />{" "}
                   {enviandoPlanilha ? "Lendo..." : temPlanilhaOuNova ? "Trocar planilha" : "Subir planilha (.xlsx)"}
                 </button>
-                {planilhaNova && (
+                {nova && planilhaNova && (
                   <>
                     <span className="text-muted">{planilhaNova.name} · será lida ao criar a campanha</span>
                     <button type="button" className="secondary small" onClick={editarColunas} disabled={enviandoPlanilha}>
