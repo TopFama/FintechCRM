@@ -58,6 +58,7 @@ type ColunaEnvio = "codigo_cliente" | "faixa" | "nome" | "loja" | "valor" | "cel
 // Colunas de data (período no topo da tela) não têm o filtro de valores; "quando" dos erros filtra por de, até
 const SEM_FILTRO = new Set(["created_at", "enviado_em", "entrou_em", "data_cobranca", "primeiro_pagamento"]);
 const FILTRO_COLUNA: Record<string, { tipo?: TipoColuna; rotuloVazio?: string; formatar?: (v: string) => string }> = {
+  celular: { formatar: formatCelular },
   valor: { tipo: "numero", formatar: (v) => formatBRL(v) },
   valor_cobrado: { tipo: "numero", formatar: (v) => formatBRL(v) },
   valor_pago: { tipo: "numero", formatar: (v) => formatBRL(v) },

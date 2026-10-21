@@ -2,6 +2,7 @@
 mesmos filtros (faixa, campanha, loja, período em dias de Brasília) e as
 mesmas consultas, para card e relatório contarem igual. Só leitura."""
 
+import re
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import Numeric, and_, case, func, or_, select, true
@@ -93,6 +94,8 @@ def envios_realizados(
 
 def valores_envios(db: Session, de, ate, filtros: dict | None, coluna: str, busca: str | None):
     """Valores distintos de uma coluna do relatório de envios (lista do filtro da coluna)."""
+    if coluna == "celular" and busca:
+        busca = re.sub(r"\D", "", busca)  # a tela mostra "+55 (63) 99123-4567"; o banco guarda só os dígitos
     return filtros_coluna.valores_distintos(
         envios_realizados(db, de, ate, carregar=False), COLUNAS_ENVIOS, filtros, coluna, busca
     )
