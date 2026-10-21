@@ -41,7 +41,7 @@ export default function CamposLoja({ valor, onChange, opcoes, semClusterPopulaca
     setLendo(true);
     setAviso(null);
     try {
-      const colunas = await api.colunasPlanilhaLojas(arquivo);
+      const colunas = await api.colunasPlanilha(arquivo);
       setPlanilha({ arquivo, colunas });
       setColuna("");
     } catch (err) {

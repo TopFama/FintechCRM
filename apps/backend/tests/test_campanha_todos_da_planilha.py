@@ -133,27 +133,17 @@ so_atraso = _selecionar(SimpleNamespace(filtros={}, clientes=planilha, todos_da_
 assert {c["codigo"] for c in so_atraso["clientes"]} == {"00000001", "00000004"}, "sem a opção, nada muda"
 print("  OK")
 
-print("3b. Valor inválido na planilha: SETA só com autorização")
-linhas_valor = {"00000001": {"Valor": "99,90"}, "00000004": {"Valor": "0"}}
-
-
-def _com_valor(autorizado):
-    return SimpleNamespace(
-        filtros={}, clientes=["00000001", "00000004"], todos_da_planilha=False, incluir_cobrados_hoje=False,
-        fonte_valores="planilha", valor_seta_autorizado=autorizado,
-        faixa=SimpleNamespace(variable_mappings=[]), planilha_linhas=linhas_valor,
-    )
-
-
-with patch("app.campanhas._bloqueados", return_value=set()):
-    for autorizado, esperados in ((None, {"00000001"}), (False, {"00000001"}), (True, {"00000001", "00000004"})):
-        r = _selecionar(_com_valor(autorizado))
-        assert {c["codigo"] for c in r["clientes"]} == esperados, (autorizado, r)
-assert campanhas.valor_invalido(_com_valor(None)) == 1
+print("3b. Celulares mapeados pelo usuário substituem os do SETA, na ordem de prioridade")
+cadastro = {"00000001": {"nome": "Ana", "cpfcnpj": "123", "telefone2": "63991234567"}}
+linha = {"Cel A": "abc", "Cel B": "(63) 98888-7777", "Cel C": "63977776666"}
+linhas, pendentes, _ = campanhas.conferir_obrigatorios({"00000001": dict(linha)}, cadastro, ["Cel A", "Cel B", "Cel C"])
+assert linhas["00000001"]["_celular"] == "5563988887777", "o primeiro válido na ordem, normalizado (DDI e 9º dígito)"
+assert linhas["00000001"]["_origem"]["celular"] == "Planilha"
+linhas, _, _ = campanhas.conferir_obrigatorios({"00000001": {"Cel A": "123"}}, cadastro, ["Cel A"])
+assert linhas["00000001"]["_celular"] == "63991234567" and linhas["00000001"]["_origem"]["celular"] == "SETA", "nenhum válido: fica o do SETA"
 cliente = {"codigo": "00000001", "valor_cobrar": Decimal("100"), "valor_atraso": Decimal("100")}
-assert campanhas.com_dados_da_planilha(cliente, _com_valor(True))["valor_cobrar"] == Decimal("99.90"), "valor válido vem da planilha"
-cliente = {"codigo": "00000004", "valor_cobrar": Decimal("100"), "valor_atraso": Decimal("100")}
-assert campanhas.com_dados_da_planilha(cliente, _com_valor(True))["valor_cobrar"] == Decimal("100"), "inválido fica o do SETA"
+com_planilha = SimpleNamespace(planilha_linhas={"00000001": {"Valor": "99,90"}})
+assert campanhas.com_dados_da_planilha(cliente, com_planilha)["valor_cobrar"] == Decimal("100"), "o valor é sempre o do SETA"
 print("  OK")
 
 print("4. Validação")

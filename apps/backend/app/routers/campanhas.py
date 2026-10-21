@@ -1,8 +1,9 @@
+import json
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy import func
@@ -96,8 +97,6 @@ def _out(
         "clientes_total": len(c.clientes or []),
         "clientes_arquivo": c.clientes_arquivo,
         "planilha_colunas": c.planilha_colunas or [],
-        "valor_invalido": camp.valor_invalido(c),
-        "valor_seta_autorizado": c.valor_seta_autorizado,
         "envios_ativos": len(envios),
         "templates": sorted({e.template.name for e in envios if e.template}),
         "ultima_execucao": c.ultima_execucao,
@@ -171,7 +170,7 @@ def _validar(db: Session, payload: CampanhaIn, atual: models.Campanha | None) ->
             raise _erro("Suba a planilha de clientes para usar todos os clientes dela")
     if payload.fonte_valores == "planilha" and not (atual and atual.clientes):
         if payload.ativa:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de clientes para usar os valores dela")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de clientes para usar os dados dela")
     return nome
 
 
@@ -397,21 +396,28 @@ def excluir(campanha_id: str, db: Session = Depends(get_db), _user: models.User 
 async def subir_clientes(
     campanha_id: str,
     file: UploadFile = File(...),
+    coluna: int | None = Form(None),
+    por_cpf: bool = Form(False),
+    celulares: str = Form("[]"),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    """Planilha .xlsx de clientes com verificação dos campos obrigatórios."""
+    """Planilha .xlsx de clientes com verificação dos campos obrigatórios.
+    `coluna`/`por_cpf` (código SETA ou CPF) e `celulares` (JSON com os índices,
+    em ordem de prioridade) vêm do mapeamento escolhido na tela."""
 
     c = _get(db, campanha_id)
     content = await ler_planilha_limitada(file)
     try:
-        lido = await run_in_threadpool(camp.ler_clientes, file.filename or "", content)
+        lido = await run_in_threadpool(
+            camp.ler_clientes, file.filename or "", content, coluna, por_cpf, [int(i) for i in json.loads(celulares)]
+        )
         if not lido["clientes"]:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nenhum cliente identificado na planilha")
             
         cadastro = await run_in_threadpool(seta_client.cadastro_por_codigo, lido["clientes"])
         planilha_linhas, pendentes, completados_pelo_seta = await run_in_threadpool(
-            camp.conferir_obrigatorios, lido["linhas"], cadastro
+            camp.conferir_obrigatorios, lido["linhas"], cadastro, lido["colunas_celular"]
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
@@ -426,7 +432,6 @@ async def subir_clientes(
     c.planilha_linhas = planilha_linhas
     c.planilha_colunas = lido["colunas"]
     c.clientes_arquivo = file.filename
-    c.valor_seta_autorizado = None
     c.ultima_execucao_dia = None
     db.commit()
     
@@ -451,7 +456,6 @@ def remover_clientes(campanha_id: str, db: Session = Depends(get_db), _user: mod
     c.planilha_linhas = {}
     c.planilha_colunas = []
     c.clientes_arquivo = None
-    c.valor_seta_autorizado = None
     c.fonte_valores = "seta"
     c.todos_da_planilha = False
     c.ultima_execucao_dia = None
@@ -515,7 +519,7 @@ def executar_agora(campanha_id: str, db: Session = Depends(get_db), user: models
     if not any(e.active for e in c.faixa.envios):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Atribua um número e um template à campanha antes de rodar")
     if c.fonte_valores == "planilha" and not c.clientes:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de clientes para usar os valores dela")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de clientes para usar os dados dela")
     if c.todos_da_planilha and not c.clientes:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de clientes para usar todos os clientes dela")
     try:
@@ -591,23 +595,3 @@ def salvar_reserva(
         
     db.commit()
     return camp.colunas_em_branco(c, c.faixa.variable_mappings)
-
-
-class ValorSetaIn(BaseModel):
-    autorizado: bool
-
-
-@router.put("/{campanha_id}/valor-seta")
-def autorizar_valor_seta(
-    campanha_id: str,
-    payload: ValorSetaIn,
-    db: Session = Depends(get_db),
-    _user: models.User = Depends(get_current_user),
-):
-    """Cliente sem valor válido na planilha: usa o valor do SETA (autorizado)
-    ou fica fora da campanha."""
-
-    c = _get(db, campanha_id)
-    c.valor_seta_autorizado = payload.autorizado
-    db.commit()
-    return _out(c)

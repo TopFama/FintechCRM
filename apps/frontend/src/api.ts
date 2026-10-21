@@ -572,9 +572,12 @@ export const api = {
   retomarCampanha: (id: string) => request<Campanha>(`/campanhas/${id}/retomar`, { method: "POST" }),
   pararCampanha: (id: string) =>
     request<Campanha & { cancelados: number }>(`/campanhas/${id}/parar`, { method: "POST" }),
-  subirClientesCampanha: (id: string, file: File) => {
+  subirClientesCampanha: (id: string, file: File, mapeamento: MapeamentoClientes) => {
     const form = new FormData();
     form.append("file", file);
+    form.append("coluna", String(mapeamento.coluna));
+    form.append("por_cpf", String(mapeamento.por_cpf));
+    form.append("celulares", JSON.stringify(mapeamento.celulares));
     return request<{ 
         clientes: number; 
         ignoradas: number; 
@@ -589,8 +592,6 @@ export const api = {
     );
   },
   removerClientesCampanha: (id: string) => request<void>(`/campanhas/${id}/clientes`, { method: "DELETE" }),
-  autorizarValorSetaCampanha: (id: string, autorizado: boolean) =>
-    request<Campanha>(`/campanhas/${id}/valor-seta`, { method: "PUT", body: JSON.stringify({ autorizado }) }),
   getColunasEmBrancoCampanha: (id: string) =>
     request<ColunaEmBranco[]>(`/campanhas/${id}/clientes/colunas-em-branco`),
   salvarReservaVazioCampanha: (id: string, reservas: ReservaVazioItem[]) =>
@@ -602,7 +603,7 @@ export const api = {
       (s) => request(`/campanhas/${id}/executar`, { method: "POST", signal: s }),
       signal
     ),
-  colunasPlanilhaLojas: (file: File) => {
+  colunasPlanilha: (file: File) => {
     const form = new FormData();
     form.append("file", file);
     return request<ColunaPlanilha[]>("/lojas/colunas-planilha", { method: "POST", body: form });
@@ -888,6 +889,13 @@ export interface Faixa {
 export type FiltrosDescarte = FiltrosRelatorio;
 
 /** Coluna de uma planilha subida, com exemplos, para o usuário escolher qual usar. */
+/** Colunas escolhidas na planilha de clientes da campanha (índices); telefones por ordem de prioridade. */
+export interface MapeamentoClientes {
+  coluna: number;
+  por_cpf: boolean;
+  celulares: number[];
+}
+
 export interface ColunaPlanilha {
   indice: number;
   nome: string;
@@ -1280,10 +1288,6 @@ export interface Campanha extends CampanhaIn {
   clientes_total: number;
   clientes_arquivo: string | null;
   planilha_colunas: string[];
-  /** Clientes da planilha sem valor válido. */
-  valor_invalido: number;
-  /** Para eles: true usa o valor do SETA, false deixa fora, null aguarda a decisão. */
-  valor_seta_autorizado: boolean | null;
   envios_ativos: number;
   templates: string[];
   ultima_execucao: string | null;
