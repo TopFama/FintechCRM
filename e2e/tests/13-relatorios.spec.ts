@@ -117,6 +117,7 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
     // o Excel sai com o mesmo filtro
     const { linhas } = await baixar(page, () => page.getByRole("button", { name: /Baixar Excel/ }).click());
     expect(linhas.length - 1).toBe(await total.count());
+    for (const l of linhas.slice(1)) expect(l.map((c) => String(c ?? "").trim())).toContain(valor);
     // a seleção fica ao ir para outra aba e voltar
     await aba(page, "Erros").click();
     await aba(page, "Envios realizados").click();
