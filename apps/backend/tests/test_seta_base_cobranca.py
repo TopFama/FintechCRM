@@ -5,7 +5,8 @@ Roda a SQL de verdade num Postgres que imita as duas tabelas do SETA que ela lê
 relativas a hoje em Brasília. Cobre as duas regras:
 - cliente cuja dívida aberta é só seguro (DESCRICAO_SEGURO) não volta;
 - cliente com atraso real só volta se o principal vencido (sem multa/juros)
-  for >= VALOR_MINIMO_ATRASO; lembrete (sem atraso ainda) não é cortado.
+  for >= VALOR_MINIMO_ATRASO; sem atraso (lembrete, Antecipado), vale o valor
+  da próxima parcela (parcelas da primeira data de vencimento de hoje em diante).
 
 Executa com asserts simples, sem pytest. Imprime 'OK' ao final.
 """
@@ -102,6 +103,11 @@ soma_29_99 = cliente([("10.00", NORMAL, 10), ("19.99", NORMAL, 8)])
 soma_30 = cliente([("10.00", NORMAL, 10), ("20.00", NORMAL, 8)])
 lembrete_amanha = cliente([("20.00", NORMAL, -1)])
 lembrete_hoje = cliente([("5.00", NORMAL, 0)])
+lembrete_amanha_30 = cliente([("30.00", NORMAL, -1)])
+antecipado_20 = cliente([("20.00", NORMAL, -10)])
+antecipado_30 = cliente([("30.00", NORMAL, -10)])
+antecipado_soma_30 = cliente([("10.00", NORMAL, -10), ("20.00", NORMAL, -10)])  # mesma data: soma
+antecipado_proxima_pequena = cliente([("20.00", NORMAL, -5), ("500.00", NORMAL, -40)])  # conta a próxima, não o total
 seguro_vencido_normal_futura = cliente([("50.00", SEGURO, 10), ("100.00", NORMAL, -5)])
 seguro_pequeno_normal_futura = cliente([("10.00", SEGURO, 10), ("100.00", NORMAL, -5)])
 descricao_nula = cliente([("100.00", None, 10)])
@@ -145,10 +151,16 @@ assert soma_29_99 not in base
 assert soma_30 in base and base[soma_30]["valor_atraso_original"] == Decimal("30.00")
 print("  10 + 19,99 fora; 10 + 20 volta")
 
-# 10: lembrete (ainda sem atraso) não passa pelo valor mínimo
-for codigo in (lembrete_amanha, lembrete_hoje):
-    assert codigo in base and base[codigo]["valor_atraso_original"] == 0
-print("  lembrete sem atraso real (R$ 20 amanhã, R$ 5 hoje): volta")
+# 10: sem atraso real (lembrete, Antecipado) o corte vale sobre a próxima parcela
+# (Antecipado vai de -365 a -2 dias; o `base` acima só enxerga de -1 em diante)
+base_antecipado = buscar(faixas=[(-365, None)])
+for codigo in (lembrete_amanha, lembrete_hoje, antecipado_20, antecipado_proxima_pequena):
+    assert codigo not in base_antecipado, f"próxima parcela abaixo de R$ 30 não deve voltar: {codigo}"
+for codigo in (lembrete_amanha_30, antecipado_30, antecipado_soma_30):
+    assert codigo in base_antecipado and base_antecipado[codigo]["valor_atraso_original"] == 0, codigo
+assert base_antecipado[antecipado_soma_30]["valor_proxima_parcela"] == Decimal("30.00")
+assert lembrete_amanha_30 in base and antecipado_30 not in base  # a faixa pedida continua valendo
+print("  sem atraso real: próxima parcela < R$ 30 fora (amanhã, hoje, Antecipado); >= R$ 30 volta")
 
 # 11: seguro vencido + normal a vencer não é "só seguro"; o valor mínimo vale sobre o vencido
 assert seguro_vencido_normal_futura in base
@@ -165,7 +177,7 @@ print("  descrição nula conta como título normal")
 alvo = buscar(codigos=[so_seguro_50, sem_seguro, abaixo_29_99, exato_30])
 assert set(alvo) == {sem_seguro, exato_30}, set(alvo)
 exato = buscar(faixas=[], dias_exatos=[-1])
-assert set(exato) == {lembrete_amanha}, set(exato)  # seguro_a_vencer (também -1) fica de fora
+assert set(exato) == {lembrete_amanha_30}, set(exato)  # seguro_a_vencer (também -1) e lembrete_amanha (R$ 20) ficam de fora
 print("  por códigos e por dias exatos: mesmas regras")
 
 # carência da multa separada da dos juros: fronteira (dias == carência não cobra, carência + 1 cobra)

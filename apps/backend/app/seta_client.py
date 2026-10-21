@@ -233,8 +233,10 @@ PORTADOR_MJ = "216"
 # não conta para o cluster de valor pago.
 DESCRICAO_SEGURO = "SEGURO TOPFAMA"
 
-# Cliente em atraso só entra na base se o principal vencido (sem multa nem
-# juros, `valor_atraso_original`) for de pelo menos este valor (inclusive).
+# Cliente só entra na base se o principal em atraso (sem multa nem juros,
+# `valor_atraso_original`) ou, sem atraso real (lembrete e Antecipado), o valor
+# da próxima parcela (`valor_proxima_parcela`) for de pelo menos este valor
+# (inclusive).
 VALOR_MINIMO_ATRASO = Decimal("30.00")
 
 # Condição de pagamento "A PRAZO ATIVO": crediário (condicoes.tipo = '4'), mas
@@ -255,7 +257,9 @@ WITH {cte_alvo}parcelas AS (
            trim(ft.portador) AS portador,
            -- COALESCE: descrição nula não é seguro (senão sumiria do filtro)
            COALESCE(trim(ft.descricao) = :descricao_seguro, false) AS eh_seguro,
-           min(ft.vencimento) OVER (PARTITION BY ft.pessoa) AS vencimento_min
+           min(ft.vencimento) OVER (PARTITION BY ft.pessoa) AS vencimento_min,
+           min(ft.vencimento) FILTER (WHERE ft.vencimento >= current_date)
+               OVER (PARTITION BY ft.pessoa) AS vencimento_proximo
       FROM financeiro_titulos ft
      WHERE ft.rp = 'R'
        AND ft.status = 'A'
@@ -292,6 +296,10 @@ abertos AS (
            -- Cobrança e das Campanhas, sem e com multa/juros
            COALESCE(sum(valor) FILTER (WHERE vencimento < current_date), 0)
                                           AS valor_atraso_original,
+           -- parcelas da primeira data de vencimento de hoje em diante (a
+           -- "próxima parcela" das mensagens)
+           COALESCE(sum(valor) FILTER (WHERE vencimento = vencimento_proximo), 0)
+                                          AS valor_proxima_parcela,
            COALESCE(sum(
                round(valor
                      + CASE WHEN current_date - vencimento > :dias_min_juros
@@ -308,9 +316,11 @@ candidatos AS (
       FROM abertos a
      WHERE {filtro_dias}
        AND a.qtd_titulos_nao_seguro > 0
-       -- sem atraso real (lembrete) passa; com atraso, vale o principal vencido
-       AND (a.vencimento_mais_antigo >= current_date
-            OR a.valor_atraso_original >= :valor_minimo_atraso)
+       -- com atraso, vale o principal vencido; sem atraso real (lembrete e
+       -- Antecipado), o valor da próxima parcela
+       AND CASE WHEN a.vencimento_mais_antigo >= current_date
+                THEN a.valor_proxima_parcela
+                ELSE a.valor_atraso_original END >= :valor_minimo_atraso
        {filtro_vencimento}
 ),
 base AS (
@@ -420,7 +430,8 @@ def buscar_base_cobranca(
       valores, mas cliente cuja dívida aberta é só seguro não volta.
     - cliente com atraso real (parcela vencida antes de hoje) só volta se o
       principal vencido (`valor_atraso_original`, sem multa/juros) for >=
-      `VALOR_MINIMO_ATRASO`; lembrete (ainda sem atraso) não passa por esse corte.
+      `VALOR_MINIMO_ATRASO`; sem atraso (lembrete, Antecipado), vale o valor da
+      próxima parcela (`valor_proxima_parcela`) contra o mesmo mínimo.
     - `faixas` (intervalos de dias) e `dias_exatos` (só o primeiro dia de cada
       faixa) restringem quem volta; `dias_exatos` tem precedência.
     - `vencimento_de` / `vencimento_ate` filtram pelo vencimento da parcela mais
