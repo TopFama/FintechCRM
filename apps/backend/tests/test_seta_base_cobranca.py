@@ -152,11 +152,14 @@ assert soma_30 in base and base[soma_30]["valor_atraso_original"] == Decimal("30
 print("  10 + 19,99 fora; 10 + 20 volta")
 
 # 10: sem atraso real (lembrete, Antecipado) o corte vale sobre a próxima parcela
+# (Antecipado vai de -365 a -2 dias; o `base` acima só enxerga de -1 em diante)
+base_antecipado = buscar(faixas=[(-365, None)])
 for codigo in (lembrete_amanha, lembrete_hoje, antecipado_20, antecipado_proxima_pequena):
-    assert codigo not in base, f"próxima parcela abaixo de R$ 30 não deve voltar: {codigo}"
+    assert codigo not in base_antecipado, f"próxima parcela abaixo de R$ 30 não deve voltar: {codigo}"
 for codigo in (lembrete_amanha_30, antecipado_30, antecipado_soma_30):
-    assert codigo in base and base[codigo]["valor_atraso_original"] == 0
-assert base[antecipado_soma_30]["valor_proxima_parcela"] == Decimal("30.00")
+    assert codigo in base_antecipado and base_antecipado[codigo]["valor_atraso_original"] == 0, codigo
+assert base_antecipado[antecipado_soma_30]["valor_proxima_parcela"] == Decimal("30.00")
+assert lembrete_amanha_30 in base and antecipado_30 not in base  # a faixa pedida continua valendo
 print("  sem atraso real: próxima parcela < R$ 30 fora (amanhã, hoje, Antecipado); >= R$ 30 volta")
 
 # 11: seguro vencido + normal a vencer não é "só seguro"; o valor mínimo vale sobre o vencido
