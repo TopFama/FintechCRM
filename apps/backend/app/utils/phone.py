@@ -32,6 +32,15 @@ def normalize_phone(raw: str | None) -> str:
     return value
 
 
+def formatar_celular(raw: str | None) -> str:
+    """"5563991234567" → "+55 (63) 99123-4567", como a tela exibe; fora desse formato, devolve como veio."""
+
+    s = re.sub(r"\D", "", str(raw or ""))
+    if len(s) != 13:
+        return str(raw or "")
+    return f"+{s[:2]} ({s[2:4]}) {s[4:9]}-{s[9:]}"
+
+
 def is_valid_phone(raw: str | None) -> bool:
     if eh_fixo(raw):
         return False

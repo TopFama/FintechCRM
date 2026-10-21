@@ -637,7 +637,7 @@ with TestClient(app) as client:
     export = client.get("/relatorios/envios/export", headers=headers)
     linhas_envios = list(openpyxl.load_workbook(io.BytesIO(export.content)).active.iter_rows(values_only=True))
     assert "Telefone cobrado" in linhas_envios[0]
-    assert linhas_envios[1][linhas_envios[0].index("Telefone cobrado")] == "5563999990000"
+    assert linhas_envios[1][linhas_envios[0].index("Telefone cobrado")] == "+55 (63) 99999-0000"
     assert client.get("/relatorios/telefones-invalidos/export", headers=headers).status_code == 200
 
     # Telefones inválidos contam números distintos: o mesmo número recusado duas

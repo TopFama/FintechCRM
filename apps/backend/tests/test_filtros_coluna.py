@@ -162,6 +162,9 @@ assert valores(V + "/valores", "nome", "ai") == ["Caio"]
 xlsx = client.get(V + "/export", params=f(nome={"valores": ["Bia"]}), headers=auth)
 linhas = list(openpyxl.load_workbook(io.BytesIO(xlsx.content)).active.iter_rows(values_only=True))
 assert [l[0] for l in linhas[1:]] == ["S1"], linhas
+# o telefone cobrado sai como a tela mostra, no Excel; a pesquisa da lista aceita o formato exibido
+assert linhas[1][linhas[0].index("Telefone cobrado")] == "+55 (63) 91111-0000", linhas
+assert valores(V + "/valores", "celular", "(63) 91111") == ["5563911110000"]
 # a ordenação continua valendo junto com o filtro
 assert get(V, sort_by="faixa", sort_dir="desc", **f(nome={"valores": ["Caio"]}))["total"] == 2
 

@@ -19,6 +19,7 @@ from .. import consultas_fila, fila_automatica, filtros_coluna, pausas
 from ..filtros_coluna import Coluna, filtros_da_query
 from ..services import efetividade_service, pagamentos_service
 from ..timezone import hora_br
+from ..utils.phone import formatar_celular
 from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx, formula_safe, texto_nunca_formula
 
 api = APIRouter()
@@ -438,7 +439,7 @@ def export_dispatch_report(
             formula_safe(item.nome),
             (item.lojas or "").strip(","),
             formula_safe(item.valor or ""),
-            formula_safe(item.celular),
+            formula_safe(formatar_celular(item.celular)),
             item.whatsapp_number.display_phone_number if item.whatsapp_number else "",
             hora_br(item.sent_at),
         ]
