@@ -422,6 +422,13 @@ def valores_dispatch_report(
     return schemas.ValoresColuna(valores=valores, truncado=truncado)
 
 
+def _celular_planilha(celular: str | None) -> str:
+    """Telefone como a tela mostra; o que não vira "+55 (DD) ..." segue sem injeção de fórmula."""
+
+    formatado = formatar_celular(celular)
+    return formula_safe(formatado) if formatado == (celular or "") else formatado
+
+
 @api.get("/envios/export")
 def export_dispatch_report(
     de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
@@ -439,7 +446,7 @@ def export_dispatch_report(
             formula_safe(item.nome),
             (item.lojas or "").strip(","),
             formula_safe(item.valor or ""),
-            formula_safe(formatar_celular(item.celular)),
+            _celular_planilha(item.celular),
             item.whatsapp_number.display_phone_number if item.whatsapp_number else "",
             hora_br(item.sent_at),
         ]
