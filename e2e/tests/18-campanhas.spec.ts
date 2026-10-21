@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { API_URL } from "./ambiente";
-import { apiGet, apiSend, baixar, card, expect, responderDialogo, test } from "./fixtures";
+import { apiGet, apiSend, baixar, card, expect, filtrarColuna, filtrosApi, responderDialogo, test } from "./fixtures";
 import { prepararTemplates } from "./preparo";
 
 const DADOS = path.join(path.dirname(fileURLToPath(import.meta.url)), "dados");
@@ -251,11 +251,12 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     const pendente = fila.itens.find((i: any) => i.status === "pending");
     expect(pendente).toBeTruthy();
     {
-      const api = await apiGet(page, `/reports/pendentes?faixa_id=${campanha.faixa_id}&limit=50&offset=0`);
+      const api = await apiGet(page, `/reports/pendentes?filtros=${filtrosApi({ campanha: [campanha.nome] })}&limit=50&offset=0`);
       const linhaApi = api.itens.find((i: any) => i.codigo_cliente === pendente.codigo_cliente);
       expect(linhaApi.campanha).toBe("Planilha promo");
       expect((await apiGet(page, "/cobranca/regras")).faixas).toContain(linhaApi.faixa);
-      await page.goto(`/relatorios?aba=pendentes&faixa_id=${campanha.faixa_id}`);
+      await page.goto("/relatorios?aba=pendentes");
+      await filtrarColuna(page, "Campanha", [campanha.nome]);
       await expect(page.getByRole("columnheader", { name: /Faixa de atraso \(régua\)/ })).toBeVisible();
       const linha = page.locator("tbody tr", { hasText: pendente.codigo_cliente });
       await expect(linha).toContainText("Planilha promo");
@@ -344,18 +345,15 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
 
   test("Relatórios filtram por campanha", async ({ page }) => {
     const campanha = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Feirão lojas 01 e 06");
+    const faixaCampanha = `Campanha: ${campanha.nome}`;
     const todos = (await apiGet(page, "/reports/envios?limit=1&offset=0")).total;
-    const daCampanha = (await apiGet(page, `/reports/envios?campanha=${campanha.id}&limit=1&offset=0`)).total;
-    const regua = (await apiGet(page, "/reports/envios?campanha=regua&limit=1&offset=0")).total;
+    const daCampanha = (await apiGet(page, `/reports/envios?filtros=${filtrosApi({ faixa: [faixaCampanha] })}&limit=1&offset=0`)).total;
     expect(daCampanha).toBeGreaterThan(0);
-    expect(regua + daCampanha).toBeLessThanOrEqual(todos);
+    expect(daCampanha).toBeLessThanOrEqual(todos);
 
     await page.goto("/relatorios?aba=envios");
-    await page.getByLabel("Campanha").selectOption({ label: "Feirão lojas 01 e 06" });
-    await expect(page).toHaveURL(new RegExp(`campanha=${campanha.id}`));
+    await filtrarColuna(page, "Faixa de atraso", [faixaCampanha]);
     await expect(page.locator(".card table tbody tr")).toHaveCount(Math.min(daCampanha, 50));
-    await page.reload();
-    await expect(page.getByLabel("Campanha")).toHaveValue(campanha.id);
   });
 
   test("remarketing do Renegocie entra como campanha fixa", async ({ page }) => {
@@ -406,7 +404,7 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     const efet = await apiGet(page, "/reports/efetividade");
     expect(efet.por_campanha.map((l: any) => l.campanha)).toContain(nome);
     expect((await apiGet(page, `/reports/efetividade?campanha=${id}`)).total.clientes_cobrados).toBe(naFila);
-    expect((await apiGet(page, `/reports/envios?campanha=${id}&limit=10&offset=0`)).total).toBe(naFila);
+    expect((await apiGet(page, `/reports/envios?filtros=${filtrosApi({ faixa: [nome] })}&limit=10&offset=0`)).total).toBe(naFila);
 
     await page.goto("/");
     const e = card(page, "Efetividade da cobrança");

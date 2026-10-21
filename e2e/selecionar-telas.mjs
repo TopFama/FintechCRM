@@ -119,7 +119,7 @@ export const FUNCIONALIDADES = {
   relatorios: [
     `${F}pages/Relatorios.tsx`, `${F}components/FiltroPeriodo.tsx`, `${F}components/Paginacao.tsx`, `${F}components/useRequisicaoUnica.ts`,
     `${F}components/SortableTh.tsx`, `${F}components/SelectCampanha.tsx`, `${B}routers/reports.py`,
-    `${B}consultas_fila.py`, `${B}utils/xlsx.py`,
+    `${B}consultas_fila.py`, `${B}utils/xlsx.py`, `${F}components/FiltroColuna.tsx`, `${F}filtrosColuna.ts`, `${B}filtros_coluna.py`,
   ],
   resiliencia: [
     `${F}components/AvisoSetaFora.tsx`, `${F}components/useAtualizacaoAutomatica.ts`, `${F}components/useRequisicaoUnica.ts`, `${F}pages/Dashboard.tsx`,

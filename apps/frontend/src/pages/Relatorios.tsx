@@ -3,7 +3,6 @@ import { useSearchParams } from "react-router-dom";
 import {
   api,
   DispatchReportItem,
-  Faixa,
   FilaReportItem,
   FilaReportPage,
   foiCancelada,
@@ -12,16 +11,15 @@ import {
   PagamentoCliente,
   PagamentosPage,
   PausaEnvio,
-  ROTULO_TIPO_FAIXA,
-  TipoFaixa,
+  Faixa,
 } from "../api";
 import { useSetaFora } from "../components/AvisoSetaFora";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import { AcaoPendentes, PainelAcao, PainelDescartar, PainelPausaLote, PausasAtivas } from "../components/PausasPendentes";
-import SelectCampanha from "../components/SelectCampanha";
 import SelectJanelaPagamento from "../components/SelectJanelaPagamento";
-import SortableTh from "../components/SortableTh";
+import { ControleFiltros, ThFiltravel, TipoColuna } from "../components/FiltroColuna";
 import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
+import { FiltrosColuna, serializarFiltros, useFiltrosColuna } from "../filtrosColuna";
 import { formatBRL, formatCelular, formatCpf, formatData, formatDataHora, formatNumero, formatValorFila } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
 import { SortDirection, useSort } from "../sort";
@@ -57,21 +55,54 @@ type ColunaPagamento =
   | "primeiro_pagamento";
 type ColunaEnvio = "codigo_cliente" | "faixa" | "nome" | "loja" | "valor" | "celular" | "telefone" | "enviado_em";
 
+// Colunas de data (período no topo da tela) não têm o filtro de valores; "quando" dos erros filtra por de, até
+const SEM_FILTRO = new Set(["created_at", "enviado_em", "entrou_em", "data_cobranca", "primeiro_pagamento"]);
+const FILTRO_COLUNA: Record<string, { tipo?: TipoColuna; rotuloVazio?: string; formatar?: (v: string) => string }> = {
+  valor: { tipo: "numero", formatar: (v) => formatBRL(v) },
+  valor_cobrado: { tipo: "numero", formatar: (v) => formatBRL(v) },
+  valor_pago: { tipo: "numero", formatar: (v) => formatBRL(v) },
+  quando: { tipo: "data" },
+  loja: { rotuloVazio: "sem loja" },
+  campanha: { rotuloVazio: "Régua" },
+};
+
+/** Cabeçalho de coluna dos relatórios: ordena no servidor e filtra pela própria coluna. */
+function ThColuna({
+  coluna,
+  rotulo,
+  ordenacao,
+  controle,
+}: {
+  coluna: string;
+  rotulo: string;
+  ordenacao?: { sortKey: string | null; sortDir: SortDirection; toggleSort: (c: any) => void };
+  controle: ControleFiltros;
+}) {
+  return (
+    <ThFiltravel
+      coluna={coluna}
+      rotulo={rotulo}
+      ordenacao={ordenacao}
+      controle={SEM_FILTRO.has(coluna) ? undefined : controle}
+      {...FILTRO_COLUNA[coluna]}
+    />
+  );
+}
+
 export default function Relatorios() {
-  // Aba, período e faixa vivem na URL: um link do Dashboard abre direto no
-  // relatório certo e F5/voltar mantêm o que estava na tela.
+  // Aba e período vivem na URL: um link do Dashboard abre direto no relatório
+  // certo e F5/voltar mantêm o que estava na tela. Os filtros das colunas ficam
+  // na sessão (useFiltrosColuna); o faixa_id de um link vira o filtro da coluna Faixa.
   const [params, setParams] = useSearchParams();
   const abaUrl = params.get("aba") as Tab | null;
   const tab: Tab = abaUrl && ABAS.some((a) => a.aba === abaUrl) ? abaUrl : ABAS[0].aba;
-  const faixaId = params.get("faixa_id") ?? "";
-  const campanha = params.get("campanha") ?? "";
+  const faixaUrl = params.get("faixa_id") ?? "";
   const cobradoDe = params.get("de") ?? "";
   const cobradoAte = params.get("ate") ?? "";
   // Vem do card de pagamentos do Dashboard ("" = qualquer data após a cobrança)
   const diasJanela = params.get("dias_janela") ?? "";
   // Vem do "Pagaram" do Por faixa: cobrados = clientes com envio no período
   const base = params.get("base") === "envios" ? ("envios" as const) : undefined;
-  const loja = tab === "pendentes" ? params.get("loja") ?? "" : "";
   function mudarUrl(mudancas: Record<string, string>) {
     setParams(
       (atual) => {
@@ -90,12 +121,12 @@ export default function Relatorios() {
     proximo.set("aba", t);
     return proximo;
   });
-  const setFaixaId = (v: string) => mudarUrl({ faixa_id: v });
   const setCobradoDe = (v: string) => mudarUrl({ de: v });
   const setCobradoAte = (v: string) => mudarUrl({ ate: v });
   const [faixas, setFaixas] = useState<Faixa[]>([]);
-  // Só "Quem pagou" com faixa escolhida depende da lista de faixas (ver load)
-  const faixasProntas = faixas.length > 0 || !faixaId || tab !== "pagamentos";
+  const { filtros, alterar: alterarFiltro } = useFiltrosColuna(tab);
+  // O faixa_id de um link do Dashboard só vira filtro quando a lista de faixas chega
+  const faixasProntas = faixas.length > 0 || !faixaUrl;
   const [fila, setFila] = useState<FilaReportItem[]>([]);
   const [filaTotal, setFilaTotal] = useState(0);
   const [filaInfo, setFilaInfo] = useState<Pick<FilaReportPage, "total_pausados" | "total_sem_loja">>({
@@ -147,6 +178,15 @@ export default function Relatorios() {
     api.listFaixas().then(setFaixas).catch(() => undefined);
   }, []);
 
+  // Link do Dashboard (faixa_id na URL): passa para o filtro da coluna Faixa
+  useEffect(() => {
+    if (!faixaUrl || faixas.length === 0) return;
+    const nome = faixas.find((f) => f.id === faixaUrl)?.name;
+    if (nome) alterarFiltro("faixa", { valores: [nome] });
+    mudarUrl({ faixa_id: "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [faixaUrl, faixas]);
+
   function carregarPausas() {
     api.listarPausas().then(setPausas).catch((e) => setError(e.message));
   }
@@ -189,15 +229,12 @@ export default function Relatorios() {
     setLoading(true);
     setError(null);
     const seq = ++reqRef.current;
-    // "Quem pagou" filtra a faixa pelo nome: espera a lista de faixas chegar,
-    // senão a primeira consulta sai sem o filtro (ex.: link vindo do Dashboard)
-    if (tab === "pagamentos" && faixaId && faixas.length === 0) return;
+    // espera a lista de faixas chegar, senão a primeira consulta sai sem o
+    // filtro de Faixa (ex.: link vindo do Dashboard)
+    if (!faixasProntas) return;
     const atual = () => seq === reqRef.current;
     const params = {
-      faixa_id: faixaId || undefined,
-      campanha: campanha || undefined,
-      de: cobradoDe || undefined,
-      ate: cobradoAte || undefined,
+      ...periodoEFiltros(),
       limit: novoLimit,
       offset: novoOffset,
       sort_by: sortBy ?? undefined,
@@ -219,7 +256,7 @@ export default function Relatorios() {
             )
             .then((r) => atual() && setPagamentos(r))
         : tab === "pendentes" || tab === "erros"
-        ? (tab === "pendentes" ? api.listPendentes({ ...params, loja: loja || undefined }) : api.listErros(params)).then(
+        ? (tab === "pendentes" ? api.listPendentes(params) : api.listErros(params)).then(
             (r) => {
               if (!atual()) return;
               setFila(r.itens);
@@ -247,13 +284,20 @@ export default function Relatorios() {
     setOffset(0);
     load(0, limit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, faixaId, campanha, loja, cobradoDe, cobradoAte, pagoDe, pagoAte, diasJanela, base, faixasProntas]);
+  }, [tab, JSON.stringify(filtros), cobradoDe, cobradoAte, pagoDe, pagoAte, diasJanela, base, faixasProntas]);
 
-  function filtrosPagamentos() {
-    const nome = faixas.find((f) => f.id === faixaId)?.name;
+  // Período da tela e filtros das colunas, como as rotas dos relatórios os recebem
+  function periodoEFiltros(colunas: FiltrosColuna = filtros) {
+    return { de: cobradoDe || undefined, ate: cobradoAte || undefined, filtros: serializarFiltros(colunas) };
+  }
+
+  // Quem pagou filtra a Faixa antes do cache do SETA (o valor cobrado soma só as faixas escolhidas):
+  // ela vai no parâmetro `faixa` e as outras colunas em `filtros`
+  function filtrosPagamentos(colunas: FiltrosColuna = filtros) {
+    const { faixa, ...outras } = colunas;
     return {
-      faixa: nome ? [nome] : undefined,
-      campanha: campanha || undefined,
+      faixa: faixa?.valores,
+      filtros: serializarFiltros(outras),
       cobrado_de: cobradoDe || undefined,
       cobrado_ate: cobradoAte || undefined,
       pago_de: pagoDe || undefined,
@@ -262,6 +306,18 @@ export default function Relatorios() {
       base,
     };
   }
+
+  // Lista de valores do filtro de uma coluna (dentro dos filtros das outras colunas)
+  const controleFiltros: ControleFiltros = {
+    filtros,
+    alterar: alterarFiltro,
+    valores: (coluna, busca) => {
+      const consulta = { coluna, busca: busca || undefined };
+      return tab === "pagamentos"
+        ? api.valoresColuna("pagamentos", { ...filtrosPagamentos(filtros), ...consulta })
+        : api.valoresColuna(tab === "invalidos" ? "telefones-invalidos" : tab, { ...periodoEFiltros(filtros), ...consulta });
+    },
+  };
 
   function mudarPagina(novoOffset: number) {
     setOffset(novoOffset);
@@ -278,18 +334,13 @@ export default function Relatorios() {
     setDownloading(true);
     setError(null);
     try {
-      const periodo = {
-        faixa_id: faixaId || undefined,
-        campanha: campanha || undefined,
-        de: cobradoDe || undefined,
-        ate: cobradoAte || undefined,
-      };
+      const periodo = periodoEFiltros();
       if (tab === "invalidos") {
         await api.downloadInvalidPhonesXlsx(periodo);
       } else if (tab === "envios") {
         await api.downloadDispatchReportXlsx(periodo);
       } else if (tab === "pendentes") {
-        await api.downloadPendentesXlsx({ ...periodo, loja: loja || undefined });
+        await api.downloadPendentesXlsx(periodo);
       } else if (tab === "erros") {
         await api.downloadErrosXlsx(periodo);
       } else {
@@ -302,13 +353,16 @@ export default function Relatorios() {
     }
   }
 
+  // "Parar esta régua/loja" vale quando o filtro da coluna deixa uma só régua/loja
+  const reguaFiltrada = filtros.faixa?.valores?.length === 1 ? faixas.find((f) => f.name === filtros.faixa.valores![0] && f.tipo === "regua") : undefined;
+  const lojaFiltrada = filtros.loja?.valores?.length === 1 && filtros.loja.valores[0] ? filtros.loja.valores[0] : "";
+
   function acaoEscopo(tipo: "pausar" | "parar", escopo: "faixa" | "loja"): AcaoPendentes {
     if (escopo === "faixa") {
-      const nome = faixas.find((f) => f.id === faixaId)?.name ?? faixaId;
-      return { tipo, escopo, valor: faixaId, rotulo: `a régua ${nome}` };
+      return { tipo, escopo, valor: reguaFiltrada!.id, rotulo: `a régua ${reguaFiltrada!.name}` };
     }
-    const l = lojas.find((x) => x.filial === loja);
-    return { tipo, escopo, valor: loja, rotulo: `a loja ${l?.nome_com_cod || loja}` };
+    const l = lojas.find((x) => x.filial === lojaFiltrada);
+    return { tipo, escopo, valor: lojaFiltrada, rotulo: `a loja ${l?.nome_com_cod || lojaFiltrada}` };
   }
 
   const totalAtual =
@@ -346,37 +400,6 @@ export default function Relatorios() {
             ))}
           </div>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <select aria-label="Faixa" value={faixaId} onChange={(e) => setFaixaId(e.target.value)} style={{ minWidth: 180 }}>
-              <option value="">Todas as faixas</option>
-              {(["regua", "campanha", "remarketing"] as TipoFaixa[]).map((tipo) => {
-                const doTipo = faixas.filter((f) => f.tipo === tipo);
-                return doTipo.length ? (
-                  <optgroup key={tipo} label={ROTULO_TIPO_FAIXA[tipo]}>
-                    {doTipo.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {tipo === "campanha" ? f.name.replace(/^Campanha: /, "") : f.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                ) : null;
-              })}
-            </select>
-            <SelectCampanha id="relatorios-campanha" compacto value={campanha} onChange={(v) => mudarUrl({ campanha: v })} />
-            {tab === "pendentes" && (
-              <select
-                aria-label="Loja"
-                value={loja}
-                onChange={(e) => mudarUrl({ loja: e.target.value })}
-                style={{ minWidth: 160 }}
-              >
-                <option value="">Todas as lojas</option>
-                {lojas.map((l) => (
-                  <option key={l.filial} value={l.filial}>
-                    {l.nome_com_cod || l.filial}
-                  </option>
-                ))}
-              </select>
-            )}
             <button className="secondary" onClick={handleDownload} disabled={downloading}>
               <IconDownload width={16} height={16} /> {downloading ? "Baixando..." : "Baixar Excel"}
             </button>
@@ -463,12 +486,12 @@ export default function Relatorios() {
               >
                 Pausar loja
               </button>
-              {faixaId && (
+              {reguaFiltrada && (
                 <button className="secondary small" onClick={() => setAcao(acaoEscopo("parar", "faixa"))}>
                   Parar esta régua
                 </button>
               )}
-              {loja && (
+              {lojaFiltrada && (
                 <button className="secondary small" onClick={() => setAcao(acaoEscopo("parar", "loja"))}>
                   Parar esta loja
                 </button>
@@ -488,15 +511,9 @@ export default function Relatorios() {
             </div>
             {descartar && (
               <PainelDescartar
-                filtros={{
-                  faixa_id: faixaId || undefined,
-                  campanha: campanha || undefined,
-                  loja: loja || undefined,
-                  de: cobradoDe || undefined,
-                  ate: cobradoAte || undefined,
-                }}
+                filtros={periodoEFiltros()}
                 descricao={
-                  faixaId || campanha || loja || cobradoDe || cobradoAte
+                  Object.keys(filtros).length || cobradoDe || cobradoAte
                     ? "os pendentes com os filtros desta tela"
                     : "todos os pendentes"
                 }
@@ -553,13 +570,14 @@ export default function Relatorios() {
                   : `Dados do SETA de ${formatDataHora(pagamentos.gerado_em)}: o relatório está sendo atualizado.`}
               </div>
             )}
-            <TabelaPagamentos dados={pagamentos} ordenacao={pagamentosSort} />
+            <TabelaPagamentos dados={pagamentos} ordenacao={pagamentosSort} controle={controleFiltros} />
           </>
         ) : tab === "pendentes" || tab === "erros" ? (
           <TabelaFila
             tipo={tab}
             itens={fila}
             ordenacao={tab === "pendentes" ? pendentesSort : errosSort}
+            controle={controleFiltros}
             onAcao={(tipo, item) =>
               setAcao({
                 tipo,
@@ -592,14 +610,7 @@ export default function Relatorios() {
                         ["created_at", "Quando"],
                       ] as [ColunaInvalido, string][]
                     ).map(([coluna, rotulo]) => (
-                      <SortableTh
-                        key={coluna}
-                        active={invalidosSort.sortKey === coluna}
-                        dir={invalidosSort.sortDir}
-                        onSort={() => invalidosSort.toggleSort(coluna)}
-                      >
-                        {rotulo}
-                      </SortableTh>
+                      <ThColuna key={coluna} coluna={coluna} rotulo={rotulo} ordenacao={invalidosSort} controle={controleFiltros} />
                     ))}
                   </tr>
                 </thead>
@@ -622,10 +633,10 @@ export default function Relatorios() {
         ) : dispatchReport.length === 0 ? (
           <div className="empty-state">
             <IconInbox width={28} height={28} />
-            {faixaId || cobradoDe || cobradoAte ? (
+            {Object.keys(filtros).length || cobradoDe || cobradoAte ? (
               <>
                 <div className="title">Nenhum envio encontrado com esses filtros</div>
-                <p>Troque a faixa ou o período para ver outros envios.</p>
+                <p>Troque os filtros ou o período para ver outros envios.</p>
               </>
             ) : (
               <>
@@ -651,14 +662,7 @@ export default function Relatorios() {
                       ["enviado_em", "Data/hora"],
                     ] as [ColunaEnvio, string][]
                   ).map(([coluna, rotulo]) => (
-                    <SortableTh
-                      key={coluna}
-                      active={enviosSort.sortKey === coluna}
-                      dir={enviosSort.sortDir}
-                      onSort={() => enviosSort.toggleSort(coluna)}
-                    >
-                      {rotulo}
-                    </SortableTh>
+                    <ThColuna key={coluna} coluna={coluna} rotulo={rotulo} ordenacao={enviosSort} controle={controleFiltros} />
                   ))}
                 </tr>
               </thead>
@@ -707,9 +711,11 @@ const COLUNAS_PAGAMENTO: [ColunaPagamento, string][] = [
 function TabelaPagamentos({
   dados,
   ordenacao,
+  controle,
 }: {
   dados: PagamentosPage | null;
   ordenacao: ReturnType<typeof useSort<ColunaPagamento>>;
+  controle: ControleFiltros;
 }) {
   if (!dados || dados.itens.length === 0) {
     return (
@@ -747,14 +753,7 @@ function TabelaPagamentos({
           <thead>
             <tr>
               {COLUNAS_PAGAMENTO.map(([coluna, rotulo]) => (
-                <SortableTh
-                  key={coluna}
-                  active={ordenacao.sortKey === coluna}
-                  dir={ordenacao.sortDir}
-                  onSort={() => ordenacao.toggleSort(coluna)}
-                >
-                  {rotulo}
-                </SortableTh>
+                <ThColuna key={coluna} coluna={coluna} rotulo={rotulo} ordenacao={ordenacao} controle={controle} />
               ))}
             </tr>
           </thead>
@@ -807,11 +806,13 @@ function TabelaFila({
   tipo,
   itens,
   ordenacao,
+  controle,
   onAcao,
 }: {
   tipo: "pendentes" | "erros";
   itens: FilaReportItem[];
   ordenacao: ReturnType<typeof useSort<ColunaFila>>;
+  controle: ControleFiltros;
   onAcao: (tipo: "pausar" | "parar", item: FilaReportItem) => void;
 }) {
   if (itens.length === 0) {
@@ -819,7 +820,7 @@ function TabelaFila({
       <div className="empty-state">
         {tipo === "pendentes" ? <IconInbox width={28} height={28} /> : <IconCheckCircle width={28} height={28} />}
         <div className="title">{tipo === "pendentes" ? "Nenhum pendente na fila" : "Nenhum erro de envio"}</div>
-        <p>Troque a faixa ou o período para ver outros itens da fila.</p>
+        <p>Troque os filtros ou o período para ver outros itens da fila.</p>
       </div>
     );
   }
@@ -829,18 +830,11 @@ function TabelaFila({
         <thead>
           <tr>
             {COLUNAS_FILA[tipo].map(([coluna, rotulo]) => (
-              <SortableTh
-                key={coluna}
-                active={ordenacao.sortKey === coluna}
-                dir={ordenacao.sortDir}
-                onSort={() => ordenacao.toggleSort(coluna)}
-              >
-                {rotulo}
-              </SortableTh>
+              <ThColuna key={coluna} coluna={coluna} rotulo={rotulo} ordenacao={ordenacao} controle={controle} />
             ))}
             {tipo === "pendentes" && (
               <>
-                <th scope="col">Loja</th>
+                <ThColuna coluna="loja" rotulo="Loja" controle={controle} />
                 <th scope="col">
                   <span className="sr-only">Ações</span>
                 </th>

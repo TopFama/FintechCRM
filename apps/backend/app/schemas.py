@@ -606,6 +606,13 @@ class InvalidPhonePage(BaseModel):
     itens: list[InvalidPhoneOut]
 
 
+class ValoresColuna(BaseModel):
+    """Valores distintos de uma coluna de relatório (lista do filtro da coluna); "" = vazio."""
+
+    valores: list[str]
+    truncado: bool = False
+
+
 class DispatchReportItemOut(BaseModel):
     codigo_cliente: str
     faixa: str

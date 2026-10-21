@@ -9,6 +9,7 @@ Executa com assert simples (sem pytest) e imprime OK ao final.
 """
 
 import io
+import json
 import os
 import tempfile
 from datetime import date, datetime, timedelta, timezone
@@ -652,10 +653,12 @@ with TestClient(app) as client:
                 motivo="x", created_at=quando,
             ))
         db_inv.commit()
-        faixa_inv_id = faixa_inv.id
     finally:
         db_inv.close()
-    lista_inv = client.get(f"/relatorios/telefones-invalidos?faixa_id={faixa_inv_id}", headers=headers).json()
+    lista_inv = client.get(
+        "/relatorios/telefones-invalidos", params={"filtros": json.dumps({"codigo_cliente": {"valores": ["901"]}})},
+        headers=headers,
+    ).json()
     assert lista_inv["total"] == 1 and len(lista_inv["itens"]) == 1
 
     # 8. Exportação Excel: GET /reports/efetividade.xlsx

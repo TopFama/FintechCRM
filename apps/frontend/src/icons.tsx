@@ -320,3 +320,11 @@ export function IconReply(props: IconProps) {
     </svg>
   );
 }
+
+export function IconFilter(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M4 5h16l-6 7v6l-4 2v-8z" />
+    </svg>
+  );
+}

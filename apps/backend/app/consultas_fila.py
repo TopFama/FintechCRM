@@ -7,20 +7,12 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import Numeric, and_, case, func, or_, select, true
 from sqlalchemy.orm import Session, contains_eager, selectinload
 
-from . import campanhas_fixas, models, pausas
+from . import campanhas_fixas, filtros_coluna, models, pausas
+from .filtros_coluna import Coluna
 from .config import settings
 from .regras_db import carregar_regras
 from .timezone import dia_br, inicio_do_dia_utc
 
-
-def filtro_faixa(db: Session, faixa_id: str):
-    """Itens da faixa. Numa faixa de atraso (régua), também os envios de
-    campanha/remarketing a clientes que estavam nela, como no "Por faixa"
-    do Dashboard."""
-    faixa = db.get(models.Faixa, faixa_id)
-    if faixa is None or faixa.tipo != models.TIPO_REGUA:
-        return models.QueueItem.faixa_id == faixa_id
-    return or_(models.QueueItem.faixa_id == faixa_id, models.QueueItem.faixa_atraso == faixa.name)
 
 def filtro_campanha(db: Session, coluna_faixa_id, campanha: str | None):
     """Filtro "Campanha" dos relatórios da fila: "regua" = só as faixas de
@@ -53,26 +45,23 @@ def um_por_telefone(db: Session, filtrada):
 
 def envios_realizados(
     db: Session,
-    faixa_id: str | None,
     de: date | None = None,
     ate: date | None = None,
     sort_by: str | None = None,
     sort_dir: str = "asc",
-    campanha: str | None = None,
+    filtros: dict | None = None,
+    carregar: bool = True,
 ):
     query = (
         db.query(models.QueueItem)
-        .options(
-            selectinload(models.QueueItem.faixa),
-            selectinload(models.QueueItem.whatsapp_number),
-        )
+        .join(models.QueueItem.faixa)
+        .outerjoin(models.QueueItem.whatsapp_number)
         .filter(models.QueueItem.status == models.QueueStatus.sent, models.QueueItem.sent_at.isnot(None))
     )
-    if faixa_id:
-        query = query.filter(filtro_faixa(db, faixa_id))
-    if campanha:
-        query = query.filter(filtro_campanha(db, models.QueueItem.faixa_id, campanha))
+    if carregar:
+        query = query.options(selectinload(models.QueueItem.faixa), selectinload(models.QueueItem.whatsapp_number))
     query = no_periodo(query, models.QueueItem.sent_at, de, ate)
+    query = filtros_coluna.aplicar(query, COLUNAS_ENVIOS, filtros)
 
     def _ordenado(coluna):
         return coluna.desc() if sort_dir == "desc" else coluna.asc()
@@ -86,11 +75,9 @@ def envios_realizados(
             if nomes_faixa
             else models.Faixa.name
         )
-        query = query.join(models.QueueItem.faixa).order_by(_ordenado(expr), models.QueueItem.id)
+        query = query.order_by(_ordenado(expr), models.QueueItem.id)
     elif sort_by == "telefone":
-        query = query.outerjoin(models.QueueItem.whatsapp_number).order_by(
-            _ordenado(models.WhatsappNumber.display_phone_number), models.QueueItem.id
-        )
+        query = query.order_by(_ordenado(models.WhatsappNumber.display_phone_number), models.QueueItem.id)
     elif sort_by == "valor":
         query = query.order_by(_ordenado(valor_numerico()).nulls_last(), models.QueueItem.id)
     elif sort_by in ("codigo_cliente", "nome", "celular"):
@@ -103,6 +90,13 @@ def envios_realizados(
         query = query.order_by(models.QueueItem.sent_at.desc())
     return query
 
+
+def valores_envios(db: Session, de, ate, filtros: dict | None, coluna: str, busca: str | None):
+    """Valores distintos de uma coluna do relatório de envios (lista do filtro da coluna)."""
+    return filtros_coluna.valores_distintos(
+        envios_realizados(db, de, ate, carregar=False), COLUNAS_ENVIOS, filtros, coluna, busca
+    )
+
 def valor_numerico():
     """QueueItem.valor (texto: "1.500,00" da planilha ou "1500.00" do SETA)
     como número, para ordenar pelo valor e não em ordem alfabética. Texto
@@ -114,6 +108,19 @@ def valor_numerico():
         else_=texto,
     )
     return case((sem_milhar.op("~")(r"^-?[0-9]+(\.[0-9]+)?$"), func.cast(sem_milhar, Numeric)), else_=None)
+
+
+# Faixa: escolher uma faixa de atraso traz também as campanhas feitas a clientes que estavam
+# nela, como a linha da faixa no "Por faixa" do Dashboard (a contagem do card bate com o relatório)
+COLUNAS_ENVIOS = {
+    "codigo_cliente": Coluna(models.QueueItem.codigo_cliente),
+    "faixa": Coluna(models.Faixa.name, tambem=models.QueueItem.faixa_atraso),
+    "nome": Coluna(models.QueueItem.nome),
+    "loja": Coluna(models.QueueItem.lojas, "multi"),
+    "valor": Coluna(valor_numerico(), "numero"),
+    "celular": Coluna(models.QueueItem.celular),
+    "telefone": Coluna(models.WhatsappNumber.display_phone_number),
+}
 
 
 def separar_faixa(item: models.QueueItem, nome_faixa: str) -> tuple[str | None, str | None]:
@@ -132,34 +139,54 @@ def ultimo_erro():
     )
 
 
-def itens_da_fila(
-    db: Session,
-    status_fila: tuple[models.QueueStatus, ...],
-    faixa_id: str | None,
-    de: date | None,
-    ate: date | None,
-    sort_by: str | None = None,
-    sort_dir: str = "asc",
-    loja: str | None = None,
-    campanha: str | None = None,
-):
+def _base_fila(db: Session, status_fila: tuple[models.QueueStatus, ...], de, ate, carregar: bool):
+    """Itens da fila nos status e período dados, com o mapa das colunas filtráveis."""
     ultimo = ultimo_erro()
     # erro de upload/extração não passa por log_erros: vale a entrada na fila
     quando = func.coalesce(ultimo.c.quando, models.QueueItem.created_at)
     query = (
         db.query(models.QueueItem, models.Faixa.name, quando)
+        .select_from(models.QueueItem)  # a lista de valores troca as colunas e os joins partem sempre da fila
         .join(models.Faixa, models.Faixa.id == models.QueueItem.faixa_id)
-        .options(contains_eager(models.QueueItem.faixa))  # tipo da faixa sem consulta por item
         .outerjoin(ultimo, ultimo.c.queue_item_id == models.QueueItem.id)
         .filter(models.QueueItem.status.in_(status_fila))
     )
-    if faixa_id:
-        query = query.filter(filtro_faixa(db, faixa_id))
-    if campanha:
-        query = query.filter(filtro_campanha(db, models.QueueItem.faixa_id, campanha))
-    if loja:
-        query = query.filter(models.QueueItem.lojas.like(f"%,{pausas.normalizar_valor('loja', loja)},%"))
+    if carregar:
+        query = query.options(contains_eager(models.QueueItem.faixa))  # tipo da faixa sem consulta por item
     query = no_periodo(query, models.QueueItem.created_at, de, ate)
+    eh_campanha = models.Faixa.tipo != models.TIPO_REGUA
+    colunas = {
+        "codigo_cliente": Coluna(models.QueueItem.codigo_cliente),
+        "nome": Coluna(models.QueueItem.nome),
+        "faixa": Coluna(case((eh_campanha, models.QueueItem.faixa_atraso), else_=models.Faixa.name)),
+        "campanha": Coluna(case((eh_campanha, func.regexp_replace(models.Faixa.name, "^Campanha: ", "")), else_=None)),
+        "valor": Coluna(valor_numerico(), "numero"),
+        "telefone": Coluna(models.QueueItem.celular),
+        "entrou_em": Coluna(models.QueueItem.created_at, "data"),
+        "quando": Coluna(quando, "data"),
+        "mensagem": Coluna(func.coalesce(func.nullif(models.QueueItem.error_message, ""), "Erro sem detalhe")),
+        "loja": Coluna(models.QueueItem.lojas, "multi"),
+    }
+    return query, quando, colunas
+
+
+def valores_fila(db: Session, status_fila, de, ate, filtros: dict | None, coluna: str, busca: str | None):
+    """Valores distintos de uma coluna dos relatórios de pendentes/erros (lista do filtro da coluna)."""
+    query, _quando, colunas = _base_fila(db, status_fila, de, ate, carregar=False)
+    return filtros_coluna.valores_distintos(query, colunas, filtros, coluna, busca)
+
+
+def itens_da_fila(
+    db: Session,
+    status_fila: tuple[models.QueueStatus, ...],
+    de: date | None,
+    ate: date | None,
+    sort_by: str | None = None,
+    sort_dir: str = "asc",
+    filtros: dict | None = None,
+):
+    query, quando, colunas = _base_fila(db, status_fila, de, ate, carregar=True)
+    query = filtros_coluna.aplicar(query, colunas, filtros)
 
     def _ordenado(coluna):
         return coluna.desc() if sort_dir == "desc" else coluna.asc()
@@ -178,7 +205,7 @@ def itens_da_fila(
         # régua (sem campanha) fica junto, antes das campanhas no crescente
         expr = case((eh_campanha, models.Faixa.name), else_="")
         return query.order_by(_ordenado(expr), models.QueueItem.id)
-    colunas = {
+    ordenaveis = {
         "codigo_cliente": models.QueueItem.codigo_cliente,
         "nome": models.QueueItem.nome,
         "valor": valor_numerico(),
@@ -187,8 +214,8 @@ def itens_da_fila(
         "quando": quando,
         "mensagem": models.QueueItem.error_message,
     }
-    if sort_by in colunas:
-        return query.order_by(_ordenado(colunas[sort_by]).nulls_last(), models.QueueItem.id)
+    if sort_by in ordenaveis:
+        return query.order_by(_ordenado(ordenaveis[sort_by]).nulls_last(), models.QueueItem.id)
     padrao = quando if models.QueueStatus.error in status_fila else models.QueueItem.created_at
     return query.order_by(padrao.desc(), models.QueueItem.id)
 

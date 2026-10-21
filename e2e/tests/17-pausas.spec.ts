@@ -1,4 +1,4 @@
-import { apiGet, expect, test } from "./fixtures";
+import { apiGet, expect, filtrosApi, test } from "./fixtures";
 import type { Page } from "@playwright/test";
 import { prepararOperacao } from "./preparo";
 
@@ -119,7 +119,9 @@ test.describe.serial("Pendentes: pausar, retomar e parar", { tag: "@pausas" }, (
 
   test("descartar fila tira da fila os pendentes do filtro, sem registro de parado", async ({ page }) => {
     const primeiro = (await apiGet(page, "/reports/pendentes?limit=1&offset=0")).itens[0];
-    const daFaixa = await apiGet(page, `/reports/pendentes?faixa_id=${primeiro.faixa_id}&limit=500&offset=0`);
+    const filtro = filtrosApi({ faixa: [primeiro.faixa] });
+    const daFaixa = await apiGet(page, `/reports/pendentes?filtros=${filtro}&limit=500&offset=0`);
+    // link do Dashboard: o faixa_id da URL vira o filtro da coluna Faixa
     await page.goto(`/relatorios?aba=pendentes&faixa_id=${primeiro.faixa_id}`);
     await page.getByRole("button", { name: "Descartar fila" }).click();
     const confirmar = page.getByRole("alertdialog");
@@ -133,7 +135,7 @@ test.describe.serial("Pendentes: pausar, retomar e parar", { tag: "@pausas" }, (
     await botao.click();
     await expect(page.locator(".success-box")).toContainText(`Fila descartada: ${qtd} pendente(s) saíram da fila.`);
     await expect
-      .poll(async () => (await apiGet(page, `/reports/pendentes?faixa_id=${primeiro.faixa_id}&limit=1&offset=0`)).total)
+      .poll(async () => (await apiGet(page, `/reports/pendentes?filtros=${filtro}&limit=1&offset=0`)).total)
       .toBeLessThanOrEqual(daFaixa.total - qtd);
   });
 });

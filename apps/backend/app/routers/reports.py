@@ -15,7 +15,8 @@ from .. import models, schemas
 from ..database import get_db
 from ..deps import get_current_user
 from ..regras_db import carregar_regras
-from .. import consultas_fila, fila_automatica, pausas
+from .. import consultas_fila, fila_automatica, filtros_coluna, pausas
+from ..filtros_coluna import Coluna, filtros_da_query
 from ..services import efetividade_service, pagamentos_service
 from ..timezone import hora_br
 from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx, formula_safe, texto_nunca_formula
@@ -275,22 +276,26 @@ _INVALID_PHONE_SORT_COLUNAS = {
 }
 
 
+# O período da tela (created_at) fica no filtro do topo; as demais colunas filtram aqui
+_INVALID_PHONE_FILTRO = {
+    nome: Coluna(coluna, "multi" if nome == "loja" else "texto")
+    for nome, coluna in _INVALID_PHONE_SORT_COLUNAS.items()
+    if nome != "created_at"
+}
+
+
 def _invalid_phones_query(
     db: Session,
-    faixa_id: str | None,
     de: date | None = None,
     ate: date | None = None,
     sort_by: str | None = None,
     sort_dir: str = "asc",
-    campanha: str | None = None,
+    filtros: dict | None = None,
 ):
     query = db.query(models.InvalidPhoneRecord)
-    if faixa_id:
-        query = query.filter(models.InvalidPhoneRecord.faixa_id == faixa_id)
-    if campanha:
-        query = query.filter(consultas_fila.filtro_campanha(db, models.InvalidPhoneRecord.faixa_id, campanha))
     query = consultas_fila.no_periodo(query, models.InvalidPhoneRecord.created_at, de, ate)
-    query = consultas_fila.um_por_telefone(db, query)
+    # um registro por número (o mais recente) e só então os filtros das colunas
+    query = filtros_coluna.aplicar(consultas_fila.um_por_telefone(db, query), _INVALID_PHONE_FILTRO, filtros)
     coluna = _INVALID_PHONE_SORT_COLUNAS.get(sort_by) if sort_by else None
     if coluna is not None:
         query = query.order_by(
@@ -301,38 +306,49 @@ def _invalid_phones_query(
     return query
 
 
-
-
 @api.get("/telefones-invalidos", response_model=schemas.InvalidPhonePage)
 def list_invalid_phones(
-    faixa_id: str | None = None,
-    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
     ate: date | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort_by: InvalidPhoneSortColumn | None = Query(None),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
+    filtros: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    query = _invalid_phones_query(db, faixa_id, de, ate, sort_by, sort_dir, campanha)
+    query = _invalid_phones_query(db, de, ate, sort_by, sort_dir, filtros)
     total = query.count()
     itens = query.offset(offset).limit(limit).all()
     return schemas.InvalidPhonePage(total=total, itens=itens)
 
 
+@api.get("/telefones-invalidos/valores", response_model=schemas.ValoresColuna)
+def valores_invalid_phones(
+    coluna: str,
+    busca: str | None = None,
+    de: date | None = None,
+    ate: date | None = None,
+    filtros: dict = Depends(filtros_da_query),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    query = _invalid_phones_query(db, de, ate)
+    valores, truncado = filtros_coluna.valores_distintos(query, _INVALID_PHONE_FILTRO, filtros, coluna, busca)
+    return schemas.ValoresColuna(valores=valores, truncado=truncado)
+
+
 @api.get("/telefones-invalidos/export")
 def export_invalid_phones(
-    faixa_id: str | None = None,
-    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
     ate: date | None = Query(None),
+    filtros: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
     records = (
-        _invalid_phones_query(db, faixa_id, de, ate, campanha=campanha)
+        _invalid_phones_query(db, de, ate, filtros=filtros)
         .options(selectinload(models.InvalidPhoneRecord.faixa))
         .all()
     )
@@ -375,33 +391,45 @@ def _to_report_item(item: models.QueueItem) -> schemas.DispatchReportItemOut:
 
 @api.get("/envios", response_model=schemas.DispatchReportPage)
 def list_dispatch_report(
-    faixa_id: str | None = None,
-    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
     ate: date | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort_by: DispatchSortColumn | None = Query(None),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
+    filtros: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    query = consultas_fila.envios_realizados(db, faixa_id, de, ate, sort_by, sort_dir, campanha)
+    query = consultas_fila.envios_realizados(db, de, ate, sort_by, sort_dir, filtros)
     total = query.count()
     itens = [_to_report_item(item) for item in query.offset(offset).limit(limit).all()]
     return schemas.DispatchReportPage(total=total, itens=itens)
 
 
-@api.get("/envios/export")
-def export_dispatch_report(
-    faixa_id: str | None = None,
-    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
-    de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
-    ate: date | None = Query(None),
+@api.get("/envios/valores", response_model=schemas.ValoresColuna)
+def valores_dispatch_report(
+    coluna: str,
+    busca: str | None = None,
+    de: date | None = None,
+    ate: date | None = None,
+    filtros: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    rows_data = consultas_fila.envios_realizados(db, faixa_id, de, ate, campanha=campanha).all()
+    valores, truncado = consultas_fila.valores_envios(db, de, ate, filtros, coluna, busca)
+    return schemas.ValoresColuna(valores=valores, truncado=truncado)
+
+
+@api.get("/envios/export")
+def export_dispatch_report(
+    de: date | None = Query(None, description="Período de cobrança: início (GMT-3)"),
+    ate: date | None = Query(None),
+    filtros: dict = Depends(filtros_da_query),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    rows_data = consultas_fila.envios_realizados(db, de, ate, filtros=filtros).all()
     headers = ["Código do cliente", "Faixa de atraso", "Nome", "Lojas", "Valor cobrado", "Telefone cobrado", "Telefone que cobrou", "Data/hora"]
     rows = [
         [
@@ -456,8 +484,8 @@ def _to_fila_item(
     )
 
 
-def _pagina_fila(db, status_fila, faixa_id, de, ate, limit, offset, sort_by, sort_dir, loja=None, campanha=None):
-    query = consultas_fila.itens_da_fila(db, status_fila, faixa_id, de, ate, sort_by, sort_dir, loja, campanha)
+def _pagina_fila(db, status_fila, de, ate, limit, offset, sort_by, sort_dir, filtros):
+    query = consultas_fila.itens_da_fila(db, status_fila, de, ate, sort_by, sort_dir, filtros)
     total = query.count()
     retencao = pausas.Retencao.carregar(db)
     itens = [_to_fila_item(*linha, retencao) for linha in query.offset(offset).limit(limit).all()]
@@ -470,32 +498,46 @@ def _pagina_fila(db, status_fila, faixa_id, de, ate, limit, offset, sort_by, sor
 
 @api.get("/pendentes", response_model=schemas.FilaReportPage)
 def list_pendentes(
-    faixa_id: str | None = None,
-    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
-    loja: str | None = Query(None, description="Filial (ex.: 07)"),
     de: date | None = Query(None, description="Entrou na fila de (GMT-3)"),
     ate: date | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort_by: FilaSortColumn | None = Query(None),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
+    filtros: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    return _pagina_fila(db, _STATUS_PENDENTE, faixa_id, de, ate, limit, offset, sort_by, sort_dir, loja, campanha)
+    return _pagina_fila(db, _STATUS_PENDENTE, de, ate, limit, offset, sort_by, sort_dir, filtros)
+
+
+def _valores_fila(db, status_fila, coluna, busca, de, ate, filtros):
+    valores, truncado = consultas_fila.valores_fila(db, status_fila, de, ate, filtros, coluna, busca)
+    return schemas.ValoresColuna(valores=valores, truncado=truncado)
+
+
+@api.get("/pendentes/valores", response_model=schemas.ValoresColuna)
+def valores_pendentes(
+    coluna: str,
+    busca: str | None = None,
+    de: date | None = None,
+    ate: date | None = None,
+    filtros: dict = Depends(filtros_da_query),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    return _valores_fila(db, _STATUS_PENDENTE, coluna, busca, de, ate, filtros)
 
 
 @api.get("/pendentes/export")
 def export_pendentes(
-    faixa_id: str | None = None,
-    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
-    loja: str | None = Query(None),
     de: date | None = Query(None),
     ate: date | None = Query(None),
+    filtros: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = consultas_fila.itens_da_fila(db, _STATUS_PENDENTE, faixa_id, de, ate, loja=loja, campanha=campanha).all()
+    linhas = consultas_fila.itens_da_fila(db, _STATUS_PENDENTE, de, ate, filtros=filtros).all()
     retencao = pausas.Retencao.carregar(db)
     headers = [
         "Código do cliente", "Nome", "Faixa de atraso", "Campanha", "Valor", "Telefone", "Lojas", "Entrou na fila em",
@@ -520,67 +562,72 @@ def export_pendentes(
 # voltar à fila depois. Item já reservado por um envio em andamento fica.
 
 
-def _descartaveis(db, faixa_id, loja, de, ate, campanha):
-    query = consultas_fila.itens_da_fila(db, (models.QueueStatus.pending,), faixa_id, de, ate, loja=loja, campanha=campanha)
+def _descartaveis(db, de, ate, filtros):
+    query = consultas_fila.itens_da_fila(db, (models.QueueStatus.pending,), de, ate, filtros=filtros)
     return [item.id for item, _f, _q in query.order_by(None).all()]
 
 
 @api.get("/pendentes/descartar/previa", response_model=schemas.PararEnvioOut)
 def previa_descartar_pendentes(
-    faixa_id: str | None = None,
-    campanha: str | None = Query(None),
-    loja: str | None = Query(None),
     de: date | None = Query(None),
     ate: date | None = Query(None),
+    filtros: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    return schemas.PararEnvioOut(qtd=len(_descartaveis(db, faixa_id, loja, de, ate, campanha)))
+    return schemas.PararEnvioOut(qtd=len(_descartaveis(db, de, ate, filtros)))
 
 
 @api.post("/pendentes/descartar", response_model=schemas.PararEnvioOut)
 def descartar_pendentes(
-    faixa_id: str | None = None,
-    campanha: str | None = Query(None),
-    loja: str | None = Query(None),
     de: date | None = Query(None),
     ate: date | None = Query(None),
+    filtros: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    total = fila_automatica.descartar_pendentes(db, _descartaveis(db, faixa_id, loja, de, ate, campanha))
+    total = fila_automatica.descartar_pendentes(db, _descartaveis(db, de, ate, filtros))
     logger.info("Fila descartada por %s: %s pendente(s)", user.email, total)
     return schemas.PararEnvioOut(qtd=total)
 
 
 @api.get("/erros", response_model=schemas.FilaReportPage)
 def list_erros(
-    faixa_id: str | None = None,
-    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     de: date | None = Query(None, description="Entrou na fila de (GMT-3)"),
     ate: date | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort_by: FilaSortColumn | None = Query(None),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
+    filtros: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    return _pagina_fila(
-        db, (models.QueueStatus.error,), faixa_id, de, ate, limit, offset, sort_by, sort_dir, campanha=campanha
-    )
+    return _pagina_fila(db, (models.QueueStatus.error,), de, ate, limit, offset, sort_by, sort_dir, filtros)
+
+
+@api.get("/erros/valores", response_model=schemas.ValoresColuna)
+def valores_erros(
+    coluna: str,
+    busca: str | None = None,
+    de: date | None = None,
+    ate: date | None = None,
+    filtros: dict = Depends(filtros_da_query),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    return _valores_fila(db, (models.QueueStatus.error,), coluna, busca, de, ate, filtros)
 
 
 @api.get("/erros/export")
 def export_erros(
-    faixa_id: str | None = None,
-    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     de: date | None = Query(None),
     ate: date | None = Query(None),
+    filtros: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = consultas_fila.itens_da_fila(db, (models.QueueStatus.error,), faixa_id, de, ate, campanha=campanha).all()
+    linhas = consultas_fila.itens_da_fila(db, (models.QueueStatus.error,), de, ate, filtros=filtros).all()
     headers = ["Código do cliente", "Nome", "Faixa de atraso", "Campanha", "Valor", "Telefone", "Mensagem de erro", "Quando"]
     rows = [
         [item.codigo_cliente, formula_safe(item.nome), consultas_fila.separar_faixa(item, faixa)[0] or "",
@@ -802,15 +849,30 @@ def export_relatorio_efetividade_clientes(
 # --- Quem pagou o que foi cobrado (por cliente) -------------------------------
 
 
-def _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela=None, campanha=None, base="leads"):
+def _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela=None, base="leads"):
     """Lista cacheada por conjunto de filtros (compartilhada entre usuários):
     ordenar, paginar e exportar com os mesmos filtros não reconsultam o SETA."""
 
     return pagamentos_service.snapshot_pagamentos(
         cobrado_de=cobrado_de, cobrado_ate=cobrado_ate, pago_de=pago_de, pago_ate=pago_ate, faixa=faixa,
-        dias_janela=dias_janela, campanha=campanha, base=base, velho=pagamentos_service.PAGAMENTOS_VELHO_SEGUNDOS,
+        dias_janela=dias_janela, base=base, velho=pagamentos_service.PAGAMENTOS_VELHO_SEGUNDOS,
     )
 
+
+# Filtros das colunas sobre a lista em memória. A Faixa filtra antes do cache
+# (parâmetro `faixa`: o valor cobrado só soma as faixas escolhidas); aqui ela só
+# aparece para listar os valores.
+_PAGAMENTOS_FILTRO = {
+    "codigo_cliente": Coluna(lambda l: l["codigo_cliente"]),
+    "nome": Coluna(lambda l: l["nome"]),
+    "loja": Coluna(lambda l: [x for x in (l["loja"] or "").split(", ") if x], "multi"),
+    "valor_cobrado": Coluna(lambda l: l["valor_cobrado"], "numero"),
+    "valor_pago": Coluna(lambda l: l["valor_pago"], "numero"),
+}
+_PAGAMENTOS_VALORES = {
+    **_PAGAMENTOS_FILTRO,
+    "faixa": Coluna(lambda l: [x for x in (l["faixa"] or "").split(", ") if x], "multi"),
+}
 
 PagamentoSortColumn = Literal[pagamentos_service.COLUNAS_ORDENAVEIS]
 
@@ -822,18 +884,18 @@ def relatorio_pagamentos(
     pago_de: date | None = Query(None, description="Período de pagamento: início"),
     pago_ate: date | None = Query(None),
     faixa: list[str] | None = Query(None),
-    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     dias_janela: int | None = Query(None, ge=0, le=365, description="Pagou em até N dias corridos da cobrança"),
     base: pagamentos_service.Base = Query("leads", description='"envios" = cobrados do Dashboard (envio no período)'),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort_by: PagamentoSortColumn | None = Query(None),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
+    filtros: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    snap = _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, campanha, base)
-    linhas = snap.data
+    snap = _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, base)
+    linhas = filtros_coluna.filtrar_memoria(snap.data, _PAGAMENTOS_FILTRO, filtros)
     if sort_by:
         linhas = pagamentos_service.ordenar(linhas, sort_by, sort_dir, carregar_regras(db).nomes_faixa)
     return schemas.PagamentosClientesPage(
@@ -847,6 +909,26 @@ def relatorio_pagamentos(
     )
 
 
+@api.get("/pagamentos/valores", response_model=schemas.ValoresColuna)
+def valores_pagamentos(
+    coluna: str,
+    busca: str | None = None,
+    cobrado_de: date | None = None,
+    cobrado_ate: date | None = None,
+    pago_de: date | None = None,
+    pago_ate: date | None = None,
+    faixa: list[str] | None = Query(None),
+    dias_janela: int | None = Query(None, ge=0, le=365),
+    base: pagamentos_service.Base = Query("leads"),
+    filtros: dict = Depends(filtros_da_query),
+    _user: models.User = Depends(get_current_user),
+):
+    # as faixas oferecidas são todas as do período, não só as já escolhidas
+    snap = _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, None if coluna == "faixa" else faixa, dias_janela, base)
+    valores, truncado = filtros_coluna.valores_memoria(snap.data, _PAGAMENTOS_VALORES, filtros, coluna, busca)
+    return schemas.ValoresColuna(valores=valores, truncado=truncado)
+
+
 @api.get("/pagamentos/export")
 def export_relatorio_pagamentos(
     cobrado_de: date | None = Query(None),
@@ -854,13 +936,17 @@ def export_relatorio_pagamentos(
     pago_de: date | None = Query(None),
     pago_ate: date | None = Query(None),
     faixa: list[str] | None = Query(None),
-    campanha: str | None = Query(None, description='"regua" = só faixas de atraso; ou o id da campanha'),
     dias_janela: int | None = Query(None, ge=0, le=365),
     base: pagamentos_service.Base = Query("leads"),
+    filtros: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    linhas = _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, campanha, base).data
+    linhas = filtros_coluna.filtrar_memoria(
+        _pagamentos(cobrado_de, cobrado_ate, pago_de, pago_ate, faixa, dias_janela, base).data,
+        _PAGAMENTOS_FILTRO,
+        filtros,
+    )
     headers = [
         "Código do cliente", "Nome", "CPF", "Loja", "Faixa", "Data da cobrança", "Valor cobrado",
         "Valor pago", "Títulos pagos", "Primeiro pagamento", "Último pagamento",

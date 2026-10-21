@@ -1,9 +1,11 @@
-import { baixar, card, expect, permitirErrosConsole, test } from "./fixtures";
+import { baixar, expect, filtrarColuna, permitirErrosConsole, test } from "./fixtures";
 import type { Page } from "@playwright/test";
 import { prepararOperacao } from "./preparo";
 
 const aba = (page: Page, nome: string) => page.getByRole("button", { name: nome, exact: true });
 const tabela = (page: Page) => page.locator(".card table").first();
+// Clica no título do cabeçalho (ordena), longe do funil do filtro
+const ordenar = (page: Page, coluna: RegExp) => tabela(page).getByRole("columnheader", { name: coluna }).click({ position: { x: 6, y: 6 } });
 
 test.beforeAll(prepararOperacao);
 
@@ -34,7 +36,7 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
     await aba(page, "Telefones inválidos").click();
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
     const pedido = page.waitForRequest((r) => r.url().includes("/relatorios/telefones-invalidos?") && r.url().includes("sort_by=loja"));
-    await tabela(page).getByRole("columnheader", { name: /^Loja/ }).click();
+    await ordenar(page, /^Loja/);
     await pedido;
     await expect(page.getByText("Carregando...")).toHaveCount(0);
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
@@ -45,7 +47,7 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
     await expect(page.getByText("Cobrado de")).toBeVisible();
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
     await expect(tabela(page).locator("tbody tr").first()).toContainText("3 A 10");
-    await tabela(page).getByRole("columnheader", { name: /^Nome/ }).click();
+    await ordenar(page, /^Nome/);
     await expect(page.getByText("Carregando...")).toHaveCount(0);
     const nomes = await tabela(page).locator("tbody tr td:nth-child(3)").allInnerTexts();
     expect(nomes).toEqual([...nomes].sort((a, b) => a.localeCompare(b, "pt-BR")));
@@ -58,19 +60,22 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
     await aba(page, "Envios realizados").click();
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
     const pedido = page.waitForRequest((r) => r.url().includes("/relatorios/envios?") && r.url().includes("sort_by=loja"));
-    await tabela(page).getByRole("columnheader", { name: /^Loja/ }).click();
+    await ordenar(page, /^Loja/);
     await pedido;
     await expect(page.getByText("Carregando...")).toHaveCount(0);
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
   });
 
-  test("envios: filtro por faixa e por período", async ({ page }) => {
+  test("envios: filtro da faixa lista as faixas com envio e o período filtra", async ({ page }) => {
     await aba(page, "Envios realizados").click();
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
-    await page.locator("select").first().selectOption({ label: "11 A 20" });
-    await expect(page.getByText("Nenhum envio encontrado com esses filtros")).toBeVisible();
-    await page.locator("select").first().selectOption({ label: "Todas as faixas" });
-    await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
+    await page.getByRole("button", { name: "Filtrar Faixa de atraso", exact: true }).click();
+    const caixa = page.getByRole("dialog", { name: "Filtro de Faixa de atraso" });
+    await expect(caixa.getByLabel("3 A 10", { exact: true })).toBeChecked();
+    await caixa.getByLabel("Pesquisar em Faixa de atraso").fill("3 A");
+    await expect(caixa.getByLabel("3 A 10", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(caixa).toHaveCount(0);
     await page.locator('input[type="date"]').first().fill("2020-01-01");
     await page.locator('input[type="date"]').nth(1).fill("2020-01-02");
     await expect(page.getByText("Nenhum envio encontrado com esses filtros")).toBeVisible();
@@ -79,10 +84,55 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
   test("estado vazio de envios com filtro não diz 'ainda' como se nunca tivesse havido envio", async ({ page }) => {
     await aba(page, "Envios realizados").click();
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
-    await page.locator("select").first().selectOption({ label: "11 A 20" });
+    await page.locator('input[type="date"]').first().fill("2020-01-01");
+    await page.locator('input[type="date"]').nth(1).fill("2020-01-02");
     await expect(page.getByText("Carregando...")).toHaveCount(0);
     await expect(page.locator(".empty-state")).toBeVisible();
     await expect(page.getByText("Nenhum envio realizado ainda")).toHaveCount(0);
+  });
+
+  test("filtro de coluna: pesquisa, selecionar tudo, marcar e desmarcar valem na tela e no Excel", async ({ page }) => {
+    await aba(page, "Envios realizados").click();
+    await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
+    const total = tabela(page).locator("tbody tr");
+    const antes = await total.count();
+    await page.getByRole("button", { name: "Filtrar Nome", exact: true }).click();
+    const caixa = page.getByRole("dialog", { name: "Filtro de Nome" });
+    // a lista vem do servidor; a pesquisa reduz as opções
+    await expect(caixa.getByLabel("Selecionar tudo")).toBeChecked();
+    await caixa.getByLabel("Pesquisar em Nome").fill("zzzz-inexistente");
+    await expect(caixa.getByText("Nada encontrado")).toBeVisible();
+    await caixa.getByLabel("Pesquisar em Nome").fill("");
+    const valor = (await caixa.locator("label.ms-option").last().innerText()).trim();
+    // desmarcar tudo e marcar um só valor (a pesquisa mantém o filtro mesmo que só exista um nome)
+    await caixa.getByLabel("Pesquisar em Nome").fill(valor);
+    await caixa.getByLabel("Selecionar tudo").uncheck();
+    await expect(caixa.getByRole("button", { name: "OK" })).toBeDisabled();
+    await caixa.getByLabel(valor, { exact: true }).check();
+    const pedido = page.waitForRequest((r) => r.url().includes("/relatorios/envios?") && r.url().includes("filtros="));
+    await caixa.getByRole("button", { name: "OK" }).click();
+    await pedido;
+    await expect(page.getByText("Carregando...")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Filtrar Nome", exact: true })).toHaveClass(/ativo/);
+    for (const nome of await tabela(page).locator("tbody tr td:nth-child(3)").allInnerTexts()) expect(nome.trim()).toBe(valor);
+    // o Excel sai com o mesmo filtro
+    const { linhas } = await baixar(page, () => page.getByRole("button", { name: /Baixar Excel/ }).click());
+    expect(linhas.length - 1).toBe(await total.count());
+    expect(linhas.length - 1).toBeLessThanOrEqual(antes);
+    // a seleção fica ao ir para outra aba e voltar
+    await aba(page, "Erros").click();
+    await aba(page, "Envios realizados").click();
+    await expect(page.getByRole("button", { name: "Filtrar Nome", exact: true })).toHaveClass(/ativo/);
+  });
+
+  test("filtro de coluna de valor aceita de, até", async ({ page }) => {
+    await aba(page, "Envios realizados").click();
+    await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
+    await page.getByRole("button", { name: "Filtrar Valor cobrado", exact: true }).click();
+    const caixa = page.getByRole("dialog", { name: "Filtro de Valor cobrado" });
+    await caixa.getByLabel("De", { exact: true }).fill("99999999");
+    await caixa.getByRole("button", { name: "OK" }).click();
+    await expect(page.getByText("Nenhum envio encontrado com esses filtros")).toBeVisible();
   });
 
   test("quem pagou: totais, filtro de pagamento e Excel", { tag: ["@pagamentos"] }, async ({ page }) => {
@@ -137,7 +187,7 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
     await expect(page.getByText("Carregando...")).toHaveCount(0);
     const linhasTela = tabela(page).locator("tbody tr");
     await expect(linhasTela.first()).toBeVisible();
-    await tabela(page).getByRole("columnheader", { name: /^Código/ }).click();
+    await ordenar(page, /^Código/);
     await expect(page.getByText("Carregando...")).toHaveCount(0);
     const cods = await tabela(page).locator("tbody tr td:nth-child(1)").allInnerTexts();
     expect(cods).toEqual([...cods].sort());

@@ -1,3 +1,5 @@
+import type { ValoresColuna } from "./filtrosColuna";
+
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 /** Imagem de cabeçalho de template: /media é servido pelo backend, não pelo frontend. */
@@ -170,6 +172,13 @@ async function pollAsync<T>(
 }
 
 // Gera query string com arrays como parâmetros repetidos (?a=1&a=2) e ignora vazios.
+/** Período da tela e filtros das colunas (JSON, ver serializarFiltros) dos relatórios. */
+export interface FiltrosRelatorio {
+  de?: string;
+  ate?: string;
+  filtros?: string;
+}
+
 export interface OrdenacaoParams {
   sort_by?: string;
   sort_dir?: "asc" | "desc";
@@ -385,23 +394,23 @@ export const api = {
   },
 
   listInvalidPhones: (
-    params: { faixa_id?: string; campanha?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+    params: FiltrosRelatorio & { limit: number; offset: number } & OrdenacaoParams
   ) => request<{ total: number; itens: InvalidPhoneRecord[] }>(`/relatorios/telefones-invalidos?${montarQuery(params)}`),
   listDispatchReport: (
-    params: { faixa_id?: string; campanha?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+    params: FiltrosRelatorio & { limit: number; offset: number } & OrdenacaoParams
   ) =>
     request<{ total: number; itens: DispatchReportItem[] }>(`/relatorios/envios?${montarQuery(params)}`),
 
   // Exportações em Excel exigem o mesmo Bearer token das outras rotas, então
   // baixamos como blob autenticado em vez de um <a href> simples.
-  downloadInvalidPhonesXlsx: (params: { faixa_id?: string; campanha?: string; de?: string; ate?: string }) =>
+  downloadInvalidPhonesXlsx: (params: FiltrosRelatorio) =>
     downloadFile(`/relatorios/telefones-invalidos/export?${montarQuery(params)}`, "telefones_invalidos.xlsx"),
-  downloadDispatchReportXlsx: (params: { faixa_id?: string; campanha?: string; de?: string; ate?: string }) =>
+  downloadDispatchReportXlsx: (params: FiltrosRelatorio) =>
     downloadFile(`/relatorios/envios/export?${montarQuery(params)}`, "relatorio_envios.xlsx"),
   listPendentes: (
-    params: { faixa_id?: string; campanha?: string; loja?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+    params: FiltrosRelatorio & { limit: number; offset: number } & OrdenacaoParams
   ) => request<FilaReportPage>(`/relatorios/pendentes?${montarQuery(params)}`),
-  downloadPendentesXlsx: (params: { faixa_id?: string; campanha?: string; loja?: string; de?: string; ate?: string }) =>
+  downloadPendentesXlsx: (params: FiltrosRelatorio) =>
     downloadFile(`/relatorios/pendentes/export?${montarQuery(params)}`, "relatorio_pendentes.xlsx"),
   // --- Pausas de envio (aba Pendentes) ---
   listarPausas: () => request<PausaEnvio[]>("/pausas"),
@@ -425,12 +434,18 @@ export const api = {
   descartarPendentes: (filtros: FiltrosDescarte) =>
     request<{ qtd: number }>(`/relatorios/pendentes/descartar?${montarQuery(filtros)}`, { method: "POST" }),
   listErros: (
-    params: { faixa_id?: string; campanha?: string; de?: string; ate?: string; limit: number; offset: number } & OrdenacaoParams
+    params: FiltrosRelatorio & { limit: number; offset: number } & OrdenacaoParams
   ) => request<FilaReportPage>(`/relatorios/erros?${montarQuery(params)}`),
-  downloadErrosXlsx: (params: { faixa_id?: string; campanha?: string; de?: string; ate?: string }) =>
+  downloadErrosXlsx: (params: FiltrosRelatorio) =>
     downloadFile(`/relatorios/erros/export?${montarQuery(params)}`, "relatorio_erros.xlsx"),
   listPagamentos: (params: FiltrosPagamentos & { limit: number; offset: number } & OrdenacaoParams, signal?: AbortSignal) =>
     request<PagamentosPage>(`/relatorios/pagamentos?${montarQuery(params)}`, { signal }),
+  /** Valores distintos de uma coluna (lista do filtro da coluna), dentro dos demais filtros. */
+  valoresColuna: (
+    relatorio: "pendentes" | "erros" | "envios" | "telefones-invalidos" | "pagamentos",
+    params: object,
+    signal?: AbortSignal
+  ) => request<ValoresColuna>(`/relatorios/${relatorio}/valores?${montarQuery(params)}`, { signal }),
   downloadPagamentosXlsx: (params: FiltrosPagamentos) =>
     downloadFile(`/relatorios/pagamentos/export?${montarQuery(params)}`, "relatorio_pagamentos.xlsx"),
 
@@ -870,13 +885,7 @@ export interface Faixa {
 }
 
 /** Filtros da aba Pendentes que definem o que "Descartar fila" tira da fila. */
-export interface FiltrosDescarte {
-  faixa_id?: string;
-  campanha?: string;
-  loja?: string;
-  de?: string;
-  ate?: string;
-}
+export type FiltrosDescarte = FiltrosRelatorio;
 
 /** Coluna de uma planilha subida, com exemplos, para o usuário escolher qual usar. */
 export interface ColunaPlanilha {
@@ -1508,7 +1517,7 @@ export interface FiltrosEfetividade extends OrdenacaoParams {
 // --- Relatório de pagamentos por cliente ---
 export interface FiltrosPagamentos {
   faixa?: string[];
-  campanha?: string;
+  filtros?: string;
   cobrado_de?: string;
   cobrado_ate?: string;
   pago_de?: string;
