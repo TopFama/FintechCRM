@@ -217,6 +217,12 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     await expect(page.getByRole("heading", { name: "Planilha promo" })).toBeVisible();
     await expect(page.getByText("clientes_campanha.xlsx · 2 cliente(s)")).toBeVisible();
     await expect(page.getByLabel("Celular e variáveis vêm")).toHaveValue("planilha");
+    // refaz o mapeamento sem subir o arquivo de novo
+    await page.getByRole("button", { name: "Editar colunas" }).click();
+    await expect(page.getByLabel("Coluna do código")).not.toHaveValue("");
+    await page.getByRole("button", { name: "Usar estas colunas" }).click();
+    await expect(page.locator(".success-box", { hasText: "Planilha lida pela coluna" })).toBeVisible();
+    await expect(page.getByText("clientes_campanha.xlsx · 2 cliente(s)")).toBeVisible();
     await expect(page.locator(".status-pill").first()).toHaveText("Automática");
     await expect(page.locator(".page-header .subtitle")).toContainText("Envio automático de 01/01/2099 a 02/01/2099");
 

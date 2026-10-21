@@ -541,7 +541,7 @@ def campanhas_para_hoje(db: Session) -> list[models.Campanha]:
 # --- Leitura de planilhas -----------------------------------------------------
 
 
-def _linhas_xlsx(filename: str, content: bytes) -> list[list[str]]:
+def linhas_xlsx(filename: str, content: bytes) -> list[list[str]]:
     if not filename.lower().endswith(".xlsx"):
         raise ValueError("Envie um arquivo .xlsx")
     try:
@@ -578,10 +578,14 @@ _COLUNAS_LOJA = ("FILIAL", "LOJA", "COD LOJA", "CODIGO LOJA", "COD FILIAL", "COD
 
 
 def colunas_planilha(filename: str, content: bytes) -> list[dict]:
-    """Colunas da planilha (cabeçalho = primeira linha preenchida), com até
-    3 valores de exemplo, para o usuário escolher qual é a da loja."""
+    return colunas_das_linhas(linhas_xlsx(filename, content))
 
-    linhas = _linhas_xlsx(filename, content)
+
+def colunas_das_linhas(linhas: list[list[str]]) -> list[dict]:
+    """Colunas da planilha (cabeçalho = primeira linha preenchida), com até
+    3 valores de exemplo, para o usuário escolher qual é a da loja, a do
+    código do cliente ou a dos telefones."""
+
     if not linhas:
         raise ValueError("A planilha está vazia")
     cabecalho, dados = linhas[0], linhas[1:]
@@ -602,7 +606,7 @@ def ler_lojas(db: Session, filename: str, content: bytes, coluna: int | None = N
     conhecido, a primeira coluna). "6" vale "06". Devolve as filiais que
     existem na base de lojas e os códigos que não casaram com nenhuma."""
 
-    linhas = _linhas_xlsx(filename, content)
+    linhas = linhas_xlsx(filename, content)
     if coluna is not None:
         cab, col = 0, coluna
     else:
@@ -625,32 +629,18 @@ def ler_lojas(db: Session, filename: str, content: bytes, coluna: int | None = N
     return {"lojas": encontradas, "nao_encontradas": nao_encontradas}
 
 
-_COLUNAS_CODIGO = ("CODIGO", "COD", "CODIGO SETA", "COD SETA", "CODIGO CLIENTE", "COD CLIENTE", "PESSOA")
-_COLUNAS_CPF = ("CPF", "CPF/CNPJ", "CPFCNPJ", "CPF CNPJ", "DOCUMENTO")
-
-
 def ler_clientes(
-    filename: str, content: bytes, coluna: int | None = None, por_cpf: bool = False, celulares: list[int] | None = None
+    linhas: list[list[str]], coluna: int, por_cpf: bool = False, celulares: list[int] | None = None
 ) -> dict:
-    """Clientes de uma planilha .xlsx para restringir a campanha. Com `coluna`
-    (índice escolhido na tela; `por_cpf` diz se é CPF ou código SETA), lê essa
-    coluna abaixo do cabeçalho (primeira linha). Sem ela, usa a coluna de código
-    SETA (Codigo, Código SETA…) ou, sem ela, a de CPF. O CPF vira código numa
-    consulta só ao SETA. Devolve os códigos (8 dígitos), quantas linhas não deram
-    para identificar e as colunas de celular escolhidas (`celulares`, índices)."""
+    """Clientes de uma planilha .xlsx para restringir a campanha: lê a coluna
+    escolhida na tela (`coluna`, índice; `por_cpf` diz se é CPF ou código SETA)
+    abaixo do cabeçalho (primeira linha). O CPF vira código numa consulta só ao
+    SETA. Devolve os códigos (8 dígitos), quantas linhas não deram para
+    identificar e as colunas de celular escolhidas (`celulares`, índices)."""
 
-    linhas = _linhas_xlsx(filename, content)
-    if coluna is not None:
-        achou = (0, coluna)
-    else:
-        achou = _achar_coluna(linhas, _COLUNAS_CODIGO)
-        por_cpf = False
-        if achou is None:
-            achou = _achar_coluna(linhas, _COLUNAS_CPF)
-            por_cpf = True
-    if achou is None:
-        raise ValueError("Não achei a coluna de código do cliente (Codigo) nem a de CPF na planilha")
-    cab, col = achou
+    if not linhas:
+        raise ValueError("A planilha está vazia")
+    cab, col = 0, coluna
     cabecalho = [c.strip() or f"Coluna {i + 1}" for i, c in enumerate(linhas[cab])]
     colunas = [c for c in cabecalho if c]
     # (identificador só dígitos, linha como {coluna: valor})

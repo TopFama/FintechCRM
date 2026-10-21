@@ -86,7 +86,12 @@ export default function CampanhaDetail() {
   const [planilhaNova, setPlanilhaNova] = useState<File | null>(null);
   const [mapeamentoNovo, setMapeamentoNovo] = useState<MapeamentoClientes | null>(null);
   // Arquivo escolhido e suas colunas, à espera do usuário indicar quais usar.
-  const [mapeando, setMapeando] = useState<{ arquivo: File; colunas: ColunaPlanilha[] } | null>(null);
+  // `arquivo` vazio: edição do mapeamento da planilha que a campanha já guarda.
+  const [mapeando, setMapeando] = useState<{
+    arquivo: File | null;
+    colunas: ColunaPlanilha[];
+    inicial?: MapeamentoClientes | null;
+  } | null>(null);
   const planilhaRef = useRef<HTMLInputElement>(null);
 
   const [previa, setPrevia] = useState<PreviaCampanha | null>(null);
@@ -194,6 +199,23 @@ export default function CampanhaDetail() {
     }
   }
 
+  async function editarColunas() {
+    setErro(null);
+    setSucesso(null);
+    setEnviandoPlanilha(true);
+    try {
+      if (planilhaNova) {
+        setMapeando({ arquivo: planilhaNova, colunas: await api.colunasPlanilha(planilhaNova), inicial: mapeamentoNovo });
+      } else if (id) {
+        setMapeando({ arquivo: null, colunas: await api.colunasPlanilhaCampanha(id), inicial: campanha?.planilha_mapeamento });
+      }
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Erro ao ler a planilha");
+    } finally {
+      setEnviandoPlanilha(false);
+    }
+  }
+
   async function usarColunas(mapeamento: MapeamentoClientes) {
     if (!mapeando) return;
     const { arquivo } = mapeando;
@@ -206,7 +228,9 @@ export default function CampanhaDetail() {
     if (!id) return;
     setEnviandoPlanilha(true);
     try {
-      const r = await api.subirClientesCampanha(id, arquivo, mapeamento);
+      const r = arquivo
+        ? await api.subirClientesCampanha(id, arquivo, mapeamento)
+        : await api.editarMapeamentoCampanha(id, mapeamento);
       setSucesso(
         `Planilha lida pela coluna ${r.coluna}: ${r.clientes} cliente(s) válidos` +
           (r.ignoradas ? `, ${r.ignoradas} linha(s) sem cliente identificado.` : ".")
@@ -480,8 +504,9 @@ export default function CampanhaDetail() {
               </p>
               {mapeando && (
                 <MapeamentoPlanilha
-                  arquivo={mapeando.arquivo.name}
+                  arquivo={mapeando.arquivo?.name ?? campanha?.clientes_arquivo ?? "planilha"}
                   colunas={mapeando.colunas}
+                  inicial={mapeando.inicial}
                   onConfirmar={usarColunas}
                   onCancelar={() => setMapeando(null)}
                 />
@@ -535,6 +560,9 @@ export default function CampanhaDetail() {
                 {planilhaNova && (
                   <>
                     <span className="text-muted">{planilhaNova.name} · será lida ao criar a campanha</span>
+                    <button type="button" className="secondary small" onClick={editarColunas} disabled={enviandoPlanilha}>
+                      Editar colunas
+                    </button>
                     <button
                       type="button"
                       className="danger small"
@@ -553,6 +581,11 @@ export default function CampanhaDetail() {
                     <span className="text-muted">
                       {campanha!.clientes_arquivo} · {campanha!.clientes_total} cliente(s)
                     </span>
+                    {campanha!.planilha_mapeamento && (
+                      <button type="button" className="secondary small" onClick={editarColunas} disabled={enviandoPlanilha}>
+                        Editar colunas
+                      </button>
+                    )}
                     <button type="button" className="danger small" onClick={removerPlanilha}>
                       <IconTrash width={14} height={14} /> Remover planilha
                     </button>

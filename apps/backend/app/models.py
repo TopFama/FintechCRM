@@ -736,6 +736,10 @@ class Campanha(Base):
     fonte_valores: Mapped[str] = mapped_column(String, default="seta", server_default="seta")
     planilha_colunas: Mapped[list] = mapped_column(JSON, default=list)
     planilha_linhas: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Planilha como subiu (linhas de texto) e colunas escolhidas: permitem refazer
+    # o mapeamento sem subir o arquivo de novo. Vazio nas campanhas anteriores.
+    planilha_bruta: Mapped[list] = mapped_column(JSON, default=list)
+    planilha_mapeamento: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Nulo: cada cliente recebe uma vez por campanha. Com valor: pode receber
     # de novo depois desse número de dias.
     recontato_dias: Mapped[int | None] = mapped_column(Integer, nullable=True)
