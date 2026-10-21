@@ -578,19 +578,14 @@ export const api = {
     form.append("coluna", String(mapeamento.coluna));
     form.append("por_cpf", String(mapeamento.por_cpf));
     form.append("celulares", JSON.stringify(mapeamento.celulares));
-    return request<{ 
-        clientes: number; 
-        ignoradas: number; 
-        coluna: string; 
-        colunas: string[];
-        pendentes: Record<string, number>;
-        completados_pelo_seta: Record<string, number>;
-        colunas_em_branco: ColunaEmBranco[];
-    }>(
-      `/campanhas/${id}/clientes`,
-      { method: "POST", body: form },
-    );
+    return request<ResultadoPlanilha>(`/campanhas/${id}/clientes`, { method: "POST", body: form });
   },
+  colunasPlanilhaCampanha: (id: string) => request<ColunaPlanilha[]>(`/campanhas/${id}/clientes/colunas`),
+  editarMapeamentoCampanha: (id: string, mapeamento: MapeamentoClientes) =>
+    request<ResultadoPlanilha>(`/campanhas/${id}/clientes/mapeamento`, {
+      method: "PUT",
+      body: JSON.stringify(mapeamento),
+    }),
   removerClientesCampanha: (id: string) => request<void>(`/campanhas/${id}/clientes`, { method: "DELETE" }),
   getColunasEmBrancoCampanha: (id: string) =>
     request<ColunaEmBranco[]>(`/campanhas/${id}/clientes/colunas-em-branco`),
@@ -894,6 +889,16 @@ export interface MapeamentoClientes {
   coluna: number;
   por_cpf: boolean;
   celulares: number[];
+}
+
+export interface ResultadoPlanilha {
+  clientes: number;
+  ignoradas: number;
+  coluna: string;
+  colunas: string[];
+  pendentes: Record<string, number>;
+  completados_pelo_seta: Record<string, number>;
+  colunas_em_branco: ColunaEmBranco[];
 }
 
 export interface ColunaPlanilha {
@@ -1288,6 +1293,8 @@ export interface Campanha extends CampanhaIn {
   clientes_total: number;
   clientes_arquivo: string | null;
   planilha_colunas: string[];
+  /** Colunas escolhidas na subida; nulo nas campanhas anteriores ao mapeamento. */
+  planilha_mapeamento: MapeamentoClientes | null;
   envios_ativos: number;
   templates: string[];
   ultima_execucao: string | null;

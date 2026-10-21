@@ -97,6 +97,7 @@ def _out(
         "clientes_total": len(c.clientes or []),
         "clientes_arquivo": c.clientes_arquivo,
         "planilha_colunas": c.planilha_colunas or [],
+        "planilha_mapeamento": c.planilha_mapeamento,
         "envios_ativos": len(envios),
         "templates": sorted({e.template.name for e in envios if e.template}),
         "ultima_execucao": c.ultima_execucao,
@@ -301,7 +302,7 @@ def criar(payload: CampanhaIn, db: Session = Depends(get_db), user: models.User 
     faixa = models.Faixa(name=camp.nome_faixa(nome), active=True, tipo=models.TIPO_CAMPANHA)
     db.add(faixa)
     db.flush()
-    c = models.Campanha(faixa_id=faixa.id, created_by=user.id, clientes=[], planilha_colunas=[], planilha_linhas={}, ultimo_resultado={})
+    c = models.Campanha(faixa_id=faixa.id, created_by=user.id, clientes=[], planilha_colunas=[], planilha_linhas={}, planilha_bruta=[], ultimo_resultado={})
     c.faixa = faixa
     _aplicar(c, payload, nome)
     db.add(c)
@@ -392,11 +393,63 @@ def excluir(campanha_id: str, db: Session = Depends(get_db), _user: models.User 
     db.commit()
 
 
+class MapeamentoIn(BaseModel):
+    """Colunas da planilha (índices) escolhidas na tela; telefones por ordem de prioridade."""
+
+    coluna: int = Field(ge=0)
+    por_cpf: bool = False
+    celulares: list[int] = []
+
+
+async def _aplicar_planilha(c: models.Campanha, linhas: list[list[str]], mapeamento: MapeamentoIn, db: Session) -> dict:
+    """Identifica os clientes da planilha pelas colunas escolhidas, confere o
+    cadastro no SETA e guarda as linhas e o mapeamento na campanha."""
+
+    try:
+        lido = await run_in_threadpool(camp.ler_clientes, linhas, mapeamento.coluna, mapeamento.por_cpf, mapeamento.celulares)
+        if not lido["clientes"]:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nenhum cliente identificado na planilha")
+
+        cadastro = await run_in_threadpool(seta_client.cadastro_por_codigo, lido["clientes"])
+        planilha_linhas, pendentes, completados_pelo_seta = await run_in_threadpool(
+            camp.conferir_obrigatorios, lido["linhas"], cadastro, lido["colunas_celular"]
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    clientes_validos = list(planilha_linhas.keys())
+
+    # Limpa as reserva_vazio da campanha (novo upload ou novo mapeamento zera decisões)
+    for mapping in c.faixa.variable_mappings:
+        mapping.reserva_vazio = None
+
+    c.clientes = clientes_validos
+    c.planilha_linhas = planilha_linhas
+    c.planilha_colunas = lido["colunas"]
+    c.planilha_bruta = linhas
+    c.planilha_mapeamento = mapeamento.model_dump()
+    c.ultima_execucao_dia = None
+    db.commit()
+
+    # Executa a verificação de colunas em branco em memória
+    col_vazias = camp.colunas_em_branco(c, c.faixa.variable_mappings)
+
+    return {
+        "clientes": len(clientes_validos),
+        "ignoradas": lido["ignoradas"],
+        "coluna": lido["coluna"],
+        "colunas": lido["colunas"],
+        "pendentes": pendentes,
+        "completados_pelo_seta": completados_pelo_seta,
+        "colunas_em_branco": col_vazias,
+    }
+
+
 @router.post("/{campanha_id}/clientes")
 async def subir_clientes(
     campanha_id: str,
     file: UploadFile = File(...),
-    coluna: int | None = Form(None),
+    coluna: int = Form(...),
     por_cpf: bool = Form(False),
     celulares: str = Form("[]"),
     db: Session = Depends(get_db),
@@ -409,44 +462,40 @@ async def subir_clientes(
     c = _get(db, campanha_id)
     content = await ler_planilha_limitada(file)
     try:
-        lido = await run_in_threadpool(
-            camp.ler_clientes, file.filename or "", content, coluna, por_cpf, [int(i) for i in json.loads(celulares)]
-        )
-        if not lido["clientes"]:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nenhum cliente identificado na planilha")
-            
-        cadastro = await run_in_threadpool(seta_client.cadastro_por_codigo, lido["clientes"])
-        planilha_linhas, pendentes, completados_pelo_seta = await run_in_threadpool(
-            camp.conferir_obrigatorios, lido["linhas"], cadastro, lido["colunas_celular"]
-        )
+        linhas = await run_in_threadpool(camp.linhas_xlsx, file.filename or "", content)
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-        
-    clientes_validos = list(planilha_linhas.keys())
-    
-    # Limpa as reserva_vazio da campanha (novo upload zera decisões)
-    for mapping in c.faixa.variable_mappings:
-        mapping.reserva_vazio = None
-        
-    c.clientes = clientes_validos
-    c.planilha_linhas = planilha_linhas
-    c.planilha_colunas = lido["colunas"]
+    resultado = await _aplicar_planilha(
+        c, linhas, MapeamentoIn(coluna=coluna, por_cpf=por_cpf, celulares=json.loads(celulares)), db
+    )
     c.clientes_arquivo = file.filename
-    c.ultima_execucao_dia = None
     db.commit()
-    
-    # Executa a verificação de colunas em branco em memória
-    col_vazias = camp.colunas_em_branco(c, c.faixa.variable_mappings)
-    
-    return {
-        "clientes": len(clientes_validos),
-        "ignoradas": lido["ignoradas"],
-        "coluna": lido["coluna"],
-        "colunas": lido["colunas"],
-        "pendentes": pendentes,
-        "completados_pelo_seta": completados_pelo_seta,
-        "colunas_em_branco": col_vazias
-    }
+    return resultado
+
+
+@router.get("/{campanha_id}/clientes/colunas")
+def colunas_da_planilha(campanha_id: str, db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
+    """Colunas da planilha já subida, para refazer o mapeamento sem subir de novo."""
+
+    c = _get(db, campanha_id)
+    if not c.planilha_bruta:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de novo para editar as colunas")
+    return camp.colunas_das_linhas(c.planilha_bruta)
+
+
+@router.put("/{campanha_id}/clientes/mapeamento")
+async def editar_mapeamento(
+    campanha_id: str,
+    payload: MapeamentoIn,
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Refaz a leitura da planilha já subida com outras colunas."""
+
+    c = _get(db, campanha_id)
+    if not c.planilha_bruta:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Suba a planilha de novo para editar as colunas")
+    return await _aplicar_planilha(c, c.planilha_bruta, payload, db)
 
 
 @router.delete("/{campanha_id}/clientes", status_code=status.HTTP_204_NO_CONTENT)
@@ -455,6 +504,8 @@ def remover_clientes(campanha_id: str, db: Session = Depends(get_db), _user: mod
     c.clientes = []
     c.planilha_linhas = {}
     c.planilha_colunas = []
+    c.planilha_bruta = []
+    c.planilha_mapeamento = None
     c.clientes_arquivo = None
     c.fonte_valores = "seta"
     c.todos_da_planilha = False

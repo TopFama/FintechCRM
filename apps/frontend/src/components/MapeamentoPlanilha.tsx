@@ -4,6 +4,8 @@ import { ColunaPlanilha, MapeamentoClientes } from "../api";
 interface Props {
   arquivo: string;
   colunas: ColunaPlanilha[];
+  /** Mapeamento já feito, ao editar; sem ele as colunas são sugeridas pelo cabeçalho. */
+  inicial?: MapeamentoClientes | null;
   onConfirmar: (mapeamento: MapeamentoClientes) => void;
   onCancelar: () => void;
 }
@@ -15,13 +17,15 @@ const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCa
 const achar = (colunas: ColunaPlanilha[], nomes: string[]) =>
   colunas.find((c) => nomes.some((n) => norm(c.nome).includes(n)))?.indice;
 
-export default function MapeamentoPlanilha({ arquivo, colunas, onConfirmar, onCancelar }: Props) {
+export default function MapeamentoPlanilha({ arquivo, colunas, inicial, onConfirmar, onCancelar }: Props) {
   const codigo = achar(colunas, ["CODIGO", "COD", "PESSOA"]);
   const cpf = codigo === undefined ? achar(colunas, ["CPF", "DOCUMENTO"]) : undefined;
-  const [porCpf, setPorCpf] = useState(codigo === undefined && cpf !== undefined);
-  const [coluna, setColuna] = useState(String(codigo ?? cpf ?? ""));
   const sugerido = achar(colunas, ["CELULAR", "TELEFONE", "FONE", "WHATSAPP"]);
-  const [telefones, setTelefones] = useState<string[]>(sugerido === undefined ? [] : [String(sugerido)]);
+  const [porCpf, setPorCpf] = useState(inicial ? inicial.por_cpf : codigo === undefined && cpf !== undefined);
+  const [coluna, setColuna] = useState(String(inicial ? inicial.coluna : (codigo ?? cpf ?? "")));
+  const [telefones, setTelefones] = useState<string[]>(
+    inicial ? inicial.celulares.map(String) : sugerido === undefined ? [] : [String(sugerido)],
+  );
 
   const opcoes = colunas.map((c) => (
     <option key={c.indice} value={c.indice}>
