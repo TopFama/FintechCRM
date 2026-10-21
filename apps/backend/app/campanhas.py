@@ -41,7 +41,7 @@ from .fila_automatica import (
 from .leads_service import gerar_leads_de_clientes
 from .regras_db import carregar_regras
 from .timezone import hoje_br, inicio_do_dia_utc, inicio_hoje_utc, para_br
-from .utils.phone import is_valid_phone
+from .utils.phone import is_valid_phone, normalize_phone
 from .utils.valor import ler_valor
 from .variaveis_template import CAMPOS_CLIENTE, extrair_placeholders, formatar_moeda
 
@@ -235,13 +235,6 @@ def _coluna_da_linha(linha: dict[str, str], nomes: tuple[str, ...]) -> str | Non
     return None
 
 
-def _decimal_planilha(texto: str) -> Decimal | None:
-    """Valor da planilha maior que zero; zero, negativo ou sem número fica
-    com o valor do SETA."""
-    valor = ler_valor(texto)
-    return valor if valor is not None and valor > 0 else None
-
-
 def _colunas_para_variaveis(linha: dict[str, str]) -> dict[str, str]:
     """Linha da planilha como contexto das variáveis: coluna de valor sai
     formatada como a mensagem mostra ("1.234,50", sem "R$")."""
@@ -253,8 +246,12 @@ def _colunas_para_variaveis(linha: dict[str, str]) -> dict[str, str]:
     return contexto
 
 
-def conferir_obrigatorios(linhas_por_codigo: dict[str, dict], cadastro: dict[str, dict]) -> tuple[dict[str, dict], dict[str, int], dict[str, int]]:
-    """Aplica as regras R1 a R3 aos clientes importados."""
+def conferir_obrigatorios(
+    linhas_por_codigo: dict[str, dict], cadastro: dict[str, dict], colunas_celular: list[str] | None = None
+) -> tuple[dict[str, dict], dict[str, int], dict[str, int]]:
+    """Aplica as regras R1 a R3 aos clientes importados. `colunas_celular`
+    são as colunas escolhidas pelo usuário, em ordem de prioridade; sem elas,
+    vale a coluna Celular/Telefone pelo nome."""
     from .utils.document import format_cpf
 
     _COLUNAS_NOME = ("NOME", "NOME CLIENTE", "CLIENTE")
@@ -311,10 +308,14 @@ def conferir_obrigatorios(linhas_por_codigo: dict[str, dict], cadastro: dict[str
             continue
             
         # CELULAR
-        celular_planilha = _coluna(linha, _COLUNAS_CELULAR)
+        if colunas_celular:
+            candidatos = [str(linha.get(c, "")).strip() for c in colunas_celular]
+        else:
+            candidatos = [_coluna(linha, _COLUNAS_CELULAR)]
+        celular_planilha = next((c for c in candidatos if c and is_valid_phone(c)), "")
         celular_final = ""
-        if celular_planilha and is_valid_phone(celular_planilha):
-            celular_final = celular_planilha
+        if celular_planilha:
+            celular_final = normalize_phone(celular_planilha)
             origem["celular"] = "Planilha"
         else:
             for tel in ORDEM_TELEFONES:
@@ -374,28 +375,12 @@ def colunas_em_branco(campanha: models.Campanha, mapeamentos: list[models.FaixaV
     return resultado
 
 
-def valor_da_planilha(linha: dict) -> Decimal | None:
-    """Valor da linha da planilha; None quando não é válido (fica o do SETA,
-    se o usuário autorizou em `Campanha.valor_seta_autorizado`)."""
-
-    return _decimal_planilha(_coluna_da_linha(linha, _COLUNAS_VALOR) or "")
-
-
-def valor_invalido(campanha: models.Campanha) -> int:
-    """Clientes da planilha sem valor válido."""
-
-    return sum(1 for linha in (campanha.planilha_linhas or {}).values() if valor_da_planilha(linha) is None)
-
-
 def com_dados_da_planilha(cliente: dict, campanha: models.Campanha) -> dict:
-    """Cliente do SETA com valor, nome, CPF e celular conferidos pela planilha."""
+    """Cliente do SETA com nome, CPF e celular conferidos pela planilha (o valor é sempre o do SETA)."""
     linha = (campanha.planilha_linhas or {}).get(cliente["codigo"])
     if not linha:
         return cliente
     novo = dict(cliente)
-    if (valor := valor_da_planilha(linha)) is not None:
-        novo["valor_cobrar"] = valor
-        novo["valor_atraso"] = valor
     if "_nome" in linha:
         novo["nome"] = linha["_nome"]
     if "_cpf" in linha:
@@ -644,22 +629,29 @@ _COLUNAS_CODIGO = ("CODIGO", "COD", "CODIGO SETA", "COD SETA", "CODIGO CLIENTE",
 _COLUNAS_CPF = ("CPF", "CPF/CNPJ", "CPFCNPJ", "CPF CNPJ", "DOCUMENTO")
 
 
-def ler_clientes(filename: str, content: bytes) -> dict:
-    """Clientes de uma planilha .xlsx para restringir a campanha: usa a
-    coluna de código SETA (Codigo, Código SETA…) ou, sem ela, a de CPF, que
-    vira código numa consulta só ao SETA. Devolve os códigos (8 dígitos) e
-    quantas linhas não deram para identificar."""
+def ler_clientes(
+    filename: str, content: bytes, coluna: int | None = None, por_cpf: bool = False, celulares: list[int] | None = None
+) -> dict:
+    """Clientes de uma planilha .xlsx para restringir a campanha. Com `coluna`
+    (índice escolhido na tela; `por_cpf` diz se é CPF ou código SETA), lê essa
+    coluna abaixo do cabeçalho (primeira linha). Sem ela, usa a coluna de código
+    SETA (Codigo, Código SETA…) ou, sem ela, a de CPF. O CPF vira código numa
+    consulta só ao SETA. Devolve os códigos (8 dígitos), quantas linhas não deram
+    para identificar e as colunas de celular escolhidas (`celulares`, índices)."""
 
     linhas = _linhas_xlsx(filename, content)
-    achou = _achar_coluna(linhas, _COLUNAS_CODIGO)
-    por_cpf = False
-    if achou is None:
-        achou = _achar_coluna(linhas, _COLUNAS_CPF)
-        por_cpf = True
+    if coluna is not None:
+        achou = (0, coluna)
+    else:
+        achou = _achar_coluna(linhas, _COLUNAS_CODIGO)
+        por_cpf = False
+        if achou is None:
+            achou = _achar_coluna(linhas, _COLUNAS_CPF)
+            por_cpf = True
     if achou is None:
         raise ValueError("Não achei a coluna de código do cliente (Codigo) nem a de CPF na planilha")
     cab, col = achou
-    cabecalho = [c.strip() for c in linhas[cab]]
+    cabecalho = [c.strip() or f"Coluna {i + 1}" for i, c in enumerate(linhas[cab])]
     colunas = [c for c in cabecalho if c]
     # (identificador só dígitos, linha como {coluna: valor})
     corpo = [
@@ -686,6 +678,7 @@ def ler_clientes(filename: str, content: bytes) -> dict:
         "colunas": colunas,
         "ignoradas": ignoradas,
         "coluna": "CPF" if por_cpf else "Código",
+        "colunas_celular": [cabecalho[i] for i in celulares or [] if i < len(cabecalho)],
     }
 
 
@@ -718,13 +711,6 @@ def diagnosticar(db: Session, campanha: models.Campanha) -> dict:
         linha = (campanha.planilha_linhas or {}).get(codigo)
         if not linha:
             return "pronto"
-        if campanha.fonte_valores == "planilha" and valor_da_planilha(linha) is None:
-            # Valor inválido na planilha: o do SETA só com autorização do usuário
-            if campanha.valor_seta_autorizado is None:
-                return "aguardando_decisao"
-            if not campanha.valor_seta_autorizado:
-                return "fora_por_decisao"
-
         for m in campanha.faixa.variable_mappings:
             if m.fonte_tipo == "coluna" and m.column_name:
                 val = str(linha.get(m.column_name, "")).strip()

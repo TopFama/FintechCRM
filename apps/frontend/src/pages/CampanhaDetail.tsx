@@ -1,9 +1,10 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, Campanha, CampanhaIn, Faixa, FiltrosCobranca, foiCancelada, mensagemErroSeta, PreviaCampanha } from "../api";
+import { api, Campanha, CampanhaIn, ColunaPlanilha, Faixa, FiltrosCobranca, foiCancelada, MapeamentoClientes, mensagemErroSeta, PreviaCampanha } from "../api";
 import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../components/BarraFiltrosCobranca";
 import AvisosCategoria from "../components/AvisosCategoria";
 import EnviosFaixa from "../components/EnviosFaixa";
+import MapeamentoPlanilha from "../components/MapeamentoPlanilha";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import SortableTh from "../components/SortableTh";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
@@ -83,6 +84,9 @@ export default function CampanhaDetail() {
   const [enviandoPlanilha, setEnviandoPlanilha] = useState(false);
   // Na criação, a planilha fica guardada e sobe logo depois de criar a campanha.
   const [planilhaNova, setPlanilhaNova] = useState<File | null>(null);
+  const [mapeamentoNovo, setMapeamentoNovo] = useState<MapeamentoClientes | null>(null);
+  // Arquivo escolhido e suas colunas, à espera do usuário indicar quais usar.
+  const [mapeando, setMapeando] = useState<{ arquivo: File; colunas: ColunaPlanilha[] } | null>(null);
   const planilhaRef = useRef<HTMLInputElement>(null);
 
   const [previa, setPrevia] = useState<PreviaCampanha | null>(null);
@@ -150,7 +154,7 @@ export default function CampanhaDetail() {
           fonte_valores: "seta",
         });
         try {
-          await api.subirClientesCampanha(criada.id, planilhaNova);
+          await api.subirClientesCampanha(criada.id, planilhaNova, mapeamentoNovo!);
           if (payload.ativa || payload.fonte_valores !== "seta") await api.salvarCampanha(criada.id, payload);
         } catch (err) {
           navigate(`/campanhas/${criada.id}`, { replace: true });
@@ -177,16 +181,32 @@ export default function CampanhaDetail() {
   async function subirPlanilha(e: ChangeEvent<HTMLInputElement>) {
     const arquivo = e.target.files?.[0];
     e.target.value = "";
-    if (arquivo && nova) {
-      setPlanilhaNova(arquivo);
-      return;
-    }
-    if (!arquivo || !id) return;
+    if (!arquivo) return;
     setErro(null);
     setSucesso(null);
     setEnviandoPlanilha(true);
     try {
-      const r = await api.subirClientesCampanha(id, arquivo);
+      setMapeando({ arquivo, colunas: await api.colunasPlanilha(arquivo) });
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Erro ao ler a planilha");
+    } finally {
+      setEnviandoPlanilha(false);
+    }
+  }
+
+  async function usarColunas(mapeamento: MapeamentoClientes) {
+    if (!mapeando) return;
+    const { arquivo } = mapeando;
+    setMapeando(null);
+    if (nova) {
+      setPlanilhaNova(arquivo);
+      setMapeamentoNovo(mapeamento);
+      return;
+    }
+    if (!id) return;
+    setEnviandoPlanilha(true);
+    try {
+      const r = await api.subirClientesCampanha(id, arquivo, mapeamento);
       setSucesso(
         `Planilha lida pela coluna ${r.coluna}: ${r.clientes} cliente(s) válidos` +
           (r.ignoradas ? `, ${r.ignoradas} linha(s) sem cliente identificado.` : ".")
@@ -202,17 +222,6 @@ export default function CampanhaDetail() {
       setErro(err instanceof Error ? err.message : "Erro ao ler a planilha");
     } finally {
       setEnviandoPlanilha(false);
-    }
-  }
-
-  async function autorizarValorSeta(autorizado: boolean) {
-    if (!id) return;
-    setErro(null);
-    try {
-      setCampanha(await api.autorizarValorSetaCampanha(id, autorizado));
-      setPrevia(null);
-    } catch (err) {
-      setErro(err instanceof Error ? err.message : "Erro ao salvar a decisão");
     }
   }
 
@@ -308,7 +317,7 @@ export default function CampanhaDetail() {
     ["nome", "Cliente"],
     ["cluster", "Cluster"],
     ["faixa", "Faixa de atraso"],
-    ["valor_cobrar", form.fonte_valores === "planilha" ? "Valor (planilha)" : "Valor a cobrar"],
+    ["valor_cobrar", "Valor a cobrar"],
   ];
 
   return (
@@ -467,8 +476,16 @@ export default function CampanhaDetail() {
             <h4>Planilha de clientes (opcional)</h4>
             <>
               <p className="field-hint">
-                Coluna Codigo ou CPF. Os filtros acima continuam valendo.
+                Você escolhe as colunas depois de subir o arquivo. Os filtros acima continuam valendo.
               </p>
+              {mapeando && (
+                <MapeamentoPlanilha
+                  arquivo={mapeando.arquivo.name}
+                  colunas={mapeando.colunas}
+                  onConfirmar={usarColunas}
+                  onCancelar={() => setMapeando(null)}
+                />
+              )}
               {Object.keys(pendentesPlanilha).length > 0 && (
                 <div className="error-box" style={{ marginBottom: 12, fontSize: '0.9em' }}>
                   <strong>Atenção: alguns clientes ficaram de fora por dados obrigatórios inválidos:</strong>
@@ -477,26 +494,6 @@ export default function CampanhaDetail() {
                       <li key={motivo}>{qtd} cliente(s) {motivo}</li>
                     ))}
                   </ul>
-                </div>
-              )}
-              {campanha?.fonte_valores === "planilha" && campanha.valor_invalido > 0 && (
-                <div className={campanha.valor_seta_autorizado === null ? "error-box" : "success-box"} style={{ marginBottom: 12, fontSize: "0.9em" }}>
-                  <strong>
-                    {campanha.valor_invalido} cliente(s) sem valor válido na planilha.{" "}
-                    {campanha.valor_seta_autorizado === null
-                      ? "Usar o valor do SETA para eles?"
-                      : campanha.valor_seta_autorizado
-                        ? "Usando o valor do SETA."
-                        : "Ficam fora da campanha."}
-                  </strong>
-                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                    <button type="button" className="small" disabled={campanha.valor_seta_autorizado === true} onClick={() => autorizarValorSeta(true)}>
-                      Usar o valor do SETA
-                    </button>
-                    <button type="button" className="secondary small" disabled={campanha.valor_seta_autorizado === false} onClick={() => autorizarValorSeta(false)}>
-                      Deixar fora
-                    </button>
-                  </div>
                 </div>
               )}
               {Object.keys(completadosSeta).length > 0 && (
@@ -543,6 +540,7 @@ export default function CampanhaDetail() {
                       className="danger small"
                       onClick={() => {
                         setPlanilhaNova(null);
+                        setMapeamentoNovo(null);
                         setForm((f) => ({ ...f, todos_da_planilha: false }));
                       }}
                     >
@@ -562,7 +560,7 @@ export default function CampanhaDetail() {
                 )}
               </div>
               <div className="field" style={{ maxWidth: 420 }}>
-                <label htmlFor="camp-fonte">Valor, celular e variáveis vêm</label>
+                <label htmlFor="camp-fonte">Celular e variáveis vêm</label>
                 <select
                   id="camp-fonte"
                   value={form.fonte_valores}
@@ -575,7 +573,7 @@ export default function CampanhaDetail() {
                   }
                 >
                   <option value="seta">Do SETA (atualizados no dia)</option>
-                  <option value="planilha">Da planilha (colunas Valor e Celular)</option>
+                  <option value="planilha">Da planilha (celulares mapeados)</option>
                 </select>
                 {form.fonte_valores === "planilha" && (
                   <span className="field-hint">

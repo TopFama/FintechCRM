@@ -204,8 +204,11 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     await page.getByLabel("Nome da campanha").fill("Planilha promo");
     // planilha escolhida antes de salvar: sobe junto com a criação
     await page.locator('input[aria-label="Planilha de clientes"]').setInputFiles(path.join(DADOS, "clientes_campanha.xlsx"));
+    // o usuário confere as colunas sugeridas (código e celular) e confirma
+    await expect(page.getByLabel("Coluna do código")).not.toHaveValue("");
+    await page.getByRole("button", { name: "Usar estas colunas" }).click();
     await expect(page.getByText("clientes_campanha.xlsx · será lida ao criar a campanha")).toBeVisible();
-    await page.getByLabel("Valor, celular e variáveis vêm").selectOption("planilha");
+    await page.getByLabel("Celular e variáveis vêm").selectOption("planilha");
     // envio automático num período futuro: salva a configuração sem rodar sozinho durante o teste
     await page.getByLabel("Envio automático").check();
     await page.getByLabel("Período: de").fill("2099-01-01");
@@ -213,7 +216,7 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     await page.getByRole("button", { name: "Criar campanha" }).click();
     await expect(page.getByRole("heading", { name: "Planilha promo" })).toBeVisible();
     await expect(page.getByText("clientes_campanha.xlsx · 2 cliente(s)")).toBeVisible();
-    await expect(page.getByLabel("Valor, celular e variáveis vêm")).toHaveValue("planilha");
+    await expect(page.getByLabel("Celular e variáveis vêm")).toHaveValue("planilha");
     await expect(page.locator(".status-pill").first()).toHaveText("Automática");
     await expect(page.locator(".page-header .subtitle")).toContainText("Envio automático de 01/01/2099 a 02/01/2099");
 
@@ -231,7 +234,6 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     await previa.getByRole("button", { name: "Ver prévia" }).click();
     // 99999 não existe no SETA; 00000036 pode ter saído da base em cenários anteriores (blacklist)
     await expect(previa).toContainText(/[12] cliente\(s\) entrariam/);
-    await expect(previa.locator("tbody")).toContainText("R$ 99,90");
     const entrariam = await previa.locator("tbody tr").count();
 
     const confirmou = responderDialogo(page);
@@ -243,7 +245,6 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     const fila = await apiGet(page, `/faixas/${campanha.faixa_id}/queue?limit=100&offset=0`);
     const item = fila.itens.find((i: any) => i.codigo_cliente === "00000027");
     if (item) {
-      expect(item.valor).toBe("99.90");
       expect(item.status).toBe("pending");
     }
 
