@@ -154,7 +154,8 @@ def buscar_base(
             # linhas com valor em atraso (sem e com juros); não reaproveita cache de antes
             # 3: linhas trazem telefone4 (quarta opção de celular)
             # 4: carência da multa separada da dos juros
-            "versao": 4,
+            # 5: sem atraso, corte de R$ 30 sobre a próxima parcela
+            "versao": 5,
         },
     )
 
