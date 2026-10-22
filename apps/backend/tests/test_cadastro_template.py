@@ -29,7 +29,7 @@ from app.database import SessionLocal
 from app.dispatch_service import montar_parametros_envio
 from app.main import _run_migrations, app
 from app.meta_client import MetaClient
-from app.routers.templates import _extract_botoes, _extract_variables
+from app.routers.templates import _extract_botoes, _extract_rodape, _extract_titulo, _extract_variables
 from app.security import hash_password
 
 WABA = "5550001"
@@ -289,5 +289,38 @@ assert json.loads(cadastro["corpo"])["components"] == [
     {"type": "HEADER", "format": "IMAGE", "example": {"header_handle": ["4::HANDLE"]}},
     {"type": "BODY", "text": "Oi, sua fatura chegou."},
 ]
+
+# Título (cabeçalho de texto) e rodapé fixos: limites, exclusivo com a imagem, ordem dos components e sync
+for campos, motivo in (
+    ({"titulo": "t" * 61}, "título passa de 60"),
+    ({"rodape": "r" * 61}, "rodapé passa de 60"),
+    ({"titulo": "Olá {{1}}"}, "não aceitam variável"),
+    ({"rodape": "Responda {{1}}"}, "não aceitam variável"),
+    ({"titulo": "Fatura", "header_type": "image"}, "só aceita um cabeçalho"),
+):
+    rascunho = criar(meta_template_name="titulo_invalido", **campos)
+    assert rascunho.status_code == 201, rascunho.text
+    resp = enviar(rascunho.json()["id"])
+    assert resp.status_code == 400 and motivo in resp.json()["detail"], (campos, resp.text)
+total = len(CHAMADAS)
+com_titulo = criar(meta_template_name="com_titulo", titulo="  Fatura em atraso ", rodape="Lojas TopFama",
+                   body_text="Oi, sua fatura chegou.", variables=[])
+assert com_titulo.status_code == 201, com_titulo.text
+assert (com_titulo.json()["titulo"], com_titulo.json()["rodape"]) == ("Fatura em atraso", "Lojas TopFama")
+resp = enviar(com_titulo.json()["id"])
+assert resp.status_code == 200, resp.text
+assert json.loads(CHAMADAS[-1]["corpo"])["components"] == [
+    {"type": "HEADER", "format": "TEXT", "text": "Fatura em atraso"},
+    {"type": "BODY", "text": "Oi, sua fatura chegou."},
+    {"type": "FOOTER", "text": "Lojas TopFama"},
+]
+assert len(CHAMADAS) == total + 1
+remoto = {"components": [
+    {"type": "HEADER", "format": "TEXT", "text": "Fatura em atraso"},
+    {"type": "BODY", "text": "Oi"},
+    {"type": "FOOTER", "text": "Lojas TopFama"},
+]}
+assert (_extract_titulo(remoto), _extract_rodape(remoto)) == ("Fatura em atraso", "Lojas TopFama")
+assert (_extract_titulo({"components": [{"type": "HEADER", "format": "IMAGE"}]}), _extract_rodape({"components": []})) == (None, None)
 
 print("OK")

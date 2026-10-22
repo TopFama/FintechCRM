@@ -85,15 +85,20 @@ function BotoesWhatsapp({ botoes }: { botoes: TemplateBotao[] }) {
   );
 }
 
-// Balão da mensagem como chega no WhatsApp: imagem do cabeçalho em cima, o
-// texto já com as variáveis trocadas por quem chama e os botões embaixo.
+// Balão da mensagem como chega no WhatsApp: título ou imagem do cabeçalho em
+// cima, o texto já com as variáveis trocadas por quem chama, o rodapé e os
+// botões embaixo.
 export default function PreviaWhatsapp({
   texto,
+  titulo,
+  rodape,
   cabecalhoImagem = false,
   imagemUrl,
   botoes = [],
 }: {
   texto: string;
+  titulo?: string | null;
+  rodape?: string | null;
   cabecalhoImagem?: boolean;
   imagemUrl?: string | null;
   botoes?: TemplateBotao[];
@@ -106,7 +111,9 @@ export default function PreviaWhatsapp({
         ) : (
           <div className="template-preview-sem-imagem">Imagem do cabeçalho</div>
         ))}
+      {titulo && <strong className="template-preview-titulo">{titulo}</strong>}
       {formatarWhatsapp(texto)}
+      {rodape && <div className="template-preview-rodape">{rodape}</div>}
       {botoes.length > 0 && <BotoesWhatsapp botoes={botoes} />}
     </div>
   );

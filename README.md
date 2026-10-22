@@ -253,7 +253,7 @@ desenvolvimento.
    reprovado ou pausado; nome e idioma fixos; categoria fixa depois de aprovado; aprovado edita
    1 vez a cada 24 h e 10 a cada 30 dias) e, se estiver em uso numa faixa, sem mudar as variáveis;
    fora disso, "Cadastrar como novo template" copia o conteúdo para um rascunho novo. Templates sincronizados
-   da Meta continuam valendo em qualquer idioma. Templates com cabeçalho de imagem permitem subir a imagem, reaproveitada em
+   da Meta continuam valendo em qualquer idioma. O cabeçalho é nenhum, título (texto fixo) ou imagem; o rodapé é opcional e as duas coisas aparecem na prévia e vêm do sync da Meta. Templates com cabeçalho de imagem permitem subir a imagem, reaproveitada em
    todo envio daquele template; se ela passar do limite do WhatsApp, o sistema mostra a versão
    otimizada para o usuário aprovar (ver "Limitações conhecidas").
    Quando a Meta muda (ou anuncia que vai mudar) a
@@ -666,7 +666,8 @@ Só é preciso refazer isto se a VPS, as chaves ou a conta do Tailscale mudarem.
 - **Envio de template para aprovação** (`POST /templates/{id}/enviar-para-aprovacao`, e a
   reanálise de `PUT /templates/{id}` em template já enviado): manda `example.body_text` com o
   exemplo gravado de cada variável do corpo, os botões em `BUTTONS` (link variável com o link
-  completo de exemplo) e, com cabeçalho de imagem,
+  completo de exemplo), o título (cabeçalho de texto, `HEADER`) e o rodapé (`FOOTER`) fixos, sem variável e
+  até 60 caracteres, e, com cabeçalho de imagem (a Meta só aceita um cabeçalho: título ou imagem),
   `example.header_handle` com a imagem do template subida pela Resumable Upload API da Meta (o app
   vem de `GET /app` com o próprio token, sem configuração a mais). As regras de cadastro da Meta
   (nome `[a-z0-9_]`, corpo até 1024 caracteres, variáveis em sequência e fora do começo e do fim)

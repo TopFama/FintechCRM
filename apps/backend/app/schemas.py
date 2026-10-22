@@ -149,6 +149,7 @@ class WhatsappNumberOut(BaseModel):
 # sequência e sem variável no começo ou no fim. A tela espelha para avisar.
 NOME_TEMPLATE_META = re.compile(r"^[a-z0-9_]{1,512}$")
 LIMITE_CORPO_TEMPLATE = 1024
+LIMITE_TITULO_RODAPE_TEMPLATE = 60  # título (cabeçalho de texto) e rodapé
 _VARIAVEL_TEMPLATE = re.compile(r"\{\{(\d+)\}\}")
 
 
@@ -197,7 +198,9 @@ class TemplateCreate(BaseModel):
     meta_template_name: str = ""
     category: Literal["UTILITY", "MARKETING"] = "UTILITY"
     header_type: TemplateHeaderType = TemplateHeaderType.none
+    titulo: str = ""
     body_text: str = ""
+    rodape: str = ""
     waba_id: str | None = None
     variables: list[TemplateVariableIn] = []
     botoes: list[TemplateBotaoIn] = []
@@ -210,7 +213,7 @@ class TemplateCreate(BaseModel):
             raise ValueError("O nome interno é obrigatório")
         return valor
 
-    @field_validator("meta_template_name", "body_text")
+    @field_validator("meta_template_name", "titulo", "body_text", "rodape")
     @classmethod
     def sem_espacos_nas_pontas(cls, valor: str) -> str:
         return valor.strip()
@@ -243,6 +246,14 @@ def pendencias_template(template) -> list[str]:
             pendencias.append("O corpo do template não pode começar nem terminar com variável")
         if variaveis_corpo != posicoes:
             pendencias.append("As variáveis informadas não batem com as do corpo do template")
+
+    for rotulo, texto in (("O título", template.titulo), ("O rodapé", template.rodape)):
+        if len(texto or "") > LIMITE_TITULO_RODAPE_TEMPLATE:
+            pendencias.append(f"{rotulo} passa de {LIMITE_TITULO_RODAPE_TEMPLATE} caracteres")
+    if _VARIAVEL_TEMPLATE.search(template.titulo or "") or _VARIAVEL_TEMPLATE.search(template.rodape or ""):
+        pendencias.append("O título e o rodapé não aceitam variável")
+    if template.titulo and template.header_type == TemplateHeaderType.image:
+        pendencias.append("A Meta só aceita um cabeçalho: use o título ou a imagem")
 
     botoes = template.botoes or []
     if len(botoes) > LIMITE_BOTOES:
@@ -297,7 +308,9 @@ class TemplateOut(BaseModel):
     category: str
     header_type: TemplateHeaderType
     image_url: str | None
+    titulo: str | None = None
     body_text: str
+    rodape: str | None = None
     botoes: list[TemplateBotao] = []
     status: TemplateStatus
     meta_status_raw: str | None

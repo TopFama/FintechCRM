@@ -137,7 +137,7 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await expect(bolha.locator("li")).toHaveText(["boleto", "cartão"]);
     await expect(bolha.locator("blockquote")).toHaveText("TopFama");
     await expect(bolha.locator("pre")).toHaveText("linha mono");
-    await campo(novo, "Cabeçalho com imagem?").selectOption("image");
+    await campo(novo, "Cabeçalho").selectOption("image");
     await expect(bolha.getByText("Imagem do cabeçalho")).toBeVisible();
     await novo.getByRole("button", { name: "Cancelar" }).click();
   });
@@ -250,7 +250,7 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     const novo = card(page, "Novo template");
     await novo.getByRole("button", { name: "Criar template" }).click();
     await campo(novo, "Nome interno").fill("Com imagem");
-    await campo(novo, "Cabeçalho com imagem?").selectOption("image");
+    await campo(novo, "Cabeçalho").selectOption("image");
     await campo(novo, /Corpo do template/).fill("Oi {{1}}, sua fatura chegou.");
     await campo(novo, "Exemplo de {{1}}").fill("Maria");
     await novo.getByRole("button", { name: "Salvar rascunho" }).click();

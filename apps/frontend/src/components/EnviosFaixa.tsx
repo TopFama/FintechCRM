@@ -420,6 +420,8 @@ export default function EnviosFaixa({
               <div className="template-preview">
                 <PreviaWhatsapp
                   texto={renderizarPreviewForm(templateFinal)}
+                  titulo={templateFinal.titulo}
+                  rodape={templateFinal.rodape}
                   cabecalhoImagem={templateFinal.header_type === "image"}
                   imagemUrl={templateFinal.image_url}
                   botoes={templateFinal.botoes}

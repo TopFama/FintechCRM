@@ -733,7 +733,9 @@ export interface TemplateCreate {
   meta_template_name: string;
   category: "UTILITY" | "MARKETING";
   header_type: "none" | "image";
+  titulo?: string;
   body_text: string;
+  rodape?: string;
   waba_id?: string;
   variables: {
     position: number;
@@ -782,7 +784,9 @@ export interface Template {
   category: string;
   header_type: "none" | "image";
   image_url: string | null;
+  titulo: string | null;
   body_text: string;
+  rodape: string | null;
   botoes: TemplateBotao[];
   status: "draft" | "pending" | "approved" | "rejected";
   meta_status_raw: string | null;
