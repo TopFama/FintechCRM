@@ -213,6 +213,8 @@ async def sync_from_meta(
 
             header_type = _extract_header_type(remote)
             body_text = _extract_body_text(remote)
+            titulo = _extract_titulo(remote)
+            rodape = _extract_rodape(remote)
 
             if existing:
                 if _aplicar_status(existing, remote.get("status")):
@@ -222,7 +224,9 @@ async def sync_from_meta(
                 existing.waba_id = waba_id
                 existing.header_type = header_type
                 existing.language = language
+                existing.titulo = titulo
                 existing.body_text = body_text
+                existing.rodape = rodape
                 existing.botoes = _extract_botoes(remote)
 
                 # Sincroniza variáveis com o texto e os botões atualizados do template
@@ -251,7 +255,9 @@ async def sync_from_meta(
                     header_type=header_type,
                     meta_template_id=remote_id,
                     waba_id=waba_id,
+                    titulo=titulo,
                     body_text=body_text,
+                    rodape=rodape,
                     botoes=_extract_botoes(remote),
                 )
                 _aplicar_categoria(template, remote)
@@ -353,6 +359,20 @@ def _extract_body_text(remote: dict) -> str:
     return ""
 
 
+def _extract_titulo(remote: dict) -> str | None:
+    for component in remote.get("components", []):
+        if component.get("type") == "HEADER" and component.get("format") == "TEXT":
+            return component.get("text") or None
+    return None
+
+
+def _extract_rodape(remote: dict) -> str | None:
+    for component in remote.get("components", []):
+        if component.get("type") == "FOOTER":
+            return component.get("text") or None
+    return None
+
+
 def _extract_botoes(remote: dict) -> list[dict]:
     """Botões do template na Meta, na ordem dela (o índice é o do envio)."""
 
@@ -439,7 +459,9 @@ def _aplicar_formulario(db: Session, template: models.Template, payload: schemas
     template.meta_template_name = payload.meta_template_name
     template.category = payload.category
     template.header_type = payload.header_type
+    template.titulo = payload.titulo or None
     template.body_text = payload.body_text
+    template.rodape = payload.rodape or None
     template.botoes = [b.model_dump() for b in payload.botoes]
     template.waba_id = waba_id
     if not template.meta_template_id:
@@ -634,7 +656,7 @@ def _botao_meta(botao: dict, exemplo: str | None) -> dict:
 async def _cadastrar_na_meta(db: Session, template: models.Template, editar_categoria: bool = True) -> bool:
     """Manda o template para análise da Meta com os exemplos que ela exige: o
     valor de cada variável (example.body_text), o link de exemplo de cada botão
-    de link variável e, com cabeçalho de imagem, a imagem já subida no template
+    de link variável, o título (cabeçalho de texto) e o rodapé fixos e, com cabeçalho de imagem, a imagem já subida no template
     (example.header_handle). Sem meta_template_id cadastra; com, edita (reanálise).
     True quando a Meta já devolve aprovado (ver _aplicar_status)."""
 
@@ -661,9 +683,13 @@ async def _cadastrar_na_meta(db: Session, template: models.Template, editar_cate
     if exemplos_corpo:
         corpo["example"] = {"body_text": [exemplos_corpo]}
     componentes = [corpo]
+    if template.rodape:
+        componentes.append({"type": "FOOTER", "text": template.rodape})
     if template.botoes:
         exemplos_link = {v.botao_indice: v.exemplo for v in template.variables if v.botao_indice is not None}
         componentes.append({"type": "BUTTONS", "buttons": [_botao_meta(b, exemplos_link.get(i)) for i, b in enumerate(template.botoes)]})
+    if template.titulo:
+        componentes.insert(0, {"type": "HEADER", "format": "TEXT", "text": template.titulo})
     try:
         if caminho_imagem:
             with open(caminho_imagem, "rb") as f:

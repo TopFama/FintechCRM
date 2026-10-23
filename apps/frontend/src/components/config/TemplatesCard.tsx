@@ -40,8 +40,11 @@ const FORM_VAZIO = {
   name: "",
   meta_template_name: "",
   category: "UTILITY" as TemplateCreate["category"],
-  header_type: "none" as TemplateCreate["header_type"],
+  // Cabeçalho: um só (Meta): nenhum, título (texto) ou imagem
+  header_type: "none" as "none" | "text" | "image",
+  titulo: "",
   body_text: "",
+  rodape: "",
 };
 
 // Botões como no portal da Meta; o link variável guarda só o começo do endereço
@@ -327,6 +330,8 @@ export default function TemplatesCard() {
       }));
     return {
       ...form,
+      header_type: form.header_type === "image" ? "image" : "none",
+      titulo: form.header_type === "text" ? form.titulo : "",
       variables: [...variaveisCorpo, ...variaveisLinks],
       botoes: botoes.map(botaoParaMeta),
       waba_id: wabaIds.length > 1 ? selectedWabaId : undefined,
@@ -352,8 +357,10 @@ export default function TemplatesCard() {
       name: t.name,
       meta_template_name: t.meta_template_name,
       category: t.category as TemplateCreate["category"],
-      header_type: t.header_type,
+      header_type: t.titulo ? "text" : t.header_type,
+      titulo: t.titulo ?? "",
       body_text: t.body_text,
+      rodape: t.rodape ?? "",
     });
     if (t.waba_id) setSelectedWabaId(t.waba_id);
     const doCorpo: Record<number, { exemplo: string; campo: string }> = {};
@@ -677,16 +684,28 @@ export default function TemplatesCard() {
                 </select>
               </div>
               <div className="field">
-                <label htmlFor="tpl-cabecalho-com-imagem">Cabeçalho com imagem?</label>
-                <select id="tpl-cabecalho-com-imagem"
+                <label htmlFor="tpl-cabecalho">Cabeçalho</label>
+                <select id="tpl-cabecalho"
                   value={form.header_type}
-                  onChange={(e) => setForm({ ...form, header_type: e.target.value as "none" | "image" })}
+                  onChange={(e) => setForm({ ...form, header_type: e.target.value as typeof form.header_type })}
                 >
-                  <option value="none">Não</option>
-                  <option value="image">Sim</option>
+                  <option value="none">Nenhum</option>
+                  <option value="text">Título</option>
+                  <option value="image">Imagem</option>
                 </select>
               </div>
             </div>
+            {form.header_type === "text" && (
+              <div className="field">
+                <label htmlFor="tpl-titulo">Título</label>
+                <input id="tpl-titulo"
+                  value={form.titulo}
+                  onChange={(e) => setForm({ ...form, titulo: e.target.value })}
+                  maxLength={60}
+                />
+                <p className="field-hint">{form.titulo.trim().length}/60</p>
+              </div>
+            )}
             <div className="field">
               <label htmlFor="tpl-corpo-do-template">Corpo do template (use {"{{1}}"}, {"{{2}}"}... para variáveis)</label>
               <textarea id="tpl-corpo-do-template"
@@ -704,6 +723,15 @@ export default function TemplatesCard() {
                   {a}
                 </p>
               ))}
+            </div>
+            <div className="field">
+              <label htmlFor="tpl-rodape">Rodapé</label>
+              <input id="tpl-rodape"
+                value={form.rodape}
+                onChange={(e) => setForm({ ...form, rodape: e.target.value })}
+                maxLength={60}
+              />
+              <p className="field-hint">{form.rodape.trim().length}/60</p>
             </div>
             {variaveisForm.length > 0 && (
               <div className="template-preview-vars">
@@ -840,6 +868,8 @@ export default function TemplatesCard() {
             <div className="template-preview">
               <PreviaWhatsapp
                 texto={textoPreviaForm}
+                titulo={form.header_type === "text" ? form.titulo : undefined}
+                rodape={form.rodape}
                 cabecalhoImagem={form.header_type === "image"}
                 imagemUrl={editando?.image_url}
                 botoes={botoes.map(botaoParaMeta)}
@@ -1062,6 +1092,8 @@ export default function TemplatesCard() {
                             <div className="template-preview">
                               <PreviaWhatsapp
                                 texto={renderizarPreview(t)}
+                                titulo={t.titulo}
+                                rodape={t.rodape}
                                 cabecalhoImagem={t.header_type === "image"}
                                 imagemUrl={t.image_url}
                                 botoes={t.botoes}
@@ -1170,6 +1202,8 @@ export default function TemplatesCard() {
                             <div className="template-preview" style={{ marginTop: 12, marginBottom: 12 }}>
                               <PreviaWhatsapp
                                 texto={renderizarPreviewComValores(t, testeVariaveis)}
+                                titulo={t.titulo}
+                                rodape={t.rodape}
                                 cabecalhoImagem={t.header_type === "image"}
                                 imagemUrl={t.image_url}
                                 botoes={t.botoes}

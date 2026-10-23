@@ -804,6 +804,17 @@ label {
   font-size: 12px;
 }
 
+.template-preview-titulo {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.template-preview-rodape {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-text-faint);
+}
+
 .template-preview-bubble code,
 .template-preview-bubble pre {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

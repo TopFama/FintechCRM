@@ -588,6 +588,8 @@ export default function Configuracoes() {
                   <div className="template-preview">
                     <PreviaWhatsapp
                       texto={renderizarPreviewTeste(testeTemplate)}
+                      titulo={testeTemplate.titulo}
+                      rodape={testeTemplate.rodape}
                       cabecalhoImagem={testeTemplate.header_type === "image"}
                       imagemUrl={testeTemplate.image_url}
                     />

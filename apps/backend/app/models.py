@@ -114,7 +114,10 @@ class Template(Base):
         Enum(TemplateHeaderType), default=TemplateHeaderType.none
     )
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Título (cabeçalho de texto, exclusivo com a imagem) e rodapé: texto fixo, sem variável
+    titulo: Mapped[str | None] = mapped_column(String, nullable=True)
     body_text: Mapped[str] = mapped_column(Text, default="")
+    rodape: Mapped[str | None] = mapped_column(String, nullable=True)
     # Botões do template, na ordem da Meta: {"tipo": "url"|"resposta_rapida", "texto", "url"};
     # url com {{1}} no fim é link variável, preenchido pela variável com botao_indice
     botoes: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
