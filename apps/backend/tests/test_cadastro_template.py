@@ -291,14 +291,14 @@ assert json.loads(cadastro["corpo"])["components"] == [
 ]
 
 # Título (cabeçalho de texto) e rodapé fixos: limites, exclusivo com a imagem, ordem dos components e sync
-for campos, motivo in (
+for n, (campos, motivo) in enumerate((
     ({"titulo": "t" * 61}, "título passa de 60"),
     ({"rodape": "r" * 61}, "rodapé passa de 60"),
     ({"titulo": "Olá {{1}}"}, "não aceitam variável"),
     ({"rodape": "Responda {{1}}"}, "não aceitam variável"),
     ({"titulo": "Fatura", "header_type": "image"}, "só aceita um cabeçalho"),
-):
-    rascunho = criar(meta_template_name="titulo_invalido", **campos)
+)):
+    rascunho = criar(meta_template_name=f"titulo_invalido_{n}", **campos)
     assert rascunho.status_code == 201, rascunho.text
     resp = enviar(rascunho.json()["id"])
     assert resp.status_code == 400 and motivo in resp.json()["detail"], (campos, resp.text)
