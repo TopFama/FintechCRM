@@ -6,7 +6,8 @@ import AvisosCategoria from "../components/AvisosCategoria";
 import EnviosFaixa from "../components/EnviosFaixa";
 import MapeamentoPlanilha from "../components/MapeamentoPlanilha";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
-import SortableTh from "../components/SortableTh";
+import { ControleFiltros, ThFiltravel, TipoColuna } from "../components/FiltroColuna";
+import { FiltrosColuna, serializarFiltros, useFiltrosColuna } from "../filtrosColuna";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
 import { formatBRL, formatCelular, formatData, formatDataHora } from "../format";
@@ -102,6 +103,9 @@ export default function CampanhaDetail() {
     setPreviaOffset(0);
     carregarPrevia(0, previaLimit, chave, dir);
   });
+  // Filtros das colunas da prévia (estilo Excel, como nos Relatórios): a lista vem do servidor já filtrada
+  const { filtros: filtrosColuna, alterar: alterarFiltroColuna } = useFiltrosColuna("previa", "campanha-previa:filtros");
+  const temFiltroColuna = Object.keys(filtrosColuna).length > 0;
   const [executando, setExecutando] = useState(false);
   const [colunasEmBranco, setColunasEmBranco] = useState<ColunaEmBranco[]>([]);
   const [pendentesPlanilha, setPendentesPlanilha] = useState<Record<string, number>>({});
@@ -269,6 +273,7 @@ export default function CampanhaDetail() {
     limit: number = previaLimit,
     sortBy: ColunaPrevia | null = previaSort.sortKey,
     sortDir: SortDirection = previaSort.sortDir,
+    colunas: FiltrosColuna = filtrosColuna,
   ) {
     if (!id) return;
     setErro(null);
@@ -277,7 +282,7 @@ export default function CampanhaDetail() {
     // a anterior (e o polling dela), que não sobrescreve a resposta nova
     const signal = novaPrevia();
     api
-      .previaCampanha(id, { limit, offset, sort_by: sortBy ?? undefined, sort_dir: sortDir }, signal)
+      .previaCampanha(id, { limit, offset, sort_by: sortBy ?? undefined, sort_dir: sortDir, filtros: serializarFiltros(colunas) }, signal)
       .then(setPrevia)
       .catch((e) => !foiCancelada(e) && setErro(mensagemErroSeta(e)))
       .finally(() => !signal.aborted && setCarregandoPrevia(false));
@@ -337,12 +342,23 @@ export default function CampanhaDetail() {
 
   const temPlanilha = (campanha?.clientes_total ?? 0) > 0;
   const temPlanilhaOuNova = temPlanilha || Boolean(planilhaNova);
-  const colunasPrevia: [ColunaPrevia, string][] = [
-    ["nome", "Cliente"],
-    ["cluster", "Cluster"],
-    ["faixa", "Faixa de atraso"],
-    ["valor_cobrar", "Valor a cobrar"],
+  const colunasPrevia: [ColunaPrevia, string, TipoColuna][] = [
+    ["nome", "Cliente", "texto"],
+    ["cluster", "Cluster", "texto"],
+    ["faixa", "Faixa de atraso", "texto"],
+    ["valor_cobrar", "Valor a cobrar", "numero"],
   ];
+  const controleFiltros: ControleFiltros = {
+    filtros: filtrosColuna,
+    alterar: (coluna, filtro) => {
+      alterarFiltroColuna(coluna, filtro);
+      const { [coluna]: _antigo, ...resto } = filtrosColuna;
+      setPreviaOffset(0);
+      carregarPrevia(0, previaLimit, previaSort.sortKey, previaSort.sortDir, filtro ? { ...resto, [coluna]: filtro } : resto);
+    },
+    valores: (coluna, busca) =>
+      api.valoresPreviaCampanha(id!, { coluna, busca: busca || undefined, filtros: serializarFiltros(filtrosColuna) }),
+  };
 
   return (
     <div>
@@ -720,27 +736,26 @@ export default function CampanhaDetail() {
                   </ul>
                 )}
               </div>
-              {previa.itens.length > 0 && (
+              {(previa.itens.length > 0 || temFiltroColuna) && (
                 <div className="table-wrap">
                   <table>
                     <thead>
                       <tr>
-                        {colunasPrevia.map(([chave, rotulo]) => (
-                          <SortableTh
-                            key={chave}
-                            scope="col"
-                            active={previaSort.sortKey === chave}
-                            dir={previaSort.sortDir}
-                            onSort={() => previaSort.toggleSort(chave)}
-                          >
-                            {rotulo}
-                          </SortableTh>
+                        {colunasPrevia.map(([chave, rotulo, tipo]) => (
+                          <ThFiltravel key={chave} coluna={chave} rotulo={rotulo} tipo={tipo} ordenacao={previaSort} controle={controleFiltros} />
                         ))}
-                        <th scope="col">Celular</th>
-                        <th scope="col">Venc. mais antigo</th>
+                        <ThFiltravel coluna="celular" rotulo="Celular" controle={controleFiltros} formatar={formatCelular} rotuloVazio="—" />
+                        <ThFiltravel coluna="vencimento_mais_antigo" rotulo="Venc. mais antigo" tipo="data" controle={controleFiltros} />
                       </tr>
                     </thead>
                     <tbody>
+                      {previa.itens.length === 0 && (
+                        <tr>
+                          <td colSpan={colunasPrevia.length + 2} className="text-muted">
+                            Nenhum cliente encontrado com esses filtros.
+                          </td>
+                        </tr>
+                      )}
                       {previa.itens.map((c) => (
                         <tr key={c.codigo}>
                           <td>
@@ -759,9 +774,9 @@ export default function CampanhaDetail() {
                   </table>
                 </div>
               )}
-              {previa.total > 0 && (
+              {(previa.total_filtrado ?? previa.total) > 0 && (
                 <Paginacao
-                  total={previa.total}
+                  total={previa.total_filtrado ?? previa.total}
                   limit={previaLimit}
                   offset={previaOffset}
                   onChange={(o) => {

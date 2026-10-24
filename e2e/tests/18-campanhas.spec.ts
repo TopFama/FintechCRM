@@ -90,7 +90,7 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     // base filtrada tem os 10; quem já está na fila ou foi cobrado hoje (specs anteriores) não entraria
     await expect(previa).toContainText("de 10 na base filtrada");
     const entrariam = Number((await previa.innerText()).match(/(\d+) cliente\(s\) entrariam/)![1]);
-    await previa.locator("th", { hasText: "Valor a cobrar" }).click();
+    await previa.locator("th", { hasText: "Valor a cobrar" }).click({ position: { x: 6, y: 6 } });
     await expect(previa.locator("th", { hasText: "Valor a cobrar" })).toHaveAttribute("aria-sort", "ascending");
     // a ordenação volta do servidor depois do clique: espera a tabela recarregar
     await expect
@@ -115,6 +115,30 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
 
     await previa.getByRole("button", { name: "Ver prévia" }).click();
     await expect(previa).toContainText(`${entrariam - codigos.length} cliente(s) entrariam`);
+  });
+
+  test("prévia: filtro de coluna restringe a lista, não o total que entra, e Limpar devolve", async ({ page }) => {
+    const campanha = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Feirão lojas 01 e 06");
+    await page.goto(`/campanhas/${campanha.id}`);
+    const previa = card(page, "Quem entraria agora");
+    await previa.getByRole("button", { name: "Ver prévia" }).click();
+    await expect(previa).toContainText("de 10 na base filtrada");
+    const entrariam = (await previa.innerText()).match(/(\d+) cliente\(s\) entrariam/)![1];
+    const linhas = await previa.locator("tbody tr").count();
+    const funil = previa.getByRole("button", { name: "Filtrar Valor a cobrar", exact: true });
+    await funil.click();
+    const caixa = page.getByRole("dialog", { name: "Filtro de Valor a cobrar" });
+    await caixa.getByLabel("De").fill("99999999");
+    await caixa.getByRole("button", { name: "OK" }).click();
+    await expect(funil).toHaveClass(/ativo/);
+    await expect(previa.locator("tbody")).toContainText("Nenhum cliente encontrado com esses filtros");
+    await expect(previa).toContainText(`${entrariam} cliente(s) entrariam`);
+    await funil.click();
+    await caixa.getByRole("button", { name: "Limpar" }).click();
+    await expect(previa.locator("tbody tr")).toHaveCount(linhas);
+    // lista do filtro de texto vem do servidor, dentro da prévia
+    await previa.getByRole("button", { name: "Filtrar Cluster", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Filtro de Cluster" }).getByLabel("Selecionar tudo")).toBeChecked();
   });
 
   test("quem recebeu a campanha vira lead da faixa de atraso e aparece filtrando pela campanha", async ({ page }) => {

@@ -107,6 +107,7 @@ CLIENTES_FILTRO = {
     "dias_atraso": Coluna(lambda c: c["dias_atraso"], "numero"),
     "faixa": Coluna(lambda c: c["faixa"]),
     "cluster": Coluna(lambda c: c["cluster"]),
+    "celular": Coluna(lambda c: c.get("celular")),
 }
 
 
