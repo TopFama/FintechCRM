@@ -101,6 +101,18 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     ["Telefones inválidos", "invalidos"],
   ] as const) {
     test(`card '${rotulo}' abre o relatório '${aba}' do mesmo período com o mesmo total`, { tag: ["@relatorios"] }, async ({ page }) => {
+      // O worker segue enviando a fila dos cenários anteriores: card e relatório são duas leituras
+      // seguidas, então só se comparam com o total parado (sem isso, 9 no card e 7 no relatório)
+      let anterior = -1;
+      await expect
+        .poll(async () => {
+          const total = (await apiGet(page, `/relatorios/${aba}?limit=1&offset=0`)).total;
+          const parado = total === anterior;
+          anterior = total;
+          return parado;
+        }, { intervals: [3_000], timeout: 60_000 })
+        .toBe(true);
+      await page.goto("/");
       const valor = stat(page, rotulo);
       await expect(valor).not.toHaveText("…");
       const n = numero(await valor.innerText());
