@@ -1,7 +1,8 @@
 import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, CampoCliente, ImagemPendente, MetaToken, rotuloVariavel, Template, TemplateBotao, TemplateCreate, urlImagemTemplate, WhatsappNumber } from "../../api";
 import PreviaWhatsapp from "../PreviaWhatsapp";
-import SortableTh from "../SortableTh";
+import { ControleFiltros, ThFiltravel } from "../FiltroColuna";
+import { useFiltrosColuna } from "../../filtrosColuna";
 import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTemplate, IconTrash } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 
@@ -132,8 +133,33 @@ export default function TemplatesCard() {
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
   const templatesSort = useSort<ColunaTemplate>();
   const templatesVisiveis = mostrarArquivados ? templates : templates.filter((t) => !t.arquivado_em);
+  // Valores de cada coluna (o que a célula mostra), para o filtro estilo Excel dos Relatórios
+  const celulas: Record<string, (t: Template) => string[]> = {
+    meta_template_name: (t) => [t.meta_template_name],
+    category: (t) => [rotuloCategoria(t.category)],
+    waba_id: (t) => [t.waba_id || ""],
+    telefones: (t) => (t.waba_id && telefonesPorWaba.get(t.waba_id)) || [""],
+    status: (t) => [rotuloStatusTemplate(t.status)],
+    imagem: (t) => [t.header_type === "image" ? (t.image_url ? "Enviada" : "Sem imagem") : ""],
+  };
+  const { filtros, alterar: alterarFiltro } = useFiltrosColuna("templates", "templates:filtros");
+  const passaFiltros = (t: Template, ignorar?: string) =>
+    Object.entries(filtros).every(
+      ([coluna, f]) => coluna === ignorar || !f.valores || celulas[coluna](t).some((v) => f.valores!.includes(v))
+    );
+  const controleFiltros: ControleFiltros = {
+    filtros,
+    alterar: alterarFiltro,
+    valores: async (coluna, busca) => {
+      const achados = new Set(templatesVisiveis.filter((t) => passaFiltros(t, coluna)).flatMap(celulas[coluna]));
+      const valores = [...achados]
+        .filter((v) => v.toLowerCase().includes(busca.toLowerCase()))
+        .sort((a, b) => (a === "" ? -1 : b === "" ? 1 : a.localeCompare(b)));
+      return { valores, truncado: false };
+    },
+  };
   const templatesOrdenados = ordenarPor(
-    templatesVisiveis,
+    templatesVisiveis.filter((t) => passaFiltros(t)),
     templatesSort.sortKey
       ? (t: Template) => {
           if (templatesSort.sortKey === "waba_id") return t.waba_id || "";
@@ -908,33 +934,12 @@ export default function TemplatesCard() {
             <table className="tabela-compacta">
               <thead>
                 <tr>
-                  <SortableTh
-                    active={templatesSort.sortKey === "meta_template_name"}
-                    dir={templatesSort.sortDir}
-                    onSort={() => templatesSort.toggleSort("meta_template_name")}
-                    aria-label="Nome / Template (Meta)"
-                  >
-                    Template (Meta)
-                  </SortableTh>
-                  <SortableTh
-                    active={templatesSort.sortKey === "category"}
-                    dir={templatesSort.sortDir}
-                    onSort={() => templatesSort.toggleSort("category")}
-                  >
-                    Tipo
-                  </SortableTh>
-                  <SortableTh
-                    active={templatesSort.sortKey === "waba_id"}
-                    dir={templatesSort.sortDir}
-                    onSort={() => templatesSort.toggleSort("waba_id")}
-                  >
-                    WABA
-                  </SortableTh>
-                  <th>Telefones</th>
-                  <SortableTh active={templatesSort.sortKey === "status"} dir={templatesSort.sortDir} onSort={() => templatesSort.toggleSort("status")}>
-                    Status
-                  </SortableTh>
-                  <th style={{ textAlign: "center" }}>Imagem</th>
+                  <ThFiltravel coluna="meta_template_name" rotulo="Template (Meta)" ordenacao={templatesSort} controle={controleFiltros} />
+                  <ThFiltravel coluna="category" rotulo="Tipo" ordenacao={templatesSort} controle={controleFiltros} />
+                  <ThFiltravel coluna="waba_id" rotulo="WABA" ordenacao={templatesSort} controle={controleFiltros} rotuloVazio="—" />
+                  <ThFiltravel coluna="telefones" rotulo="Telefones" controle={controleFiltros} rotuloVazio="—" />
+                  <ThFiltravel coluna="status" rotulo="Status" ordenacao={templatesSort} controle={controleFiltros} />
+                  <ThFiltravel coluna="imagem" rotulo="Imagem" controle={controleFiltros} rotuloVazio="—" />
                   <th style={{ textAlign: "right" }}></th>
                 </tr>
               </thead>

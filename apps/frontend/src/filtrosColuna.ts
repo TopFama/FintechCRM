@@ -19,26 +19,26 @@ export function serializarFiltros(filtros: FiltrosColuna): string | undefined {
   return Object.keys(filtros).length ? JSON.stringify(filtros) : undefined;
 }
 
-// A seleção vale enquanto o usuário está em Relatórios: sai da sessão ao deixar a tela
+// A seleção vale enquanto o usuário está na tela: sai da sessão ao deixá-la
 const CHAVE = "relatorios:filtros";
 type PorAba = Record<string, FiltrosColuna>;
 
-function ler(): PorAba {
+function ler(chave: string): PorAba {
   try {
-    return JSON.parse(sessionStorage.getItem(CHAVE) || "{}");
+    return JSON.parse(sessionStorage.getItem(chave) || "{}");
   } catch {
     return {};
   }
 }
 
-/** Filtros por coluna de cada aba, guardados no sessionStorage enquanto a tela de Relatórios estiver aberta. */
-export function useFiltrosColuna(aba: string) {
-  const [porAba, setPorAba] = useState<PorAba>(ler);
+/** Filtros por coluna de cada aba, guardados no sessionStorage (em `chave`) enquanto a tela estiver aberta. */
+export function useFiltrosColuna(aba: string, chave = CHAVE) {
+  const [porAba, setPorAba] = useState<PorAba>(() => ler(chave));
 
   useEffect(
     () => () => {
       try {
-        sessionStorage.removeItem(CHAVE);
+        sessionStorage.removeItem(chave);
       } catch {
         /* sem sessionStorage: os filtros só vivem na tela */
       }
@@ -49,7 +49,7 @@ export function useFiltrosColuna(aba: string) {
   function atualizar(proximo: PorAba) {
     setPorAba(proximo);
     try {
-      sessionStorage.setItem(CHAVE, JSON.stringify(proximo));
+      sessionStorage.setItem(chave, JSON.stringify(proximo));
     } catch {
       /* idem */
     }
