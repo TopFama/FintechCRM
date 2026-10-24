@@ -739,6 +739,7 @@ label {
 
 .form-row .field {
   flex: 1;
+  min-width: 0;
 }
 
 .checkbox-row {
@@ -1578,12 +1579,6 @@ label {
   flex: 1;
   min-width: 0;
   font-size: 12px;
-}
-
-.filtro-coluna-intervalo input {
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
 }
 
 .filtro-coluna-lista {
