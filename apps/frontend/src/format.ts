@@ -64,12 +64,21 @@ export function formatHora(d: Date): string {
 // O backend grava e serializa timestamps em UTC sem sufixo de fuso (ex:
 // "2024-01-15T14:30:00") — sem isso, o navegador interpretaria a string como
 // hora local dele, não UTC, e o horário exibido saía errado.
+function dataDeIso(iso: string): Date {
+  return new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso.replace(" ", "T")}Z`);
+}
+
 export function formatDataHora(iso: string | null | undefined): string {
   if (!iso) return "—";
-  const normalizado = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso.replace(" ", "T")}Z`;
-  const data = new Date(normalizado);
+  const data = dataDeIso(iso);
   if (isNaN(data.getTime())) return iso;
   return dataHoraBR.format(data).replace(",", "");
+}
+
+/** Dia (AAAA-MM-DD) de um instante ISO no horário de Brasília; "" se vazio ou inválido. */
+export function diaIsoBR(iso: string | null | undefined): string {
+  const data = iso ? dataDeIso(iso) : null;
+  return data && !isNaN(data.getTime()) ? diaBR.format(data) : "";
 }
 
 export function formatCpf(digitos: string | null | undefined): string {

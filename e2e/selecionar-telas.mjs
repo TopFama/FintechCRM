@@ -143,7 +143,7 @@ export const FUNCIONALIDADES = {
     `${F}pages/Configuracoes.tsx`, `${F}pages/Campanhas.tsx`, `${F}components/config/RemarketingCard.tsx`,
     `${F}components/config/RenegocieConexaoCard.tsx`, `${B}routers/remarketing.py`, `${B}remarketing.py`,
     `${B}campanhas_fixas.py`, `${B}cobranca_base.py`, `${B}fila_automatica.py`, `${B}elegibilidade.py`,
-    `${B}leads_service.py`, `${B}seta_client.py`, `${B}services/compras_seta.py`,
+    `${B}leads_service.py`, `${B}seta_client.py`, `${B}services/compras_seta.py`, `${F}components/FiltroColuna.tsx`, `${F}filtrosColuna.ts`,
   ],
   campanhas: [
     `${F}pages/Campanhas.tsx`, `${F}pages/CampanhaDetail.tsx`, `${F}components/BarraFiltrosCobranca.tsx`, `${F}components/useRequisicaoUnica.ts`,

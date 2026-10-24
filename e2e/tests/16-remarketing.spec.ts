@@ -55,6 +55,29 @@ test.describe.serial("Remarketing do Renegocie", { tag: ["@remarketing","@elegib
     await expect(acordo(page).locator("tbody")).not.toContainText("RE000901");
   });
 
+  test("prévia: filtro de coluna filtra a lista, mantém a tabela sem resultado e Limpar devolve", async ({ page }) => {
+    await page.goto("/remarketing");
+    await acordo(page).getByLabel("Enviar remarketing para este segmento").check();
+    await acordo(page).getByRole("button", { name: "Salvar" }).click();
+    await expect(acordo(page).locator(".status-pill")).toHaveText("Ligado");
+    await acordo(page).getByRole("button", { name: "Ver quem entraria hoje" }).click();
+    await expect(acordo(page).locator("tbody tr")).toHaveCount(1);
+    const funil = acordo(page).getByRole("button", { name: "Filtrar Valor a cobrar", exact: true });
+    await funil.click();
+    const caixa = page.getByRole("dialog", { name: "Filtro de Valor a cobrar" });
+    await caixa.getByLabel("De").fill("999999");
+    await caixa.getByRole("button", { name: "OK" }).click();
+    await expect(funil).toHaveClass(/ativo/);
+    await expect(acordo(page).locator("tbody")).toContainText("Nenhum cliente encontrado com esses filtros");
+    await funil.click();
+    await caixa.getByRole("button", { name: "Limpar" }).click();
+    await expect(acordo(page).locator("tbody tr")).toHaveCount(1);
+    await expect(acordo(page).locator("tbody")).toContainText("P-901");
+    // lista do filtro de texto vem da própria prévia
+    await acordo(page).getByRole("button", { name: "Filtrar Proposta", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Filtro de Proposta" }).getByLabel("P-901", { exact: true })).toBeChecked();
+  });
+
   test("janela da desistência e filtro de valor valem na prévia", async ({ page }) => {
     await page.goto("/remarketing");
     const viu = card(page, "Propostas simuladas");
