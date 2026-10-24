@@ -129,6 +129,9 @@ test.describe("Relatórios", { tag: "@relatorios" }, () => {
     await expect(tabela(page).locator("tbody tr").first()).toBeVisible();
     await page.getByRole("button", { name: "Filtrar Valor cobrado", exact: true }).click();
     const caixa = page.getByRole("dialog", { name: "Filtro de Valor cobrado" });
+    // o decimal é a vírgula: digitar "1,5" fica "1,5" na caixa e o filtro vale
+    await caixa.getByLabel("De", { exact: true }).fill("1,5");
+    await expect(caixa.getByLabel("De", { exact: true })).toHaveValue("1,5");
     await caixa.getByLabel("De", { exact: true }).fill("99999999");
     await caixa.getByRole("button", { name: "OK" }).click();
     await expect(page.getByText("Nenhum envio encontrado com esses filtros")).toBeVisible();

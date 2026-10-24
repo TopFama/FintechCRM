@@ -7,6 +7,9 @@ import SortableTh from "./SortableTh";
 // Altura máxima da caixa (busca, de/até, lista e botões), para mantê-la dentro da janela
 const ALTURA_CAIXA = 430;
 
+// 1234.5 → "1.234,5"; valor que não é número segue como veio
+const numeroBR = (v: string) => (v.trim() === "" || isNaN(Number(v)) ? v : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2, minimumFractionDigits: v.includes(".") ? 2 : 0 }));
+
 export type TipoColuna = "texto" | "numero" | "data";
 
 /** Controle de filtros das colunas de um relatório: o valor atual, como alterar e de onde vêm os valores. */
@@ -14,6 +17,8 @@ export interface ControleFiltros {
   filtros: FiltrosColuna;
   alterar: (coluna: string, filtro: Filtro | undefined) => void;
   valores: (coluna: string, busca: string) => Promise<ValoresColuna>;
+  // coluna de indicador (faixa, cluster): lista de valores nesta ordem, o que não está aqui vai ao fim
+  ordem?: Record<string, string[]>;
 }
 
 /**
@@ -52,7 +57,12 @@ function FiltroDaColuna({
   const comLista = tipo !== "data";
   const comIntervalo = tipo !== "texto";
   const ativo = !!filtro;
-  const nomeValor = (v: string) => (v === "" ? rotuloVazio : formatar ? formatar(v) : v);
+  const nomeValor = (v: string) => (v === "" ? rotuloVazio : formatar ? formatar(v) : tipo === "numero" ? numeroBR(v) : v);
+  // número digitado com vírgula (ou ponto); guardado com ponto, que é o que o servidor entende
+  const campoNumero = (valor: string, alterar: (v: string) => void) =>
+    tipo === "numero"
+      ? { type: "text", inputMode: "decimal" as const, value: valor.replace(".", ","), onChange: (e: { target: { value: string } }) => alterar(e.target.value.replace(",", ".").replace(/[^\d.-]/g, "")) }
+      : { type: "date", value: valor, onChange: (e: { target: { value: string } }) => alterar(e.target.value) };
 
   function abrir() {
     const r = botao.current?.getBoundingClientRect();
@@ -80,6 +90,9 @@ function FiltroDaColuna({
     };
   }, [aberto]);
 
+  // Coluna formatada (CPF, celular) guarda só dígitos: "123.456" pesquisa "123456"
+  const buscaDoServidor = formatar && tipo === "texto" && /^[\d\s.\-/()+]+$/.test(busca) ? busca.replace(/\D/g, "") : busca;
+
   // Valores do servidor, com a pesquisa
   useEffect(() => {
     if (!aberto || !comLista) return;
@@ -88,7 +101,7 @@ function FiltroDaColuna({
     const t = setTimeout(
       () =>
         controle
-          .valores(coluna, busca)
+          .valores(coluna, buscaDoServidor)
           .then((r) => atual && setLista(r))
           .catch(() => atual && setErro(true)),
       busca ? 250 : 0
@@ -101,7 +114,13 @@ function FiltroDaColuna({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberto, busca]);
 
-  const visiveis = lista?.valores ?? [];
+  const posicoes = controle.ordem?.[coluna];
+  const visiveis = posicoes
+    ? [...(lista?.valores ?? [])].sort((a, b) => {
+        const pos = (v: string) => (v === "" ? -1 : posicoes.indexOf(v) === -1 ? posicoes.length : posicoes.indexOf(v));
+        return pos(a) - pos(b);
+      })
+    : lista?.valores ?? [];
   const marcado = (v: string) => marcados === null || marcados.has(v);
   const todosMarcados = visiveis.length > 0 && visiveis.every(marcado);
 
@@ -144,23 +163,11 @@ function FiltroDaColuna({
             <div className="filtro-coluna-intervalo">
               <label>
                 De
-                <input
-                  type={tipo === "data" ? "date" : "number"}
-                  step={tipo === "numero" ? "0.01" : undefined}
-                  value={de}
-                  max={tipo === "data" ? ate || undefined : undefined}
-                  onChange={(e) => setDe(e.target.value)}
-                />
+                <input {...campoNumero(de, setDe)} max={tipo === "data" ? ate || undefined : undefined} />
               </label>
               <label>
                 Até
-                <input
-                  type={tipo === "data" ? "date" : "number"}
-                  step={tipo === "numero" ? "0.01" : undefined}
-                  value={ate}
-                  min={tipo === "data" ? de || undefined : undefined}
-                  onChange={(e) => setAte(e.target.value)}
-                />
+                <input {...campoNumero(ate, setAte)} min={tipo === "data" ? de || undefined : undefined} />
               </label>
             </div>
           )}

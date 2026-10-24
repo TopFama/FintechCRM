@@ -7,10 +7,10 @@ import EnviosFaixa from "../components/EnviosFaixa";
 import MapeamentoPlanilha from "../components/MapeamentoPlanilha";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import { ControleFiltros, ThFiltravel, TipoColuna } from "../components/FiltroColuna";
-import { FiltrosColuna, serializarFiltros, useFiltrosColuna } from "../filtrosColuna";
+import { FiltrosColuna, serializarFiltros, useFiltrosColuna, useOrdemFiltros } from "../filtrosColuna";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
-import { formatBRL, formatCelular, formatData, formatDataHora } from "../format";
+import { formatBRL, semRS, formatCelular, formatData, formatDataHora } from "../format";
 import { IconAlert, IconBolt, IconCheckCircle, IconEye, IconTrash, IconUpload } from "../icons";
 import ModalDecisaoVariaveis from "../components/ModalDecisaoVariaveis";
 import { ColunaEmBranco } from "../api";
@@ -71,6 +71,7 @@ function paraPayload(f: CampanhaIn): CampanhaIn {
 }
 
 export default function CampanhaDetail() {
+  const ordemFiltros = useOrdemFiltros();
   const { id } = useParams<{ id: string }>();
   const nova = !id;
   const navigate = useNavigate();
@@ -349,6 +350,7 @@ export default function CampanhaDetail() {
     ["valor_cobrar", "Valor a cobrar", "numero"],
   ];
   const controleFiltros: ControleFiltros = {
+    ordem: ordemFiltros,
     filtros: filtrosColuna,
     alterar: (coluna, filtro) => {
       alterarFiltroColuna(coluna, filtro);
@@ -742,7 +744,7 @@ export default function CampanhaDetail() {
                     <thead>
                       <tr>
                         {colunasPrevia.map(([chave, rotulo, tipo]) => (
-                          <ThFiltravel key={chave} coluna={chave} rotulo={rotulo} tipo={tipo} ordenacao={previaSort} controle={controleFiltros} />
+                          <ThFiltravel key={chave} coluna={chave} rotulo={rotulo} tipo={tipo} rotuloVazio="—" formatar={chave === "valor_cobrar" ? (v) => semRS(formatBRL(v)) : undefined} ordenacao={previaSort} controle={controleFiltros} />
                         ))}
                         <ThFiltravel coluna="celular" rotulo="Celular" controle={controleFiltros} formatar={formatCelular} rotuloVazio="—" />
                         <ThFiltravel coluna="vencimento_mais_antigo" rotulo="Venc. mais antigo" tipo="data" controle={controleFiltros} />

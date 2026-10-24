@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ClienteCobranca, Faixa, FiltrosCobranca, foiCancelada, mensagemErroSeta } from "../api";
-import { formatBRL, formatCpf, formatData } from "../format";
+import { formatBRL, formatCpf, formatData, semRS } from "../format";
 import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../components/BarraFiltrosCobranca";
 import UploadPlanilhaFaixa from "../components/UploadPlanilhaFaixa";
 import AvisosCategoria from "../components/AvisosCategoria";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
 import { ControleFiltros, ThFiltravel, TipoColuna } from "../components/FiltroColuna";
-import { FiltrosColuna, serializarFiltros, useFiltrosColuna } from "../filtrosColuna";
+import { FiltrosColuna, serializarFiltros, useFiltrosColuna, useOrdemFiltros } from "../filtrosColuna";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
 import { IconAlert } from "../icons";
@@ -30,6 +30,14 @@ const COLUNAS_CLIENTE: [ColunaCliente, string, TipoColuna][] = [
 function diasAtrasoLabel(dias: number): string {
   return dias === -1 ? "vence amanhã" : `${dias} dias`;
 }
+
+// A lista do filtro mostra o que a célula mostra
+const FORMATO_CLIENTE: Partial<Record<ColunaCliente, { formatar?: (v: string) => string; rotuloVazio?: string }>> = {
+  cpfcnpj: { formatar: formatCpf },
+  valor_cobrar: { formatar: (v) => semRS(formatBRL(v)) },
+  dias_atraso: { formatar: (v) => diasAtrasoLabel(Number(v)) },
+  faixa: { rotuloVazio: "—" },
+};
 
 export default function Cobranca() {
   const opcoes = useOpcoesCobranca();
@@ -123,7 +131,9 @@ export default function Cobranca() {
     setLeadsErro(null);
   }
 
+  const ordemFiltros = useOrdemFiltros();
   const controleFiltros: ControleFiltros = {
+    ordem: ordemFiltros,
     filtros: filtrosColuna,
     alterar: (coluna, filtro) => {
       alterarFiltroColuna(coluna, filtro);
@@ -332,7 +342,7 @@ export default function Cobranca() {
                 <thead>
                   <tr>
                     {COLUNAS_CLIENTE.map(([coluna, rotulo, tipo]) => (
-                      <ThFiltravel key={coluna} coluna={coluna} rotulo={rotulo} tipo={tipo} ordenacao={clientesSort} controle={controleFiltros} />
+                      <ThFiltravel key={coluna} coluna={coluna} rotulo={rotulo} tipo={tipo} {...FORMATO_CLIENTE[coluna]} ordenacao={clientesSort} controle={controleFiltros} />
                     ))}
                   </tr>
                 </thead>

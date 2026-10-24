@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api } from "./api";
 
 /** Filtro de uma coluna de relatório: valores marcados (lista estilo Excel) e/ou intervalo de, até. */
 export interface FiltroColuna {
@@ -12,6 +13,15 @@ export type FiltrosColuna = Record<string, FiltroColuna>;
 export interface ValoresColuna {
   valores: string[];
   truncado: boolean;
+}
+
+/** Ordem dos indicadores nas listas do filtro: faixa pelo atraso e cluster do menor para o maior valor (regras da cobrança). */
+export function useOrdemFiltros(): Record<string, string[]> {
+  const [ordem, setOrdem] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    api.regrasCobranca().then((r) => setOrdem({ faixa: r.faixas, cluster: r.clusters })).catch(() => {});
+  }, []);
+  return ordem;
 }
 
 /** Valor do parâmetro `filtros` das rotas dos relatórios (undefined = sem filtro). */

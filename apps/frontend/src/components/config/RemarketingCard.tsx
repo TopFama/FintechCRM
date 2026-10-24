@@ -3,13 +3,13 @@ import { Link } from "react-router-dom";
 import AvisosCategoria from "../AvisosCategoria";
 import EnviosFaixa from "../EnviosFaixa";
 import { api, Faixa, pareceAdmin, PreviaRemarketing, SegmentoRemarketing, SegmentoRemarketingIn } from "../../api";
-import { diaIsoBR, formatBRL, formatCelular, formatData, formatDataHora } from "../../format";
+import { diaIsoBR, formatBRL, semRS, formatCelular, formatData, formatDataHora } from "../../format";
 import { IconAlert, IconEye, IconRefresh } from "../../icons";
 import FiltroPeriodo, { Periodo } from "../FiltroPeriodo";
 import MultiSelect from "../MultiSelect";
 import Paginacao from "../Paginacao";
 import { ControleFiltros, ThFiltravel, TipoColuna } from "../FiltroColuna";
-import { CelulasColuna, passaFiltros, useFiltrosColuna, valoresLocais } from "../../filtrosColuna";
+import { CelulasColuna, passaFiltros, useFiltrosColuna, useOrdemFiltros, valoresLocais } from "../../filtrosColuna";
 import { ordenarPor, useSort } from "../../sort";
 import CampoValorMaximo from "../CampoValorMaximo";
 import { opcoesCluster, useOpcoesCobranca } from "../useOpcoesCobranca";
@@ -182,7 +182,9 @@ function SegmentoForm({
         : (c) => (c[chavePrevia] ?? null) as string | null;
   const clientesPrevia = previa ? previa.clientes : [];
   const { filtros: filtrosPrevia, alterar: alterarFiltroPrevia } = useFiltrosColuna(segmento.segmento, "remarketing:filtros");
+  const ordemFiltros = useOrdemFiltros();
   const controleFiltros: ControleFiltros = {
+    ordem: ordemFiltros,
     filtros: filtrosPrevia,
     alterar: (coluna, filtro) => {
       alterarFiltroPrevia(coluna, filtro);
@@ -414,6 +416,7 @@ function SegmentoForm({
                         rotulo={rotulo}
                         tipo={tipo}
                         rotuloVazio="—"
+                        formatar={chave === "valor_cobrar" ? (v) => semRS(formatBRL(v)) : undefined}
                         controle={controleFiltros}
                         ordenacao={{
                           sortKey: previaSort.sortKey,
