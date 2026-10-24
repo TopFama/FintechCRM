@@ -1544,6 +1544,12 @@ label {
   opacity: 1;
 }
 
+/* filtro em uso: funil verde, também com o mouse em cima */
+.filtro-coluna-btn.ativo,
+.filtro-coluna-btn.ativo:hover:not(:disabled) {
+  color: var(--color-success);
+}
+
 .filtro-coluna {
   position: fixed;
   z-index: 200;
