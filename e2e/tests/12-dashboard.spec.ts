@@ -106,7 +106,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
       let anterior = -1;
       await expect
         .poll(async () => {
-          const total = (await apiGet(page, `/relatorios/${aba}?limit=1&offset=0`)).total;
+          const total = (await apiGet(page, `/relatorios/${aba === "invalidos" ? "telefones-invalidos" : aba}?limit=1&offset=0`)).total;
           const parado = total === anterior;
           anterior = total;
           return parado;
