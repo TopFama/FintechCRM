@@ -19,7 +19,7 @@ import { AcaoPendentes, PainelAcao, PainelDescartar, PainelPausaLote, PausasAtiv
 import SelectJanelaPagamento from "../components/SelectJanelaPagamento";
 import { ControleFiltros, ThFiltravel, TipoColuna } from "../components/FiltroColuna";
 import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
-import { FiltrosColuna, serializarFiltros, useFiltrosColuna } from "../filtrosColuna";
+import { FiltrosColuna, serializarFiltros, useFiltrosColuna, useOrdemFiltros } from "../filtrosColuna";
 import { formatBRL, formatCelular, formatCpf, formatData, formatDataHora, formatNumero, formatValorFila } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
 import { SortDirection, useSort } from "../sort";
@@ -60,11 +60,14 @@ const SEM_FILTRO = new Set(["created_at", "enviado_em", "entrou_em", "data_cobra
 const FILTRO_COLUNA: Record<string, { tipo?: TipoColuna; rotuloVazio?: string; formatar?: (v: string) => string }> = {
   celular: { formatar: formatCelular },
   cpf: { formatar: formatCpf },
-  valor: { tipo: "numero", formatar: (v) => formatBRL(v) },
+  valor: { tipo: "numero", formatar: (v) => formatValorFila(v) },
+  nome: { rotuloVazio: "—" },
+  faixa: { rotuloVazio: "—" },
+  celular_normalizado: { rotuloVazio: "—" },
   valor_cobrado: { tipo: "numero", formatar: (v) => formatBRL(v) },
   valor_pago: { tipo: "numero", formatar: (v) => formatBRL(v) },
   quando: { tipo: "data" },
-  loja: { rotuloVazio: "sem loja" },
+  loja: { rotuloVazio: "—" },
   campanha: { rotuloVazio: "Régua" },
 };
 
@@ -74,9 +77,11 @@ function ThColuna({
   rotulo,
   ordenacao,
   controle,
+  vazio,
 }: {
   coluna: string;
   rotulo: string;
+  vazio?: string;
   ordenacao?: { sortKey: string | null; sortDir: SortDirection; toggleSort: (c: any) => void };
   controle: ControleFiltros;
 }) {
@@ -87,6 +92,7 @@ function ThColuna({
       ordenacao={ordenacao}
       controle={SEM_FILTRO.has(coluna) ? undefined : controle}
       {...FILTRO_COLUNA[coluna]}
+      {...(vazio ? { rotuloVazio: vazio } : {})}
     />
   );
 }
@@ -310,7 +316,9 @@ export default function Relatorios() {
   }
 
   // Lista de valores do filtro de uma coluna (dentro dos filtros das outras colunas)
+  const ordemFiltros = useOrdemFiltros();
   const controleFiltros: ControleFiltros = {
+    ordem: ordemFiltros,
     filtros,
     alterar: alterarFiltro,
     valores: (coluna, busca) => {
@@ -836,7 +844,7 @@ function TabelaFila({
             ))}
             {tipo === "pendentes" && (
               <>
-                <ThColuna coluna="loja" rotulo="Loja" controle={controle} />
+                <ThColuna coluna="loja" rotulo="Loja" vazio="sem loja" controle={controle} />
                 <th scope="col">
                   <span className="sr-only">Ações</span>
                 </th>

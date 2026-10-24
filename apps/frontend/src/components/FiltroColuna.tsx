@@ -17,6 +17,8 @@ export interface ControleFiltros {
   filtros: FiltrosColuna;
   alterar: (coluna: string, filtro: Filtro | undefined) => void;
   valores: (coluna: string, busca: string) => Promise<ValoresColuna>;
+  // coluna de indicador (faixa, cluster): lista de valores nesta ordem, o que não está aqui vai ao fim
+  ordem?: Record<string, string[]>;
 }
 
 /**
@@ -112,7 +114,13 @@ function FiltroDaColuna({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberto, busca]);
 
-  const visiveis = lista?.valores ?? [];
+  const posicoes = controle.ordem?.[coluna];
+  const visiveis = posicoes
+    ? [...(lista?.valores ?? [])].sort((a, b) => {
+        const pos = (v: string) => (v === "" ? -1 : posicoes.indexOf(v) === -1 ? posicoes.length : posicoes.indexOf(v));
+        return pos(a) - pos(b);
+      })
+    : lista?.valores ?? [];
   const marcado = (v: string) => marcados === null || marcados.has(v);
   const todosMarcados = visiveis.length > 0 && visiveis.every(marcado);
 
