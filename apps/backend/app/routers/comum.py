@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import cobranca_base, google_client, lojas as lojas_base
 from ..database import get_db
+from ..filtros_coluna import Coluna
 from ..regras_db import carregar_regras
 
 _TAMANHO_MAXIMO_PLANILHA_BYTES = 20 * 1024 * 1024
@@ -92,6 +93,22 @@ ClienteSortColumn = Literal[
     "faixa",
     "cluster",
 ]
+
+
+# Filtro por coluna da lista de clientes (Cobrança): valores de cada coluna da tela.
+# Serve à lista, à lista de valores do filtro, ao Excel e ao envio para a fila.
+CLIENTES_FILTRO = {
+    "codigo": Coluna(lambda c: c["codigo"]),
+    "cpfcnpj": Coluna(lambda c: c["cpfcnpj"]),
+    "nome": Coluna(lambda c: c["nome"]),
+    "vencimento_mais_antigo": Coluna(lambda c: c["vencimento_mais_antigo"], "data"),
+    "valor_cobrar": Coluna(lambda c: c["valor_cobrar"], "numero"),
+    "qtd_parcelas_cobranca": Coluna(lambda c: c["qtd_parcelas_cobranca"], "numero"),
+    "dias_atraso": Coluna(lambda c: c["dias_atraso"], "numero"),
+    "faixa": Coluna(lambda c: c["faixa"]),
+    "cluster": Coluna(lambda c: c["cluster"]),
+    "celular": Coluna(lambda c: c.get("celular")),
+}
 
 
 def ordenar_clientes(clientes: list[dict], sort_by: str, sort_dir: str, db: Session) -> list[dict]:

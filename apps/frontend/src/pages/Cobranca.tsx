@@ -6,13 +6,26 @@ import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../components/Bar
 import UploadPlanilhaFaixa from "../components/UploadPlanilhaFaixa";
 import AvisosCategoria from "../components/AvisosCategoria";
 import Paginacao, { LIMIT_OPCOES_PADRAO } from "../components/Paginacao";
-import SortableTh from "../components/SortableTh";
+import { ControleFiltros, ThFiltravel, TipoColuna } from "../components/FiltroColuna";
+import { FiltrosColuna, serializarFiltros, useFiltrosColuna } from "../filtrosColuna";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
 import { IconAlert } from "../icons";
 import { SortDirection, useSort } from "../sort";
 
 type ColunaCliente = "codigo" | "cpfcnpj" | "nome" | "vencimento_mais_antigo" | "valor_cobrar" | "qtd_parcelas_cobranca" | "dias_atraso" | "faixa" | "cluster";
+
+const COLUNAS_CLIENTE: [ColunaCliente, string, TipoColuna][] = [
+  ["codigo", "Código", "texto"],
+  ["cpfcnpj", "CPF", "texto"],
+  ["nome", "Nome", "texto"],
+  ["vencimento_mais_antigo", "Vencimento", "data"],
+  ["valor_cobrar", "Valor", "numero"],
+  ["qtd_parcelas_cobranca", "Parcelas", "numero"],
+  ["dias_atraso", "Atraso", "numero"],
+  ["faixa", "Faixa", "texto"],
+  ["cluster", "Cluster", "texto"],
+];
 
 function diasAtrasoLabel(dias: number): string {
   return dias === -1 ? "vence amanhã" : `${dias} dias`;
@@ -45,6 +58,11 @@ export default function Cobranca() {
     setOffset(0);
     buscarClientes(filtrosAplicados, 0, limit, chave, dir);
   });
+  // Filtros das colunas da lista (estilo Excel, como nos Relatórios): a lista vem do servidor já filtrada
+  const { filtros: filtrosColuna, alterar: alterarFiltroColuna } = useFiltrosColuna("clientes", "cobranca:filtros");
+  const temFiltroColuna = Object.keys(filtrosColuna).length > 0;
+  // Exportar e Enviar perguntam se aplicam os filtros das colunas; null = sem pergunta aberta
+  const [perguntaColunas, setPerguntaColunas] = useState<"exportar" | "enviar" | null>(null);
 
   const [gerandoLeads, setGerandoLeads] = useState(false);
   const [leadsResultado, setLeadsResultado] = useState<string | null>(null);
@@ -67,14 +85,15 @@ export default function Cobranca() {
     novoOffset: number,
     novoLimit: number = limit,
     sortBy: ColunaCliente | null = clientesSort.sortKey,
-    sortDir: SortDirection = clientesSort.sortDir
+    sortDir: SortDirection = clientesSort.sortDir,
+    colunas: FiltrosColuna = filtrosColuna
   ) {
     setClientesErro(null);
     setClientesCarregando(true);
     const signal = novaConsulta();
     api
       .listarClientesCobranca(
-        { ...filtros, limit: novoLimit, offset: novoOffset, sort_by: sortBy ?? undefined, sort_dir: sortDir },
+        { ...filtros, limit: novoLimit, offset: novoOffset, sort_by: sortBy ?? undefined, sort_dir: sortDir, filtros: serializarFiltros(colunas) },
         signal
       )
       .then((r) => {
@@ -104,6 +123,18 @@ export default function Cobranca() {
     setLeadsErro(null);
   }
 
+  const controleFiltros: ControleFiltros = {
+    filtros: filtrosColuna,
+    alterar: (coluna, filtro) => {
+      alterarFiltroColuna(coluna, filtro);
+      const { [coluna]: _antigo, ...resto } = filtrosColuna;
+      setOffset(0);
+      buscarClientes(filtrosAplicados, 0, limit, clientesSort.sortKey, clientesSort.sortDir, filtro ? { ...resto, [coluna]: filtro } : resto);
+    },
+    valores: (coluna, busca) =>
+      api.valoresClientesCobranca({ ...filtrosAplicados, coluna, busca: busca || undefined, filtros: serializarFiltros(filtrosColuna) }),
+  };
+
   function mudarPagina(novoOffset: number) {
     setOffset(novoOffset);
     buscarClientes(filtrosAplicados, novoOffset);
@@ -120,7 +151,7 @@ export default function Cobranca() {
   // Enviar e Exportar usam o que está na tela, mesmo que ainda não aplicado
   const filtrosMudaram = JSON.stringify(filtrosEdit) !== JSON.stringify(filtrosAplicados);
 
-  async function exportarExcel() {
+  async function exportarExcel(comColunas: boolean) {
     setExportando(true);
     setLeadsErro(null);
     try {
@@ -128,6 +159,7 @@ export default function Cobranca() {
         ...filtrosEdit,
         sort_by: clientesSort.sortKey ?? undefined,
         sort_dir: clientesSort.sortDir,
+        filtros: comColunas ? serializarFiltros(filtrosColuna) : undefined,
       });
     } catch (e) {
       setLeadsErro(e instanceof Error ? e.message : "Erro ao exportar os clientes");
@@ -136,9 +168,16 @@ export default function Cobranca() {
     }
   }
 
-  async function gerarLeads() {
+  function decidirColunas(comColunas: boolean) {
+    const acao = perguntaColunas;
+    setPerguntaColunas(null);
+    if (acao === "exportar") exportarExcel(comColunas);
+    else gerarLeads(comColunas);
+  }
+
+  async function gerarLeads(comColunas: boolean) {
     const msg =
-      totalClientes > 0 && !filtrosMudaram
+      totalClientes > 0 && !filtrosMudaram && (comColunas || !temFiltroColuna)
         ? `Enviar ${totalClientes} cliente(s) com os filtros atuais para a fila de cobrança?`
         : "Enviar os clientes com os filtros atuais para a fila de cobrança?";
     if (!window.confirm(msg)) return;
@@ -148,7 +187,7 @@ export default function Cobranca() {
     setAvisosCategoria([]);
     const signal = novoEnvio();
     try {
-      const r = await api.gerarLeads(filtrosEdit, signal);
+      const r = await api.gerarLeads({ ...filtrosEdit, filtros: comColunas ? serializarFiltros(filtrosColuna) : undefined }, signal);
       const semCelular = r.sem_celular > 0 ? ` ${r.sem_celular} sem celular válido.` : "";
       if (r.na_fila === 0) {
         setLeadsErro(
@@ -206,7 +245,7 @@ export default function Cobranca() {
       <div className="card">
         <div className="card-header">
           <h3>Filtros</h3>
-          <button type="button" onClick={gerarLeads} disabled={gerandoLeads} className="secondary">
+          <button type="button" onClick={() => (temFiltroColuna ? setPerguntaColunas("enviar") : gerarLeads(false))} disabled={gerandoLeads} className="secondary">
             {gerandoLeads ? "Enviando..." : "Enviar para fila de cobrança"}
           </button>
         </div>
@@ -222,6 +261,26 @@ export default function Cobranca() {
           </div>
         )}
 
+        {perguntaColunas && (
+          <div className="painel-acao" role="dialog" aria-labelledby="titulo-colunas">
+            <strong id="titulo-colunas">Aplicar os filtros das colunas?</strong>
+            <p className="text-muted" style={{ margin: "4px 0 10px" }}>
+              A lista de clientes tem filtros ativos nas colunas. Deseja aplicá-los {perguntaColunas === "exportar" ? "ao exportar" : "ao enviar para a fila"}?
+            </p>
+            <div className="acoes">
+              <button type="button" onClick={() => decidirColunas(true)}>
+                Aplicar filtros das colunas
+              </button>
+              <button type="button" className="secondary" onClick={() => decidirColunas(false)}>
+                Ignorar filtros das colunas
+              </button>
+              <button type="button" className="secondary" onClick={() => setPerguntaColunas(null)}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
+
         <BarraFiltrosCobranca
           valor={filtrosEdit}
           onChange={setFiltrosEdit}
@@ -230,7 +289,7 @@ export default function Cobranca() {
           opcoes={opcoes}
           idPrefixo="cobranca"
           acaoDireita={
-            <button type="button" className="excel" onClick={exportarExcel} disabled={exportando}>
+            <button type="button" className="excel" onClick={() => (temFiltroColuna ? setPerguntaColunas("exportar") : exportarExcel(false))} disabled={exportando}>
               {exportando ? "Exportando..." : "Exportar Excel"}
             </button>
           }
@@ -260,44 +319,31 @@ export default function Cobranca() {
           <div className="loading-state">Consultando o SETA — isso pode levar até 45 segundos...</div>
         )}
 
-        {!clientesCarregando && clientes.length === 0 && !clientesErro && (
+        {!clientesCarregando && clientes.length === 0 && !temFiltroColuna && !clientesErro && (
           <div className="empty-state">
             <p>{consultado ? "Nenhum cliente encontrado com esses filtros." : "Aplique os filtros para listar clientes."}</p>
           </div>
         )}
 
-        {!clientesCarregando && clientes.length > 0 && (
+        {!clientesCarregando && (clientes.length > 0 || temFiltroColuna) && (
           <>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    {(
-                      [
-                        ["codigo", "Código"],
-                        ["cpfcnpj", "CPF"],
-                        ["nome", "Nome"],
-                        ["vencimento_mais_antigo", "Vencimento"],
-                        ["valor_cobrar", "Valor"],
-                        ["qtd_parcelas_cobranca", "Parcelas"],
-                        ["dias_atraso", "Atraso"],
-                        ["faixa", "Faixa"],
-                        ["cluster", "Cluster"],
-                      ] as [ColunaCliente, string][]
-                    ).map(([coluna, rotulo]) => (
-                      <SortableTh
-                        key={coluna}
-                        scope="col"
-                        active={clientesSort.sortKey === coluna}
-                        dir={clientesSort.sortDir}
-                        onSort={() => clientesSort.toggleSort(coluna)}
-                      >
-                        {rotulo}
-                      </SortableTh>
+                    {COLUNAS_CLIENTE.map(([coluna, rotulo, tipo]) => (
+                      <ThFiltravel key={coluna} coluna={coluna} rotulo={rotulo} tipo={tipo} ordenacao={clientesSort} controle={controleFiltros} />
                     ))}
                   </tr>
                 </thead>
                 <tbody>
+                  {clientes.length === 0 && (
+                    <tr>
+                      <td colSpan={COLUNAS_CLIENTE.length} className="text-muted">
+                        Nenhum cliente encontrado com esses filtros.
+                      </td>
+                    </tr>
+                  )}
                   {clientes.map((c) => (
                     <tr key={c.codigo}>
                       <td className="cell-strong">{c.codigo}</td>

@@ -6,9 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import case, false, or_
 from sqlalchemy.orm import Session
 
-from .. import google_client, itens_fila, lojas as lojas_base, models, schemas
+from .. import filtros_coluna, google_client, itens_fila, lojas as lojas_base, models, schemas
 from ..database import get_db
 from ..fila_automatica import enfileirar_leads
+from ..filtros_coluna import filtros_da_query
 from ..deps import get_current_user
 from ..leads_service import _em_lotes, gerar_leads_de_clientes
 from ..regras_db import carregar_regras
@@ -17,7 +18,7 @@ from ..timezone import hoje_br, inicio_do_dia_utc
 from ..utils.leads_xlsx import gerar_xlsx_leads
 from ..blacklist import codigos_bloqueados
 from ..elegibilidade import sem_cobrados_hoje
-from .comum import buscar_base_ou_erro, filtros_base
+from .comum import CLIENTES_FILTRO, buscar_base_ou_erro, filtros_base
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -25,6 +26,7 @@ router = APIRouter(prefix="/leads", tags=["leads"])
 @router.post("/gerar", response_model=schemas.LeadsGerarAsyncOut)
 def gerar_leads(
     filtros: dict = Depends(filtros_base),
+    colunas: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
@@ -39,7 +41,7 @@ def gerar_leads(
     job = buscar_base_ou_erro(db, filtros)
     if job["status"] != "ready":
         return schemas.LeadsGerarAsyncOut(status="processing")
-    clientes = sem_cobrados_hoje(db, job["data"])
+    clientes = filtros_coluna.filtrar_memoria(sem_cobrados_hoje(db, job["data"]), CLIENTES_FILTRO, colunas)
 
     criados, ja_existiam, sem_celular = gerar_leads_de_clientes(db, clientes, created_by=user.id)
     na_fila = enfileirar_leads(db, clientes)

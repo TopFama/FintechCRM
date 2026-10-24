@@ -209,6 +209,47 @@ with patch("app.routers.reports._pagamentos", return_value=snap):
     linhas = list(openpyxl.load_workbook(io.BytesIO(xlsx.content)).active.iter_rows(values_only=True))
     assert [l[0] for l in linhas[1:]] == ["C2"], linhas
 
+# --- Clientes da Cobrança (lista em memória da base do SETA) -----------------------
+def cliente(codigo, nome, faixa, valor, dias, venc):
+    return {"codigo": codigo, "nome": nome, "celular": "5563911110000", "celular_origem": "celular1",
+            "celular_original": "63911110000", "cpfcnpj": "1" * 11, "status": "A", "status_descricao": "Ativo",
+            "loja_cadastro": None, "salario": None, "limite_rotativo": None, "nascimento": None, "cadastro": None,
+            "cluster": "ESPECIAL", "valor_pago": Decimal("0"), "qtd_compras": 1, "faixa_compra": None,
+            "ultima_compra": None, "faixa": faixa, "dias_atraso": dias, "entra_whatsapp": True, "qtd_titulos": 1,
+            "valor_em_aberto": Decimal(valor), "qtd_parcelas_cobranca": 1, "valor_cobrar": Decimal(valor),
+            "vencimento_mais_antigo": venc, "lojas": [], "portadores": [], "spc_restricao": "nao"}
+
+
+base_cobranca = [
+    cliente("K1", "Ana", "1 A 10", "100.00", 5, date(2026, 10, 1)),
+    cliente("K2", "Bia", "11 A 20", "900.00", 15, date(2026, 9, 20)),
+    cliente("K3", "Caio", None, "50.00", 1, date(2026, 10, 10)),
+]
+CL = "/cobranca/clientes"
+with patch("app.routers.cobranca.buscar_base_ou_erro", return_value={"status": "ready", "data": base_cobranca}), \
+        patch("app.routers.cobranca.seta_client.buscar_spc", return_value={}):
+    def clientes(**params):
+        r = get(CL, **params)["data"]
+        return sorted(c["codigo"] for c in r["itens"]), r["total"]
+
+    assert clientes() == (["K1", "K2", "K3"], 3)
+    assert clientes(**f(faixa={"valores": ["1 A 10"]})) == (["K1"], 1)
+    assert clientes(**f(faixa={"valores": [""]})) == (["K3"], 1)
+    assert clientes(**f(valor_cobrar={"de": "100"})) == (["K1", "K2"], 2)
+    assert clientes(**f(dias_atraso={"ate": "5"})) == (["K1", "K3"], 2)
+    assert clientes(**f(vencimento_mais_antigo={"de": "2026-10-01"})) == (["K1", "K3"], 2)
+    assert clientes(**f(vencimento_mais_antigo={"ate": "2026-09-30"})) == (["K2"], 1)
+    assert clientes(**f(nome={"valores": ["Ana", "Bia"]}, dias_atraso={"de": "10"})) == (["K2"], 1)
+    assert valores(CL + "/valores", "faixa") == ["", "1 A 10", "11 A 20"]
+    assert valores(CL + "/valores", "nome", **f(valor_cobrar={"de": "100"})) == ["Ana", "Bia"]
+    assert valores(CL + "/valores", "nome", "ca") == ["Caio"]
+    # data filtra por intervalo: não tem lista
+    assert client.get(CL + "/valores", params={"coluna": "vencimento_mais_antigo"}, headers=auth).status_code == 422
+    xlsx = client.get(CL + "/exportar.xlsx", params=f(faixa={"valores": ["11 A 20"]}), headers=auth)
+    linhas = list(openpyxl.load_workbook(io.BytesIO(xlsx.content)).active.iter_rows(values_only=True))
+    assert [l[0] for l in linhas[1:]] == ["K2"], linhas
+    assert client.get(CL, params=f(inexistente={"valores": ["x"]}), headers=auth).status_code == 422
+
 # --- Entrada inválida --------------------------------------------------------------
 for url in (P, E, V, I, PG):
     assert client.get(url, params={"filtros": "{"}, headers=auth).status_code == 422

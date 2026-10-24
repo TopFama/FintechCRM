@@ -9,13 +9,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import campanhas as camp, campanhas_fixas, cobranca_base, google_client, itens_fila, models, pausas, seta_client
+from .. import campanhas as camp, campanhas_fixas, cobranca_base, filtros_coluna, google_client, itens_fila, models, pausas, schemas, seta_client
 from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
+from ..filtros_coluna import filtros_da_query
 from ..regras_db import carregar_regras
 from ..timezone import hoje_br, inicio_do_dia_utc
-from .comum import ClienteSortColumn, ler_planilha_limitada, ordenar_clientes
+from .comum import CLIENTES_FILTRO, ClienteSortColumn, ler_planilha_limitada, ordenar_clientes
 
 router = APIRouter(prefix="/campanhas", tags=["campanhas"])
 
@@ -522,6 +523,21 @@ def _erro_base(exc: Exception) -> HTTPException:
 _ERROS_BASE = (cobranca_base.FiltroInvalido, google_client.GoogleIndisponivel)
 
 
+def _clientes_da_previa(db: Session, c: models.Faixa):
+    """(resultado do diagnóstico, clientes que entrariam) ou None enquanto o SETA calcula a base."""
+
+    try:
+        resultado = camp.diagnosticar(db, c)
+    except _ERROS_BASE as exc:
+        raise _erro_base(exc) from exc
+    if resultado["status"] != "ready":
+        return None
+    clientes = resultado["clientes"]
+    if c.fonte_valores == "planilha":
+        clientes = [camp.com_dados_da_planilha(x, c) for x in clientes]
+    return resultado, clientes
+
+
 @router.get("/{campanha_id}/previa")
 def previa(
     campanha_id: str,
@@ -529,23 +545,21 @@ def previa(
     offset: int = Query(0, ge=0),
     sort_by: ClienteSortColumn | None = Query(None),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
+    colunas: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
     """Quem entraria na fila se a campanha rodasse agora (sem colocar
     ninguém), paginado e ordenado no servidor. "processing" enquanto o SETA
-    calcula a base; quem pediu tenta de novo em seguida."""
+    calcula a base; quem pediu tenta de novo em seguida. Os filtros das
+    colunas só restringem a lista (`total_filtrado`); `total` é quem entra."""
 
-    c = _get(db, campanha_id)
-    try:
-        resultado = camp.diagnosticar(db, c)
-    except _ERROS_BASE as exc:
-        raise _erro_base(exc) from exc
-    if resultado["status"] != "ready":
+    pronto = _clientes_da_previa(db, _get(db, campanha_id))
+    if pronto is None:
         return {"status": "processing", "data": None}
-    clientes = resultado["clientes"]
-    if c.fonte_valores == "planilha":
-        clientes = [camp.com_dados_da_planilha(x, c) for x in clientes]
+    resultado, clientes = pronto
+    total = len(clientes)
+    clientes = filtros_coluna.filtrar_memoria(clientes, CLIENTES_FILTRO, colunas)
     if sort_by:
         clientes = ordenar_clientes(clientes, sort_by, sort_dir, db)
     campos = ("codigo", "nome", "celular", "cpfcnpj", "cluster", "faixa", "dias_atraso", "valor_cobrar",
@@ -554,11 +568,30 @@ def previa(
         "status": "ready",
         "data": {
             "total_base": resultado["total_base"],
-            "total": len(clientes),
+            "total": total,
+            "total_filtrado": len(clientes),
             "itens": [{k: x.get(k) for k in campos} for x in clientes[offset : offset + limit]],
             "diagnostico": resultado.get("diagnostico")
         },
     }
+
+
+@router.get("/{campanha_id}/previa/valores", response_model=schemas.ValoresColuna)
+def valores_previa(
+    campanha_id: str,
+    coluna: str,
+    busca: str | None = None,
+    colunas: dict = Depends(filtros_da_query),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Lista do filtro de uma coluna da prévia, dentro dos filtros das outras colunas."""
+
+    pronto = _clientes_da_previa(db, _get(db, campanha_id))
+    if pronto is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "A base de cobrança ainda está sendo calculada.")
+    valores, truncado = filtros_coluna.valores_memoria(pronto[1], CLIENTES_FILTRO, colunas, coluna, busca)
+    return schemas.ValoresColuna(valores=valores, truncado=truncado)
 
 
 @router.post("/{campanha_id}/executar")

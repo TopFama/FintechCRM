@@ -179,6 +179,11 @@ export interface FiltrosRelatorio {
   filtros?: string;
 }
 
+/** Filtros por coluna (JSON de serializarFiltros) da lista de clientes da Cobrança. */
+export interface ColunasParam {
+  filtros?: string;
+}
+
 export interface OrdenacaoParams {
   sort_by?: string;
   sort_dir?: "asc" | "desc";
@@ -454,21 +459,23 @@ export const api = {
   // dezenas de milhões de linhas, cacheada no Redis pelo backend — a primeira
   // vez com um filtro novo pode "processar" por alguns segundos/minutos;
   // pollAsync tenta de novo sozinho até vir pronto.
-  exportarClientesCobranca: (params: FiltrosCobranca & OrdenacaoParams) =>
+  exportarClientesCobranca: (params: FiltrosCobranca & OrdenacaoParams & ColunasParam) =>
     downloadFile(`/cobranca/clientes/exportar.xlsx?${montarQuery(params)}`, "clientes_cobranca.xlsx"),
   regrasCobranca: () => request<RegrasCobranca>("/cobranca/regras"),
   atualizarComprasSeta: () =>
     request<{ clientes_atualizados: number }>("/cobranca/compras/atualizar", { method: "POST" }),
-  listarClientesCobranca: (params: FiltrosCobranca & { limit: number; offset: number } & OrdenacaoParams, signal?: AbortSignal) =>
+  listarClientesCobranca: (params: FiltrosCobranca & { limit: number; offset: number } & OrdenacaoParams & ColunasParam, signal?: AbortSignal) =>
     pollAsync<{ total: number; itens: ClienteCobranca[] }>(
       (s) => request(`/cobranca/clientes?${montarQuery(params)}`, { signal: s }),
       signal
     ),
+  valoresClientesCobranca: (params: FiltrosCobranca & ColunasParam & { coluna: string; busca?: string }, signal?: AbortSignal) =>
+    request<ValoresColuna>(`/cobranca/clientes/valores?${montarQuery(params)}`, { signal }),
   relatorioCobranca: (params: FiltrosCobranca, signal?: AbortSignal) =>
     pollAsync<RelatorioCobranca>((s) => request(`/cobranca/relatorio?${montarQuery(params)}`, { signal: s }), signal),
 
   // --- Leads ---
-  gerarLeads: (params: FiltrosCobranca, signal?: AbortSignal) =>
+  gerarLeads: (params: FiltrosCobranca & ColunasParam, signal?: AbortSignal) =>
     pollAsync<{ criados: number; ja_existiam: number; sem_celular: number; na_fila: number; avisos_categoria: string[] }>(
       (s) => request(`/leads/gerar?${montarQuery(params)}`, { method: "POST", signal: s }),
       signal
@@ -591,8 +598,10 @@ export const api = {
     request<ColunaEmBranco[]>(`/campanhas/${id}/clientes/colunas-em-branco`),
   salvarReservaVazioCampanha: (id: string, reservas: ReservaVazioItem[]) =>
     request<ColunaEmBranco[]>(`/campanhas/${id}/variaveis/reserva`, { method: "PUT", body: JSON.stringify({ reservas }) }),
-  previaCampanha: (id: string, params: { limit: number; offset: number } & OrdenacaoParams, signal?: AbortSignal) =>
+  previaCampanha: (id: string, params: { limit: number; offset: number } & OrdenacaoParams & ColunasParam, signal?: AbortSignal) =>
     pollAsync<PreviaCampanha>((s) => request(`/campanhas/${id}/previa?${montarQuery(params)}`, { signal: s }), signal),
+  valoresPreviaCampanha: (id: string, params: ColunasParam & { coluna: string; busca?: string }, signal?: AbortSignal) =>
+    request<ValoresColuna>(`/campanhas/${id}/previa/valores?${montarQuery(params)}`, { signal }),
   executarCampanha: (id: string, signal?: AbortSignal) =>
     pollAsync<{ encontrados: number; na_fila: number; avisos_categoria: string[] }>(
       (s) => request(`/campanhas/${id}/executar`, { method: "POST", signal: s }),
@@ -1315,7 +1324,8 @@ export interface Campanha extends CampanhaIn {
 
 export interface PreviaCampanha {
   total_base: number;
-  total: number;
+  total: number; // quem entra na fila
+  total_filtrado?: number; // da lista, depois dos filtros das colunas
   diagnostico?: {
     pronto: number;
     aguardando_decisao: number;

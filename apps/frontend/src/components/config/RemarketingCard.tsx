@@ -3,12 +3,13 @@ import { Link } from "react-router-dom";
 import AvisosCategoria from "../AvisosCategoria";
 import EnviosFaixa from "../EnviosFaixa";
 import { api, Faixa, pareceAdmin, PreviaRemarketing, SegmentoRemarketing, SegmentoRemarketingIn } from "../../api";
-import { formatBRL, formatCelular, formatData, formatDataHora } from "../../format";
+import { diaIsoBR, formatBRL, formatCelular, formatData, formatDataHora } from "../../format";
 import { IconAlert, IconEye, IconRefresh } from "../../icons";
 import FiltroPeriodo, { Periodo } from "../FiltroPeriodo";
 import MultiSelect from "../MultiSelect";
 import Paginacao from "../Paginacao";
-import SortableTh from "../SortableTh";
+import { ControleFiltros, ThFiltravel, TipoColuna } from "../FiltroColuna";
+import { CelulasColuna, passaFiltros, useFiltrosColuna, valoresLocais } from "../../filtrosColuna";
 import { ordenarPor, useSort } from "../../sort";
 import CampoValorMaximo from "../CampoValorMaximo";
 import { opcoesCluster, useOpcoesCobranca } from "../useOpcoesCobranca";
@@ -106,19 +107,31 @@ const ROTULO_EVENTO: Record<string, string> = {
   ACORDO_ATIVO: "Lançado em",
 };
 
-function colunasDaPrevia(segmento: string): [ColunaPrevia, string][] {
-  const colunas: [ColunaPrevia, string][] = [
-    ["nome", "Cliente"],
-    ["celular", "Celular"],
-    ["cluster", "Cluster"],
-    ["faixa", "Faixa"],
-    ["valor_cobrar", "Valor a cobrar"],
-    ["evento_em", ROTULO_EVENTO[segmento] ?? "Data"],
-    ["proposta", "Proposta"],
+function colunasDaPrevia(segmento: string): [ColunaPrevia, string, TipoColuna][] {
+  const colunas: [ColunaPrevia, string, TipoColuna][] = [
+    ["nome", "Cliente", "texto"],
+    ["celular", "Celular", "texto"],
+    ["cluster", "Cluster", "texto"],
+    ["faixa", "Faixa", "texto"],
+    ["valor_cobrar", "Valor a cobrar", "numero"],
+    ["evento_em", ROTULO_EVENTO[segmento] ?? "Data", "data"],
+    ["proposta", "Proposta", "texto"],
   ];
-  if (segmento === "ACORDO_ATIVO") colunas.push(["entrada_vencimento", "Entrada venceu em"]);
+  if (segmento === "ACORDO_ATIVO") colunas.push(["entrada_vencimento", "Entrada venceu em", "data"]);
   return colunas;
 }
+
+// Valores de cada coluna da prévia (o que a célula mostra; datas em AAAA-MM-DD) para o filtro da coluna
+const CELULAS_PREVIA: CelulasColuna<ClientePrevia> = {
+  nome: (c) => [`${c.codigo} · ${c.nome}`],
+  celular: (c) => [c.celular ? formatCelular(c.celular) : ""],
+  cluster: (c) => [c.cluster || ""],
+  faixa: (c) => [c.faixa ?? ""],
+  valor_cobrar: (c) => [c.valor_cobrar],
+  evento_em: (c) => [diaIsoBR(c.evento_em)],
+  proposta: (c) => [c.proposta ?? ""],
+  entrada_vencimento: (c) => [c.entrada_vencimento?.slice(0, 10) ?? ""],
+};
 
 function paraForm(s: SegmentoRemarketing): SegmentoRemarketingIn {
   return {
@@ -168,7 +181,17 @@ function SegmentoForm({
         ? (c) => Number(c.valor_cobrar)
         : (c) => (c[chavePrevia] ?? null) as string | null;
   const clientesPrevia = previa ? previa.clientes : [];
-  const paginaPrevia = ordenarPor(clientesPrevia, valorPrevia, previaSort.sortDir).slice(
+  const { filtros: filtrosPrevia, alterar: alterarFiltroPrevia } = useFiltrosColuna(segmento.segmento, "remarketing:filtros");
+  const controleFiltros: ControleFiltros = {
+    filtros: filtrosPrevia,
+    alterar: (coluna, filtro) => {
+      alterarFiltroPrevia(coluna, filtro);
+      setPreviaOffset(0);
+    },
+    valores: (coluna, busca) => valoresLocais(clientesPrevia, CELULAS_PREVIA, filtrosPrevia, coluna, busca),
+  };
+  const clientesFiltrados = clientesPrevia.filter((c) => passaFiltros(c, CELULAS_PREVIA, filtrosPrevia));
+  const paginaPrevia = ordenarPor(clientesFiltrados, valorPrevia, previaSort.sortDir).slice(
     previaOffset,
     previaOffset + previaLimit,
   );
@@ -384,23 +407,34 @@ function SegmentoForm({
               <table>
                 <thead>
                   <tr>
-                    {colunasPrevia.map(([chave, rotulo]) => (
-                      <SortableTh
+                    {colunasPrevia.map(([chave, rotulo, tipo]) => (
+                      <ThFiltravel
                         key={chave}
-                        scope="col"
-                        active={previaSort.sortKey === chave}
-                        dir={previaSort.sortDir}
-                        onSort={() => {
-                          previaSort.toggleSort(chave);
-                          setPreviaOffset(0);
+                        coluna={chave}
+                        rotulo={rotulo}
+                        tipo={tipo}
+                        rotuloVazio="—"
+                        controle={controleFiltros}
+                        ordenacao={{
+                          sortKey: previaSort.sortKey,
+                          sortDir: previaSort.sortDir,
+                          toggleSort: (c) => {
+                            previaSort.toggleSort(c);
+                            setPreviaOffset(0);
+                          },
                         }}
-                      >
-                        {rotulo}
-                      </SortableTh>
+                      />
                     ))}
                   </tr>
                 </thead>
                 <tbody>
+                  {paginaPrevia.length === 0 && (
+                    <tr>
+                      <td colSpan={colunasPrevia.length} className="text-muted">
+                        Nenhum cliente encontrado com esses filtros.
+                      </td>
+                    </tr>
+                  )}
                   {paginaPrevia.map((c) => (
                     <tr key={c.codigo}>
                       <td>
@@ -421,9 +455,9 @@ function SegmentoForm({
               </table>
             </div>
           )}
-          {clientesPrevia.length > 0 && (
+          {clientesFiltrados.length > 0 && (
             <Paginacao
-              total={clientesPrevia.length}
+              total={clientesFiltrados.length}
               limit={previaLimit}
               offset={previaOffset}
               onChange={setPreviaOffset}

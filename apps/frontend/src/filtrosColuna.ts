@@ -19,6 +19,40 @@ export function serializarFiltros(filtros: FiltrosColuna): string | undefined {
   return Object.keys(filtros).length ? JSON.stringify(filtros) : undefined;
 }
 
+/** Valor(es) de cada coluna de um item (o que a célula mostra; data em AAAA-MM-DD); "" = vazio. */
+export type CelulasColuna<T> = Record<string, (item: T) => string[]>;
+
+/** Filtro das listas que já estão inteiras no navegador (sem servidor), com o mesmo contrato do servidor:
+ * `valores` marcados e/ou intervalo de, até (número ou data). `ignorar` é a coluna cujos filtros não valem. */
+export function passaFiltros<T>(item: T, celulas: CelulasColuna<T>, filtros: FiltrosColuna, ignorar?: string): boolean {
+  return Object.entries(filtros).every(([coluna, f]) => {
+    if (coluna === ignorar) return true;
+    const valores = celulas[coluna](item);
+    if (f.valores && !valores.some((v) => f.valores!.includes(v))) return false;
+    if (!f.de && !f.ate) return true;
+    const numero = !/^\d{4}-\d{2}-\d{2}$/.test(f.de || f.ate!);
+    const comparavel = (v: string) => (numero ? Number(v) : v);
+    return valores.some(
+      (v) => v !== "" && (!f.de || comparavel(v) >= comparavel(f.de)) && (!f.ate || comparavel(v) <= comparavel(f.ate))
+    );
+  });
+}
+
+/** Lista do filtro de uma coluna, dentro dos filtros das outras colunas; vazio ("") primeiro. */
+export async function valoresLocais<T>(
+  itens: T[],
+  celulas: CelulasColuna<T>,
+  filtros: FiltrosColuna,
+  coluna: string,
+  busca: string
+): Promise<ValoresColuna> {
+  const achados = new Set(itens.filter((i) => passaFiltros(i, celulas, filtros, coluna)).flatMap(celulas[coluna]));
+  const valores = [...achados]
+    .filter((v) => v.toLowerCase().includes(busca.toLowerCase()))
+    .sort((a, b) => (a === "" ? -1 : b === "" ? 1 : a.localeCompare(b, "pt-BR", { numeric: true })));
+  return { valores, truncado: false };
+}
+
 // A seleção vale enquanto o usuário está na tela: sai da sessão ao deixá-la
 const CHAVE = "relatorios:filtros";
 type PorAba = Record<string, FiltrosColuna>;

@@ -2,7 +2,7 @@ import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react
 import { api, CampoCliente, ImagemPendente, MetaToken, rotuloVariavel, Template, TemplateBotao, TemplateCreate, urlImagemTemplate, WhatsappNumber } from "../../api";
 import PreviaWhatsapp from "../PreviaWhatsapp";
 import { ControleFiltros, ThFiltravel } from "../FiltroColuna";
-import { useFiltrosColuna } from "../../filtrosColuna";
+import { CelulasColuna, passaFiltros, useFiltrosColuna, valoresLocais } from "../../filtrosColuna";
 import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTemplate, IconTrash } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 
@@ -134,7 +134,7 @@ export default function TemplatesCard() {
   const templatesSort = useSort<ColunaTemplate>();
   const templatesVisiveis = mostrarArquivados ? templates : templates.filter((t) => !t.arquivado_em);
   // Valores de cada coluna (o que a célula mostra), para o filtro estilo Excel dos Relatórios
-  const celulas: Record<string, (t: Template) => string[]> = {
+  const celulas: CelulasColuna<Template> = {
     meta_template_name: (t) => [t.meta_template_name],
     category: (t) => [rotuloCategoria(t.category)],
     waba_id: (t) => [t.waba_id || ""],
@@ -143,23 +143,13 @@ export default function TemplatesCard() {
     imagem: (t) => [t.header_type === "image" ? (t.image_url ? "Enviada" : "Sem imagem") : ""],
   };
   const { filtros, alterar: alterarFiltro } = useFiltrosColuna("templates", "templates:filtros");
-  const passaFiltros = (t: Template, ignorar?: string) =>
-    Object.entries(filtros).every(
-      ([coluna, f]) => coluna === ignorar || !f.valores || celulas[coluna](t).some((v) => f.valores!.includes(v))
-    );
   const controleFiltros: ControleFiltros = {
     filtros,
     alterar: alterarFiltro,
-    valores: async (coluna, busca) => {
-      const achados = new Set(templatesVisiveis.filter((t) => passaFiltros(t, coluna)).flatMap(celulas[coluna]));
-      const valores = [...achados]
-        .filter((v) => v.toLowerCase().includes(busca.toLowerCase()))
-        .sort((a, b) => (a === "" ? -1 : b === "" ? 1 : a.localeCompare(b)));
-      return { valores, truncado: false };
-    },
+    valores: (coluna, busca) => valoresLocais(templatesVisiveis, celulas, filtros, coluna, busca),
   };
   const templatesOrdenados = ordenarPor(
-    templatesVisiveis.filter((t) => passaFiltros(t)),
+    templatesVisiveis.filter((t) => passaFiltros(t, celulas, filtros)),
     templatesSort.sortKey
       ? (t: Template) => {
           if (templatesSort.sortKey === "waba_id") return t.waba_id || "";

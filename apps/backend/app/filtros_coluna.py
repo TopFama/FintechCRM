@@ -4,7 +4,7 @@ O parâmetro `filtros` é um JSON {coluna: {"valores": [...], "de": ..., "ate": 
 `valores` restringe aos valores marcados ("" = vazio); `de`/`ate` é o
 intervalo (datas ISO nas colunas de data, números nas de valor); os dois
 juntos valem em conjunto. Relatórios em SQL usam `aplicar`/`valores_distintos`;
-o "Quem pagou", que é uma lista em memória (cache do SETA), usa
+o "Quem pagou" e a lista de clientes da Cobrança, que são listas em memória (cache do SETA), usam
 `filtrar_memoria`/`valores_memoria` com o mesmo contrato."""
 
 import json
@@ -166,6 +166,11 @@ def _chave(c: Coluna, valor):
 
 
 def _passa(c: Coluna, f: dict, linha: dict) -> bool:
+    if c.tipo == "data":
+        dia = c.expr(linha)
+        if f.get("de") and not (dia and dia >= _data(f["de"])):
+            return False
+        return not (f.get("ate") and not (dia and dia <= _data(f["ate"])))
     celulas = [_chave(c, x) for x in _celulas(c, linha)]
     if f.get("valores") is not None:
         marcados = {_chave(c, v) for v in f["valores"]}
@@ -185,6 +190,8 @@ def filtrar_memoria(linhas: list[dict], mapa: dict[str, Coluna], filtros: dict |
 
 def valores_memoria(linhas: list[dict], mapa: dict[str, Coluna], filtros: dict | None, coluna: str, busca: str | None):
     c = _coluna(mapa, coluna)
+    if c.tipo == "data":
+        raise HTTPException(422, "Coluna de data filtra por intervalo")
     visiveis = filtrar_memoria(linhas, mapa, filtros, ignorar=coluna)
     itens = {str(x) for l in visiveis for x in _celulas(c, l)}
     if busca:
