@@ -94,26 +94,26 @@ test.describe("Cobrança: consulta de clientes no SETA", { tag: "@cobranca" }, (
     const pag = card(page, /^Clientes/).locator(".paginacao");
     await pag.getByRole("combobox").selectOption("25");
     const cab = card(page, /^Clientes/).getByRole("columnheader", { name: /^Nome/ });
-    await cab.click();
+    await cab.click({ position: { x: 6, y: 6 } });
     await expect(page.getByText("Consultando o SETA")).toHaveCount(0);
     const asc = await coluna(page, 3);
     const limpo = (s: string) => s.replace(/\s*SPC$/, "");
     expect(asc.map(limpo)).toEqual([...asc.map(limpo)].sort((a, b) => a.localeCompare(b, "pt-BR")));
     expect(limpo(asc[0])).toBe("ADRIANA COSTA"); // primeiro nome do conjunto inteiro, não só da página
-    await cab.click();
+    await cab.click({ position: { x: 6, y: 6 } });
     await expect(page.getByText("Consultando o SETA")).toHaveCount(0);
     const desc = await coluna(page, 3);
     expect(limpo(desc[0])).toBe("VINICIUS BATISTA");
     await expect(pag).toContainText("Página 1 de 2"); // ordenar volta para a primeira página
 
     // atraso: numérico, não alfabético
-    await card(page, /^Clientes/).getByRole("columnheader", { name: /^Atraso/ }).click();
+    await card(page, /^Clientes/).getByRole("columnheader", { name: /^Atraso/ }).click({ position: { x: 6, y: 6 } });
     await expect(page.getByText("Consultando o SETA")).toHaveCount(0);
     const dias = (await coluna(page, 7)).map((d) => (d === "vence amanhã" ? -1 : parseInt(d)));
     expect(dias).toEqual([...dias].sort((a, b) => a - b));
 
     // faixa: ordem de atraso, não alfabética
-    await card(page, /^Clientes/).getByRole("columnheader", { name: /^Faixa/ }).click();
+    await card(page, /^Clientes/).getByRole("columnheader", { name: /^Faixa/ }).click({ position: { x: 6, y: 6 } });
     await expect(page.getByText("Consultando o SETA")).toHaveCount(0);
     const faixas = await coluna(page, 8);
     const ordem = ["-1", "2", "3 A 10", "11 A 20", "21 A 30", "31 A 40", "41 A 60", "61 A 80", "81 A 100", "101 A 120", "121 A 140", "141 A 150", "151+"];
@@ -200,6 +200,44 @@ test.describe("Cobrança: consulta de clientes no SETA", { tag: "@cobranca" }, (
     await filtros(page).getByLabel("Vencimento até").fill("2000-01-02");
     await aplicar(page);
     await expect(card(page, /^Clientes/)).toContainText(/nenhum cliente/i);
+  });
+
+  test("filtro de coluna na lista: filtra no servidor e Exportar pergunta se aplica", async ({ page }) => {
+    await semRegrasPadrao(page);
+    await aplicar(page);
+    const lista = card(page, /^Clientes/);
+    const totalDe = async () => Number(((await titulo(page).innerText()).match(/\(([\d.]+)\)/) ?? [])[1]?.replace(/\./g, ""));
+    const total = await totalDe();
+    await lista.getByRole("button", { name: "Filtrar Faixa", exact: true }).click();
+    const caixa = page.getByRole("dialog", { name: "Filtro de Faixa" });
+    await expect(caixa.getByLabel("Selecionar tudo")).toBeChecked();
+    const valor = (await caixa.locator("label.ms-option").last().innerText()).trim();
+    await caixa.getByLabel("Pesquisar em Faixa").fill(valor);
+    await caixa.getByLabel("Selecionar tudo").uncheck();
+    await caixa.getByLabel(valor, { exact: true }).check();
+    await caixa.getByRole("button", { name: "OK" }).click();
+    await expect(page.getByText("Consultando o SETA")).toHaveCount(0);
+    await expect(lista.getByRole("button", { name: "Filtrar Faixa", exact: true })).toHaveClass(/ativo/);
+    for (const faixa of await coluna(page, 8)) expect(faixa.trim()).toBe(valor);
+    const filtrado = await totalDe();
+    expect(filtrado).toBeLessThan(total);
+    // com filtro de coluna ativo, Exportar pergunta; aplicar leva só a lista filtrada
+    await filtros(page).getByRole("button", { name: "Exportar Excel" }).click();
+    await expect(filtros(page).getByRole("dialog", { name: "Aplicar os filtros das colunas?" })).toBeVisible();
+    const aplicado = await baixar(page, () => filtros(page).getByRole("button", { name: "Aplicar filtros das colunas" }).click());
+    expect(aplicado.linhas.length - 1).toBe(filtrado);
+    // ignorar leva a lista toda dos filtros da barra
+    await filtros(page).getByRole("button", { name: "Exportar Excel" }).click();
+    const ignorado = await baixar(page, () => filtros(page).getByRole("button", { name: "Ignorar filtros das colunas" }).click());
+    expect(ignorado.linhas.length - 1).toBe(total);
+    // cancelar não exporta e Limpar devolve a lista
+    await filtros(page).getByRole("button", { name: "Exportar Excel" }).click();
+    await filtros(page).getByRole("button", { name: "Cancelar" }).click();
+    await expect(filtros(page).getByRole("dialog")).toHaveCount(0);
+    await lista.getByRole("button", { name: "Filtrar Faixa", exact: true }).click();
+    await caixa.getByRole("button", { name: "Limpar" }).click();
+    await expect(page.getByText("Consultando o SETA")).toHaveCount(0);
+    expect(await totalDe()).toBe(total);
   });
 
   test("exportar Excel usa os filtros e a ordenação aplicados", async ({ page }) => {

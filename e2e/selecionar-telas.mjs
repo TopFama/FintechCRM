@@ -87,6 +87,7 @@ export const FUNCIONALIDADES = {
     `${F}components/CamposLoja.tsx`, `${F}components/MultiSelect.tsx`, `${F}components/useOpcoesCobranca.ts`,
     `${F}components/useRequisicaoUnica.ts`, `${F}components/dashboard/MatrizCobrancaCard.tsx`,
     `${F}components/MatrizTable.tsx`, `${F}components/SortableTh.tsx`, `${F}components/Paginacao.tsx`,
+    `${F}components/FiltroColuna.tsx`, `${F}filtrosColuna.ts`, `${B}filtros_coluna.py`,
     `${B}routers/cobranca.py`, `${B}routers/comum.py`, `${B}routers/leads.py`, `${B}cobranca_base.py`,
     `${B}cobranca_relatorio.py`, `${B}leads_service.py`, `${B}seta_client.py`, `${B}blacklist.py`, `${B}elegibilidade.py`,
     `${B}lojas.py`, `${B}lojas_iniciais.py`, `${B}google_client.py`, `${B}cache.py`, `${B}services/compras_seta.py`,

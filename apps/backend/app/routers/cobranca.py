@@ -3,16 +3,17 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
-from .. import cobranca_relatorio, models, schemas, seta_client
+from .. import cobranca_relatorio, filtros_coluna, models, schemas, seta_client
 from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
+from ..filtros_coluna import filtros_da_query
 from ..regras_db import carregar_regras
 from ..elegibilidade import sem_cobrados_hoje
 from ..services import compras_seta
 from ..timezone import hoje_br
 from ..utils.spc import parse_spc
-from .comum import ClienteSortColumn, buscar_base_ou_erro, filtros_base, ordenar_clientes
+from .comum import CLIENTES_FILTRO, ClienteSortColumn, buscar_base_ou_erro, filtros_base, ordenar_clientes
 from ..utils.xlsx import XLSX_MEDIA_TYPE, build_xlsx, formula_safe
 
 router = APIRouter(prefix="/cobranca", tags=["cobranca"])
@@ -67,6 +68,7 @@ def listar_clientes(
     offset: int = Query(0, ge=0),
     sort_by: ClienteSortColumn | None = Query(None),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
+    colunas: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
@@ -74,7 +76,7 @@ def listar_clientes(
     if job["status"] != "ready":
         return schemas.ClientesCobrancaAsyncOut(status="processing")
 
-    clientes = sem_cobrados_hoje(db, job["data"])
+    clientes = filtros_coluna.filtrar_memoria(sem_cobrados_hoje(db, job["data"]), CLIENTES_FILTRO, colunas)
     if sort_by:
         clientes = ordenar_clientes(clientes, sort_by, sort_dir, db)
     pagina = clientes[offset : offset + limit]
@@ -87,6 +89,26 @@ def listar_clientes(
     return schemas.ClientesCobrancaAsyncOut(
         status="ready", data=schemas.ClientesCobrancaPage(total=len(clientes), itens=pagina)
     )
+
+
+@router.get("/clientes/valores", response_model=schemas.ValoresColuna)
+def valores_clientes(
+    coluna: str,
+    busca: str | None = None,
+    filtros: dict = Depends(filtros_base),
+    colunas: dict = Depends(filtros_da_query),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Lista do filtro de uma coluna, dentro dos filtros das outras colunas."""
+
+    job = buscar_base_ou_erro(db, filtros)
+    if job["status"] != "ready":
+        raise HTTPException(status.HTTP_409_CONFLICT, "A base de cobrança ainda está sendo calculada.")
+    valores, truncado = filtros_coluna.valores_memoria(
+        sem_cobrados_hoje(db, job["data"]), CLIENTES_FILTRO, colunas, coluna, busca
+    )
+    return schemas.ValoresColuna(valores=valores, truncado=truncado)
 
 
 _COLUNAS_EXPORTACAO = [
@@ -104,6 +126,7 @@ def exportar_clientes(
     filtros: dict = Depends(filtros_base),
     sort_by: ClienteSortColumn | None = Query(None),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
+    colunas: dict = Depends(filtros_da_query),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
@@ -114,7 +137,7 @@ def exportar_clientes(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "A base de cobrança ainda está sendo calculada. Tente exportar de novo em instantes."
         )
-    clientes = sem_cobrados_hoje(db, job["data"])
+    clientes = filtros_coluna.filtrar_memoria(sem_cobrados_hoje(db, job["data"]), CLIENTES_FILTRO, colunas)
     if sort_by:
         clientes = ordenar_clientes(clientes, sort_by, sort_dir, db)
 
