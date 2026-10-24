@@ -250,6 +250,15 @@ with patch("app.routers.cobranca.buscar_base_ou_erro", return_value={"status": "
     assert [l[0] for l in linhas[1:]] == ["K2"], linhas
     assert client.get(CL, params=f(inexistente={"valores": ["x"]}), headers=auth).status_code == 422
 
+# --- Prévia da campanha: a coluna Cliente é "código · nome" ---------------------------
+from app import filtros_coluna as _fc
+from app.routers.campanhas import PREVIA_FILTRO
+
+_linhas = [{"codigo": "K1", "nome": "Ana"}, {"codigo": "K2", "nome": "Bia"}]
+_vals, _ = _fc.valores_memoria(_linhas, PREVIA_FILTRO, None, "nome", None)
+assert _vals == ["K1 · Ana", "K2 · Bia"], _vals
+assert _fc.filtrar_memoria(_linhas, PREVIA_FILTRO, {"nome": {"valores": ["K2 · Bia"]}}) == [_linhas[1]]
+
 # --- Entrada inválida --------------------------------------------------------------
 for url in (P, E, V, I, PG):
     assert client.get(url, params={"filtros": "{"}, headers=auth).status_code == 422

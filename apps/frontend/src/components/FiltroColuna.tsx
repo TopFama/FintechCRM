@@ -88,6 +88,9 @@ function FiltroDaColuna({
     };
   }, [aberto]);
 
+  // Coluna formatada (CPF, celular) guarda só dígitos: "123.456" pesquisa "123456"
+  const buscaDoServidor = formatar && tipo === "texto" && /^[\d\s.\-/()+]+$/.test(busca) ? busca.replace(/\D/g, "") : busca;
+
   // Valores do servidor, com a pesquisa
   useEffect(() => {
     if (!aberto || !comLista) return;
@@ -96,7 +99,7 @@ function FiltroDaColuna({
     const t = setTimeout(
       () =>
         controle
-          .valores(coluna, busca)
+          .valores(coluna, buscaDoServidor)
           .then((r) => atual && setLista(r))
           .catch(() => atual && setErro(true)),
       busca ? 250 : 0

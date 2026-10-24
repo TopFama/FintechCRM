@@ -13,10 +13,13 @@ from .. import campanhas as camp, campanhas_fixas, cobranca_base, filtros_coluna
 from ..cobranca_regras import NOMES_FAIXA_COMPRA
 from ..database import get_db
 from ..deps import get_current_user
-from ..filtros_coluna import filtros_da_query
+from ..filtros_coluna import Coluna, filtros_da_query
 from ..regras_db import carregar_regras
 from ..timezone import hoje_br, inicio_do_dia_utc
 from .comum import CLIENTES_FILTRO, ClienteSortColumn, ler_planilha_limitada, ordenar_clientes
+
+# Na prévia a coluna Cliente mostra "código · nome": o filtro lista e filtra o mesmo texto
+PREVIA_FILTRO = {**CLIENTES_FILTRO, "nome": Coluna(lambda c: f"{c['codigo']} · {c['nome']}")}
 
 router = APIRouter(prefix="/campanhas", tags=["campanhas"])
 
@@ -559,7 +562,7 @@ def previa(
         return {"status": "processing", "data": None}
     resultado, clientes = pronto
     total = len(clientes)
-    clientes = filtros_coluna.filtrar_memoria(clientes, CLIENTES_FILTRO, colunas)
+    clientes = filtros_coluna.filtrar_memoria(clientes, PREVIA_FILTRO, colunas)
     if sort_by:
         clientes = ordenar_clientes(clientes, sort_by, sort_dir, db)
     campos = ("codigo", "nome", "celular", "cpfcnpj", "cluster", "faixa", "dias_atraso", "valor_cobrar",
@@ -590,7 +593,7 @@ def valores_previa(
     pronto = _clientes_da_previa(db, _get(db, campanha_id))
     if pronto is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "A base de cobrança ainda está sendo calculada.")
-    valores, truncado = filtros_coluna.valores_memoria(pronto[1], CLIENTES_FILTRO, colunas, coluna, busca)
+    valores, truncado = filtros_coluna.valores_memoria(pronto[1], PREVIA_FILTRO, colunas, coluna, busca)
     return schemas.ValoresColuna(valores=valores, truncado=truncado)
 
 

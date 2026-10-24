@@ -332,7 +332,7 @@ export default function Cobranca() {
                 <thead>
                   <tr>
                     {COLUNAS_CLIENTE.map(([coluna, rotulo, tipo]) => (
-                      <ThFiltravel key={coluna} coluna={coluna} rotulo={rotulo} tipo={tipo} ordenacao={clientesSort} controle={controleFiltros} />
+                      <ThFiltravel key={coluna} coluna={coluna} rotulo={rotulo} tipo={tipo} formatar={coluna === "cpfcnpj" ? formatCpf : undefined} ordenacao={clientesSort} controle={controleFiltros} />
                     ))}
                   </tr>
                 </thead>
