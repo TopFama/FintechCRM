@@ -4,6 +4,9 @@ import { IconFilter } from "../icons";
 import { SortDirection } from "../sort";
 import SortableTh from "./SortableTh";
 
+// Altura máxima da caixa (busca, de/até, lista e botões), para mantê-la dentro da janela
+const ALTURA_CAIXA = 430;
+
 export type TipoColuna = "texto" | "numero" | "data";
 
 /** Controle de filtros das colunas de um relatório: o valor atual, como alterar e de onde vêm os valores. */
@@ -53,7 +56,8 @@ function FiltroDaColuna({
 
   function abrir() {
     const r = botao.current?.getBoundingClientRect();
-    if (r) setPosicao({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 300)) });
+    // a caixa é fixa: sem este limite, cabeçalho perto do pé da janela abre a caixa fora da tela
+    if (r) setPosicao({ top: Math.max(8, Math.min(r.bottom + 4, window.innerHeight - ALTURA_CAIXA)), left: Math.max(8, Math.min(r.left, window.innerWidth - 300)) });
     setMarcados(filtro?.valores ? new Set(filtro.valores) : null);
     setDe(filtro?.de ?? "");
     setAte(filtro?.ate ?? "");
