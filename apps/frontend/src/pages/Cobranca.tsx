@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ClienteCobranca, Faixa, FiltrosCobranca, foiCancelada, mensagemErroSeta } from "../api";
-import { formatBRL, formatCpf, formatData } from "../format";
+import { formatBRL, formatCpf, formatData, semRS } from "../format";
 import BarraFiltrosCobranca, { FILTROS_COBRANCA_PADRAO } from "../components/BarraFiltrosCobranca";
 import UploadPlanilhaFaixa from "../components/UploadPlanilhaFaixa";
 import AvisosCategoria from "../components/AvisosCategoria";
@@ -34,7 +34,7 @@ function diasAtrasoLabel(dias: number): string {
 // A lista do filtro mostra o que a célula mostra
 const FORMATO_CLIENTE: Partial<Record<ColunaCliente, { formatar?: (v: string) => string; rotuloVazio?: string }>> = {
   cpfcnpj: { formatar: formatCpf },
-  valor_cobrar: { formatar: (v) => formatBRL(v) },
+  valor_cobrar: { formatar: (v) => semRS(formatBRL(v)) },
   dias_atraso: { formatar: (v) => diasAtrasoLabel(Number(v)) },
   faixa: { rotuloVazio: "—" },
 };

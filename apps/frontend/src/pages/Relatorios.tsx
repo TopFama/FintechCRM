@@ -20,7 +20,7 @@ import SelectJanelaPagamento from "../components/SelectJanelaPagamento";
 import { ControleFiltros, ThFiltravel, TipoColuna } from "../components/FiltroColuna";
 import { useRequisicaoUnica } from "../components/useRequisicaoUnica";
 import { FiltrosColuna, serializarFiltros, useFiltrosColuna, useOrdemFiltros } from "../filtrosColuna";
-import { formatBRL, formatCelular, formatCpf, formatData, formatDataHora, formatNumero, formatValorFila } from "../format";
+import { formatBRL, formatCelular, formatCpf, formatData, formatDataHora, formatNumero, formatValorFila, semRS } from "../format";
 import { IconAlert, IconCheckCircle, IconDownload, IconInbox } from "../icons";
 import { SortDirection, useSort } from "../sort";
 
@@ -60,12 +60,12 @@ const SEM_FILTRO = new Set(["created_at", "enviado_em", "entrou_em", "data_cobra
 const FILTRO_COLUNA: Record<string, { tipo?: TipoColuna; rotuloVazio?: string; formatar?: (v: string) => string }> = {
   celular: { formatar: formatCelular },
   cpf: { formatar: formatCpf },
-  valor: { tipo: "numero", formatar: (v) => formatValorFila(v) },
+  valor: { tipo: "numero", formatar: (v) => semRS(formatValorFila(v)) },
   nome: { rotuloVazio: "—" },
   faixa: { rotuloVazio: "—" },
   celular_normalizado: { rotuloVazio: "—" },
-  valor_cobrado: { tipo: "numero", formatar: (v) => formatBRL(v) },
-  valor_pago: { tipo: "numero", formatar: (v) => formatBRL(v) },
+  valor_cobrado: { tipo: "numero", formatar: (v) => semRS(formatBRL(v)) },
+  valor_pago: { tipo: "numero", formatar: (v) => semRS(formatBRL(v)) },
   quando: { tipo: "data" },
   loja: { rotuloVazio: "—" },
   campanha: { rotuloVazio: "Régua" },

@@ -20,6 +20,9 @@ export function formatValorFila(v: string | null | undefined): string {
   return v;
 }
 
+// Valor em reais sem o "R$" (lista do filtro: a coluna já diz que é valor)
+export const semRS = (s: string) => s.replace(/^R\$\s*/, "");
+
 export function formatBRL(v: string | number | null | undefined): string {
   if (v === null || v === undefined || v === "") return "—";
   const n = typeof v === "string" ? parseFloat(v) : v;

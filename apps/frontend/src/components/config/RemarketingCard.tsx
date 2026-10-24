@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import AvisosCategoria from "../AvisosCategoria";
 import EnviosFaixa from "../EnviosFaixa";
 import { api, Faixa, pareceAdmin, PreviaRemarketing, SegmentoRemarketing, SegmentoRemarketingIn } from "../../api";
-import { diaIsoBR, formatBRL, formatCelular, formatData, formatDataHora } from "../../format";
+import { diaIsoBR, formatBRL, semRS, formatCelular, formatData, formatDataHora } from "../../format";
 import { IconAlert, IconEye, IconRefresh } from "../../icons";
 import FiltroPeriodo, { Periodo } from "../FiltroPeriodo";
 import MultiSelect from "../MultiSelect";
@@ -416,7 +416,7 @@ function SegmentoForm({
                         rotulo={rotulo}
                         tipo={tipo}
                         rotuloVazio="—"
-                        formatar={chave === "valor_cobrar" ? (v) => formatBRL(v) : undefined}
+                        formatar={chave === "valor_cobrar" ? (v) => semRS(formatBRL(v)) : undefined}
                         controle={controleFiltros}
                         ordenacao={{
                           sortKey: previaSort.sortKey,
