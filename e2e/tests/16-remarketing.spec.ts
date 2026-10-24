@@ -57,8 +57,12 @@ test.describe.serial("Remarketing do Renegocie", { tag: ["@remarketing","@elegib
 
   test("prévia: filtro de coluna filtra a lista, mantém a tabela sem resultado e Limpar devolve", async ({ page }) => {
     await page.goto("/remarketing");
-    await acordo(page).getByLabel("Enviar remarketing para este segmento").check();
-    await acordo(page).getByRole("button", { name: "Salvar" }).click();
+    // o cenário anterior pode já ter ligado o segmento: só liga e salva se ainda estiver desligado
+    const ligar = acordo(page).getByLabel("Enviar remarketing para este segmento");
+    if (!(await ligar.isChecked())) {
+      await ligar.check();
+      await acordo(page).getByRole("button", { name: "Salvar" }).click();
+    }
     await expect(acordo(page).locator(".status-pill")).toHaveText("Ligado");
     await acordo(page).getByRole("button", { name: "Ver quem entraria hoje" }).click();
     await expect(acordo(page).locator("tbody tr")).toHaveCount(1);
