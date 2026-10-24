@@ -71,6 +71,7 @@ function paraPayload(f: CampanhaIn): CampanhaIn {
 }
 
 export default function CampanhaDetail() {
+  const ordemFiltros = useOrdemFiltros();
   const { id } = useParams<{ id: string }>();
   const nova = !id;
   const navigate = useNavigate();
@@ -348,7 +349,6 @@ export default function CampanhaDetail() {
     ["faixa", "Faixa de atraso", "texto"],
     ["valor_cobrar", "Valor a cobrar", "numero"],
   ];
-  const ordemFiltros = useOrdemFiltros();
   const controleFiltros: ControleFiltros = {
     ordem: ordemFiltros,
     filtros: filtrosColuna,
