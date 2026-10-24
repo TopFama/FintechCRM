@@ -24,11 +24,38 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
   test("ordenar a tabela por nome e por status", async ({ page }) => {
     const tabela = card(page, "Templates cadastrados");
     const nomes = () => tabela.locator("tbody tr td:first-child").allInnerTexts();
-    await tabela.getByRole("columnheader", { name: /Nome/ }).click();
+    await tabela.getByRole("columnheader", { name: /^Template/ }).click({ position: { x: 6, y: 6 } });
     const asc = await nomes();
     expect(asc).toEqual([...asc].sort((a, b) => a.localeCompare(b)));
-    await tabela.getByRole("columnheader", { name: /Nome/ }).click();
+    await tabela.getByRole("columnheader", { name: /^Template/ }).click({ position: { x: 6, y: 6 } });
     expect(await nomes()).toEqual([...asc].reverse());
+  });
+
+  test("filtro de coluna: pesquisa, marcar valores e limpar valem na tabela", async ({ page }) => {
+    const tabela = card(page, "Templates cadastrados");
+    const linhas = tabela.locator("tbody tr");
+    await expect(linhas).toHaveCount(3);
+    await tabela.getByRole("button", { name: "Filtrar Tipo", exact: true }).click();
+    const caixa = page.getByRole("dialog", { name: "Filtro de Tipo" });
+    await expect(caixa.getByLabel("Selecionar tudo")).toBeChecked();
+    await caixa.getByLabel("Pesquisar em Tipo").fill("zzzz-inexistente");
+    await expect(caixa.getByText("Nada encontrado")).toBeVisible();
+    await caixa.getByLabel("Pesquisar em Tipo").fill("");
+    await caixa.getByLabel("Selecionar tudo").uncheck();
+    await expect(caixa.getByRole("button", { name: "OK" })).toBeDisabled();
+    await caixa.getByLabel("Marketing", { exact: true }).check();
+    await caixa.getByRole("button", { name: "OK" }).click();
+    await expect(tabela.getByRole("button", { name: "Filtrar Tipo", exact: true })).toHaveClass(/ativo/);
+    await expect(linhas.filter({ hasText: "promo_reprovada" })).toHaveCount(1);
+    await expect(linhas.filter({ hasText: "cobranca_atraso" })).toHaveCount(0);
+    // a lista de outra coluna respeita os filtros ativos
+    await tabela.getByRole("button", { name: "Filtrar Status", exact: true }).click();
+    const status = page.getByRole("dialog", { name: "Filtro de Status" });
+    await expect(status.getByLabel("Reprovado", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await tabela.getByRole("button", { name: "Filtrar Tipo", exact: true }).click();
+    await caixa.getByRole("button", { name: "Limpar" }).click();
+    await expect(linhas).toHaveCount(3);
   });
 
   test("pré-visualizar e mapear variável para campo do cliente", async ({ page }) => {
