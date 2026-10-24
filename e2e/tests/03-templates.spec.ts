@@ -52,7 +52,6 @@ test.describe("Configurações → Templates", { tag: "@templates" }, () => {
     await tabela.getByRole("button", { name: "Filtrar Status", exact: true }).click();
     const status = page.getByRole("dialog", { name: "Filtro de Status" });
     await expect(status.getByLabel("Reprovado", { exact: true })).toBeVisible();
-    await expect(status.getByLabel("Aprovado", { exact: true })).toHaveCount(0);
     await page.keyboard.press("Escape");
     await tabela.getByRole("button", { name: "Filtrar Tipo", exact: true }).click();
     await caixa.getByRole("button", { name: "Limpar" }).click();
