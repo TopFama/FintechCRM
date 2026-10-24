@@ -15,6 +15,8 @@ name: Deploy (VPS)
 #   - deploy: traz a main, reconstrói os containers do CRM e confere a saúde.
 #     Só a partir da main. Se a VPS tiver commits que não
 #     estão no alvo, guarda numa branch vps-local-* e volta ao commit testado.
+# Depois de um deploy automático verde, apaga a branch do PR mergeado que gerou
+# o commit (job "apagar-branch"; falha na exclusão nunca derruba o deploy).
 # PR que mexe neste arquivo roda o "testar", para validar a conexão antes do merge.
 on:
   workflow_run:
@@ -213,3 +215,40 @@ jobs:
           else
             echo "::warning::WebSocket do Dashboard respondeu $codigo pelo proxy (esperado 101); a tela segue no polling de 30 s (README → Deploy)"
           fi
+
+  apagar-branch:
+    name: Apagar branch do PR
+    needs: vps
+    # só depois de deploy automático verde (needs sem sucesso pula este job)
+    if: github.event_name == 'workflow_run'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Apagar a branch do PR mergeado
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const sha = context.payload.workflow_run.head_sha;
+            try {
+              const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: sha });
+              // commit direto na main (ex.: só .md) não vem de PR: nada a apagar
+              const pr = prs.find(p => p.merged_at && p.base.ref === 'main');
+              if (!pr) return core.info(`Commit ${sha} sem PR mergeado na main`);
+              const ref = pr.head.ref;
+              if (pr.head.repo?.full_name !== `${owner}/${repo}` || ref === 'main') {
+                return core.info(`Branch ${ref} é de fork ou é a main: mantida`);
+              }
+              // commits novos na branch depois do merge: mantém para não perder trabalho
+              const { data: atual } = await github.rest.git.getRef({ owner, repo, ref: `heads/${ref}` });
+              if (atual.object.sha !== pr.head.sha) {
+                return core.info(`Branch ${ref} tem commits depois do merge: mantida`);
+              }
+              await github.rest.git.deleteRef({ owner, repo, ref: `heads/${ref}` });
+              core.info(`Branch ${ref} (PR #${pr.number}) apagada`);
+            } catch (e) {
+              // branch já apagada (404) ou sem permissão: avisa e não falha
+              core.warning(`Branch não apagada: ${e.message}`);
+            }
