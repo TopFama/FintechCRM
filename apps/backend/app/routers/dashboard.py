@@ -4,6 +4,7 @@ import logging
 import time
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Literal
 
 import redis
 import redis.asyncio as redis_async
@@ -315,18 +316,28 @@ def exportar_orcamento_por_dia(
     mes: int | None = Query(None, ge=1, le=12),
     de: date | None = Query(None),
     ate: date | None = Query(None),
+    categorias: list[Literal["utilitario", "marketing", "servico"]] = Query([]),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    """Gasto com WhatsApp por dia, WABA e número (mesmo período do card)."""
+    """Gasto com WhatsApp por dia, WABA e número (mesmo período do card). Com
+    categorias, conta só elas, como o filtro do gráfico; sem, o total da Meta."""
 
     inicio, fim = _periodo_orcamento(ano, mes, de, ate)
     custo = custo_whatsapp.custo_detalhado(db, inicio, fim)
     if custo.por_dia is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, custo.motivo or "Custo da Meta indisponível")
+    por_dia_numero = custo.por_dia_numero
+    if categorias:
+        por_dia_numero = {
+            (dia, waba, tel): [
+                sum(custo.por_categoria.get((dia, tel, c), [Decimal("0"), 0])[i] for c in categorias) for i in (0, 1)
+            ]
+            for (dia, waba, tel) in por_dia_numero
+        }
     linhas = [
         [dia, waba, telefone or "—", mensagens, float(gasto.quantize(Decimal("0.01")))]
-        for (dia, waba, telefone), (gasto, mensagens) in sorted(custo.por_dia_numero.items())
+        for (dia, waba, telefone), (gasto, mensagens) in sorted(por_dia_numero.items())
         if gasto or mensagens
     ]
     conteudo = build_xlsx(
