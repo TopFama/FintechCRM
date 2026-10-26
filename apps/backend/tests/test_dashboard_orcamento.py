@@ -8,6 +8,7 @@ Serviço), que o filtro do card soma no navegador.
 Executa com assert simples, sem pytest. Encerra imprimindo 'OK'.
 """
 
+import io
 import os
 import tempfile
 from datetime import date, timedelta
@@ -22,6 +23,7 @@ os.environ["ADMIN_PASSWORD"] = "senha-admin-teste-orcamento"
 os.environ["MEDIA_DIR"] = tempfile.mkdtemp()
 os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
 
+import openpyxl
 from fastapi.testclient import TestClient
 
 from app.database import SessionLocal
@@ -35,7 +37,7 @@ with TestClient(app):  # sobe o schema
 HOJE = date(2026, 10, 4)
 
 
-def orcamento(inicio: date, fim: date):
+def orcamento(inicio: date, fim: date, exportar=None):
     # R$ 1,00 por dia em todo o período, inclusive "dias futuros" (não podem entrar)
     por_dia = {inicio + timedelta(days=i): Decimal("1.00") for i in range((fim - inicio).days + 1)}
     # 2 mensagens por dia, em dois números da mesma WABA (somam no dia)
@@ -56,6 +58,10 @@ def orcamento(inicio: date, fim: date):
     ):
         db = SessionLocal()
         try:
+            if exportar is not None:
+                resp = dashboard.exportar_orcamento_por_dia(None, None, inicio, fim, exportar, db, None)
+                ws = openpyxl.load_workbook(io.BytesIO(resp.body)).active
+                return [row for row in ws.iter_rows(min_row=2, values_only=True)]
             return dashboard._orcamento(db, inicio, fim)
         finally:
             db.close()
@@ -94,5 +100,15 @@ assert numeros["5511999990001"].qtd_mensagens == 30
 o = orcamento(date(2026, 11, 1), date(2026, 11, 5))
 assert len(o.dias) == 5 and all(d.gasto_acumulado_brl is None for d in o.dias)
 assert o.valor_gasto_brl == Decimal("0.00")
+
+# Exportar por dia respeita o filtro de categorias do gráfico
+dia, fim = date(2026, 9, 1), date(2026, 9, 2)
+sem_filtro = orcamento(dia, fim, [])
+assert len(sem_filtro) == 4 and {(r[3], r[4]) for r in sem_filtro} == {(1, 0.5)}, sem_filtro
+so_marketing = orcamento(dia, fim, ["marketing"])
+assert [(r[2], r[3], r[4]) for r in so_marketing] == [("5511999990002", 1, 0.7)] * 2, so_marketing
+ambas = orcamento(dia, fim, ["marketing", "utilitario"])
+assert len(ambas) == 4 and sorted({r[4] for r in ambas}) == [0.3, 0.7], ambas
+assert orcamento(dia, fim, ["servico"]) == []
 
 print("OK")

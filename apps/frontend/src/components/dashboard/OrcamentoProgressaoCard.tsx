@@ -104,7 +104,7 @@ export default function OrcamentoProgressaoCard({ recarregar }: { recarregar: nu
     setExportando(true);
     setErroExportar(null);
     try {
-      await api.exportarOrcamentoPorDia(filtro);
+      await api.exportarOrcamentoPorDia({ ...filtro, categorias });
     } catch (e) {
       setErroExportar(e instanceof Error ? e.message : "Erro ao exportar");
     } finally {
