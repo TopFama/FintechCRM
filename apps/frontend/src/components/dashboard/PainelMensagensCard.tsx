@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, PainelMensagens, PainelTemplate, Template, WhatsappNumber } from "../../api";
+import { AgruparPainel, api, PainelLinha, PainelMensagens, Template, WhatsappNumber } from "../../api";
 import { formatBRL, formatNumero, formatPercentual } from "../../format";
 import { IconAlert } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
@@ -24,6 +24,26 @@ const TIPOS_GRATUITOS: [string, string][] = [
   ["FREE_ENTRY_POINT", "Ponto de entrada gratuito"],
 ];
 
+// Explicação de cada quadro e linha (o "i" do analytics da Meta); com template ou campanha
+// marcado os quadros vêm da fila e a explicação diz isso
+const DICAS = {
+  todas: "Mensagens do WhatsApp do período: as que você enviou, as que chegaram ao cliente e as que ele enviou para você.",
+  enviadas: "Mensagens que sua empresa enviou, entregues ou não, de template ou de atendimento.",
+  entregues: "Mensagens enviadas que chegaram ao aparelho do cliente.",
+  recebidas: "Mensagens que os clientes enviaram para os seus números.",
+  entreguesCategoria: "Mensagens entregues no período por categoria de cobrança da Meta, pagas e gratuitas.",
+  gratuitas: "Mensagens entregues que a Meta não cobra: dentro da janela de atendimento ao cliente ou de conversas que começam em pontos de entrada gratuitos.",
+  atendimento: "Mensagens dentro da janela de atendimento ao cliente de 24 horas, aberta quando o cliente escreve para você, que a Meta não cobra.",
+  pontoEntrada:
+    "Mensagens entregues gratuitas porque a conversa começa em um ponto de entrada gratuito, como anúncios de clique para o WhatsApp ou botões da Página do Facebook, e você responde em até 24 horas. A janela pode ser prorrogada por até 7 dias.",
+  pagas: "Mensagens entregues que a Meta cobra, por categoria. A cobrança é por mensagem entregue.",
+  pagasFila: "Envios da fila do filtro escolhido que a Meta cobra, por categoria do template. Não são as entregues: a Meta não separa por template nem campanha.",
+  cobranca: "Valor aproximado cobrado pela Meta no período, em reais (dólar pela cotação do dia). Pode diferir da fatura por pequenas variações no processamento.",
+  cobrancaFila: "Estimativa: envios do filtro escolhido × tarifa unitária da categoria (custo ÷ mensagens cobradas da mesma WABA no período).",
+};
+
+const ROTULO_GRUPO: Record<AgruparPainel, string> = { template: "Template", faixa: "Faixa de atraso", campanha: "Campanha" };
+
 // Linhas fixas do quadro (zeradas também) mais o que a Meta mandar fora da lista
 function linhas<T>(fixas: [string, string][], dados: Record<string, T>): [string, string, T | undefined][] {
   const extras = Object.keys(dados).filter((k) => !fixas.some(([c]) => c === k));
@@ -32,11 +52,14 @@ function linhas<T>(fixas: [string, string][], dados: Record<string, T>): [string
   );
 }
 
-function Quadro({ titulo, total, children }: { titulo: string; total: string; children: React.ReactNode }) {
+function Quadro({ titulo, total, dica, children }: { titulo: string; total: string; dica?: string; children: React.ReactNode }) {
   return (
     <div className="painel-quadro">
       <div className="painel-quadro-topo">
-        <strong>{titulo}</strong>
+        <strong>
+          {titulo}
+          {dica && <DicaIndicador titulo={titulo} texto={dica} />}
+        </strong>
         <strong>{total}</strong>
       </div>
       {children}
@@ -44,10 +67,13 @@ function Quadro({ titulo, total, children }: { titulo: string; total: string; ch
   );
 }
 
-function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
+function Linha({ rotulo, valor, dica }: { rotulo: string; valor: string; dica?: string }) {
   return (
     <div className="painel-linha">
-      <span>{rotulo}</span>
+      <span>
+        {rotulo}
+        {dica && <DicaIndicador titulo={rotulo} texto={dica} />}
+      </span>
       <span>{valor}</span>
     </div>
   );
@@ -56,16 +82,40 @@ function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
 type Coluna = {
   chave: string;
   rotulo: string;
-  dica?: { texto: string; formula: string };
-  valor: (t: PainelTemplate) => string | number | null;
-  formato: (t: PainelTemplate) => string;
+  dica?: { texto: string; formula?: string };
+  valor: (t: PainelLinha) => string | number | null;
+  formato: (t: PainelLinha) => string;
 };
 
 const COLUNAS: Coluna[] = [
   { chave: "enviados", rotulo: "Enviados", valor: (t) => t.enviados, formato: (t) => formatNumero(t.enviados) },
-  { chave: "entregues", rotulo: "Entregues", valor: (t) => t.entregues, formato: (t) => formatNumero(t.entregues) },
-  { chave: "lidas", rotulo: "Lidas", valor: (t) => t.lidas, formato: (t) => formatNumero(t.lidas) },
-  { chave: "cliques", rotulo: "Cliques", valor: (t) => t.cliques, formato: (t) => formatNumero(t.cliques) },
+  {
+    chave: "entregues",
+    rotulo: "Entregues",
+    dica: {
+      texto:
+        "Por template, vem da Meta. Por faixa de atraso e campanha, vem dos avisos de entrega do Chatwoot, só de envios feitos depois desse recurso entrar.",
+    },
+    valor: (t) => t.entregues,
+    formato: (t) => formatNumero(t.entregues),
+  },
+  {
+    chave: "lidas",
+    rotulo: "Lidas",
+    dica: {
+      texto:
+        "Por template, vem da Meta. Por faixa de atraso e campanha, vem dos avisos de leitura do Chatwoot, só de envios feitos depois desse recurso entrar. Só conta quem está com o recibo de leitura ligado.",
+    },
+    valor: (t) => t.lidas,
+    formato: (t) => formatNumero(t.lidas),
+  },
+  {
+    chave: "cliques",
+    rotulo: "Cliques",
+    dica: { texto: "Cliques em botão só existem por template: a Meta não separa por faixa de atraso nem por campanha." },
+    valor: (t) => t.cliques,
+    formato: (t) => formatNumero(t.cliques),
+  },
   {
     chave: "taxa_visualizacao",
     rotulo: "% Visualização",
@@ -120,6 +170,7 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
   const [wabas, setWabas] = useState<string[]>([]);
   const [templates, setTemplates] = useState<string[]>([]);
   const [campanha, setCampanha] = useState("");
+  const [agrupar, setAgrupar] = useState<AgruparPainel>("template");
   const [numeros, setNumeros] = useState<WhatsappNumber[]>([]);
   const [modelos, setModelos] = useState<Template[]>([]);
   const [dados, setDados] = useState<PainelMensagens | null>(null);
@@ -137,13 +188,13 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
     setDados(null);
     setErro(null);
     api
-      .getPainelMensagens({ de: periodo.de, ate: periodo.ate, telefone: telefones, waba: wabas, template: templates, campanha })
+      .getPainelMensagens({ de: periodo.de, ate: periodo.ate, telefone: telefones, waba: wabas, template: templates, campanha, agrupar })
       .then((d) => atual && setDados(d))
       .catch((e) => atual && setErro(e.message));
     return () => {
       atual = false;
     };
-  }, [periodo.de, periodo.ate, telefones, wabas, templates, campanha, recarregar]);
+  }, [periodo.de, periodo.ate, telefones, wabas, templates, campanha, agrupar, recarregar]);
 
   const opcoesWaba = [...new Set(numeros.map((n) => n.waba_id))].map((w) => ({ value: w, label: w }));
   const opcoesTelefone = numeros
@@ -182,6 +233,14 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
         />
         <MultiSelect id="painel-template" label="Template" options={opcoesTemplate} value={templates} onChange={setTemplates} />
         <SelectCampanha id="painel-campanha" value={campanha} onChange={setCampanha} enviadoDe={periodo.de} enviadoAte={periodo.ate} />
+        <div className="field" style={{ flex: "1 1 200px" }}>
+          <label htmlFor="painel-agrupar">Agrupar por</label>
+          <select id="painel-agrupar" value={agrupar} onChange={(e) => setAgrupar(e.target.value as AgruparPainel)}>
+            <option value="template">Template</option>
+            <option value="faixa">Faixa de atraso</option>
+            <option value="campanha">Campanha</option>
+          </select>
+        </div>
       </div>
 
       {erro ? (
@@ -205,39 +264,48 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
           )}
           <div className="painel-quadros">
             {dados.todas && (
-              <Quadro titulo="Todas as mensagens" total="">
-                <Linha rotulo="Mensagens enviadas" valor={formatNumero(dados.todas.enviadas)} />
+              <Quadro titulo="Todas as mensagens" total="" dica={DICAS.todas}>
+                <Linha rotulo="Mensagens enviadas" valor={formatNumero(dados.todas.enviadas)} dica={DICAS.enviadas} />
                 {dados.origem === "meta" && (
                   <>
-                    <Linha rotulo="Mensagens entregues" valor={formatNumero(dados.todas.entregues)} />
-                    <Linha rotulo="Mensagens recebidas" valor={formatNumero(dados.todas.recebidas)} />
+                    <Linha rotulo="Mensagens entregues" valor={formatNumero(dados.todas.entregues)} dica={DICAS.entregues} />
+                    <Linha rotulo="Mensagens recebidas" valor={formatNumero(dados.todas.recebidas)} dica={DICAS.recebidas} />
                   </>
                 )}
               </Quadro>
             )}
             {dados.entregues && (
-              <Quadro titulo="Mensagens entregues" total={formatNumero(dados.entregues.total)}>
+              <Quadro titulo="Mensagens entregues" total={formatNumero(dados.entregues.total)} dica={DICAS.entreguesCategoria}>
                 {linhas(CATEGORIAS, dados.entregues.por_categoria).map(([c, nome, v]) => (
                   <Linha key={c} rotulo={nome} valor={formatNumero(v ?? 0)} />
                 ))}
               </Quadro>
             )}
             {dados.gratuitas && (
-              <Quadro titulo="Mensagens gratuitas entregues" total={formatNumero(dados.gratuitas.total)}>
+              <Quadro titulo="Mensagens gratuitas entregues" total={formatNumero(dados.gratuitas.total)} dica={DICAS.gratuitas}>
                 {linhas(TIPOS_GRATUITOS, dados.gratuitas.por_tipo).map(([c, nome, v]) => (
-                  <Linha key={c} rotulo={nome} valor={formatNumero(v ?? 0)} />
+                  <Linha
+                    key={c}
+                    rotulo={nome}
+                    valor={formatNumero(v ?? 0)}
+                    dica={c === "FREE_CUSTOMER_SERVICE" ? DICAS.atendimento : c === "FREE_ENTRY_POINT" ? DICAS.pontoEntrada : undefined}
+                  />
                 ))}
               </Quadro>
             )}
             {dados.pagas && (
-              <Quadro titulo={dados.origem === "meta" ? "Mensagens pagas entregues" : "Mensagens pagas"} total={formatNumero(dados.pagas.total)}>
+              <Quadro
+                titulo={dados.origem === "meta" ? "Mensagens pagas entregues" : "Mensagens pagas"}
+                total={formatNumero(dados.pagas.total)}
+                dica={dados.origem === "meta" ? DICAS.pagas : DICAS.pagasFila}
+              >
                 {linhas(CATEGORIAS, dados.pagas.por_categoria).map(([c, nome, v]) => (
                   <Linha key={c} rotulo={nome} valor={formatNumero(v ?? 0)} />
                 ))}
               </Quadro>
             )}
             {dados.cobranca && (
-              <Quadro titulo="Cobrança total aproximada" total={formatBRL(dados.cobranca.total_brl)}>
+              <Quadro titulo="Cobrança total aproximada" total={formatBRL(dados.cobranca.total_brl)} dica={dados.origem === "meta" ? DICAS.cobranca : DICAS.cobrancaFila}>
                 {linhas(CATEGORIAS, dados.cobranca.por_categoria).map(([c, nome, v]) => (
                   <Linha key={c} rotulo={nome} valor={formatBRL(v ?? 0)} />
                 ))}
@@ -245,8 +313,8 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
             )}
           </div>
 
-          {dados.por_template.length > 0 && (
-            <TabelaAjustavel id="painel-por-template" rotulo="Por template" style={{ marginTop: 16 }}>
+          {dados.linhas.length > 0 && (
+            <TabelaAjustavel id="painel-por-template" rotulo={`Por ${ROTULO_GRUPO[agrupar].toLowerCase()}`} style={{ marginTop: 16 }}>
               <table>
                 <thead>
                   <tr>
@@ -255,7 +323,7 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
                       dir={ordenacao.sortDir}
                       onSort={() => ordenacao.toggleSort("nome")}
                     >
-                      Template
+                      {ROTULO_GRUPO[agrupar]}
                     </SortableTh>
                     {COLUNAS.map((c) => (
                       <SortableTh
@@ -272,11 +340,11 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
                 </thead>
                 <tbody>
                   {ordenarPor(
-                    dados.por_template,
+                    dados.linhas,
                     ordenacao.sortKey === "nome" ? (t) => t.nome : coluna ? coluna.valor : null,
                     ordenacao.sortDir
                   ).map((t) => (
-                    <tr key={t.template_id}>
+                    <tr key={t.chave}>
                       <td className="cell-strong">{t.nome}</td>
                       {COLUNAS.map((c) => (
                         <td key={c.chave}>{c.formato(t)}</td>

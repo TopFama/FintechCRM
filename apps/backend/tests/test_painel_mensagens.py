@@ -56,16 +56,19 @@ mkt = models.Template(
     waba_id="waba1", meta_template_id="222",
 )
 faixa = models.Faixa(name="1 a 3 dias")
-db.add_all([n1, n2, util, mkt, faixa])
+campanha = models.Faixa(name="Campanha: Black", tipo=models.TIPO_CAMPANHA)
+db.add_all([n1, n2, util, mkt, faixa, campanha])
 db.flush()
 
 
-def item(codigo, numero, template):
+def item(codigo, numero, template, f=None, atraso=None, entregue=False, lida=False):
     db.add(
         models.QueueItem(
-            faixa_id=faixa.id, codigo_cliente=codigo, celular="5511999990000", celular_original="11999990000",
+            faixa_id=(f or faixa).id, codigo_cliente=codigo, celular="5511999990000", celular_original="11999990000",
             status=models.QueueStatus.sent, sent_at=datetime(2026, 10, 20, 15, 0),
-            whatsapp_number_id=numero.id, template_id=template.id,
+            whatsapp_number_id=numero.id, template_id=template.id, faixa_atraso=atraso,
+            entregue_em=datetime(2026, 10, 20, 15, 1) if entregue or lida else None,
+            lida_em=datetime(2026, 10, 20, 16, 0) if lida else None,
         )
     )
 
@@ -128,7 +131,7 @@ assert p.cobranca.total_brl == Decimal("12.20") and p.cobranca.por_categoria["UT
 assert ("mensagens", "waba1", (0, 2), ()) in CHAMADAS and ("mensagens", "waba1", (100,), ()) in CHAMADAS
 
 # Por template: entregues/lidas/cliques da Meta, conversão pelos pagamentos, custo = envios × tarifa
-linhas = {t.template_id: t for t in p.por_template}
+linhas = {t.chave: t for t in p.linhas}
 u = linhas[util_id]
 assert (u.enviados, u.cobrados, u.pagaram) == (5, 4, 1), u
 assert (u.entregues, u.lidas, u.cliques) == (80, 40, 8), u
@@ -144,13 +147,13 @@ assert any("Sem tarifa" in a and "MARKETING" in a for a in p.avisos), p.avisos
 CHAMADAS.clear()
 p = painel(telefones=[n1_id])
 assert ("mensagens", "waba1", (0, 2), ("551140000001",)) in CHAMADAS, CHAMADAS
-assert {t.template_id: t.enviados for t in p.por_template} == {util_id: 4, mkt_id: 2}, p.por_template
+assert {t.chave: t.enviados for t in p.linhas} == {util_id: 4, mkt_id: 2}, p.linhas
 assert p.entregues.total == 1640  # só o número 1 tem custo no Pricing Analytics do teste
 assert any("não filtra por telefone" in a for a in p.avisos), p.avisos
 
 # Número que não existe no filtro: nada entra
 p = painel(wabas=["outra"])
-assert p.entregues.total == 0 and p.por_template == [], p
+assert p.entregues.total == 0 and p.linhas == [], p
 
 # Template marcado: quadros da fila, custo = quantidade × tarifa da categoria
 p = painel(templates=[util_id])
@@ -158,7 +161,7 @@ assert p.origem == "fila" and p.entregues is None and p.gratuitas is None
 assert (p.todas.enviadas, p.todas.entregues, p.todas.recebidas) == (5, None, None), p.todas
 assert p.pagas.total == 5 and p.pagas.por_categoria == {"UTILITY": 5}, p.pagas
 assert p.cobranca.total_brl == Decimal("0.03") and p.cobranca.por_categoria == {"UTILITY": Decimal("0.03")}, p.cobranca
-assert [t.template_id for t in p.por_template] == [util_id]
+assert [t.chave for t in p.linhas] == [util_id]
 
 # Template sem tarifa: total da cobrança "—"
 p = painel(templates=[mkt_id])
@@ -169,7 +172,35 @@ CUSTO_FORA = CustoWhatsapp(None, "Falha ao consultar a Meta: fora")
 painel_mensagens.custo_whatsapp.custo_detalhado = lambda db_, de, ate: CUSTO_FORA
 p = painel()
 assert p.todas is None and p.entregues is None and p.cobranca is None, p
-assert any("fora" in a for a in p.avisos) and len(p.por_template) == 2, p.avisos
+assert any("fora" in a for a in p.avisos) and len(p.linhas) == 2, p.avisos
+
+# Agrupar por campanha/faixa de atraso: a tabela sai da fila (entregue/lida do Chatwoot), sem Meta por template
+painel_mensagens.custo_whatsapp.custo_detalhado = lambda db_, de, ate: CUSTO
+item("c6", n1, util, f=campanha, atraso="4 a 7 dias", lida=True)
+item("c7", n1, util, f=campanha, atraso="1 a 3 dias", entregue=True)
+db.commit()
+campanha_id = campanha.id
+CHAMADAS.clear()
+p = painel(agrupar="campanha")
+assert not any(c[0] == "templates" for c in CHAMADAS), CHAMADAS
+por = {l.chave: l for l in p.linhas}
+assert set(por) == {"regua", campanha_id}, por.keys()
+assert por["regua"].nome == "Régua de cobrança" and por["regua"].enviados == 7 and por["regua"].custo_brl is None, por["regua"]
+c = por[campanha_id]
+assert c.nome == "Campanha: Black" and (c.enviados, c.cobrados, c.pagaram) == (2, 2, 0), c
+assert (c.entregues, c.lidas, c.cliques) == (2, 1, None), c
+assert c.taxa_visualizacao == Decimal("0.5") and c.taxa_cliques is None and c.categoria == "", c
+assert c.custo_brl == Decimal("0.01"), c.custo_brl  # 2 × (10,20 ÷ 1500)
+
+p = painel(agrupar="faixa")
+por = {l.nome: l for l in p.linhas}
+assert set(por) == {"1 a 3 dias", "4 a 7 dias"}, por.keys()  # faixa de atraso do cliente: a da campanha, senão a da régua
+assert por["1 a 3 dias"].enviados == 8 and por["4 a 7 dias"].enviados == 1, por
+assert por["4 a 7 dias"].lidas == 1 and por["1 a 3 dias"].entregues == 1, por
+
+# Filtro de template vale em qualquer agrupamento
+p = painel(agrupar="campanha", templates=[mkt_id])
+assert [l.chave for l in p.linhas] == ["regua"] and p.linhas[0].enviados == 2, p.linhas
 
 # Endpoint exige o período e rejeita de > ate
 with TestClient(app) as client:
@@ -177,6 +208,7 @@ with TestClient(app) as client:
     assert login.status_code == 200, login.text
     cabecalho = {"Authorization": f"Bearer {login.json()['access_token']}"}
     assert client.get("/dashboard/painel-mensagens", headers=cabecalho).status_code == 422
+    assert client.get("/dashboard/painel-mensagens?de=2026-10-20&ate=2026-10-20&agrupar=x", headers=cabecalho).status_code == 422
     resposta = client.get("/dashboard/painel-mensagens?de=2026-10-21&ate=2026-10-20", headers=cabecalho)
     assert resposta.status_code == 400, resposta.text
 

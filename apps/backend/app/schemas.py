@@ -902,12 +902,13 @@ class PainelCobrancaOut(BaseModel):
     por_categoria: dict[str, Decimal] = {}
 
 
-class PainelTemplateOut(BaseModel):
-    template_id: str
+class PainelLinhaOut(BaseModel):
+    chave: str  # id do template, nome da faixa de atraso ou id da campanha ("regua" = régua)
     nome: str
-    categoria: str
+    categoria: str  # só no agrupamento por template
     enviados: int  # envios da fila no período
-    # da Meta (template_analytics): None sem insights ativados ou sem leitura da WABA
+    # por template, da Meta (template_analytics): None sem insights ativados ou sem leitura da
+    # WABA. Por faixa e campanha, do Chatwoot (fila); cliques sempre None fora de template
     entregues: int | None = None
     lidas: int | None = None
     cliques: int | None = None
@@ -928,7 +929,7 @@ class PainelMensagensOut(BaseModel):
     gratuitas: PainelGratuitasOut | None = None
     pagas: PainelQuantidadesOut | None = None
     cobranca: PainelCobrancaOut | None = None
-    por_template: list[PainelTemplateOut] = []
+    linhas: list[PainelLinhaOut] = []
     avisos: list[str] = []
 
 

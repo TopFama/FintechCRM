@@ -15,7 +15,7 @@ let aberta: { dono: object; fechar: () => void } | null = null;
  * tocando, mostra o que ele significa e a fórmula. O balão vai num portal no
  * <body> com `fixed`: fora do cabeçalho (não entra no nome da coluna para o
  * leitor de tela) e fora do .table-wrap, cujo overflow o cortaria. */
-export default function DicaIndicador({ titulo, texto, formula }: { titulo: string; texto: string; formula: string }) {
+export default function DicaIndicador({ titulo, texto, formula }: { titulo: string; texto: string; formula?: string }) {
   const id = useId();
   const botaoRef = useRef<HTMLButtonElement>(null);
   const balaoRef = useRef<HTMLSpanElement>(null);
@@ -160,7 +160,7 @@ export default function DicaIndicador({ titulo, texto, formula }: { titulo: stri
           }}
         >
           <span className="dica-texto">{texto}</span>
-          <span className="dica-formula">{formula}</span>
+          {formula && <span className="dica-formula">{formula}</span>}
         </span>,
         document.body
       )}

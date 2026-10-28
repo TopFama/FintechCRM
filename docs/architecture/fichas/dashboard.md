@@ -59,14 +59,14 @@ fila" chama `fila_automatica.descartar_pendentes` (Envios).
 - **Camada:** aplicação
 - **Responsabilidade:** calcular o custo do WhatsApp em reais. A Meta devolve o custo na moeda de cobrança de cada WABA (campo `currency`, lido junto com o Pricing Analytics): USD é convertido pela cotação de `cambio`, BRL entra como veio e outra moeda vira aviso da WABA, sem entrar no total. `gasto_diario_brl` guarda o gasto por dia 10 min no Redis (falha não é guardada; sem Redis vai à Meta); `custo_por_envio` divide o gasto de cada dia pelas mensagens enviadas pela fila no dia, a única regra de rateio do ROAS (Dashboard e Efetividade).
 - **Violações encontradas:**
-  - [x] Acesso a dados de outro domínio: `_tokens_da_waba` decifra tokens da Meta direto das tabelas, repetindo parte de `meta_client.token_da_waba` (a diferença é que aqui tenta todos os tokens ativos). `painel_mensagens` reaproveita essa função em vez de criar outra.
+  - [x] Acesso a dados de outro domínio: `tokens_da_waba` decifra tokens da Meta direto das tabelas, repetindo parte de `meta_client.token_da_waba` (a diferença é que aqui tenta todos os tokens ativos). `painel_mensagens` reaproveita essa função em vez de criar outra.
 - **Churn:** 5 | **Linhas:** 186
 - **Ação sugerida:** `meta_client.tokens_da_waba(db, waba_id)` devolvendo todos; baixa prioridade.
 
 ### `apps/backend/app/services/painel_mensagens.py`
 - **Domínio:** Dashboard/Relatórios
 - **Camada:** aplicação
-- **Responsabilidade:** montar o painel de mensagens do Dashboard (quadros do analytics da Meta em R$ e métricas por template).
+- **Responsabilidade:** montar o painel de mensagens do Dashboard (quadros do analytics da Meta em R$ e a tabela por template, faixa de atraso ou campanha; no agrupamento por faixa e campanha, entregues e lidas vêm de `QueueItem.entregue_em`/`lida_em`, gravados pelo webhook do Chatwoot em `routers/chatwoot`).
 - **Depende de:** `cache`, `consultas_fila` (período e filtro de campanha da fila), `meta_client` (`message_analytics`, `template_analytics`), `models`, `seta_client` (só a exceção), `services/custo_whatsapp` (`custo_detalhado`, que agora também devolve `por_tipo_categoria`: custo e volume por WABA, número, categoria e tipo; `tokens_da_waba`, `consultar_waba` e `tarifas_unitarias`), `services/pagamentos_service` (conversão: mesma lista e janela do card de pagamentos). A tarifa unitária por WABA e categoria (custo ÷ mensagens cobradas, `custo_whatsapp.tarifas_unitarias`) vem do mesmo Pricing Analytics e é a única regra de custo estimado por template/campanha. O template de cada envio é `QueueItem.template_id`, gravado em `dispatch_service.enviar_item`; o histórico anterior não foi preenchido, então filtros por template só contam envios feitos depois dessa mudança.
 - **É usado por:** `routers/dashboard`.
 - **Violações encontradas:** nenhuma. Teste: `tests/test_painel_mensagens.py`.

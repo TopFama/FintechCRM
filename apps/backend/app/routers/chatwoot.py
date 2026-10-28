@@ -3,6 +3,8 @@ import hashlib
 import hmac
 import json
 import logging
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -170,6 +172,45 @@ def _processar_webhook_chatwoot(payload: dict) -> dict:
         db.close()
 
 
+def _registrar_recibo(payload: dict, lida: bool) -> dict:
+    """Grava no item da fila quando a mensagem chegou (delivered) ou foi lida
+    (read; leitura implica entrega). O item é achado pelo id exato guardado no
+    envio, com o prefixo que a sincronização de telefones inválidos troca por
+    "chatwoot-ok:" quando vê a mensagem entregue. Não regride nem regrava."""
+    msg_id = payload.get("id")
+    conversa = (payload.get("conversation") or {}).get("id")
+    identificadores = [str(msg_id)]
+    if conversa is not None:
+        identificador = telefones_invalidos.identificador_chatwoot(conversa, msg_id)
+        identificadores += [identificador, identificador.replace("chatwoot:", "chatwoot-ok:", 1)]
+
+    db = SessionLocal()
+    try:
+        item = (
+            db.query(models.QueueItem)
+            .filter(
+                models.QueueItem.whatsapp_message_id.in_(identificadores),
+                models.QueueItem.status == models.QueueStatus.sent,
+            )
+            .first()
+        )
+        if not item:
+            return {"status": "ok", "action": "item_not_found"}
+        agora = datetime.utcnow()
+        if item.entregue_em is None:
+            item.entregue_em = agora
+        if lida and item.lida_em is None:
+            item.lida_em = agora
+        db.commit()
+        return {"status": "ok", "action": "receipt_saved", "item_id": item.id}
+    except Exception:
+        db.rollback()
+        logger.exception("Falha ao gravar recibo do Chatwoot: msg_id=%s", msg_id)
+        raise
+    finally:
+        db.close()
+
+
 @router.post("/webhook")
 async def webhook_chatwoot(request: Request):
     """Endpoint receptor de eventos do Chatwoot (message_updated e message_created).
@@ -210,8 +251,10 @@ async def webhook_chatwoot(request: Request):
     content_attributes = payload.get("content_attributes") or {}
     external_error = content_attributes.get("external_error")
 
-    # Só processamos se o status for failed ou se houver erro externo registrado
-    if msg_status in ("delivered", "read", 1, 2) or (msg_status != "failed" and not external_error):
+    # Entregue e lida só guardam o horário; o resto do fluxo trata falha
+    if msg_status in ("delivered", "read", 1, 2):
+        return await asyncio.to_thread(_registrar_recibo, payload, msg_status in ("read", 2))
+    if msg_status != "failed" and not external_error:
         return {"status": "ok", "action": "status_not_failed"}
 
     import time

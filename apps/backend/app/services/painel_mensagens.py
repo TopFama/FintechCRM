@@ -18,7 +18,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, literal_column, select
 from sqlalchemy.orm import Session
 
 from .. import cache, consultas_fila, models, seta_client
@@ -166,28 +166,55 @@ def _analytics_de_templates(
     return dados, avisos
 
 
+def _grupo(agrupar: str):
+    """(chave, nome) do agrupamento escolhido sobre os envios, que pedem o join
+    com Faixa: a de atraso do cliente (a mesma do "Por faixa" do Dashboard), a
+    campanha (a faixa própria dela; a régua entra junto, como "Régua de cobrança")
+    ou, no padrão, o template."""
+
+    if agrupar == "faixa":
+        faixa = consultas_fila.nome_faixa()  # um objeto só: o mesmo parâmetro no SELECT e no GROUP BY
+        return faixa, faixa
+    if agrupar == "campanha":
+        regua = models.Faixa.tipo == models.TIPO_REGUA
+        return (
+            case((regua, "regua"), else_=models.Faixa.id),
+            case((regua, "Régua de cobrança"), else_=models.Faixa.name),
+        )
+    return models.QueueItem.template_id, literal_column("''")
+
+
 def _envios_da_fila(
-    db: Session, de: date, ate: date, numeros: list[str] | None, templates: list[str], campanha: str
+    db: Session, de: date, ate: date, numeros: list[str] | None, templates: list[str], campanha: str, agrupar: str
 ) -> list[dict]:
-    """Envios (sent) do período por template e WABA, com os clientes cobrados.
-    Mesmos filtros da fila: período em dias de Brasília e campanha pela faixa dela."""
+    """Envios (sent) do período por grupo, template e WABA, com os clientes cobrados
+    e quantos já têm entrega e leitura avisadas pelo Chatwoot. Mesmos filtros da
+    fila: período em dias de Brasília e campanha pela faixa dela."""
 
     ini, fim = consultas_fila.limites_utc(de, ate)
+    grupo, nome = _grupo(agrupar)
     q = (
         select(
+            grupo.label("grupo"),
+            nome.label("nome"),
             models.QueueItem.template_id,
             models.WhatsappNumber.waba_id,
             models.QueueItem.codigo_cliente,
             func.count().label("envios"),
+            func.count(models.QueueItem.entregue_em).label("entregues"),
+            func.count(models.QueueItem.lida_em).label("lidas"),
         )
         .select_from(models.QueueItem)
+        .join(models.Faixa, models.Faixa.id == models.QueueItem.faixa_id)
         .join(models.WhatsappNumber, models.QueueItem.whatsapp_number_id == models.WhatsappNumber.id, isouter=True)
         .where(
             models.QueueItem.status == models.QueueStatus.sent,
             consultas_fila.condicao_periodo(models.QueueItem.sent_at, ini, fim),
         )
-        .group_by(models.QueueItem.template_id, models.WhatsappNumber.waba_id, models.QueueItem.codigo_cliente)
+        .group_by(grupo, models.QueueItem.template_id, models.WhatsappNumber.waba_id, models.QueueItem.codigo_cliente)
     )
+    if agrupar != "template":  # constante no GROUP BY o Postgres recusa
+        q = q.group_by(nome)
     if numeros is not None:
         q = q.where(models.QueueItem.whatsapp_number_id.in_(numeros))
     if templates:
@@ -195,6 +222,21 @@ def _envios_da_fila(
     if campanha:
         q = q.where(consultas_fila.filtro_campanha(db, models.QueueItem.faixa_id, campanha))
     return [dict(l._mapping) for l in db.execute(q)]
+
+
+def _custo(linha: dict, modelos: dict, tarifas: dict, sem_tarifa: set[str]) -> Decimal | None:
+    """Custo estimado do grupo: envios de cada WABA e template × tarifa unitária
+    da categoria do template na WABA. None se faltar tarifa em algum."""
+
+    total = Decimal("0")
+    for (waba, tid), qtd in linha["por_waba"].items():
+        categoria = modelos[tid].category if tid in modelos else ""
+        tarifa = tarifas.get((waba, categoria))
+        if tarifa is None:
+            sem_tarifa.add(f"{categoria or 'sem categoria'} na WABA {waba or 'desconhecida'}")
+            return None
+        total += tarifa * qtd
+    return total
 
 
 def _conversao(db: Session, de: date, ate: date, campanha: str) -> tuple[set[str] | None, str | None]:
@@ -222,6 +264,7 @@ def montar(
     wabas: list[str],
     templates: list[str],
     campanha: str,
+    agrupar: str = "template",
 ) -> dict:
     """Dados do painel (schemas.PainelMensagensOut). Levanta o que o cache
     levanta; falha da Meta ou do SETA vira aviso e deixa "—" no que depende dela."""
@@ -245,38 +288,43 @@ def montar(
     if not meta_ok and custo.motivo:
         avisos.append(custo.motivo)
 
-    envios = _envios_da_fila(db, de, ate, ids_numero, templates, campanha)
+    envios = _envios_da_fila(db, de, ate, ids_numero, templates, campanha, agrupar)
+    # por_template alimenta os quadros e as métricas da Meta; a tabela mostra por_grupo
+    # (o mesmo dicionário quando se agrupa por template)
     por_template: dict[str, dict] = {}
+    por_grupo: dict[str, dict] = por_template if agrupar == "template" else {}
     for e in envios:
         if not e["template_id"]:
             continue
-        linha = por_template.setdefault(e["template_id"], {"enviados": 0, "clientes": set(), "por_waba": {}})
-        linha["enviados"] += e["envios"]
-        linha["clientes"].add(e["codigo_cliente"])
         waba = e["waba_id"] or ""
-        linha["por_waba"][waba] = linha["por_waba"].get(waba, 0) + e["envios"]
+        destinos = [(por_template, e["template_id"])]
+        if por_grupo is not por_template:
+            destinos.append((por_grupo, e["grupo"]))
+        for destino, chave in destinos:
+            linha = destino.setdefault(
+                chave, {"nome": e["nome"], "enviados": 0, "clientes": set(), "entregues": 0, "lidas": 0, "por_waba": {}}
+            )
+            linha["enviados"] += e["envios"]
+            linha["clientes"].add(e["codigo_cliente"])
+            linha["entregues"] += e["entregues"]
+            linha["lidas"] += e["lidas"]
+            ponto = (waba, e["template_id"])
+            linha["por_waba"][ponto] = linha["por_waba"].get(ponto, 0) + e["envios"]
     modelos = {
         t.id: t for t in db.query(models.Template).filter(models.Template.id.in_(list(por_template)))
     } if por_template else {}
     tarifas = custo_whatsapp.tarifas_unitarias(custo) if meta_ok else {}
 
-    # Custo estimado de cada template: envios de cada WABA × tarifa unitária da categoria dela
     sem_tarifa: set[str] = set()
-    for tid, linha in por_template.items():
-        categoria = modelos[tid].category if tid in modelos else ""
-        custo_tpl: Decimal | None = Decimal("0")
-        for waba, qtd in linha["por_waba"].items():
-            tarifa = tarifas.get((waba, categoria))
-            if tarifa is None:
-                sem_tarifa.add(f"{categoria or 'sem categoria'} na WABA {waba or 'desconhecida'}")
-                custo_tpl = None
-                break
-            custo_tpl += tarifa * qtd
-        linha["custo"] = custo_tpl
+    for linha in {id(l): l for l in (*por_template.values(), *por_grupo.values())}.values():
+        linha["custo"] = _custo(linha, modelos, tarifas, sem_tarifa)
     if sem_tarifa:
         avisos.append("Sem tarifa no período para: " + "; ".join(sorted(sem_tarifa)))
 
-    template_meta, avisos_meta = _analytics_de_templates(db, de, ate, list(modelos.values()))
+    # Entregues, lidas e cliques por template são da Meta; por faixa e campanha vêm
+    # do Chatwoot (fila) e a Meta não separa cliques por elas
+    por_meta = agrupar == "template"
+    template_meta, avisos_meta = _analytics_de_templates(db, de, ate, list(modelos.values())) if por_meta else ({}, [])
     avisos += avisos_meta
     if (telefones or campanha) and template_meta:
         avisos.append("Entregues, lidas e cliques por template são da WABA inteira: a Meta não filtra por telefone nem campanha")
@@ -285,22 +333,24 @@ def montar(
         avisos.append(aviso_conversao)
 
     tabela = []
-    for tid, linha in por_template.items():
-        tpl = modelos.get(tid)
-        meta = template_meta.get(tid)
-        entregues_meta = meta["entregues"] if meta else None
+    for chave, linha in por_grupo.items():
+        tpl = modelos.get(chave) if por_meta else None
+        meta = template_meta.get(chave)
+        entregues = meta["entregues"] if meta else (None if por_meta else linha["entregues"])
+        lidas = meta["lidas"] if meta else (None if por_meta else linha["lidas"])
+        cliques = meta["cliques"] if meta else None
         pagos = len(linha["clientes"] & pagaram) if pagaram is not None else None
         tabela.append(
             {
-                "template_id": tid,
-                "nome": tpl.name if tpl else "Template removido",
-                "categoria": tpl.category if tpl else "",
+                "chave": chave,
+                "nome": (tpl.name if tpl else "Template removido") if por_meta else linha["nome"],
+                "categoria": (tpl.category if tpl else "") if por_meta else "",
                 "enviados": linha["enviados"],
-                "entregues": entregues_meta,
-                "lidas": meta["lidas"] if meta else None,
-                "cliques": meta["cliques"] if meta else None,
-                "taxa_visualizacao": Decimal(meta["lidas"]) / entregues_meta if meta and entregues_meta else None,
-                "taxa_cliques": Decimal(meta["cliques"]) / entregues_meta if meta and entregues_meta else None,
+                "entregues": entregues,
+                "lidas": lidas,
+                "cliques": cliques,
+                "taxa_visualizacao": Decimal(lidas) / entregues if lidas is not None and entregues else None,
+                "taxa_cliques": Decimal(cliques) / entregues if cliques is not None and entregues else None,
                 "cobrados": len(linha["clientes"]),
                 "pagaram": pagos,
                 "conversao": Decimal(pagos) / len(linha["clientes"]) if pagos is not None and linha["clientes"] else None,
@@ -309,7 +359,7 @@ def montar(
         )
     tabela.sort(key=lambda l: -l["enviados"])
 
-    saida = {"de": de, "ate": ate, "origem": "fila" if (templates or campanha) else "meta", "por_template": tabela}
+    saida = {"de": de, "ate": ate, "origem": "fila" if (templates or campanha) else "meta", "linhas": tabela}
     if templates or campanha:
         # A Meta não filtra por template nem campanha: quadros da fila, custo = quantidade × tarifa
         por_categoria: dict[str, int] = {}
