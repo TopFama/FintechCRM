@@ -217,14 +217,12 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
         # Só conta mensagem cobrada: REGULAR na dimensão PRICING_TYPE (as
         # gratuitas vêm como FREE_*), ou custo > 0 se o tipo não vier.
         tipo = p.get("pricing_type")
-        if tipo is None:
-            tipo = TIPO_COBRADA if custo > 0 else ""
-        cobradas = int(p.get("volume", 0) or 0) if tipo == TIPO_COBRADA else 0
+        cobradas = int(p.get("volume", 0) or 0) if tipo == TIPO_COBRADA or (tipo is None and custo > 0) else 0
         linha = por_dia_numero.setdefault((dia, p.get("waba_id", ""), chave), [Decimal("0"), 0])
         linha[0] += custo
         linha[1] += cobradas
         linha = por_tipo_categoria.setdefault(
-            (p.get("waba_id", ""), chave, p.get("pricing_category") or "", tipo),
+            (p.get("waba_id", ""), chave, p.get("pricing_category") or "", tipo or (TIPO_COBRADA if custo > 0 else "")),
             [Decimal("0"), 0],
         )
         linha[0] += custo
