@@ -20,16 +20,6 @@ def upgrade() -> None:
     op.create_foreign_key(
         "fk_cobranca_fila_template_id", "cobranca_fila", "templates", ["template_id"], ["id"], ondelete="SET NULL"
     )
-    # Histórico: o template do par faixa+número que enviou (único por faixa e número)
-    op.execute(
-        """
-        UPDATE cobranca_fila SET template_id = (
-            SELECT fe.template_id FROM faixa_envios fe
-            WHERE fe.faixa_id = cobranca_fila.faixa_id AND fe.whatsapp_number_id = cobranca_fila.whatsapp_number_id
-        )
-        WHERE whatsapp_number_id IS NOT NULL AND sent_at IS NOT NULL
-        """
-    )
 
 
 def downgrade() -> None:

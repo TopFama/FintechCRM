@@ -349,7 +349,7 @@ desenvolvimento.
    (a moeda de cada WABA vem do Pricing Analytics: USD converte, BRL entra como veio), e por template
    entregues, lidas, cliques, % visualização, % cliques, conversão e custo. Filtros: período, WABA,
    telefone, template e campanha. A Meta não filtra por template nem campanha: com um deles marcado os
-   quadros contam os envios da fila (`cobranca_fila.template_id`, gravado no envio) e o custo é a
+   quadros contam os envios da fila (`cobranca_fila.template_id`, gravado no envio, só a partir do deploy, sem histórico) e o custo é a
    quantidade × a tarifa unitária da categoria (custo ÷ mensagens cobradas da mesma WABA e categoria
    no período, do próprio Pricing Analytics). Lidas e cliques vêm do `template_analytics` da Meta (até
    90 dias; leitura e clique só por 7 dias depois do envio; exige os insights ativados na WABA) e não
