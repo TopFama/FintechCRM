@@ -198,7 +198,7 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
       ) : (
         <>
           {dados.avisos.length > 0 && (
-            <div className="error-box" style={{ alignItems: "flex-start" }}>
+            <div className="warning-box" role="status">
               <IconAlert width={16} height={16} />
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 {dados.avisos.map((a) => (
