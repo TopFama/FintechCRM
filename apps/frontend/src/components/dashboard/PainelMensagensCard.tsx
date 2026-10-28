@@ -24,22 +24,31 @@ const TIPOS_GRATUITOS: [string, string][] = [
   ["FREE_ENTRY_POINT", "Ponto de entrada gratuito"],
 ];
 
-// Explicação de cada quadro e linha (o "i" do analytics da Meta); com template ou campanha
+// Explicação de cada quadro e linha, das definições do "i" do analytics da Meta; com template ou campanha
 // marcado os quadros vêm da fila e a explicação diz isso
 const DICAS = {
-  todas: "Mensagens do WhatsApp do período: as que você enviou, as que chegaram ao cliente e as que ele enviou para você.",
-  enviadas: "Mensagens que sua empresa enviou, entregues ou não, de template ou de atendimento.",
-  entregues: "Mensagens enviadas que chegaram ao aparelho do cliente.",
-  recebidas: "Mensagens que os clientes enviaram para os seus números.",
-  entreguesCategoria: "Mensagens entregues no período por categoria de cobrança da Meta, pagas e gratuitas.",
-  gratuitas: "Mensagens entregues que a Meta não cobra: dentro da janela de atendimento ao cliente ou de conversas que começam em pontos de entrada gratuitos.",
-  atendimento: "Mensagens dentro da janela de atendimento ao cliente de 24 horas, aberta quando o cliente escreve para você, que a Meta não cobra.",
+  todas: "Mensagens do WhatsApp do período: as que sua empresa enviou, as que chegaram ao cliente e as que ele enviou para você.",
+  enviadas:
+    "Total de mensagens que sua empresa enviou para contas individuais. Inclui as que podem não ter sido entregues, por exemplo quando o aparelho do destinatário estava fora de serviço.",
+  entregues:
+    "Mensagens enviadas para contas individuais ou membros de um grupo do WhatsApp que chegaram com sucesso ao dispositivo. Exclui as não entregues.",
+  recebidas: "Mensagens que sua empresa recebeu de contas individuais.",
+  entreguesCategoria:
+    "Mensagens entregues com sucesso, abertas por categoria (marketing, utilidade, serviço e outras). Mesma definição de Mensagens entregues.",
+  gratuitas:
+    "Mensagens entregues sem custo: as de ponto de entrada gratuito e as de serviço dentro do limite mensal gratuito (1.000 por número comercial). A partir de 1º/10/2026, mensagens de serviço e utilidade na janela de atendimento de 24 horas são cobradas por mensagem; passando da cota, contam como pagas.",
+  atendimento:
+    "Mensagens de atendimento dentro do limite gratuito mensal de 1.000 por número, enviadas na janela de 24 horas, que começa quando alguém envia mensagem à empresa. Acima da cota, são cobradas e contam como pagas.",
   pontoEntrada:
-    "Mensagens entregues gratuitas porque a conversa começa em um ponto de entrada gratuito, como anúncios de clique para o WhatsApp ou botões da Página do Facebook, e você responde em até 24 horas. A janela pode ser prorrogada por até 7 dias.",
-  pagas: "Mensagens entregues que a Meta cobra, por categoria. A cobrança é por mensagem entregue.",
-  pagasFila: "Envios da fila do filtro escolhido que a Meta cobra, por categoria do template. Não são as entregues: a Meta não separa por template nem campanha.",
-  cobranca: "Valor aproximado cobrado pela Meta no período, em reais (dólar pela cotação do dia). Pode diferir da fatura por pequenas variações no processamento.",
-  cobrancaFila: "Estimativa: envios do filtro escolhido × tarifa unitária da categoria (custo ÷ mensagens cobradas da mesma WABA no período).",
+    "Mensagens gratuitas porque começaram em pontos de entrada gratuitos. A janela abre quando um cliente (Android ou iOS) escreve a partir de anúncios de clique para o WhatsApp ou de botões da Página do Facebook e você responde em até 24 horas. Pode ser prorrogada por até 7 dias.",
+  pagas:
+    "Mensagens pagas entregues com sucesso, de marketing, utilidade, autenticação ou atendimento. As de atendimento passam a ser cobradas por mensagem depois que o número usa o limite mensal de 1.000 gratuitas.",
+  pagasFila:
+    "Envios da fila do filtro escolhido que a Meta cobra, por categoria do template. Não são as entregues: a Meta não separa por template nem campanha.",
+  cobranca:
+    "Total aproximado das cobranças das mensagens entregues, em reais (dólar pela cotação do dia). Pode diferir da fatura por variações no processamento. O valor de cada mensagem paga depende da tarifa do país do número e de a mensagem ser iniciada pela empresa ou resposta em até 24 horas.",
+  cobrancaFila:
+    "Estimativa: envios do filtro escolhido × tarifa unitária da categoria (custo ÷ mensagens cobradas da mesma WABA no período).",
 };
 
 const ROTULO_GRUPO: Record<AgruparPainel, string> = { template: "Template", faixa: "Faixa de atraso", campanha: "Campanha" };
