@@ -694,6 +694,52 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await page.reload();
     await expect(card(page, "Orçamento").locator(".error-box")).toContainText("Falha ao consultar a Meta");
   });
+  test("painel de mensagens: quadros em R$ e métricas por template", { tag: ["@orcamento"] }, async ({ page }) => {
+    const pedidos: URL[] = [];
+    await page.route("**/dashboard/painel-mensagens*", (r) => {
+      pedidos.push(new URL(r.request().url()));
+      return r.fulfill({
+        json: {
+          de: "2026-10-22", ate: "2026-10-28", origem: "meta",
+          todas: { enviadas: 33937, entregues: 32710, recebidas: 7418 },
+          entregues: { total: 32686, por_categoria: { UTILITY: 27572, SERVICE: 5114 } },
+          gratuitas: { total: 0, por_tipo: {} },
+          pagas: { total: 32686, por_categoria: { UTILITY: 27572, SERVICE: 5114 } },
+          cobranca: { total_brl: "1156.84", por_categoria: { UTILITY: "975.00", SERVICE: "181.84" } },
+          por_template: [{
+            template_id: "t1", nome: "Aviso de vencimento", categoria: "UTILITY", enviados: 200, entregues: 180, lidas: 90,
+            cliques: 18, taxa_visualizacao: "0.5", taxa_cliques: "0.1", cobrados: 150, pagaram: 30, conversao: "0.2", custo_brl: "1.36",
+          }],
+          avisos: [],
+        },
+      });
+    });
+    await page.reload();
+    const painel = card(page, /^Mensagens$/);
+    const quadro = (titulo: string) =>
+      painel.locator(".painel-quadro").filter({ has: page.locator(".painel-quadro-topo", { hasText: titulo }) });
+    await expect(quadro("Todas as mensagens")).toContainText("33.937");
+    await expect(quadro("Mensagens entregues")).toContainText("32.686");
+    await expect(quadro("Cobrança total aproximada")).toContainText("1.156,84");
+    await expect(quadro("Cobrança total aproximada")).toContainText("Utilidade");
+    const linha = painel.locator("tbody tr", { hasText: "Aviso de vencimento" });
+    await expect(linha).toContainText("50,0%");
+    await expect(linha).toContainText("20,0%");
+    // o período padrão (7 dias) vai para a API e os filtros de template e campanha existem
+    expect(pedidos[0].searchParams.get("de")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await expect(painel.locator("label", { hasText: /^Template$/ })).toBeVisible();
+    await expect(painel.locator("label", { hasText: /^Campanha$/ })).toBeVisible();
+  });
+
+  test("painel de mensagens: Meta fora do ar mostra o motivo", { tag: ["@orcamento", "@resiliencia"] }, async ({ page }) => {
+    permitirErrosConsole(page, "502");
+    await page.route("**/dashboard/painel-mensagens*", (r) =>
+      r.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ detail: "Falha ao consultar a Meta" }) })
+    );
+    await page.reload();
+    await expect(card(page, /^Mensagens$/).locator(".error-box")).toContainText("Falha ao consultar a Meta");
+  });
+
   test("resumo e leads se atualizam sozinhos, sem F5, e param com a aba oculta", { tag: ["@resiliencia"] }, async ({ page }) => {
     await semTempoReal(page); // aqui se confere o polling, que é a reserva
     await page.clock.install();

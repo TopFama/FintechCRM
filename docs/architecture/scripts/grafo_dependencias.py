@@ -50,7 +50,7 @@ DOMINIO = {
     # Dashboard e relatórios
     "routers.dashboard": "Dashboard/Relatórios", "routers.reports": "Dashboard/Relatórios",
     "services.efetividade_service": "Dashboard/Relatórios", "relatorio_efetividade": "Dashboard/Relatórios",
-    "services.custo_whatsapp": "Dashboard/Relatórios", "consultas_fila": "Dashboard/Relatórios",
+    "services.custo_whatsapp": "Dashboard/Relatórios", "services.painel_mensagens": "Dashboard/Relatórios", "consultas_fila": "Dashboard/Relatórios",
     # Plataforma (compartilhado)
     "main": "Plataforma", "config": "Plataforma", "database": "Plataforma", "models": "Plataforma",
     "schemas": "Plataforma", "cache": "Plataforma", "timezone": "Plataforma", "utils.phone": "Plataforma",

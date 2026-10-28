@@ -5,6 +5,8 @@ chama a Meta diretamente para listar/criar templates, listar números e
 enviar mensagens de template.
 """
 
+import json
+
 import httpx
 
 from sqlalchemy.orm import Session
@@ -146,6 +148,64 @@ class MetaClient:
         for bloco in data.get("pricing_analytics", {}).get("data", []):
             pontos.extend(bloco.get("data_points", []))
         return data.get("currency"), pontos
+
+    async def message_analytics(
+        self,
+        waba_id: str,
+        *,
+        start_unix: int,
+        end_unix: int,
+        product_types: list[int],
+        telefones: list[str] | None = None,
+    ) -> list[dict]:
+        """Mensagens enviadas e entregues no período (campo analytics da WABA,
+        por dia). product_types: 0 = template, 2 = não-template, 100 = recebidas
+        (nelas o total vem em "sent"). `telefones` (só dígitos) restringe aos
+        números; sem ele a Meta soma todos os da WABA. Retorna os "data_points"
+        (start, end, sent, delivered)."""
+
+        filtro_telefone = f".phone_numbers({json.dumps(telefones)})" if telefones else ""
+        data = await self._request(
+            "GET",
+            str(waba_id),
+            params={
+                "fields": (
+                    "analytics.start(%d).end(%d).granularity(DAY)%s.product_types(%s)"
+                    % (start_unix, end_unix, filtro_telefone, json.dumps(product_types))
+                )
+            },
+        )
+        analytics = data.get("analytics", {})
+        pontos: list[dict] = list(analytics.get("data_points", []))
+        for bloco in analytics.get("data", []):
+            pontos.extend(bloco.get("data_points", []))
+        return pontos
+
+    async def template_analytics(
+        self, waba_id: str, template_ids: list[str], *, start_unix: int, end_unix: int
+    ) -> list[dict]:
+        """Enviadas, entregues, lidas e cliques por template e dia (template_analytics,
+        só diário). A Meta aceita até 10 templates por chamada, guarda 90 dias, só
+        informa leitura e clique por 7 dias depois do envio e exige os insights
+        ativados na WABA (senão responde erro). Retorna os "data_points" (template_id,
+        start, end, sent, delivered, read, clicked)."""
+
+        pontos: list[dict] = []
+        for i in range(0, len(template_ids), 10):
+            data = await self._request(
+                "GET",
+                f"{waba_id}/template_analytics",
+                params={
+                    "start": start_unix,
+                    "end": end_unix,
+                    "granularity": "DAILY",
+                    "template_ids": json.dumps([int(t) for t in template_ids[i : i + 10]]),
+                    "metric_types": json.dumps(["SENT", "DELIVERED", "READ", "CLICKED"]),
+                },
+            )
+            for bloco in data.get("data", []):
+                pontos.extend(bloco.get("data_points", []))
+        return pontos
 
     async def upload_media(self, phone_number_id: str, nome: str, conteudo: bytes, mime: str) -> str:
         """Sobe um arquivo para a Cloud API e devolve o media id. Com o id, a

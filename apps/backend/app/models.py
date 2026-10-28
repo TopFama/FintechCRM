@@ -330,6 +330,11 @@ class QueueItem(Base):
         ForeignKey("whatsapp_numbers.id", ondelete="SET NULL"), nullable=True
     )
     whatsapp_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Template que o envio usou (o do par faixa+número no momento do envio): base
+    # do painel de mensagens por template. SET NULL: apagar o template não apaga o histórico.
+    template_id: Mapped[str | None] = mapped_column(
+        ForeignKey("templates.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     reserved_by: Mapped[str | None] = mapped_column(String, nullable=True)
     # Lojas do cliente no mesmo formato de Lead.lojas (",01,07,"), pra pausa

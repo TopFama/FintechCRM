@@ -343,6 +343,18 @@ desenvolvimento.
    atualizam sozinhos, só ao abrir, trocar o filtro ou em "Atualizar agora". Os pedidos
    automáticos (`auto=true`) leem do cache compartilhado no Redis (15 s o resumo, 10 min o
    orçamento).
+   **Painel de mensagens** (card "Mensagens", abaixo do Orçamento; `GET /dashboard/painel-mensagens`,
+   `services/painel_mensagens.py`): as mini-tabelas do "Preços das mensagens" do analytics da Meta
+   (todas as mensagens, entregues por categoria, gratuitas, pagas e cobrança aproximada), sempre em R$
+   (a moeda de cada WABA vem do Pricing Analytics: USD converte, BRL entra como veio), e por template
+   entregues, lidas, cliques, % visualização, % cliques, conversão e custo. Filtros: período, WABA,
+   telefone, template e campanha. A Meta não filtra por template nem campanha: com um deles marcado os
+   quadros contam os envios da fila (`cobranca_fila.template_id`, gravado no envio, só a partir do deploy, sem histórico) e o custo é a
+   quantidade × a tarifa unitária da categoria (custo ÷ mensagens cobradas da mesma WABA e categoria
+   no período, do próprio Pricing Analytics). Lidas e cliques vêm do `template_analytics` da Meta (até
+   90 dias; leitura e clique só por 7 dias depois do envio; exige os insights ativados na WABA) e não
+   filtram por telefone nem campanha. Conversão = clientes cobrados com o template que pagaram na janela de
+   Indicadores. Guardado 10 min no Redis por conjunto de filtros; não se atualiza sozinho.
    **Tempo real** (`app/painel_tempo_real.py`, WebSocket `/dashboard/ws?de=&ate=`): os cards
    Pendentes (e pausados), Cobranças, Erros e Telefones inválidos mudam na hora. Triggers do
    Postgres (migration `a3d5f7b9c1e2`) avisam no canal `painel` o saldo de cada comando em

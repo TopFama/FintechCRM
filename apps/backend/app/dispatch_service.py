@@ -138,6 +138,7 @@ async def enviar_item(envio: models.FaixaEnvio, item: models.QueueItem, db: Sess
 
 
     item.whatsapp_number_id = number.id
+    item.template_id = template.id
     item.reserved_by = envio.id
 
     body_params, header_image_link, botoes_params = montar_parametros_envio(template, item.variables_json)

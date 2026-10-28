@@ -6,6 +6,7 @@ import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
 import OrcamentoProgressaoCard from "../components/dashboard/OrcamentoProgressaoCard";
+import PainelMensagensCard from "../components/dashboard/PainelMensagensCard";
 import FiltroPeriodo, { OpcaoPeriodo, Periodo, periodoDe } from "../components/FiltroPeriodo";
 import DicaIndicador from "../components/DicaIndicador";
 import SortableTh from "../components/SortableTh";
@@ -117,6 +118,7 @@ export default function Dashboard() {
       <EfetividadeCard opcoes={opcoes} />
       <LeadsCard opcoes={opcoes} recarregar={recarregar} />
       <OrcamentoProgressaoCard recarregar={recarregar} />
+      <PainelMensagensCard recarregar={recarregar} />
     </div>
   );
 }
