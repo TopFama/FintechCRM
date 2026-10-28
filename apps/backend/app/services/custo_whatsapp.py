@@ -52,6 +52,9 @@ class CustoWhatsapp:
     por_dia_numero: dict[tuple[date, str, str], list] = field(default_factory=dict)
     # (dia, número, categoria de CATEGORIAS) → [gasto em BRL, mensagens cobradas]
     por_categoria: dict[tuple[date, str, str], list] = field(default_factory=dict)
+    # (WABA, número, pricing_category da Meta, pricing_type) → [gasto em BRL, mensagens entregues],
+    # sem filtro de categoria nem de tipo: base do painel de mensagens
+    por_tipo_categoria: dict[tuple[str, str, str, str], list] = field(default_factory=dict)
 
 
 def _digitos(numero: str | None) -> str:
@@ -178,6 +181,7 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
     por_categoria: dict[tuple[date, str, str], list] = {}
     por_numero: dict[str, Decimal] = {n: Decimal("0") for numeros in numeros_por_waba.values() for n in numeros}
     por_dia_numero: dict[tuple[date, str, str], list] = {}
+    por_tipo_categoria: dict[tuple[str, str, str, str], list] = {}
     for p in pontos:
         if p.get("start") is None:
             continue
@@ -195,6 +199,12 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
         linha = por_dia_numero.setdefault((dia, p.get("waba_id", ""), chave), [Decimal("0"), 0])
         linha[0] += custo
         linha[1] += cobradas
+        linha = por_tipo_categoria.setdefault(
+            (p.get("waba_id", ""), chave, p.get("pricing_category") or "", tipo or ("REGULAR" if custo > 0 else "")),
+            [Decimal("0"), 0],
+        )
+        linha[0] += custo
+        linha[1] += int(p.get("volume", 0) or 0)
         categoria = CATEGORIAS.get(p.get("pricing_category"))
         if categoria:
             linha = por_categoria.setdefault((dia, chave, categoria), [Decimal("0"), 0])
@@ -202,7 +212,7 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
             linha[1] += cobradas
         if telefone:
             por_numero[chave] = por_numero.get(chave, Decimal("0")) + custo
-    return CustoWhatsapp(por_dia, None, avisos, por_numero, por_dia_numero, por_categoria)
+    return CustoWhatsapp(por_dia, None, avisos, por_numero, por_dia_numero, por_categoria, por_tipo_categoria)
 
 
 def gasto_diario_brl(db: Session, inicio: date, fim: date) -> tuple[dict[date, Decimal] | None, str | None]:

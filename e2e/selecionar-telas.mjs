@@ -171,7 +171,8 @@ export const FUNCIONALIDADES = {
   ],
   orcamento: [
     `${F}components/dashboard/OrcamentoProgressaoCard.tsx`, `${B}services/custo_whatsapp.py`, `${B}cambio.py`,
-    `${B}routers/dashboard.py`, `${B}meta_client.py`,
+    `${B}routers/dashboard.py`, `${B}meta_client.py`, `${F}components/dashboard/PainelMensagensCard.tsx`,
+    `${B}services/painel_mensagens.py`,
   ],
   visual: [
     `${F}components/TabelaAjustavel.tsx`, `${F}components/DicaIndicador.tsx`, `${F}pages/Dashboard.tsx`,

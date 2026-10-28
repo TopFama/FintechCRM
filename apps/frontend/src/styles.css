@@ -1778,6 +1778,42 @@ button.periodo-card.ativo {
   text-align: center;
 }
 
+/* Painel de mensagens no Dashboard */
+.painel-quadros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.painel-quadro {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  background: var(--color-surface);
+}
+
+.painel-quadro-topo,
+.painel-linha {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.painel-quadro-topo {
+  margin-bottom: 10px;
+}
+
+.painel-linha {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  padding: 3px 0;
+}
+
+.painel-linha span:last-child {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
 .orcamento-legenda {
   display: flex;
   justify-content: center;

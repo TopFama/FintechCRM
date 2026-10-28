@@ -881,6 +881,57 @@ class GastoNumeroOut(BaseModel):
     por_categoria: dict[str, GastoCategoriaOut] = {}
 
 
+class PainelQuantidadesOut(BaseModel):
+    total: int
+    por_categoria: dict[str, int] = {}  # chave = pricing_category da Meta (ou categoria do template)
+
+
+class PainelTodasOut(BaseModel):
+    enviadas: int | None = None
+    entregues: int | None = None
+    recebidas: int | None = None
+
+
+class PainelGratuitasOut(BaseModel):
+    total: int
+    por_tipo: dict[str, int] = {}  # pricing_type FREE_* da Meta
+
+
+class PainelCobrancaOut(BaseModel):
+    total_brl: Decimal | None = None  # None = sem tarifa para parte dos envios
+    por_categoria: dict[str, Decimal] = {}
+
+
+class PainelTemplateOut(BaseModel):
+    template_id: str
+    nome: str
+    categoria: str
+    enviados: int  # envios da fila no período
+    # da Meta (template_analytics): None sem insights ativados ou sem leitura da WABA
+    entregues: int | None = None
+    lidas: int | None = None
+    cliques: int | None = None
+    taxa_visualizacao: Decimal | None = None  # lidas ÷ entregues
+    taxa_cliques: Decimal | None = None  # cliques ÷ entregues
+    cobrados: int  # clientes distintos que receberam o template
+    pagaram: int | None = None  # cobrados que pagaram na janela de Indicadores
+    conversao: Decimal | None = None  # pagaram ÷ cobrados
+    custo_brl: Decimal | None = None  # envios × tarifa unitária da categoria
+
+
+class PainelMensagensOut(BaseModel):
+    de: date
+    ate: date
+    origem: Literal["meta", "fila"]  # fila = com template ou campanha marcado
+    todas: PainelTodasOut | None = None
+    entregues: PainelQuantidadesOut | None = None
+    gratuitas: PainelGratuitasOut | None = None
+    pagas: PainelQuantidadesOut | None = None
+    cobranca: PainelCobrancaOut | None = None
+    por_template: list[PainelTemplateOut] = []
+    avisos: list[str] = []
+
+
 class LinhaEfetividadeClienteOut(BaseModel):
     codigo_cliente: str
     nome: str

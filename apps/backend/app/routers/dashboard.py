@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from .. import cache, consultas_fila, painel_tempo_real, seta_client
-from ..services import custo_whatsapp, pagamentos_service, pagos_janela_service
+from ..services import custo_whatsapp, pagamentos_service, pagos_janela_service, painel_mensagens
 from ..timezone import hoje_br
 from ..config import settings
 from ..database import SessionLocal, get_db
@@ -434,6 +434,46 @@ def _somar_categorias(por_categoria, agrupar, casas=Decimal("0.0001")) -> dict:
         g: {c: schemas.GastoCategoriaOut(gasto_brl=v.quantize(casas), qtd_mensagens=m) for c, (v, m) in cats.items()}
         for g, cats in somas.items()
     }
+
+
+@router.get("/painel-mensagens", response_model=schemas.PainelMensagensOut)
+def painel_mensagens_dashboard(
+    de: date = Query(...),
+    ate: date = Query(...),
+    telefone: list[str] = Query([]),
+    waba: list[str] = Query([]),
+    template: list[str] = Query([]),
+    campanha: str = Query(""),
+    auto: bool = Query(False),
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    """Mini-tabelas do analytics da Meta (em BRL) e métricas por template, no
+    período de/ate. Telefone = id do número. Com template ou campanha, os
+    quadros vêm da fila (ver services/painel_mensagens)."""
+
+    if de > ate:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe data inicial e final válidas")
+
+    def calcular():
+        dados = painel_mensagens.montar(
+            db, de, ate, telefones=telefone, wabas=waba, templates=template, campanha=campanha
+        )
+        return schemas.PainelMensagensOut(**dados).model_dump(mode="json")
+
+    filtros = dict(de=de, ate=ate, telefone=sorted(telefone), waba=sorted(waba), template=sorted(template), campanha=campanha)
+    try:
+        dados = cache.obter_ou_calcular(
+            cache.chave("dashboard-painel-mensagens", filtros),
+            calcular,
+            painel_mensagens.PAINEL_TTL_SEGUNDOS,
+            reaproveitar=auto,
+            # Meta fora do ar ou sem permissão numa WABA: não segura o aviso por 10 min
+            guardar_se=lambda d: not d["avisos"],
+        )
+    except cache.CacheIndisponivel:
+        dados = calcular()
+    return schemas.PainelMensagensOut(**dados)
 
 
 @router.get("/colunas-por-faixa", response_model=schemas.ColunasPorFaixa)

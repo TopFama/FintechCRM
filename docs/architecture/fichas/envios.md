@@ -102,7 +102,7 @@ saída estavam escritas dentro do laço do worker. O backlog #4 (PR #6) juntou t
 - **Camada:** aplicação + infraestrutura (mídia)
 - **Responsabilidade (1 frase, sem "e"):** enviar um item da fila pelo canal do número.
 - **Motivos para mudar:** API da Meta, API do Chatwoot, imagem de cabeçalho, regra de "falha incerta ocupa o cliente", marcar lead como cobrado.
-- **Depende de:** `meta_client`, `chatwoot_client`, `campanhas_fixas`, `config`, `models`.
+- **Depende de:** `meta_client`, `chatwoot_client`, `campanhas_fixas`, `config`, `models`. Grava no item o número e o template usado (`QueueItem.template_id`, base do painel de mensagens por template).
 - **É usado por:** `worker`, `routers/templates` (teste de envio).
 - **Violações encontradas:**
   - [x] Mais de uma responsabilidade: envio pelos dois canais, cache de mídia da Meta e atualização do `Lead`.

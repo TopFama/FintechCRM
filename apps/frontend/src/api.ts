@@ -645,6 +645,10 @@ export const api = {
     request<OrcamentoMes[]>(`/config/cobranca/orcamento?ano=${ano}`, { method: "PUT", body: JSON.stringify(meses) }),
   getOrcamentoProgressao: (filtro: { ano?: number; mes?: number; de?: string; ate?: string }, auto = false) =>
     request<OrcamentoProgressao>(`/dashboard/orcamento-progressao?${montarQuery({ ...filtro, auto: auto || undefined })}`),
+  getPainelMensagens: (
+    filtro: { de: string; ate: string; telefone: string[]; waba: string[]; template: string[]; campanha: string },
+    auto = false
+  ) => request<PainelMensagens>(`/dashboard/painel-mensagens?${montarQuery({ ...filtro, auto: auto || undefined })}`),
   exportarOrcamentoPorDia: (filtro: { ano?: number; mes?: number; de?: string; ate?: string; categorias?: string[] }) =>
     downloadFile(`/dashboard/orcamento-progressao/exportar.xlsx?${montarQuery(filtro)}`, "orcamento_por_dia.xlsx"),
 };
@@ -1209,6 +1213,41 @@ export interface OrcamentoProgressao {
     por_categoria: Partial<Record<CategoriaGasto, GastoCategoria>>;
   }[];
   dias: OrcamentoProgressaoDia[];
+}
+
+export interface PainelQuantidades {
+  total: number;
+  por_categoria: Record<string, number>; // pricing_category da Meta (ou categoria do template)
+}
+
+export interface PainelTemplate {
+  template_id: string;
+  nome: string;
+  categoria: string;
+  enviados: number;
+  // da Meta: null sem insights ativados ou sem leitura da WABA
+  entregues: number | null;
+  lidas: number | null;
+  cliques: number | null;
+  taxa_visualizacao: string | null; // razão 0–1
+  taxa_cliques: string | null;
+  cobrados: number;
+  pagaram: number | null;
+  conversao: string | null;
+  custo_brl: string | null;
+}
+
+export interface PainelMensagens {
+  de: string;
+  ate: string;
+  origem: "meta" | "fila"; // fila = com template ou campanha marcado (a Meta não filtra por eles)
+  todas: { enviadas: number | null; entregues: number | null; recebidas: number | null } | null;
+  entregues: PainelQuantidades | null;
+  gratuitas: { total: number; por_tipo: Record<string, number> } | null;
+  pagas: PainelQuantidades | null;
+  cobranca: { total_brl: string | null; por_categoria: Record<string, string> } | null;
+  por_template: PainelTemplate[];
+  avisos: string[];
 }
 
 export interface ClienteCobranca {

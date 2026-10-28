@@ -34,7 +34,7 @@ fila" chama `fila_automatica.descartar_pendentes` (Envios).
 - **Domínio:** Dashboard/Relatórios
 - **Camada:** interface
 - **Responsabilidade:** servir os cards do Dashboard. Na tabela "Por faixa", `consultas_fila.nome_faixa` é a única definição da faixa da linha (a de atraso do cliente, senão a da fila). Clientes cobrados são os clientes distintos com mensagem enviada (`sent`) da faixa com `sent_at` no período, de `consultas_fila.clientes_com_envio_no_periodo`, a mesma base das Cobranças: Frequência = mensagens do período ÷ clientes cobrados, e "Pagaram após cobrança" = desses clientes, quem pagou depois do primeiro envio do período (`pagamentos_service.clientes_que_pagaram(base="envios")`, a mesma lista que o número abre em Quem pagou com `base=envios`). Lead marcado como cobrado à mão, sem envio, não conta. Os totais que não são soma da coluna (clientes e valor pago contados uma vez) vêm em `total_por_faixa`. O custo do WhatsApp de cada faixa (base do ROAS, `_somar_custo_por_faixa`) = custo por envio de cada dia (`custo_whatsapp.custo_por_envio`) × mensagens enviadas pela faixa no dia (`consultas_fila.envios_por_dia`); o ROAS em si é calculado na tela. A ordem das colunas dessa tabela é guardada por usuário (`GET`/`PUT /dashboard/colunas-por-faixa`, coluna `users.colunas_por_faixa`; vazia = ordem padrão da tela).
-- **Depende de:** `cache`, `consultas_fila`, `painel_tempo_real` (WebSocket `/dashboard/ws`), `seta_client`, `services/custo_whatsapp`, `services/pagamentos_service`, `services/pagos_janela_service`, `utils/xlsx`, `timezone`. O card de pagamentos (`GET /dashboard/janela-pagamento`, "Pagaram em até N dias") lê a janela de `config_parametros.dias_janela_dashboard` (Configurações → Indicadores; nulo = qualquer data após a cobrança) e reaproveita o snapshot `relatorio-pagamentos` (mesma chave de Quem pagou com a mesma janela); sem Redis o resumo cai para só o que é local (`buscar_novos=False`).
+- **Depende de:** `cache`, `consultas_fila`, `painel_tempo_real` (WebSocket `/dashboard/ws`), `seta_client`, `services/custo_whatsapp`, `services/pagamentos_service`, `services/pagos_janela_service`, `services/painel_mensagens` (`GET /dashboard/painel-mensagens`, em cache 10 min como o orçamento), `utils/xlsx`, `timezone`. O card de pagamentos (`GET /dashboard/janela-pagamento`, "Pagaram em até N dias") lê a janela de `config_parametros.dias_janela_dashboard` (Configurações → Indicadores; nulo = qualquer data após a cobrança) e reaproveita o snapshot `relatorio-pagamentos` (mesma chave de Quem pagou com a mesma janela); sem Redis o resumo cai para só o que é local (`buscar_novos=False`).
 - **Violações encontradas:** nenhuma grave. As de 26/09 (import de `routers.reports`, `_limites_utc` e contagem de pausados no router) foram resolvidas pelo backlog #3: `_resumo` monta o card a partir de `consultas_fila` (`limites_utc`, `contar_pausados`), a mesma fonte dos relatórios.
 - **Churn:** 15 | **Linhas:** 350 | **Cobertura:** 24% (medida em 26/09)
 
@@ -59,9 +59,17 @@ fila" chama `fila_automatica.descartar_pendentes` (Envios).
 - **Camada:** aplicação
 - **Responsabilidade:** calcular o custo do WhatsApp em reais. A Meta devolve o custo na moeda de cobrança de cada WABA (campo `currency`, lido junto com o Pricing Analytics): USD é convertido pela cotação de `cambio`, BRL entra como veio e outra moeda vira aviso da WABA, sem entrar no total. `gasto_diario_brl` guarda o gasto por dia 10 min no Redis (falha não é guardada; sem Redis vai à Meta); `custo_por_envio` divide o gasto de cada dia pelas mensagens enviadas pela fila no dia, a única regra de rateio do ROAS (Dashboard e Efetividade).
 - **Violações encontradas:**
-  - [x] Acesso a dados de outro domínio: `_tokens_da_waba` decifra tokens da Meta direto das tabelas, repetindo parte de `meta_client.token_da_waba` (a diferença é que aqui tenta todos os tokens ativos).
+  - [x] Acesso a dados de outro domínio: `_tokens_da_waba` decifra tokens da Meta direto das tabelas, repetindo parte de `meta_client.token_da_waba` (a diferença é que aqui tenta todos os tokens ativos). `painel_mensagens` reaproveita essa função em vez de criar outra.
 - **Churn:** 5 | **Linhas:** 186
 - **Ação sugerida:** `meta_client.tokens_da_waba(db, waba_id)` devolvendo todos; baixa prioridade.
+
+### `apps/backend/app/services/painel_mensagens.py`
+- **Domínio:** Dashboard/Relatórios
+- **Camada:** aplicação
+- **Responsabilidade:** montar o painel de mensagens do Dashboard (quadros do analytics da Meta em R$ e métricas por template).
+- **Depende de:** `cache`, `consultas_fila` (período e filtro de campanha da fila), `meta_client` (`message_analytics`, `template_analytics`), `models`, `seta_client` (só a exceção), `services/custo_whatsapp` (`custo_detalhado`, que agora também devolve `por_tipo_categoria`: custo e volume por WABA, número, categoria e tipo; e `_tokens_da_waba`), `services/pagamentos_service` (conversão: mesma lista e janela do card de pagamentos). A tarifa unitária por WABA e categoria (custo ÷ mensagens cobradas) vem do mesmo Pricing Analytics e é a única regra de custo estimado por template/campanha. O template de cada envio é `QueueItem.template_id`, gravado em `dispatch_service.enviar_item`.
+- **É usado por:** `routers/dashboard`.
+- **Violações encontradas:** nenhuma. Teste: `tests/test_painel_mensagens.py`.
 
 ### `apps/backend/app/relatorio_efetividade.py`
 - **Domínio:** Dashboard/Relatórios

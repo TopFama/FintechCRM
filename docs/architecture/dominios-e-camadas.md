@@ -20,7 +20,7 @@ são desse domínio (a mesma tabela está em `scripts/grafo_dependencias.py`, qu
 | **Envios** | Fila, disparo, "pode entrar / pode sair", pausa e parada, blacklist, upload de planilha na faixa, histórico | `fila_automatica.py`, `elegibilidade.py`, `itens_fila.py`, `upload_service.py`, `blacklist.py`, `worker.py`, `dispatch_service.py`, `pausas.py`, `routers/pausas.py`, `routers/uploads.py`, `routers/blacklist.py` |
 | **Campanhas** | Campanhas (manuais e com envio automático) e o remarketing do Renegocie, que é campanha fixa | `campanhas.py`, `campanhas_fixas.py`, `remarketing.py`, `routers/campanhas.py`, `routers/remarketing.py` |
 | **Pagamentos** | Cópia local das baixas do SETA e "quem pagou" | `services/pagamentos_seta.py`, `services/pagamentos_service.py`, `services/pagos_janela_service.py` |
-| **Dashboard/Relatórios** | Leitura: cards, relatórios, efetividade, orçamento e custo do WhatsApp | `routers/dashboard.py`, `routers/reports.py`, `consultas_fila.py`, `services/efetividade_service.py`, `relatorio_efetividade.py`, `services/custo_whatsapp.py` |
+| **Dashboard/Relatórios** | Leitura: cards, relatórios, efetividade, orçamento e custo do WhatsApp | `routers/dashboard.py`, `routers/reports.py`, `consultas_fila.py`, `services/efetividade_service.py`, `relatorio_efetividade.py`, `services/custo_whatsapp.py`, `services/painel_mensagens.py` |
 | **Plataforma** | O que todo domínio usa e não é de nenhum | `main.py`, `config.py`, `database.py`, `models.py`, `schemas.py`, `cache.py`, `timezone.py`, `utils/phone.py`, `utils/document.py`, `utils/spreadsheet.py`, `utils/xlsx.py`, `utils/erros.py`, `routers/comum.py` |
 
 `consultas_fila.py` é dono da regra de período do Dashboard: o dia de cada card
