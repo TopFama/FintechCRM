@@ -182,7 +182,7 @@ def _registrar_recibo(payload: dict, lida: bool) -> dict:
     identificadores = [str(msg_id)]
     if conversa is not None:
         identificador = telefones_invalidos.identificador_chatwoot(conversa, msg_id)
-        identificadores += [identificador, identificador.replace("chatwoot:", "chatwoot-ok:", 1)]
+        identificadores += [identificador, telefones_invalidos.identificador_chatwoot_entregue(identificador)]
 
     db = SessionLocal()
     try:

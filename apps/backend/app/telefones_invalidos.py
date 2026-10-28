@@ -12,6 +12,7 @@ from .utils.phone import ORDEM_TELEFONES, is_valid_phone, normalize_phone
 
 logger = logging.getLogger("dispatch_worker")
 PREFIXO_MENSAGEM_CHATWOOT = "chatwoot:"
+PREFIXO_MENSAGEM_CHATWOOT_OK = "chatwoot-ok:"
 _proxima_sincronizacao = datetime.min
 _ultimo_id = ""
 
@@ -40,6 +41,11 @@ def mensagem_telefone_invalido(detalhe: str) -> str:
 
 def identificador_chatwoot(conversation_id: int, message_id: object) -> str:
     return f"{PREFIXO_MENSAGEM_CHATWOOT}{conversation_id}:{message_id}"
+
+
+def identificador_chatwoot_entregue(identificador: str) -> str:
+    """O mesmo id depois que a mensagem foi vista como entregue ou lida."""
+    return identificador.replace(PREFIXO_MENSAGEM_CHATWOOT, PREFIXO_MENSAGEM_CHATWOOT_OK, 1)
 
 
 def _filtro_erro():
@@ -202,7 +208,7 @@ async def sincronizar_retornos_chatwoot(db: Session, limite: int = 100) -> int:
                 db.rollback()
                 continue
             if mensagem.get("status") in ("delivered", "read", 1, 2):
-                item.whatsapp_message_id = identificador.replace("chatwoot:", "chatwoot-ok:", 1)
+                item.whatsapp_message_id = identificador_chatwoot_entregue(identificador)
                 db.commit()
                 alterados += 1
             elif (detalhe := detalhe_telefone_invalido(mensagem)):

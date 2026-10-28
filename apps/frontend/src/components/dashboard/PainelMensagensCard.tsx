@@ -101,27 +101,21 @@ const COLUNAS: Coluna[] = [
   {
     chave: "entregues",
     rotulo: "Entregues",
-    dica: {
-      texto:
-        "Por template, vem da Meta. Por faixa de atraso e campanha, vem dos avisos de entrega do Chatwoot, só de envios feitos depois desse recurso entrar.",
-    },
+    dica: { texto: DICAS.entregues },
     valor: (t) => t.entregues,
     formato: (t) => formatNumero(t.entregues),
   },
   {
     chave: "lidas",
     rotulo: "Lidas",
-    dica: {
-      texto:
-        "Por template, vem da Meta. Por faixa de atraso e campanha, vem dos avisos de leitura do Chatwoot, só de envios feitos depois desse recurso entrar. Só conta quem está com o recibo de leitura ligado.",
-    },
+    dica: { texto: "Mensagens entregues que o cliente abriu e leu." },
     valor: (t) => t.lidas,
     formato: (t) => formatNumero(t.lidas),
   },
   {
     chave: "cliques",
     rotulo: "Cliques",
-    dica: { texto: "Cliques em botão só existem por template: a Meta não separa por faixa de atraso nem por campanha." },
+    dica: { texto: "Cliques nos botões da mensagem." },
     valor: (t) => t.cliques,
     formato: (t) => formatNumero(t.cliques),
   },

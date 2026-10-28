@@ -18,7 +18,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import case, func, literal_column, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from .. import cache, consultas_fila, models, seta_client
@@ -167,7 +167,8 @@ def _analytics_de_templates(
 
 
 def _grupo(agrupar: str):
-    """(chave, nome) do agrupamento escolhido sobre os envios, que pedem o join
+    """(chave, nome) do agrupamento escolhido (nome None por template: o nome vem do
+    cadastro do template) sobre os envios, que pedem o join
     com Faixa: a de atraso do cliente (a mesma do "Por faixa" do Dashboard), a
     campanha (a faixa própria dela; a régua entra junto, como "Régua de cobrança")
     ou, no padrão, o template."""
@@ -181,7 +182,7 @@ def _grupo(agrupar: str):
             case((regua, "regua"), else_=models.Faixa.id),
             case((regua, "Régua de cobrança"), else_=models.Faixa.name),
         )
-    return models.QueueItem.template_id, literal_column("''")
+    return models.QueueItem.template_id, None
 
 
 def _envios_da_fila(
@@ -193,10 +194,10 @@ def _envios_da_fila(
 
     ini, fim = consultas_fila.limites_utc(de, ate)
     grupo, nome = _grupo(agrupar)
+    colunas = [grupo.label("grupo")] + ([nome.label("nome")] if nome is not None else [])
     q = (
         select(
-            grupo.label("grupo"),
-            nome.label("nome"),
+            *colunas,
             models.QueueItem.template_id,
             models.WhatsappNumber.waba_id,
             models.QueueItem.codigo_cliente,
@@ -213,7 +214,7 @@ def _envios_da_fila(
         )
         .group_by(grupo, models.QueueItem.template_id, models.WhatsappNumber.waba_id, models.QueueItem.codigo_cliente)
     )
-    if agrupar != "template":  # constante no GROUP BY o Postgres recusa
+    if nome is not None:
         q = q.group_by(nome)
     if numeros is not None:
         q = q.where(models.QueueItem.whatsapp_number_id.in_(numeros))
@@ -302,7 +303,7 @@ def montar(
             destinos.append((por_grupo, e["grupo"]))
         for destino, chave in destinos:
             linha = destino.setdefault(
-                chave, {"nome": e["nome"], "enviados": 0, "clientes": set(), "entregues": 0, "lidas": 0, "por_waba": {}}
+                chave, {"nome": e.get("nome"), "enviados": 0, "clientes": set(), "entregues": 0, "lidas": 0, "por_waba": {}}
             )
             linha["enviados"] += e["envios"]
             linha["clientes"].add(e["codigo_cliente"])
