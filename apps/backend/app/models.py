@@ -329,7 +329,12 @@ class QueueItem(Base):
     whatsapp_number_id: Mapped[str | None] = mapped_column(
         ForeignKey("whatsapp_numbers.id", ondelete="SET NULL"), nullable=True
     )
-    whatsapp_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    whatsapp_message_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # Quando o webhook do Chatwoot avisou que a mensagem chegou / foi lida (o
+    # Chatwoot não manda o horário, vale o da chegada do aviso). Só envios
+    # feitos depois desse recurso; lida depende de o cliente ter recibo ligado.
+    entregue_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    lida_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Template que o envio usou (o do par faixa+número no momento do envio): base
     # do painel de mensagens por template. SET NULL: apagar o template não apaga o histórico.
     template_id: Mapped[str | None] = mapped_column(

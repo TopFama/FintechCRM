@@ -444,11 +444,13 @@ def painel_mensagens_dashboard(
     waba: list[str] = Query([]),
     template: list[str] = Query([]),
     campanha: str = Query(""),
+    agrupar: Literal["template", "faixa", "campanha"] = Query("template"),
     auto: bool = Query(False),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
-    """Mini-tabelas do analytics da Meta (em BRL) e métricas por template, no
+    """Mini-tabelas do analytics da Meta (em BRL) e a tabela por template, faixa
+    de atraso ou campanha (`agrupar`), no
     período de/ate. Telefone = id do número. Com template ou campanha, os
     quadros vêm da fila (ver services/painel_mensagens)."""
 
@@ -457,11 +459,11 @@ def painel_mensagens_dashboard(
 
     def calcular():
         dados = painel_mensagens.montar(
-            db, de, ate, telefones=telefone, wabas=waba, templates=template, campanha=campanha
+            db, de, ate, telefones=telefone, wabas=waba, templates=template, campanha=campanha, agrupar=agrupar
         )
         return schemas.PainelMensagensOut(**dados).model_dump(mode="json")
 
-    filtros = dict(de=de, ate=ate, telefone=sorted(telefone), waba=sorted(waba), template=sorted(template), campanha=campanha)
+    filtros = dict(de=de, ate=ate, telefone=sorted(telefone), waba=sorted(waba), template=sorted(template), campanha=campanha, agrupar=agrupar)
     try:
         dados = cache.obter_ou_calcular(
             cache.chave("dashboard-painel-mensagens", filtros),

@@ -706,8 +706,8 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
           gratuitas: { total: 0, por_tipo: {} },
           pagas: { total: 32686, por_categoria: { UTILITY: 27572, SERVICE: 5114 } },
           cobranca: { total_brl: "1156.84", por_categoria: { UTILITY: "975.00", SERVICE: "181.84" } },
-          por_template: [{
-            template_id: "t1", nome: "Aviso de vencimento", categoria: "UTILITY", enviados: 200, entregues: 180, lidas: 90,
+          linhas: [{
+            chave: "t1", nome: "Aviso de vencimento", categoria: "UTILITY", enviados: 200, entregues: 180, lidas: 90,
             cliques: 18, taxa_visualizacao: "0.5", taxa_cliques: "0.1", cobrados: 150, pagaram: 30, conversao: "0.2", custo_brl: "1.36",
           }],
           avisos: [],
@@ -729,6 +729,16 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     expect(pedidos[0].searchParams.get("de")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     await expect(painel.locator("label", { hasText: /^Template$/ })).toBeVisible();
     await expect(painel.locator("label", { hasText: /^Campanha$/ })).toBeVisible();
+    expect(pedidos[0].searchParams.get("agrupar")).toBe("template");
+
+    // O "i" de cada quadro explica o que ele conta
+    await painel.getByRole("button", { name: "O que é Todas as mensagens" }).hover();
+    await expect(page.getByRole("tooltip").filter({ hasText: "Mensagens do WhatsApp do período" })).toBeVisible();
+
+    // Agrupar por campanha troca as linhas e a coluna de nomes, e a API recebe o agrupamento
+    await painel.getByLabel("Agrupar por").selectOption("campanha");
+    await expect.poll(() => pedidos.at(-1)?.searchParams.get("agrupar")).toBe("campanha");
+    await expect(painel.locator("thead th").first()).toContainText("Campanha");
   });
 
   test("painel de mensagens: Meta fora do ar mostra o motivo", { tag: ["@orcamento", "@resiliencia"] }, async ({ page }) => {

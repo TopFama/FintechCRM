@@ -354,7 +354,11 @@ desenvolvimento.
    no período, do próprio Pricing Analytics). Lidas e cliques vêm do `template_analytics` da Meta (até
    90 dias; leitura e clique só por 7 dias depois do envio; exige os insights ativados na WABA) e não
    filtram por telefone nem campanha. Conversão = clientes cobrados com o template que pagaram na janela de
-   Indicadores. Guardado 10 min no Redis por conjunto de filtros; não se atualiza sozinho.
+   Indicadores. A tabela agrupa por template (padrão), faixa de atraso do cliente ou campanha
+   (`agrupar`; a régua entra como "Régua de cobrança"): por faixa e campanha, entregues e lidas vêm de
+   `cobranca_fila.entregue_em` e `lida_em`, gravados pelo webhook do Chatwoot (`delivered`/`read`; só
+   envios depois do deploy; lida exige recibo de leitura ligado) e os cliques ficam "—". Cada quadro e
+   linha tem o ícone "i" com a explicação. Guardado 10 min no Redis por conjunto de filtros; não se atualiza sozinho.
    **Tempo real** (`app/painel_tempo_real.py`, WebSocket `/dashboard/ws?de=&ate=`): os cards
    Pendentes (e pausados), Cobranças, Erros e Telefones inválidos mudam na hora. Triggers do
    Postgres (migration `a3d5f7b9c1e2`) avisam no canal `painel` o saldo de cada comando em

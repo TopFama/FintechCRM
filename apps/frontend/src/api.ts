@@ -646,7 +646,15 @@ export const api = {
   getOrcamentoProgressao: (filtro: { ano?: number; mes?: number; de?: string; ate?: string }, auto = false) =>
     request<OrcamentoProgressao>(`/dashboard/orcamento-progressao?${montarQuery({ ...filtro, auto: auto || undefined })}`),
   getPainelMensagens: (
-    filtro: { de: string; ate: string; telefone: string[]; waba: string[]; template: string[]; campanha: string },
+    filtro: {
+      de: string;
+      ate: string;
+      telefone: string[];
+      waba: string[];
+      template: string[];
+      campanha: string;
+      agrupar: AgruparPainel;
+    },
     auto = false
   ) => request<PainelMensagens>(`/dashboard/painel-mensagens?${montarQuery({ ...filtro, auto: auto || undefined })}`),
   exportarOrcamentoPorDia: (filtro: { ano?: number; mes?: number; de?: string; ate?: string; categorias?: string[] }) =>
@@ -1220,12 +1228,14 @@ export interface PainelQuantidades {
   por_categoria: Record<string, number>; // pricing_category da Meta (ou categoria do template)
 }
 
-export interface PainelTemplate {
-  template_id: string;
+export type AgruparPainel = "template" | "faixa" | "campanha";
+
+export interface PainelLinha {
+  chave: string; // id do template, nome da faixa de atraso ou id da campanha ("regua" = régua)
   nome: string;
   categoria: string;
   enviados: number;
-  // da Meta: null sem insights ativados ou sem leitura da WABA
+  // por template, da Meta (null sem insights ativados ou sem leitura da WABA); por faixa e campanha, do Chatwoot
   entregues: number | null;
   lidas: number | null;
   cliques: number | null;
@@ -1246,7 +1256,7 @@ export interface PainelMensagens {
   gratuitas: { total: number; por_tipo: Record<string, number> } | null;
   pagas: PainelQuantidades | null;
   cobranca: { total_brl: string | null; por_categoria: Record<string, string> } | null;
-  por_template: PainelTemplate[];
+  linhas: PainelLinha[];
   avisos: string[];
 }
 

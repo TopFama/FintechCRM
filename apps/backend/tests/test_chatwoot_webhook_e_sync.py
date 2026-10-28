@@ -221,10 +221,51 @@ class TestChatwootWebhookESync(unittest.TestCase):
         resp = self.client.post("/chatwoot/webhook", json=p3, headers=self._headers_webhook(p3))
         self.assertEqual(resp.json(), {"status": "ok", "action": "invalid_id"})
 
+        p4 = {"event": "message_updated", "id": 555, "status": "sent"}
+        resp = self.client.post("/chatwoot/webhook", json=p4, headers=self._headers_webhook(p4))
+        self.assertEqual(resp.json(), {"status": "ok", "action": "status_not_failed"})
+
+        # Entregue/lida de mensagem que não é da fila: nada a gravar
         for st in ("delivered", "read", 1, 2):
-            p4 = {"event": "message_updated", "id": 555, "status": st}
-            resp = self.client.post("/chatwoot/webhook", json=p4, headers=self._headers_webhook(p4))
-            self.assertEqual(resp.json(), {"status": "ok", "action": "status_not_failed"})
+            p5 = {"event": "message_updated", "id": 555, "status": st}
+            resp = self.client.post("/chatwoot/webhook", json=p5, headers=self._headers_webhook(p5))
+            self.assertEqual(resp.json(), {"status": "ok", "action": "item_not_found"})
+
+    def test_webhook_grava_entregue_e_lida(self):
+        """delivered grava entregue_em; read grava lida_em (e entregue_em se faltar); aviso repetido não regrava."""
+        self.db.add(models.Faixa(id="faixa-recibo", name="Faixa Recibo", tipo=models.TIPO_REGUA))
+        for item_id, mensagem in (("item-recibo-a", "chatwoot:77:4321"), ("item-recibo-b", "chatwoot-ok:77:4322")):
+            self.db.add(
+                models.QueueItem(
+                    id=item_id, faixa_id="faixa-recibo", codigo_cliente=item_id, celular="5511999990000",
+                    celular_original="11999990000", status=models.QueueStatus.sent,
+                    sent_at=datetime.utcnow(), whatsapp_message_id=mensagem,
+                )
+            )
+        self.db.commit()
+
+        def avisar(msg_id, st):
+            p = {"event": "message_updated", "id": msg_id, "status": st, "conversation": {"id": 77}}
+            resp = self.client.post("/chatwoot/webhook", json=p, headers=self._headers_webhook(p))
+            self.assertEqual(resp.json()["action"], "receipt_saved", resp.json())
+            self.db.expire_all()
+            return self.db.get(models.QueueItem, "item-recibo-a" if msg_id == 4321 else "item-recibo-b")
+
+        a = avisar(4321, "delivered")
+        self.assertIsNotNone(a.entregue_em)
+        self.assertIsNone(a.lida_em)
+        entregue = a.entregue_em
+        a = avisar(4321, 2)
+        self.assertIsNotNone(a.lida_em)
+        self.assertEqual(a.entregue_em, entregue)
+        lida = a.lida_em
+        a = avisar(4321, "read")
+        self.assertEqual(a.lida_em, lida)
+
+        # Sem ter visto o delivered: read preenche as duas; o prefixo trocado pela sincronização também casa
+        b = avisar(4322, "read")
+        self.assertIsNotNone(b.entregue_em)
+        self.assertEqual(b.entregue_em, b.lida_em)
 
     def test_webhook_item_nao_encontrado(self):
         """Webhook com mensagem falha de id inexistente na fila retorna item_not_found."""
