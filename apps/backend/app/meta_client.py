@@ -120,21 +120,23 @@ class MetaClient:
         start_unix: int,
         end_unix: int,
         granularity: str = "DAILY",
-    ) -> list[dict]:
-        """Custo cobrado pela Meta no período, em USD (Pricing Analytics). Desde
-        jul/2025 a Meta cobra por mensagem e o antigo conversation_analytics não
-        traz mais custo — por isso este endpoint. Sem filtro de phone_numbers a
-        Meta devolve todos os números da WABA; a dimensão PHONE quebra o custo
-        por número (campo phone_number) e PRICING_CATEGORY por categoria do
-        template (pricing_category). Retorna os "data_points"
-        (start, end, phone_number, pricing_type, pricing_category, volume, cost)."""
+    ) -> tuple[str | None, list[dict]]:
+        """Custo cobrado pela Meta no período (Pricing Analytics), com a moeda
+        de cobrança da WABA (campo currency, ex.: "USD" ou "BRL"): o cost vem
+        nessa moeda, não sempre em USD. Desde jul/2025 a Meta cobra por
+        mensagem e o antigo conversation_analytics não traz mais custo — por
+        isso este endpoint. Sem filtro de phone_numbers a Meta devolve todos os
+        números da WABA; a dimensão PHONE quebra o custo por número (campo
+        phone_number) e PRICING_CATEGORY por categoria do template
+        (pricing_category). Retorna (moeda, "data_points"), cada ponto com
+        start, end, phone_number, pricing_type, pricing_category, volume, cost."""
 
         data = await self._request(
             "GET",
             str(waba_id),
             params={
                 "fields": (
-                    'pricing_analytics.start(%d).end(%d).granularity(%s)'
+                    'currency,pricing_analytics.start(%d).end(%d).granularity(%s)'
                     '.metric_types(["COST","VOLUME"]).dimensions(["PHONE","PRICING_TYPE","PRICING_CATEGORY"])'
                 )
                 % (start_unix, end_unix, granularity)
@@ -143,7 +145,7 @@ class MetaClient:
         pontos: list[dict] = []
         for bloco in data.get("pricing_analytics", {}).get("data", []):
             pontos.extend(bloco.get("data_points", []))
-        return pontos
+        return data.get("currency"), pontos
 
     async def upload_media(self, phone_number_id: str, nome: str, conteudo: bytes, mime: str) -> str:
         """Sobe um arquivo para a Cloud API e devolve o media id. Com o id, a
