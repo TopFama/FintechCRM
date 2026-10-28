@@ -1,6 +1,8 @@
-"""Gasto real com WhatsApp (Meta Pricing Analytics, USD → BRL) por dia, usado
+"""Gasto real com WhatsApp (Meta Pricing Analytics, em BRL) por dia, usado
 no orçamento do Dashboard, no "valor a pagar" do relatório de efetividade e,
-rateado por envio (`custo_por_envio`), no ROAS do "Por faixa" e da Efetividade."""
+rateado por envio (`custo_por_envio`), no ROAS do "Por faixa" e da Efetividade.
+A Meta devolve o custo na moeda de cobrança de cada WABA: USD é convertido pela
+cotação do dia, BRL entra como veio."""
 
 import asyncio
 import logging
@@ -23,6 +25,10 @@ GASTO_TTL_SEGUNDOS = 600
 # pricing_category da Meta → categoria do Orçamento. Autenticação e outras ficam
 # de fora da quebra por categoria (continuam no gasto total).
 CATEGORIAS = {"UTILITY": "utilitario", "MARKETING": "marketing", "MARKETING_LITE": "marketing", "SERVICE": "servico"}
+
+# Moedas de cobrança da WABA que sabemos levar para BRL. Sem o campo currency
+# (resposta antiga da Meta) o custo é tratado como USD, como sempre foi.
+MOEDAS_SUPORTADAS = {"USD", "BRL"}
 
 # Códigos de erro da Graph API que significam falta de acesso/permissão
 _CODIGOS_PERMISSAO = {10, 100, 190, 200, 294}
@@ -129,10 +135,15 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
             for token in tokens:
                 try:
                     client = meta_client.MetaClient(token)
-                    pontos.extend(
-                        {**p, "waba_id": waba_id}
-                        for p in await client.pricing_analytics(waba_id, start_unix=start_unix, end_unix=end_unix)
+                    moeda, pontos_waba = await client.pricing_analytics(
+                        waba_id, start_unix=start_unix, end_unix=end_unix
                     )
+                    moeda = (moeda or "USD").upper()
+                    if moeda not in MOEDAS_SUPORTADAS:
+                        # Converter com a cotação errada distorce o total; melhor avisar
+                        avisos.append(AvisoWaba(waba_id, numeros, f"moeda de cobrança {moeda} não suportada"))
+                    else:
+                        pontos.extend({**p, "waba_id": waba_id, "moeda": moeda} for p in pontos_waba)
                     break
                 except Exception as exc:  # noqa: BLE001 - tenta o próximo token da WABA
                     erros.append(_descrever_erro(exc))
@@ -151,11 +162,14 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
     if len(avisos) == len(numeros_por_waba):
         return CustoWhatsapp(None, "; ".join(f"WABA {a.waba_id}: {a.motivo}" for a in avisos), avisos)
 
-    try:
-        cotacao = Decimal(str(asyncio.run(cambio.cotacao_usd_brl())))
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Câmbio indisponível: %s", exc)
-        return CustoWhatsapp(None, f"Cotação do dólar indisponível: {exc}", avisos)
+    # Só busca a cotação se alguma WABA cobra em dólar
+    cotacao = Decimal("1")
+    if any(p["moeda"] == "USD" for p in pontos):
+        try:
+            cotacao = Decimal(str(asyncio.run(cambio.cotacao_usd_brl())))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Câmbio indisponível: %s", exc)
+            return CustoWhatsapp(None, f"Cotação do dólar indisponível: {exc}", avisos)
 
     exibicao = {
         _digitos(n): n for numeros in numeros_por_waba.values() for n in numeros
@@ -168,7 +182,9 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
         if p.get("start") is None:
             continue
         dia = datetime.fromtimestamp(int(p["start"]), BUSINESS_TZ).date()
-        custo = Decimal(str(p.get("cost", 0) or 0)) * cotacao
+        custo = Decimal(str(p.get("cost", 0) or 0))
+        if p["moeda"] == "USD":
+            custo *= cotacao
         por_dia[dia] = por_dia.get(dia, Decimal("0")) + custo
         telefone = p.get("phone_number")
         chave = exibicao.get(_digitos(telefone), telefone) if telefone else ""

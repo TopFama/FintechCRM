@@ -57,7 +57,7 @@ fila" chama `fila_automatica.descartar_pendentes` (Envios).
 ### `apps/backend/app/services/custo_whatsapp.py`
 - **Domínio:** Dashboard/Relatórios
 - **Camada:** aplicação
-- **Responsabilidade:** calcular o custo do WhatsApp em reais. `gasto_diario_brl` guarda o gasto por dia 10 min no Redis (falha não é guardada; sem Redis vai à Meta); `custo_por_envio` divide o gasto de cada dia pelas mensagens enviadas pela fila no dia, a única regra de rateio do ROAS (Dashboard e Efetividade).
+- **Responsabilidade:** calcular o custo do WhatsApp em reais. A Meta devolve o custo na moeda de cobrança de cada WABA (campo `currency`, lido junto com o Pricing Analytics): USD é convertido pela cotação de `cambio`, BRL entra como veio e outra moeda vira aviso da WABA, sem entrar no total. `gasto_diario_brl` guarda o gasto por dia 10 min no Redis (falha não é guardada; sem Redis vai à Meta); `custo_por_envio` divide o gasto de cada dia pelas mensagens enviadas pela fila no dia, a única regra de rateio do ROAS (Dashboard e Efetividade).
 - **Violações encontradas:**
   - [x] Acesso a dados de outro domínio: `_tokens_da_waba` decifra tokens da Meta direto das tabelas, repetindo parte de `meta_client.token_da_waba` (a diferença é que aqui tenta todos os tokens ativos).
 - **Churn:** 5 | **Linhas:** 186

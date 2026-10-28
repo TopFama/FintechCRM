@@ -48,7 +48,7 @@ variáveis (`styles.css`), sem biblioteca de UI nem de ícones.
 | SETA (ERP, Postgres de produção) | `seta_client.py` | Base de cobrança, parcelas, SPC, baixas e compras (faixa de compra). Só `SELECT`, conexão read-only |
 | TopFamaRenegocie (HTTP interno) | `remarketing.py` (inline; `routers/remarketing.py` só captura `httpx.HTTPError`) | Clientes do remarketing |
 | Google Sheets (OAuth2) | `google_client.py` | Planilha de lojas |
-| Câmbio USD→BRL | `cambio.py` | AwesomeAPI, PTAX do BCB e open.er-api, com fallback |
+| Câmbio USD→BRL | `cambio.py` | AwesomeAPI, PTAX do BCB e open.er-api, com fallback; só para WABA cobrada em dólar |
 
 Não há e-mail nem SMS: o único canal de envio é WhatsApp (Meta direta ou via Chatwoot).
 
