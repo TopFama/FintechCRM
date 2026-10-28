@@ -716,9 +716,10 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     });
     await page.reload();
     const painel = card(page, /^Mensagens$/);
-    const quadro = (titulo: string) => painel.locator(".painel-quadro", { hasText: titulo });
+    const quadro = (titulo: string) =>
+      painel.locator(".painel-quadro").filter({ has: page.locator(".painel-quadro-topo", { hasText: titulo }) });
     await expect(quadro("Todas as mensagens")).toContainText("33.937");
-    await expect(quadro("Mensagens entregues").first()).toContainText("32.686");
+    await expect(quadro("Mensagens entregues")).toContainText("32.686");
     await expect(quadro("Cobrança total aproximada")).toContainText("1.156,84");
     await expect(quadro("Cobrança total aproximada")).toContainText("Utilidade");
     const linha = painel.locator("tbody tr", { hasText: "Aviso de vencimento" });
