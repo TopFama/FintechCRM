@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import cache, consultas_fila, meta_client, models, seta_client
+from .. import cache, consultas_fila, models, seta_client
 from ..timezone import BUSINESS_TZ, hoje_br
 from . import custo_whatsapp, pagamentos_service
 
@@ -31,15 +31,9 @@ logger = logging.getLogger(__name__)
 PAINEL_TTL_SEGUNDOS = 600  # guardado no Redis pelo router
 # A Meta guarda 90 dias de analytics de template
 DIAS_TEMPLATE_ANALYTICS = 90
-# pricing_type diferente de REGULAR é mensagem gratuita (FREE_*)
-TIPO_COBRADA = "REGULAR"
 # product_types do analytics da WABA: 0 = template, 2 = não-template, 100 = recebidas
 TIPOS_ENVIADAS = [0, 2]
 TIPOS_RECEBIDAS = [100]
-
-
-def _digitos(numero: str | None) -> str:
-    return "".join(c for c in (numero or "") if c.isdigit())
 
 
 def _unix(dia: date, fim: bool = False) -> int:
@@ -50,19 +44,6 @@ def _unix(dia: date, fim: bool = False) -> int:
 
 def _quantidades(linhas: dict[str, int]) -> dict:
     return {"total": sum(linhas.values()), "por_categoria": linhas}
-
-
-def _tarifas(custo: custo_whatsapp.CustoWhatsapp) -> dict[tuple[str, str], Decimal]:
-    """Tarifa unitária em BRL por (WABA, categoria da Meta): o que foi cobrado
-    (REGULAR) ÷ mensagens cobradas no período, já com câmbio e faixa de volume."""
-
-    soma: dict[tuple[str, str], list] = {}
-    for (waba, _numero, categoria, tipo), (gasto, volume) in custo.por_tipo_categoria.items():
-        if tipo == TIPO_COBRADA and volume:
-            linha = soma.setdefault((waba, categoria), [Decimal("0"), 0])
-            linha[0] += gasto
-            linha[1] += volume
-    return {chave: gasto / volume for chave, (gasto, volume) in soma.items()}
 
 
 def _quadros_da_meta(
@@ -76,11 +57,11 @@ def _quadros_da_meta(
     gratuitas: dict[str, int] = {}
     gasto: dict[str, Decimal] = {}
     for (waba, numero, categoria, tipo), (valor, volume) in custo.por_tipo_categoria.items():
-        if (wabas is not None and waba not in wabas) or (telefones is not None and _digitos(numero) not in telefones):
+        if (wabas is not None and waba not in wabas) or (telefones is not None and custo_whatsapp.digitos(numero) not in telefones):
             continue
         categoria = categoria or "OUTRAS"
         entregues[categoria] = entregues.get(categoria, 0) + volume
-        if tipo == TIPO_COBRADA:
+        if tipo == custo_whatsapp.TIPO_COBRADA:
             pagas[categoria] = pagas.get(categoria, 0) + volume
         else:
             gratuitas[tipo or "GRATUITA"] = gratuitas.get(tipo or "GRATUITA", 0) + volume
@@ -108,27 +89,25 @@ def _mensagens_da_meta(
 
     async def buscar() -> None:
         for waba in wabas:
-            tokens = custo_whatsapp._tokens_da_waba(db, waba)
             telefones = (telefones_por_waba or {}).get(waba)
-            erro = "nenhum token da Meta ativo para esta WABA"
-            for token in tokens:
-                try:
-                    client = meta_client.MetaClient(token)
-                    enviadas = await client.message_analytics(
-                        waba, start_unix=inicio, end_unix=fim, product_types=TIPOS_ENVIADAS, telefones=telefones
-                    )
-                    recebidas = await client.message_analytics(
-                        waba, start_unix=inicio, end_unix=fim, product_types=TIPOS_RECEBIDAS, telefones=telefones
-                    )
-                except Exception as exc:  # noqa: BLE001 - tenta o próximo token da WABA
-                    erro = custo_whatsapp._descrever_erro(exc)
-                    continue
-                resultado["enviadas"] += sum(int(p.get("sent") or 0) for p in enviadas)
-                resultado["entregues"] += sum(int(p.get("delivered") or 0) for p in enviadas)
-                resultado["recebidas"] += sum(int(p.get("sent") or 0) for p in recebidas)
-                break
-            else:
+
+            async def consultar(client, waba=waba, telefones=telefones):
+                enviadas = await client.message_analytics(
+                    waba, start_unix=inicio, end_unix=fim, product_types=TIPOS_ENVIADAS, telefones=telefones
+                )
+                recebidas = await client.message_analytics(
+                    waba, start_unix=inicio, end_unix=fim, product_types=TIPOS_RECEBIDAS, telefones=telefones
+                )
+                return enviadas, recebidas
+
+            resposta, erro = await custo_whatsapp.consultar_waba(custo_whatsapp.tokens_da_waba(db, waba), consultar)
+            if resposta is None:
                 avisos.append(f"Mensagens da WABA {waba} indisponíveis: {erro}")
+                continue
+            enviadas, recebidas = resposta
+            resultado["enviadas"] += sum(int(p.get("sent") or 0) for p in enviadas)
+            resultado["entregues"] += sum(int(p.get("delivered") or 0) for p in enviadas)
+            resultado["recebidas"] += sum(int(p.get("sent") or 0) for p in recebidas)
 
     asyncio.run(buscar())
     return resultado, avisos
@@ -164,27 +143,24 @@ def _analytics_de_templates(
 
     async def buscar() -> None:
         for waba, lista in por_waba.items():
-            tokens = custo_whatsapp._tokens_da_waba(db, waba)
-            erro = "nenhum token da Meta ativo para esta WABA"
-            for token in tokens:
-                try:
-                    pontos = await meta_client.MetaClient(token).template_analytics(
-                        waba, [t.meta_template_id for t in lista], start_unix=inicio, end_unix=fim
-                    )
-                except Exception as exc:  # noqa: BLE001 - tenta o próximo token da WABA
-                    erro = custo_whatsapp._descrever_erro(exc)
-                    continue
-                for p in pontos:
-                    alvo = por_meta_id.get(str(p.get("template_id")))
-                    if not alvo:
-                        continue
-                    soma = dados.setdefault(alvo, {"entregues": 0, "lidas": 0, "cliques": 0})
-                    soma["entregues"] += int(p.get("delivered") or 0)
-                    soma["lidas"] += int(p.get("read") or 0)
-                    soma["cliques"] += _cliques(p.get("clicked"))
-                break
-            else:
+
+            async def consultar(client, waba=waba, lista=lista):
+                return await client.template_analytics(
+                    waba, [t.meta_template_id for t in lista], start_unix=inicio, end_unix=fim
+                )
+
+            pontos, erro = await custo_whatsapp.consultar_waba(custo_whatsapp.tokens_da_waba(db, waba), consultar)
+            if pontos is None:
                 avisos.append(f"Lidas e cliques da WABA {waba} indisponíveis: {erro}")
+                continue
+            for p in pontos:
+                alvo = por_meta_id.get(str(p.get("template_id")))
+                if not alvo:
+                    continue
+                soma = dados.setdefault(alvo, {"entregues": 0, "lidas": 0, "cliques": 0})
+                soma["entregues"] += int(p.get("delivered") or 0)
+                soma["lidas"] += int(p.get("read") or 0)
+                soma["cliques"] += _cliques(p.get("clicked"))
 
     asyncio.run(buscar())
     return dados, avisos
@@ -260,7 +236,7 @@ def montar(
     filtra_numero = bool(telefones or wabas)
     ids_numero = [n.id for n in escolhidos] if filtra_numero else None
     wabas_alvo = {n.waba_id for n in escolhidos} if filtra_numero else None
-    telefones_alvo = {_digitos(n.display_phone_number) for n in escolhidos} if telefones else None
+    telefones_alvo = {custo_whatsapp.digitos(n.display_phone_number) for n in escolhidos} if telefones else None
 
     custo = custo_whatsapp.custo_detalhado(db, de, ate)
     meta_ok = custo.por_dia is not None
@@ -282,7 +258,7 @@ def montar(
     modelos = {
         t.id: t for t in db.query(models.Template).filter(models.Template.id.in_(list(por_template)))
     } if por_template else {}
-    tarifas = _tarifas(custo) if meta_ok else {}
+    tarifas = custo_whatsapp.tarifas_unitarias(custo) if meta_ok else {}
 
     # Custo estimado de cada template: envios de cada WABA × tarifa unitária da categoria dela
     sem_tarifa: set[str] = set()
@@ -364,7 +340,7 @@ def montar(
             | {w for (w,) in db.query(models.MetaToken.waba_id).filter(models.MetaToken.ativo.is_(True)) if w}
         )
         telefones_por_waba = (
-            {w: [_digitos(n.display_phone_number) for n in escolhidos if n.waba_id == w] for w in wabas_conhecidas}
+            {w: [custo_whatsapp.digitos(n.display_phone_number) for n in escolhidos if n.waba_id == w] for w in wabas_conhecidas}
             if telefones
             else None
         )

@@ -189,11 +189,7 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
           <IconAlert width={16} height={16} />
           <span>{erro}</span>
         </div>
-      ) : !periodo.de || !periodo.ate ? (
-        <div className="empty-state">
-          <p>Escolha a data mínima e a máxima.</p>
-        </div>
-      ) : !dados ? (
+      ) : !periodo.de || !periodo.ate ? null : !dados ? (
         <div className="loading-state">Carregando mensagens...</div>
       ) : (
         <>

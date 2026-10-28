@@ -80,11 +80,11 @@ export default function FiltroPeriodo({
         <div className="form-row">
           <div className="field">
             <label htmlFor={`${idBase}-de`}>Data mínima</label>
-            <input id={`${idBase}-de`} type="date" value={de} max={ate || undefined} onChange={(e) => mudarData(e.target.value, ate)} />
+            <input id={`${idBase}-de`} type="date" required aria-invalid={!de} value={de} max={ate || undefined} onChange={(e) => mudarData(e.target.value, ate)} />
           </div>
           <div className="field">
             <label htmlFor={`${idBase}-ate`}>Data máxima</label>
-            <input id={`${idBase}-ate`} type="date" value={ate} min={de || undefined} onChange={(e) => mudarData(de, e.target.value)} />
+            <input id={`${idBase}-ate`} type="date" required aria-invalid={!ate} value={ate} min={de || undefined} onChange={(e) => mudarData(de, e.target.value)} />
           </div>
         </div>
       )}

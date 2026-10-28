@@ -763,6 +763,10 @@ label {
   color: var(--color-text-muted);
 }
 
+.field input[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
 .field input:disabled {
   background: var(--color-neutral-bg);
   color: var(--color-text-faint);

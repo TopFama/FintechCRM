@@ -57,7 +57,11 @@ class CustoWhatsapp:
     por_tipo_categoria: dict[tuple[str, str, str, str], list] = field(default_factory=dict)
 
 
-def _digitos(numero: str | None) -> str:
+# pricing_type da mensagem cobrada; qualquer outro (FREE_*) é gratuita
+TIPO_COBRADA = "REGULAR"
+
+
+def digitos(numero: str | None) -> str:
     return "".join(c for c in (numero or "") if c.isdigit())
 
 
@@ -72,7 +76,7 @@ def _descrever_erro(exc: Exception) -> str:
     return str(exc)
 
 
-def _tokens_da_waba(db: Session, waba_id: str) -> list[str]:
+def tokens_da_waba(db: Session, waba_id: str) -> list[str]:
     """Todos os tokens ativos que podem responder pela WABA — dos números dela
     e do cadastro em Configurações —, para tentar o próximo se um não tiver
     permissão."""
@@ -101,6 +105,32 @@ def _tokens_da_waba(db: Session, waba_id: str) -> list[str]:
     return tokens
 
 
+async def consultar_waba(tokens: list[str], chamar) -> tuple[object | None, str | None]:
+    """Roda `chamar(MetaClient)` com cada token da WABA até um responder:
+    (resultado, None) ou (None, último erro) se nenhum respondeu."""
+
+    erro = "nenhum token da Meta ativo para esta WABA"
+    for token in tokens:
+        try:
+            return await chamar(meta_client.MetaClient(token)), None
+        except Exception as exc:  # noqa: BLE001 - tenta o próximo token da WABA
+            erro = _descrever_erro(exc)
+    return None, erro
+
+
+def tarifas_unitarias(custo: "CustoWhatsapp") -> dict[tuple[str, str], Decimal]:
+    """Tarifa unitária em BRL por (WABA, pricing_category da Meta): o que foi cobrado
+    (TIPO_COBRADA) ÷ mensagens cobradas no período, já com câmbio e faixa de volume."""
+
+    soma: dict[tuple[str, str], list] = {}
+    for (waba, _numero, categoria, tipo), (gasto, volume) in custo.por_tipo_categoria.items():
+        if tipo == TIPO_COBRADA and volume:
+            linha = soma.setdefault((waba, categoria), [Decimal("0"), 0])
+            linha[0] += gasto
+            linha[1] += volume
+    return {chave: gasto / volume for chave, (gasto, volume) in soma.items()}
+
+
 def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
     """Custo de TODAS as WABAs conectadas (tokens ativos + números importados)
     no período, por dia e por número, com aviso de cada WABA que não pôde ser
@@ -124,34 +154,26 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
     if end_unix <= start_unix:
         return CustoWhatsapp({})
 
-    tokens_por_waba = {w: _tokens_da_waba(db, w) for w in numeros_por_waba}
+    tokens_por_waba = {w: tokens_da_waba(db, w) for w in numeros_por_waba}
 
     async def _buscar() -> tuple[list[dict], list[AvisoWaba]]:
         pontos: list[dict] = []
         avisos: list[AvisoWaba] = []
         for waba_id, numeros in numeros_por_waba.items():
-            tokens = tokens_por_waba[waba_id]
-            if not tokens:
-                avisos.append(AvisoWaba(waba_id, numeros, "nenhum token da Meta ativo para esta WABA"))
+            async def consultar(client, waba_id=waba_id):
+                return await client.pricing_analytics(waba_id, start_unix=start_unix, end_unix=end_unix)
+
+            resposta, erro = await consultar_waba(tokens_por_waba[waba_id], consultar)
+            if resposta is None:
+                avisos.append(AvisoWaba(waba_id, numeros, erro))
                 continue
-            erros: list[str] = []
-            for token in tokens:
-                try:
-                    client = meta_client.MetaClient(token)
-                    moeda, pontos_waba = await client.pricing_analytics(
-                        waba_id, start_unix=start_unix, end_unix=end_unix
-                    )
-                    moeda = (moeda or "USD").upper()
-                    if moeda not in MOEDAS_SUPORTADAS:
-                        # Converter com a cotação errada distorce o total; melhor avisar
-                        avisos.append(AvisoWaba(waba_id, numeros, f"moeda de cobrança {moeda} não suportada"))
-                    else:
-                        pontos.extend({**p, "waba_id": waba_id, "moeda": moeda} for p in pontos_waba)
-                    break
-                except Exception as exc:  # noqa: BLE001 - tenta o próximo token da WABA
-                    erros.append(_descrever_erro(exc))
+            moeda, pontos_waba = resposta
+            moeda = (moeda or "USD").upper()
+            if moeda not in MOEDAS_SUPORTADAS:
+                # Converter com a cotação errada distorce o total; melhor avisar
+                avisos.append(AvisoWaba(waba_id, numeros, f"moeda de cobrança {moeda} não suportada"))
             else:
-                avisos.append(AvisoWaba(waba_id, numeros, erros[-1]))
+                pontos.extend({**p, "waba_id": waba_id, "moeda": moeda} for p in pontos_waba)
         return pontos, avisos
 
     try:
@@ -175,7 +197,7 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
             return CustoWhatsapp(None, f"Cotação do dólar indisponível: {exc}", avisos)
 
     exibicao = {
-        _digitos(n): n for numeros in numeros_por_waba.values() for n in numeros
+        digitos(n): n for numeros in numeros_por_waba.values() for n in numeros
     }
     por_dia: dict[date, Decimal] = {}
     por_categoria: dict[tuple[date, str, str], list] = {}
@@ -191,16 +213,18 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
             custo *= cotacao
         por_dia[dia] = por_dia.get(dia, Decimal("0")) + custo
         telefone = p.get("phone_number")
-        chave = exibicao.get(_digitos(telefone), telefone) if telefone else ""
+        chave = exibicao.get(digitos(telefone), telefone) if telefone else ""
         # Só conta mensagem cobrada: REGULAR na dimensão PRICING_TYPE (as
         # gratuitas vêm como FREE_*), ou custo > 0 se o tipo não vier.
         tipo = p.get("pricing_type")
-        cobradas = int(p.get("volume", 0) or 0) if tipo == "REGULAR" or (tipo is None and custo > 0) else 0
+        if tipo is None:
+            tipo = TIPO_COBRADA if custo > 0 else ""
+        cobradas = int(p.get("volume", 0) or 0) if tipo == TIPO_COBRADA else 0
         linha = por_dia_numero.setdefault((dia, p.get("waba_id", ""), chave), [Decimal("0"), 0])
         linha[0] += custo
         linha[1] += cobradas
         linha = por_tipo_categoria.setdefault(
-            (p.get("waba_id", ""), chave, p.get("pricing_category") or "", tipo or ("REGULAR" if custo > 0 else "")),
+            (p.get("waba_id", ""), chave, p.get("pricing_category") or "", tipo),
             [Decimal("0"), 0],
         )
         linha[0] += custo

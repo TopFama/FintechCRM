@@ -31,6 +31,7 @@ from app import crypto, models, schemas
 from app.database import SessionLocal
 from app.main import app
 from app.services import painel_mensagens
+from app.services import custo_whatsapp
 from app.services.custo_whatsapp import CustoWhatsapp
 
 with TestClient(app):  # sobe o schema
@@ -104,7 +105,7 @@ class MetaFalsa:
 
 
 painel_mensagens.custo_whatsapp.custo_detalhado = lambda db_, de, ate: CUSTO
-painel_mensagens.meta_client.MetaClient = MetaFalsa
+custo_whatsapp.meta_client.MetaClient = MetaFalsa
 painel_mensagens.pagamentos_service.snapshot_pagamentos = lambda **_: SimpleNamespace(data=[{"codigo_cliente": "c1"}])
 painel_mensagens.hoje_br = lambda: date(2026, 10, 28)
 
