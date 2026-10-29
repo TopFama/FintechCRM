@@ -355,10 +355,12 @@ desenvolvimento.
    90 dias; leitura e clique só por 7 dias depois do envio; exige os insights ativados na WABA) e não
    filtram por telefone nem campanha. Conversão = clientes cobrados com o template que pagaram na janela de
    Indicadores. A tabela agrupa por template (padrão), faixa de atraso do cliente ou campanha
-   (`agrupar`; a régua entra como "Régua de cobrança"): por faixa e campanha, entregues e lidas vêm de
-   `cobranca_fila.entregue_em` e `lida_em`, gravados pelo webhook do Chatwoot (`delivered`/`read`; só
-   envios depois do deploy; lida exige recibo de leitura ligado) e os cliques ficam "—". Cada quadro e
-   linha tem o ícone "i" com a explicação. Guardado 10 min no Redis por conjunto de filtros; não se atualiza sozinho.
+   (`agrupar`; a régua entra como "Régua de cobrança"; templates de mesmo nome somam numa linha): por faixa e
+   campanha, entregues, lidas e cliques são os dos templates enviados nela, a parte de cada template igual à
+   fatia dos envios dele (só envios com `template_id`). ROAS = valor pago dos cobrados ÷ custo da linha
+   (`relatorio_efetividade.calcular_roas`). O webhook do Chatwoot guarda `entregue_em` e `lida_em` em
+   `cobranca_fila` (`delivered`/`read`), sem uso no painel. O período abre em "Este mês". Cada quadro e
+   linha tem o ícone "i" com a explicação. Guardado 10 min no Redis por conjunto de filtros; vencido, abre na hora com o último resultado (até 30 min) e atualiza ao fundo.
    **Tempo real** (`app/painel_tempo_real.py`, WebSocket `/dashboard/ws?de=&ate=`): os cards
    Pendentes (e pausados), Cobranças, Erros e Telefones inválidos mudam na hora. Triggers do
    Postgres (migration `a3d5f7b9c1e2`) avisam no canal `painel` o saldo de cada comando em

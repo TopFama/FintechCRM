@@ -1235,7 +1235,7 @@ export interface PainelLinha {
   nome: string;
   categoria: string;
   enviados: number;
-  // por template, da Meta (null sem insights ativados ou sem leitura da WABA); por faixa e campanha, do Chatwoot
+  // da Meta por template; por faixa e campanha, a parte de cada template pela fatia dos envios (null sem insights ativados ou sem leitura da WABA)
   entregues: number | null;
   lidas: number | null;
   cliques: number | null;
@@ -1245,6 +1245,7 @@ export interface PainelLinha {
   pagaram: number | null;
   conversao: string | null;
   custo_brl: string | null;
+  roas: string | null; // valor pago dos cobrados ÷ custo da linha; null sem custo
 }
 
 export interface PainelMensagens {

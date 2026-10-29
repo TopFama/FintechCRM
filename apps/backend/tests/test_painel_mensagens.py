@@ -109,7 +109,7 @@ class MetaFalsa:
 
 painel_mensagens.custo_whatsapp.custo_detalhado = lambda db_, de, ate: CUSTO
 custo_whatsapp.meta_client.MetaClient = MetaFalsa
-painel_mensagens.pagamentos_service.snapshot_pagamentos = lambda **_: SimpleNamespace(data=[{"codigo_cliente": "c1"}])
+painel_mensagens.pagamentos_service.snapshot_pagamentos = lambda **_: SimpleNamespace(data=[{"codigo_cliente": "c1", "valor_pago": Decimal("100.00")}])
 painel_mensagens.hoje_br = lambda: date(2026, 10, 28)
 
 
@@ -137,10 +137,11 @@ assert (u.enviados, u.cobrados, u.pagaram) == (5, 4, 1), u
 assert (u.entregues, u.lidas, u.cliques) == (80, 40, 8), u
 assert u.taxa_visualizacao == Decimal("0.5") and u.taxa_cliques == Decimal("0.1"), u
 assert u.conversao == Decimal("0.25"), u
+assert u.roas == Decimal("2941.18"), u.roas  # 100,00 pagos ÷ (5 × 10,20 ÷ 1500)
 assert u.custo_brl == Decimal("0.03"), u.custo_brl  # 5 × (10,20 ÷ 1500)
 # Marketing sem tarifa no período: custo "—" e aviso; sem insights do template (Meta não devolveu)
 m = linhas["Oferta"]
-assert m.enviados == 2 and m.custo_brl is None and m.entregues is None and m.taxa_visualizacao is None, m
+assert m.enviados == 2 and m.custo_brl is None and m.entregues is None and m.taxa_visualizacao is None and m.roas is None, m
 assert any("Sem tarifa" in a and "MARKETING" in a for a in p.avisos), p.avisos
 
 # Telefone: vai para o analytics da WABA (só dígitos) e restringe a fila
@@ -174,7 +175,7 @@ p = painel()
 assert p.todas is None and p.entregues is None and p.cobranca is None, p
 assert any("fora" in a for a in p.avisos) and len(p.linhas) == 2, p.avisos
 
-# Agrupar por campanha/faixa de atraso: a tabela sai da fila (entregue/lida do Chatwoot), sem Meta por template
+# Agrupar por campanha/faixa de atraso: cada linha leva a parte dos templates dela, igual à fatia dos envios de cada template
 painel_mensagens.custo_whatsapp.custo_detalhado = lambda db_, de, ate: CUSTO
 item("c6", n1, util, f=campanha, atraso="4 a 7 dias", lida=True)
 item("c7", n1, util, f=campanha, atraso="1 a 3 dias", entregue=True)
@@ -182,21 +183,24 @@ db.commit()
 campanha_id = campanha.id
 CHAMADAS.clear()
 p = painel(agrupar="campanha")
-assert not any(c[0] == "templates" for c in CHAMADAS), CHAMADAS
 por = {l.chave: l for l in p.linhas}
 assert set(por) == {"regua", campanha_id}, por.keys()
 assert por["regua"].nome == "Régua de cobrança" and por["regua"].enviados == 7 and por["regua"].custo_brl is None, por["regua"]
 c = por[campanha_id]
 assert c.nome == "Campanha: Black" and (c.enviados, c.cobrados, c.pagaram) == (2, 2, 0), c
-assert (c.entregues, c.lidas, c.cliques) == (2, 1, None), c
-assert c.taxa_visualizacao == Decimal("0.5") and c.taxa_cliques is None and c.categoria == "", c
+# Aviso: 7 envios na régua e na campanha; 80 entregues, 40 lidas e 8 cliques repartidos em 5 e 2 deles
+assert (c.entregues, c.lidas, c.cliques) == (23, 11, 2), c
+assert c.taxa_visualizacao == Decimal(11) / 23 and c.taxa_cliques == Decimal(2) / 23 and c.categoria == "", c
+assert (por["regua"].entregues, por["regua"].lidas, por["regua"].cliques) == (57, 29, 6), por["regua"]
+assert c.roas == Decimal("0.00") and por["regua"].roas is None, (c.roas, por["regua"].roas)
 assert c.custo_brl == Decimal("0.01"), c.custo_brl  # 2 × (10,20 ÷ 1500)
 
 p = painel(agrupar="faixa")
 por = {l.nome: l for l in p.linhas}
 assert set(por) == {"1 a 3 dias", "4 a 7 dias"}, por.keys()  # faixa de atraso do cliente: a da campanha, senão a da régua
 assert por["1 a 3 dias"].enviados == 8 and por["4 a 7 dias"].enviados == 1, por
-assert por["4 a 7 dias"].lidas == 1 and por["1 a 3 dias"].entregues == 1, por
+assert (por["4 a 7 dias"].entregues, por["4 a 7 dias"].lidas) == (11, 6), por  # 1 dos 7 envios do Aviso
+assert (por["1 a 3 dias"].entregues, por["1 a 3 dias"].lidas) == (69, 34), por  # 6 dos 7
 # Ordem do "Por faixa" (progressão de atraso das regras), não por quantidade: a faixa de mais atraso, mesmo com mais envios, vem depois
 for i in range(10):
     item(f"x{i}", n1, util, atraso="4 a 7 dias")

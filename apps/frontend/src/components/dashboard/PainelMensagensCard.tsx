@@ -162,13 +162,23 @@ const COLUNAS: Coluna[] = [
     valor: (t) => (t.custo_brl === null ? null : Number(t.custo_brl)),
     formato: (t) => formatBRL(t.custo_brl),
   },
+  {
+    chave: "roas",
+    rotulo: "ROAS",
+    dica: {
+      texto: "Quanto voltou em pagamento para cada R$ 1 gasto com WhatsApp nas mensagens da linha. Cliente que recebeu mais de um template conta em todos.",
+      formula: "Valor pago dos clientes cobrados ÷ Custo da linha",
+    },
+    valor: (t) => (t.roas === null ? null : Number(t.roas)),
+    formato: (t) => formatRoas(t.roas),
+  },
 ];
 
 // Mini-tabelas do "Preços das mensagens" do analytics da Meta (em R$) e métricas por
 // template. Filtros próprios; a Meta não filtra por template nem campanha, então com
 // um deles marcado os quadros vêm da fila (o backend avisa em `origem`).
 export default function PainelMensagensCard({ recarregar }: { recarregar: number }) {
-  const [periodo, setPeriodo] = useState<Periodo>(() => periodoDe("7dias"));
+  const [periodo, setPeriodo] = useState<Periodo>(() => periodoDe("mes"));
   const [telefones, setTelefones] = useState<string[]>([]);
   const [wabas, setWabas] = useState<string[]>([]);
   const [templates, setTemplates] = useState<string[]>([]);
@@ -226,7 +236,7 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
         </div>
       </div>
 
-      <FiltroPeriodo opcoes={["7dias", "mes", "personalizado"]} inicial="7dias" onChange={(p) => setPeriodo(p)} />
+      <FiltroPeriodo opcoes={["7dias", "mes", "personalizado"]} inicial="mes" onChange={(p) => setPeriodo(p)} />
       <div className="form-row">
         <MultiSelect id="painel-waba" label="WABA" options={opcoesWaba} value={wabas} onChange={setWabas} />
         <MultiSelect

@@ -708,7 +708,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
           cobranca: { total_brl: "1156.84", por_categoria: { UTILITY: "975.00", SERVICE: "181.84" } },
           linhas: [{
             chave: "t1", nome: "Aviso de vencimento", categoria: "UTILITY", enviados: 200, entregues: 180, lidas: 90,
-            cliques: 18, taxa_visualizacao: "0.5", taxa_cliques: "0.1", cobrados: 150, pagaram: 30, conversao: "0.2", custo_brl: "1.36",
+            cliques: 18, taxa_visualizacao: "0.5", taxa_cliques: "0.1", cobrados: 150, pagaram: 30, conversao: "0.2", custo_brl: "1.36", roas: "8.00",
           }],
           avisos: [],
         },
@@ -725,8 +725,10 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     const linha = painel.locator("tbody tr", { hasText: "Aviso de vencimento" });
     await expect(linha).toContainText("50,0%");
     await expect(linha).toContainText("20,0%");
-    // o período padrão (7 dias) vai para a API e os filtros de template e campanha existem
-    expect(pedidos[0].searchParams.get("de")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await expect(linha).toContainText("8,00x");
+    // o período padrão (Este mês) vai para a API e os filtros de template e campanha existem
+    await expect(painel.locator(".periodo-card", { hasText: "Este mês" })).toHaveAttribute("aria-pressed", "true");
+    expect(pedidos[0].searchParams.get("de")).toMatch(/^\d{4}-\d{2}-01$/);
     await expect(painel.locator("label", { hasText: /^Template$/ })).toBeVisible();
     await expect(painel.locator("label", { hasText: /^Campanha$/ })).toBeVisible();
     expect(pedidos[0].searchParams.get("agrupar")).toBe("template");

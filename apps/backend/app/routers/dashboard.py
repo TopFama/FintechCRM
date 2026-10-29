@@ -446,7 +446,6 @@ def painel_mensagens_dashboard(
     campanha: str = Query(""),
     agrupar: Literal["template", "faixa", "campanha"] = Query("template"),
     auto: bool = Query(False),
-    db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):
     """Mini-tabelas do analytics da Meta (em BRL) e a tabela por template, faixa
@@ -458,21 +457,24 @@ def painel_mensagens_dashboard(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe data inicial e final válidas")
 
     def calcular():
-        dados = painel_mensagens.montar(
-            db, de, ate, telefones=telefone, wabas=waba, templates=template, campanha=campanha, agrupar=agrupar
-        )
+        # Sessão própria: a atualização em segundo plano roda depois da requisição
+        with SessionLocal() as sessao:
+            dados = painel_mensagens.montar(
+                sessao, de, ate, telefones=telefone, wabas=waba, templates=template, campanha=campanha, agrupar=agrupar
+            )
         return schemas.PainelMensagensOut(**dados).model_dump(mode="json")
 
     filtros = dict(de=de, ate=ate, telefone=sorted(telefone), waba=sorted(waba), template=sorted(template), campanha=campanha, agrupar=agrupar)
     try:
-        dados = cache.obter_ou_calcular(
+        dados = cache.obter_snapshot(
             cache.chave("dashboard-painel-mensagens", filtros),
             calcular,
             painel_mensagens.PAINEL_TTL_SEGUNDOS,
             reaproveitar=auto,
             # Meta fora do ar ou sem permissão numa WABA: não segura o aviso por 10 min
             guardar_se=lambda d: not d["avisos"],
-        )
+            velho=painel_mensagens.PAINEL_VELHO_SEGUNDOS,
+        ).data
     except cache.CacheIndisponivel:
         dados = calcular()
     return schemas.PainelMensagensOut(**dados)
