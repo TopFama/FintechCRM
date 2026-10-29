@@ -22,6 +22,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from .. import cache, consultas_fila, models, seta_client
+from ..regras_db import carregar_regras
 from ..timezone import BUSINESS_TZ, hoje_br
 from . import custo_whatsapp, pagamentos_service
 
@@ -358,7 +359,12 @@ def montar(
                 "custo_brl": linha["custo"].quantize(Decimal("0.01")) if linha["custo"] is not None else None,
             }
         )
-    tabela.sort(key=lambda l: -l["enviados"])
+    if agrupar == "faixa":
+        # Mesma ordem do "Por faixa": a progressão de atraso das regras
+        ordem_faixa = {nome: i for i, nome in enumerate(carregar_regras(db).nomes_faixa)}
+        tabela.sort(key=lambda l: (ordem_faixa.get(l["nome"], 9999), l["nome"]))
+    else:
+        tabela.sort(key=lambda l: -l["enviados"])
 
     saida = {"de": de, "ate": ate, "origem": "fila" if (templates or campanha) else "meta", "linhas": tabela}
     if templates or campanha:
