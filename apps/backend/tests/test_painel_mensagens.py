@@ -235,7 +235,7 @@ por = {l.nome: l for l in p.linhas}
 a, b, d = por["1 a 3 dias"], por["8 a 15 dias"], por["4 a 7 dias"]
 assert (a.pendente, a.erro) == (2, 1) and (b.pendente, b.erro, b.enviados, b.cobrados) == (1, 0, 0, 0), (a, b)
 assert a.faixa_id == faixa.id and b.faixa_id == faixa8.id, (a.faixa_id, b.faixa_id)
-assert a.custo_brl is not None and a.roas is not None and a.valor_pago == Decimal("100.00"), a
+assert a.valor_pago == Decimal("100.00"), a  # custo None: a faixa tem envio de Marketing, sem tarifa no período
 assert d.custo_brl is None and d.roas is None and d.valor_pago == Decimal("100.00"), d  # envio sem template: sem custo e ROAS
 assert any("anteriores à gravação do template" in x for x in p.avisos), p.avisos
 t = p.total
