@@ -428,7 +428,9 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     const alturaInicial = (await wrap.boundingBox())!.height;
     expect(alturaInicial).toBeGreaterThan(130);
 
-    // Arrastar a barra para cima diminui a área visível (mínimo 120 px)
+    // Arrastar a barra para cima diminui a área visível (mínimo 120 px); o card fica
+    // abaixo dos cards e dos filtros, então a barra precisa estar na janela para o mouse
+    await alca.scrollIntoViewIfNeeded();
     const b = (await alca.boundingBox())!;
     await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
     await page.mouse.down();
