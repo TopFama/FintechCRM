@@ -236,15 +236,26 @@ a, b, d = por["1 a 3 dias"], por["8 a 15 dias"], por["4 a 7 dias"]
 assert (a.pendente, a.erro) == (2, 1) and (b.pendente, b.erro, b.enviados, b.cobrados) == (1, 0, 0, 0), (a, b)
 assert a.faixa_id == faixa.id and b.faixa_id == faixa8.id, (a.faixa_id, b.faixa_id)
 assert a.valor_pago == Decimal("100.00"), a  # custo None: a faixa tem envio de Marketing, sem tarifa no período
-assert d.custo_brl is None and d.roas is None and d.valor_pago == Decimal("100.00"), d  # envio sem template: sem custo e ROAS
-assert any("anteriores à gravação do template" in x for x in p.avisos), p.avisos
+assert d.valor_pago == Decimal("100.00") and d.custo_brl is not None and d.roas is not None, d  # envio sem template: custo do dia
 t = p.total
 assert t.nome == "Total" and (t.pendente, t.erro) == (3, 1), t
 assert t.enviados == sum(l.enviados for l in p.linhas), t
 assert (t.pagaram, t.valor_pago) == (1, Decimal("100.00")), t  # c1 está em duas linhas e conta uma vez
 assert t.conversao == Decimal(1) / t.cobrados and t.custo_brl is None and t.roas is None, t
 assert t.cobrados < sum(l.cobrados for l in p.linhas), (t.cobrados, [l.cobrados for l in p.linhas])  # cliente em duas faixas conta uma vez
-assert painel(agrupar="template").total.nome == "Total"
+
+# Custo misto: o envio sem template (c1) leva o custo médio da mensagem no dia; o gasto dele sai do que os
+# templates rateiam, então as linhas continuam somando o gasto do dia (menos o de SERVICE, que nenhum template tem)
+taxa = painel_mensagens.custo_whatsapp.custo_por_envio(db, DIA, DIA)[0][DIA]
+for modo in ("template", "faixa", "campanha"):
+    pm = painel(agrupar=modo)
+    antigo = [l for l in pm.linhas if l.chave == "sem_template"]
+    assert bool(antigo) == (modo == "template"), (modo, [l.chave for l in pm.linhas])
+    if antigo:
+        assert antigo[0].nome == "Sem template registrado" and antigo[0].enviados == 1 and antigo[0].custo_brl == taxa, antigo[0]
+        assert antigo[0].entregues is None and antigo[0].roas is not None, antigo[0]
+util_linha = next(l for l in painel(agrupar="template").linhas if l.chave == "Aviso")
+assert util_linha.custo_brl == Decimal("10.20") * (Decimal("12.20") - taxa) / Decimal("12.20"), util_linha.custo_brl
 
 # Templates de mesmo nome (um registro por WABA) somam numa linha só
 util2 = models.Template(
