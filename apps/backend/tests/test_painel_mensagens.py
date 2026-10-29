@@ -61,12 +61,12 @@ db.add_all([n1, n2, util, mkt, faixa, campanha])
 db.flush()
 
 
-def item(codigo, numero, template, f=None, atraso=None, entregue=False, lida=False):
+def item(codigo, numero, template, f=None, atraso=None, entregue=False, lida=False, status=models.QueueStatus.sent):
     db.add(
         models.QueueItem(
             faixa_id=(f or faixa).id, codigo_cliente=codigo, celular="5511999990000", celular_original="11999990000",
-            status=models.QueueStatus.sent, sent_at=datetime(2026, 10, 20, 15, 0),
-            whatsapp_number_id=numero.id, template_id=template.id, faixa_atraso=atraso,
+            status=status, sent_at=datetime(2026, 10, 20, 15, 0), created_at=datetime(2026, 10, 20, 14, 0),
+            whatsapp_number_id=numero.id, template_id=template.id if template else None, faixa_atraso=atraso,
             entregue_em=datetime(2026, 10, 20, 15, 1) if entregue or lida else None,
             lida_em=datetime(2026, 10, 20, 16, 0) if lida else None,
         )
@@ -109,7 +109,15 @@ class MetaFalsa:
 
 painel_mensagens.custo_whatsapp.custo_detalhado = lambda db_, de, ate: CUSTO
 custo_whatsapp.meta_client.MetaClient = MetaFalsa
-painel_mensagens.pagamentos_service.snapshot_pagamentos = lambda **_: SimpleNamespace(data=[{"codigo_cliente": "c1", "valor_pago": Decimal("100.00")}])
+JANELAS: list = []
+
+
+def pagamentos_falsos(**filtros):
+    JANELAS.append(filtros["dias_janela"])
+    return SimpleNamespace(data=[{"codigo_cliente": "c1", "valor_pago": Decimal("100.00")}])
+
+
+painel_mensagens.pagamentos_service.snapshot_pagamentos = pagamentos_falsos
 painel_mensagens.hoje_br = lambda: date(2026, 10, 28)
 
 
@@ -208,6 +216,35 @@ for i in range(10):
 db.commit()
 p = painel(agrupar="faixa")
 assert [l.nome for l in p.linhas] == ["1 a 3 dias", "4 a 7 dias"] and p.linhas[1].enviados > p.linhas[0].enviados, p.linhas
+
+# Por faixa substitui o antigo "Por faixa" do Dashboard: Pendente e Erro da fila, envio sem template registrado
+# conta (sem custo nem ROAS), pagamento em qualquer data depois do 1º envio (sem janela) e linha de total
+faixa8 = models.Faixa(name="8 a 15 dias")
+db.add(faixa8)
+db.flush()
+item("p1", n1, util, status=models.QueueStatus.pending)
+item("p2", n1, util, status=models.QueueStatus.reserved)
+item("e1", n1, util, status=models.QueueStatus.error)
+item("p3", n1, util, f=faixa8, status=models.QueueStatus.pending)  # faixa só com fila aberta também ganha linha
+item("c1", n1, None, atraso="4 a 7 dias")  # c1 também em outra faixa, num envio sem template registrado
+db.commit()
+JANELAS.clear()
+p = painel(agrupar="faixa")
+assert JANELAS == [None], JANELAS  # por faixa não usa a janela de pagamento
+por = {l.nome: l for l in p.linhas}
+a, b, d = por["1 a 3 dias"], por["8 a 15 dias"], por["4 a 7 dias"]
+assert (a.pendente, a.erro) == (2, 1) and (b.pendente, b.erro, b.enviados, b.cobrados) == (1, 0, 0, 0), (a, b)
+assert a.faixa_id == faixa.id and b.faixa_id == faixa8.id, (a.faixa_id, b.faixa_id)
+assert a.valor_pago == Decimal("100.00"), a  # custo None: a faixa tem envio de Marketing, sem tarifa no período
+assert d.custo_brl is None and d.roas is None and d.valor_pago == Decimal("100.00"), d  # envio sem template: sem custo e ROAS
+assert any("anteriores à gravação do template" in x for x in p.avisos), p.avisos
+t = p.total
+assert t.nome == "Total" and (t.pendente, t.erro) == (3, 1), t
+assert t.enviados == sum(l.enviados for l in p.linhas), t
+assert (t.pagaram, t.valor_pago) == (1, Decimal("100.00")), t  # c1 está em duas linhas e conta uma vez
+assert t.conversao == Decimal(1) / t.cobrados and t.custo_brl is None and t.roas is None, t
+assert t.cobrados < sum(l.cobrados for l in p.linhas), (t.cobrados, [l.cobrados for l in p.linhas])  # cliente em duas faixas conta uma vez
+assert painel(agrupar="template").total.nome == "Total"
 
 # Templates de mesmo nome (um registro por WABA) somam numa linha só
 util2 = models.Template(

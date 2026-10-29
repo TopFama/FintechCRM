@@ -12,6 +12,10 @@ const semTempoReal = (page: Page) => page.routeWebSocket(/\/dashboard\/ws/, (ws)
 // "12.345" → 12345 (os cards mostram separador de milhar)
 const numero = (t: string) => Number(t.replace(/\./g, ""));
 
+// A tabela por faixa é a do card Mensagens (abre agrupada por Faixa de atraso, em Este mês)
+const porFaixaDe = (page: Page) => card(page, /^Mensagens$/);
+const CARREGAR = { timeout: 30_000 };
+
 test.beforeAll(prepararOperacao);
 
 test.describe("Dashboard", { tag: "@dashboard" }, () => {
@@ -24,8 +28,8 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(stat(page, "Cobranças")).not.toHaveText("0");
     await expect(stat(page, "Pendentes na fila")).not.toHaveText("0");
     await expect(stat(page, "Telefones inválidos")).not.toHaveText("0");
-    const porFaixa = card(page, "Por faixa");
-    await expect(porFaixa.locator("tbody tr", { hasText: "3 A 10" })).toBeVisible();
+    const porFaixa = porFaixaDe(page);
+    await expect(porFaixa.locator("tbody tr", { hasText: "3 A 10" })).toBeVisible(CARREGAR);
   });
 
   test("cards da fila mudam na hora, sem esperar a atualização de 30 s", { tag: ["@pausas"] }, async ({ page }) => {
@@ -73,14 +77,15 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(stat(page, "Pendentes na fila")).toHaveText("0");
   });
 
-  test("período sem movimento mostra o estado vazio, sem faixas excluídas", async ({ page }) => {
-    await page.locator(".periodo-card", { hasText: "Personalizado" }).first().click();
-    const periodo = page.locator(".periodo-filtro").first();
+  test("período sem movimento no Mensagens não lista faixas excluídas", async ({ page }) => {
+    const porFaixa = porFaixaDe(page);
+    await expect(porFaixa.locator("tbody tr").first()).toBeVisible(CARREGAR);
+    await porFaixa.locator(".periodo-card", { hasText: "Personalizado" }).click();
+    const periodo = porFaixa.locator(".periodo-filtro");
     await periodo.locator('input[type="date"]').first().fill("2020-01-01");
     await periodo.locator('input[type="date"]').nth(1).fill("2020-01-31");
-    await expect(stat(page, "Cobranças")).toHaveText("0");
-    await expect(card(page, "Por faixa")).not.toContainText("RENEGOCIE");
-    await expect(card(page, "Por faixa")).toContainText("Nenhuma faixa com movimento ainda");
+    await expect(porFaixa.locator("tbody tr")).toHaveCount(0, CARREGAR);
+    await expect(porFaixa).not.toContainText("RENEGOCIE");
   });
 
   test("'Personalizado' sem datas não troca os números por um período diferente do mostrado", async ({ page }) => {
@@ -257,7 +262,8 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await pend.focus();
     await expect(pend).toBeFocused();
     await expect(pend).toContainText("Ver detalhes →");
-    const linha = card(page, "Por faixa").locator("tbody tr", { hasText: "3 A 10" });
+    const linha = porFaixaDe(page).locator("tbody tr", { hasText: "3 A 10" });
+    await expect(linha).toBeVisible(CARREGAR);
     const enviados = (await linha.locator("td").nth(3).innerText()).trim();
     await linha.locator("td").nth(3).getByRole("link").click();
     await expect(page).toHaveURL(/aba=envios.*faixa_id=/);
@@ -268,15 +274,15 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
   });
 
   test("por faixa mostra quem pagou após a cobrança e abre Quem pagou da faixa com o mesmo total", { tag: ["@pagamentos"] }, async ({ page }) => {
-    const porFaixa = card(page, "Por faixa");
+    const porFaixa = porFaixaDe(page);
     await expect(porFaixa.getByRole("columnheader", { name: /Pagaram após cobrança/ })).toBeVisible();
     await expect(porFaixa.getByRole("columnheader", { name: /Valor pago/ })).toBeVisible();
     // O SETA falso tem clientes que pagam hoje: alguma faixa cobrada hoje tem pagamento
-    const linha = porFaixa.locator("tbody tr").filter({ has: page.locator("td:nth-child(7) a", { hasText: /^[1-9]/ }) }).first();
+    const linha = porFaixa.locator("tbody tr").filter({ has: page.locator("td:nth-child(12) a", { hasText: /^[1-9]/ }) }).first();
     await expect(linha).toBeVisible({ timeout: 30_000 });
-    const pagaram = numero(await linha.locator("td").nth(6).innerText());
-    await expect(linha.locator("td").nth(9)).toContainText(/R\$\s?[1-9]/);
-    await linha.locator("td").nth(6).getByRole("link").click();
+    const pagaram = numero(await linha.locator("td").nth(11).innerText());
+    await expect(linha.locator("td").nth(14)).toContainText(/R\$\s?[1-9]/);
+    await linha.locator("td").nth(11).getByRole("link").click();
     await expect(page).toHaveURL(/aba=pagamentos.*faixa_id=.*base=envios/);
     await expect(page.getByRole("button", { name: "Filtrar Faixa", exact: true })).toHaveClass(/ativo/);
     await expect(page.locator(".stat", { hasText: "Clientes que pagaram" }).locator(".value")).toHaveText(
@@ -286,19 +292,20 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
   });
 
   test("tabela por faixa ordena pela ordem de atraso e por números", async ({ page }) => {
-    const porFaixa = card(page, "Por faixa");
-    await porFaixa.getByRole("columnheader", { name: /^Enviado/ }).click();
+    const porFaixa = porFaixaDe(page);
+    await expect(porFaixa.locator("tbody tr").first()).toBeVisible(CARREGAR);
+    await porFaixa.getByRole("columnheader", { name: /^Enviados/ }).click();
     const col = async () => (await porFaixa.locator("tbody tr td:nth-child(4)").allInnerTexts()).map(Number);
     const v = await col();
     expect(v).toEqual([...v].sort((a, b) => a - b));
   });
 
   test("por faixa: ordem das colunas, indicadores com fórmula e linha de total", { tag: ["@visual","@pagamentos"] }, async ({ page }) => {
-    const porFaixa = card(page, "Por faixa");
+    const porFaixa = porFaixaDe(page);
     await expect(porFaixa.locator("thead th")).toHaveText([
-      /^Faixa/, /^Pendente/, /^Erro/, /^Enviado/, /^Clientes cobrados/, /^Frequência/,
-      /^Pagaram após cobrança/, /^%\sRep\./, /^%\sConv\./, /^Valor pago/, /^ROAS/,
-    ]);
+      /^Faixa de atraso/, /^Pendente/, /^Erro/, /^Enviados/, /^Entregues/, /^Lidas/, /^Cliques/, /^% Visualização/, /^% Cliques/,
+      /^Clientes cobrados/, /^Frequência/, /^Pagaram após cobrança/, /^%\sRep\./, /^%\sConv\./, /^Valor pago/, /^Custo \(R\$\)/, /^ROAS/,
+    ], CARREGAR);
     const linhas = porFaixa.locator("tbody tr");
     await expect(linhas.first()).toBeVisible();
     const n = await linhas.count();
@@ -307,8 +314,8 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     const soma = (v: string[]) => v.reduce((s, t) => s + numero(t), 0);
 
     // % Rep. soma 100% quando alguém pagou (ou é 0,0% em todas as faixas)
-    const pagaram = await col(6);
-    const reps = (await col(7)).map(pct);
+    const pagaram = await col(11);
+    const reps = (await col(12)).map(pct);
     if (soma(pagaram) > 0) expect(Math.abs(reps.reduce((s: number, v) => s + (v ?? 0), 0) - 100)).toBeLessThan(0.1 * n + 0.01);
 
     // Total: Pendente, Erro e Enviado somam a coluna; Clientes cobrados e
@@ -319,26 +326,26 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     for (const i of [1, 2, 3]) {
       await expect(total.nth(i)).toHaveText(soma(await col(i)).toLocaleString("pt-BR"));
     }
-    const cobrados = numero(await total.nth(4).innerText());
-    const pagaramTotal = numero(await total.nth(6).innerText());
+    const cobrados = numero(await total.nth(9).innerText());
+    const pagaramTotal = numero(await total.nth(11).innerText());
     expect(cobrados).toBeGreaterThan(0);
-    expect(cobrados).toBeLessThanOrEqual(soma(await col(4)));
+    expect(cobrados).toBeLessThanOrEqual(soma(await col(9)));
     expect(pagaramTotal).toBeLessThanOrEqual(soma(pagaram));
     expect(pagaramTotal > 0).toBe(soma(pagaram) > 0);
     const convTotal = new Intl.NumberFormat("pt-BR", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(
       pagaramTotal / cobrados
     );
-    await expect(total.nth(8)).toHaveText(convTotal);
-    await expect(total.nth(7)).toHaveText("");
+    await expect(total.nth(13)).toHaveText(convTotal);
+    await expect(total.nth(12)).toHaveText("");
     // ROAS: multiplicador ("4,25x") ou "—" sem custo da Meta
-    for (const t of [...(await col(10)), await total.nth(10).innerText()]) expect(t.trim()).toMatch(/^(\d[\d.]*,\d{2}x|—)$/);
+    for (const t of [...(await col(16)), await total.nth(16).innerText()]) expect(t.trim()).toMatch(/^(\d[\d.]*,\d{2}x|—)$/);
 
     // 🛈 abre a dica com a fórmula e não reordena a tabela
     const ordemAntes = await col(0);
     await porFaixa.getByRole("button", { name: /O que é %\sConv\./ }).hover();
-    await expect(page.getByRole("tooltip")).toContainText("Pagaram após cobrança ÷ Clientes cobrados × 100");
+    await expect(page.getByRole("tooltip")).toContainText("Pagaram ÷ Clientes cobrados × 100");
     await porFaixa.getByRole("button", { name: /O que é %\sRep\./ }).click();
-    await expect(page.getByRole("tooltip")).toContainText("Σ Pagaram após cobrança de todas as faixas");
+    await expect(page.getByRole("tooltip")).toContainText("Σ Pagaram de todas as linhas");
     // Tocar no balão só fecha a dica: não reordena nem abre o relatório da linha
     await page.getByRole("tooltip").click();
     await expect(page.getByRole("tooltip")).toHaveCount(0);
@@ -350,26 +357,25 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await conv.click();
     await expect(page.getByRole("tooltip")).toHaveCount(0);
     await porFaixa.getByRole("button", { name: /O que é ROAS/ }).hover();
-    await expect(page.getByRole("tooltip")).toContainText("Valor pago ÷ Custo do WhatsApp");
+    await expect(page.getByRole("tooltip")).toContainText("Valor pago dos clientes cobrados ÷ Custo da linha");
     expect(await col(0)).toEqual(ordemAntes);
   });
 
   test("por faixa: colunas se arrastam pelo título e a ordem fica salva na conta", async ({ page }) => {
-    const porFaixa = card(page, "Por faixa");
+    const porFaixa = porFaixaDe(page);
     const titulos = porFaixa.locator("thead th");
     const pendente = porFaixa.getByRole("columnheader", { name: /^Pendente/ });
     await expect(porFaixa.locator("tbody tr").first()).toBeVisible();
     await expect(titulos.nth(1)).toHaveText(/^Pendente/);
     const pendentes = await porFaixa.locator("tbody tr td:nth-child(2)").allInnerTexts();
     try {
-      // Arrastar "Pendente" para cima de "ROAS" (a última) leva a coluna para depois dela, com os números junto
-      await pendente.dragTo(porFaixa.getByRole("columnheader", { name: /^ROAS/ }));
-      await expect(titulos.last()).toHaveText(/^Pendente/);
+      // Arrastar "Pendente" para cima de "Enviados" leva a coluna para depois dela, com os números junto
+      await pendente.dragTo(porFaixa.getByRole("columnheader", { name: /^Enviados/ }));
       await expect(titulos.nth(1)).toHaveText(/^Erro/);
-      await expect(titulos.nth(8)).toHaveText(/^Valor pago/);
-      await expect(titulos.nth(9)).toHaveText(/^ROAS/);
-      expect(await porFaixa.locator("tbody tr td:last-child").allInnerTexts()).toEqual(pendentes);
-      await expect(porFaixa.locator("tfoot tr.linha-total td").last()).not.toContainText("R$");
+      await expect(titulos.nth(2)).toHaveText(/^Enviados/);
+      await expect(titulos.nth(3)).toHaveText(/^Pendente/);
+      await expect(titulos.last()).toHaveText(/^ROAS/);
+      expect(await porFaixa.locator("tbody tr td:nth-child(4)").allInnerTexts()).toEqual(pendentes);
       // Arrastar não ordena a tabela; clicar no título continua ordenando
       await expect(pendente).toHaveAttribute("aria-sort", "none");
       await pendente.click();
@@ -379,8 +385,8 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
 
       // A ordem vem da conta: volta igual depois de recarregar
       await page.reload();
-      await expect(titulos.last()).toHaveText(/^Pendente/);
-      expect((await apiGet(page, "/dashboard/colunas-por-faixa")).colunas.at(-1)).toBe("pending");
+      await expect(titulos.nth(3)).toHaveText(/^Pendente/);
+      expect((await apiGet(page, "/dashboard/colunas-por-faixa")).colunas.slice(0, 3)).toEqual(["error", "sent", "pending"]);
     } finally {
       // Os outros testes usam o mesmo usuário e contam com a ordem padrão
       await apiSend(page, "PUT", "/dashboard/colunas-por-faixa", { colunas: [] });
@@ -388,14 +394,14 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
   });
 
   test("por faixa: números e títulos centralizados, inclusive título quebrado em duas linhas", { tag: ["@visual"] }, async ({ page }) => {
-    const porFaixa = card(page, "Por faixa");
+    const porFaixa = porFaixaDe(page);
     await expect(porFaixa.locator("tbody tr").first()).toBeVisible();
     // Faixa fica à esquerda; as outras colunas, centralizadas
     const alinhamento = (sel: string) =>
       porFaixa.locator(sel).evaluateAll((els) => els.map((el) => getComputedStyle(el).textAlign));
-    expect(await alinhamento("thead th")).toEqual(["left", ...Array(10).fill("center")]);
-    expect(await alinhamento("tbody tr:first-child td")).toEqual(["left", ...Array(10).fill("center")]);
-    expect(await alinhamento("tfoot tr td")).toEqual(["left", ...Array(10).fill("center")]);
+    expect(await alinhamento("thead th")).toEqual(["left", ...Array(16).fill("center")]);
+    expect(await alinhamento("tbody tr:first-child td")).toEqual(["left", ...Array(16).fill("center")]);
+    expect(await alinhamento("tfoot tr td")).toEqual(["left", ...Array(16).fill("center")]);
 
     // O bloco do título (texto, dica e seta) fica no meio da célula, mesmo quebrado
     const desvios = await porFaixa.locator("thead th").evaluateAll((ths) =>
@@ -414,14 +420,16 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
   });
 
   test("por faixa: altura ajustável na barra, com cabeçalho, total e faixa fixos na rolagem", { tag: ["@visual"] }, async ({ page }) => {
-    const porFaixa = card(page, "Por faixa");
+    const porFaixa = porFaixaDe(page);
     const wrap = porFaixa.locator(".tabela-ajustavel");
-    const alca = porFaixa.getByRole("separator", { name: "Ajustar altura da tabela Por faixa" });
+    const alca = porFaixa.getByRole("separator", { name: "Ajustar altura da tabela Por faixa de atraso" });
     await expect(porFaixa.locator("tbody tr").first()).toBeVisible();
     const alturaInicial = (await wrap.boundingBox())!.height;
     expect(alturaInicial).toBeGreaterThan(130);
 
-    // Arrastar a barra para cima diminui a área visível (mínimo 120 px)
+    // Arrastar a barra para cima diminui a área visível (mínimo 120 px); o card fica
+    // abaixo dos cards e dos filtros, então a barra precisa estar na janela para o mouse
+    await alca.scrollIntoViewIfNeeded();
     const b = (await alca.boundingBox())!;
     await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
     await page.mouse.down();
@@ -694,7 +702,7 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await page.reload();
     await expect(card(page, "Orçamento").locator(".error-box")).toContainText("Falha ao consultar a Meta");
   });
-  test("painel de mensagens: quadros em R$ e métricas por template", { tag: ["@orcamento"] }, async ({ page }) => {
+  test("painel de mensagens: quadros em R$, métricas por faixa e linha de total", { tag: ["@orcamento"] }, async ({ page }) => {
     const pedidos: URL[] = [];
     await page.route("**/dashboard/painel-mensagens*", (r) => {
       pedidos.push(new URL(r.request().url()));
@@ -708,8 +716,14 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
           cobranca: { total_brl: "1156.84", por_categoria: { UTILITY: "975.00", SERVICE: "181.84" } },
           linhas: [{
             chave: "t1", nome: "Aviso de vencimento", categoria: "UTILITY", enviados: 200, entregues: 180, lidas: 90,
-            cliques: 18, taxa_visualizacao: "0.5", taxa_cliques: "0.1", cobrados: 150, pagaram: 30, conversao: "0.2", custo_brl: "1.36", roas: "8.00",
+            cliques: 18, taxa_visualizacao: "0.5", taxa_cliques: "0.1", cobrados: 150, pagaram: 30, conversao: "0.2",
+            valor_pago: "10.88", custo_brl: "1.36", roas: "8.00", pendente: 4, erro: 1, faixa_id: null,
           }],
+          total: {
+            chave: "total", nome: "Total", categoria: "", enviados: 200, entregues: 180, lidas: 90, cliques: 18,
+            taxa_visualizacao: "0.5", taxa_cliques: "0.1", cobrados: 140, pagaram: 28, conversao: "0.2",
+            valor_pago: "10.88", custo_brl: "1.36", roas: "8.00", pendente: 4, erro: 1, faixa_id: null,
+          },
           avisos: [],
         },
       });
@@ -726,12 +740,19 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(linha).toContainText("50,0%");
     await expect(linha).toContainText("20,0%");
     await expect(linha).toContainText("8,00x");
+    // A última linha é o total, com as taxas e o ROAS que vieram da soma
+    const total = painel.locator("tfoot tr.linha-total");
+    await expect(total).toContainText("Total");
+    await expect(total).toContainText("140");
+    await expect(total).toContainText("8,00x");
     // o período padrão (Este mês) vai para a API e os filtros de template e campanha existem
     await expect(painel.locator(".periodo-card", { hasText: "Este mês" })).toHaveAttribute("aria-pressed", "true");
     expect(pedidos[0].searchParams.get("de")).toMatch(/^\d{4}-\d{2}-01$/);
     await expect(painel.locator("label", { hasText: /^Template$/ })).toBeVisible();
     await expect(painel.locator("label", { hasText: /^Campanha$/ })).toBeVisible();
-    expect(pedidos[0].searchParams.get("agrupar")).toBe("template");
+    // abre agrupado por Faixa de atraso
+    expect(pedidos[0].searchParams.get("agrupar")).toBe("faixa");
+    await expect(painel.locator("thead th").first()).toContainText("Faixa de atraso");
 
     // O "i" de cada quadro explica o que ele conta
     await painel.getByRole("button", { name: "O que é Todas as mensagens" }).hover();

@@ -1,22 +1,19 @@
-import { ReactNode, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { api, ApiError, DashboardPorFaixa, DashboardSummary, DashboardTotalPorFaixa, PagosJanela, foiCancelada } from "../api";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { api, ApiError, DashboardSummary, PagosJanela, foiCancelada } from "../api";
 import AvisosCategoria from "../components/AvisosCategoria";
 import EfetividadeCard from "../components/dashboard/EfetividadeCard";
 import LeadsCard from "../components/dashboard/LeadsCard";
 import MatrizCobrancaCard from "../components/dashboard/MatrizCobrancaCard";
 import OrcamentoProgressaoCard from "../components/dashboard/OrcamentoProgressaoCard";
+import { linkRelatorio } from "../components/dashboard/linkRelatorio";
 import PainelMensagensCard from "../components/dashboard/PainelMensagensCard";
 import FiltroPeriodo, { OpcaoPeriodo, Periodo, periodoDe } from "../components/FiltroPeriodo";
-import DicaIndicador from "../components/DicaIndicador";
-import SortableTh from "../components/SortableTh";
-import TabelaAjustavel from "../components/TabelaAjustavel";
-import { formatBRL, formatDecimal, formatHora, formatNumero, formatPercentual, formatRoas } from "../format";
+import { formatBRL, formatHora, formatNumero } from "../format";
 import { useOpcoesCobranca } from "../components/useOpcoesCobranca";
 import { useAtualizacaoAutomatica, useEhAtualizacaoAutomatica } from "../components/useAtualizacaoAutomatica";
 import { usePainelTempoReal } from "../components/usePainelTempoReal";
-import { IconAlert, IconBolt, IconCheckCircle, IconClock, IconInbox, IconPhone, IconRefresh } from "../icons";
-import { ordemFaixaFn, ordenarPor, useSort } from "../sort";
+import { IconAlert, IconCheckCircle, IconClock, IconInbox, IconPhone, IconRefresh } from "../icons";
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -111,22 +108,16 @@ export default function Dashboard() {
       {periodoIncompleto && <div className="empty-state"><p>Escolha a data mínima e a máxima.</p></div>}
       {!periodoIncompleto && !summary && !error && <div className="loading-state">Carregando resumo da fila...</div>}
       {summary && (
-        <ResumoFila summary={tempoReal ? { ...summary, ...tempoReal } : summary} periodo={periodo} nomesFaixa={opcoes.regras?.faixas} recarregar={recarregar} />
+        <ResumoFila summary={tempoReal ? { ...summary, ...tempoReal } : summary} periodo={periodo} recarregar={recarregar} />
       )}
 
+      <PainelMensagensCard recarregar={recarregar} />
       <MatrizCobrancaCard opcoes={opcoes} />
       <EfetividadeCard opcoes={opcoes} />
       <LeadsCard opcoes={opcoes} recarregar={recarregar} />
       <OrcamentoProgressaoCard recarregar={recarregar} />
-      <PainelMensagensCard recarregar={recarregar} />
     </div>
   );
-}
-
-// Link pro relatório do card com o mesmo período do Dashboard (a contagem bate)
-function linkRelatorio(aba: string, periodo: Periodo, extra: Record<string, string> = {}) {
-  const q = new URLSearchParams({ aba, ...(periodo.de ? { de: periodo.de } : {}), ...(periodo.ate ? { ate: periodo.ate } : {}), ...extra });
-  return `/relatorios?${q.toString()}`;
 }
 
 function StatLink({
@@ -236,86 +227,7 @@ function CardJanelaPagamento({ periodo, recarregar }: { periodo: Periodo; recarr
   );
 }
 
-function ResumoFila({
-  summary,
-  periodo,
-  nomesFaixa,
-  recarregar,
-}: {
-  summary: DashboardSummary;
-  periodo: Periodo;
-  nomesFaixa: string[] | undefined;
-  recarregar: number;
-}) {
-  const navigate = useNavigate();
-  const ordemFaixa = ordemFaixaFn(nomesFaixa);
-  const linhas = linhasPorFaixa(summary.por_faixa);
-  const total = totalPorFaixa(linhas, summary.total_por_faixa);
-  const porFaixaSort = useSort<"faixa" | ColunaPorFaixa>("faixa");
-  const porFaixaOrdenado = ordenarPor(
-    linhas,
-    porFaixaSort.sortKey === "faixa"
-      ? (row) => ordemFaixa(row.faixa)
-      : porFaixaSort.sortKey
-      ? (row) => row[porFaixaSort.sortKey as ColunaPorFaixa]
-      : null,
-    porFaixaSort.sortDir
-  );
-  const [ordem, setOrdem] = useState<ColunaPorFaixa[]>(ORDEM_PADRAO);
-  const [arrastada, setArrastada] = useState<ColunaPorFaixa | null>(null);
-  const [alvo, setAlvo] = useState<ColunaPorFaixa | null>(null);
-  useEffect(() => {
-    api
-      .colunasPorFaixa()
-      .then((r) => setOrdem(ordemColunas(r.colunas)))
-      .catch(() => {}); // sem a ordem salva, fica a padrão
-  }, []);
-
-  // Solta a coluna arrastada no lugar da coluna alvo e salva na conta do usuário
-  function soltar(chave: ColunaPorFaixa) {
-    if (!arrastada || arrastada === chave) return;
-    const nova = ordem.filter((c) => c !== arrastada);
-    nova.splice(nova.indexOf(chave) + (ordem.indexOf(arrastada) < ordem.indexOf(chave) ? 1 : 0), 0, arrastada);
-    setOrdem(nova);
-    api.salvarColunasPorFaixa(nova).catch(() => {}); // sem salvar, a ordem vale só nesta visita
-  }
-
-  // Faixa fica sempre na primeira posição (coluna fixa na rolagem); as outras se arrastam pelo título
-  const th = (chave: "faixa" | ColunaPorFaixa, rotulo: string, dica?: Dica) => (
-    <SortableTh
-      key={chave}
-      active={porFaixaSort.sortKey === chave}
-      dir={porFaixaSort.sortDir}
-      onSort={() => porFaixaSort.toggleSort(chave)}
-      {...(chave !== "faixa" && {
-        draggable: true,
-        className: alvo === chave && arrastada !== chave ? "th-alvo-arraste" : undefined,
-        onDragStart: (e) => {
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/plain", chave);
-          setArrastada(chave);
-        },
-        onDragOver: (e) => {
-          if (!arrastada) return;
-          e.preventDefault();
-          setAlvo(chave);
-        },
-        onDragLeave: () => setAlvo((a) => (a === chave ? null : a)),
-        onDrop: (e) => {
-          e.preventDefault();
-          soltar(chave);
-        },
-        onDragEnd: () => {
-          setArrastada(null);
-          setAlvo(null);
-        },
-      })}
-    >
-      {rotulo}
-      {dica && <DicaIndicador titulo={rotulo} texto={dica.texto} formula={dica.formula} />}
-    </SortableTh>
-  );
-
+function ResumoFila({ summary, periodo, recarregar }: { summary: DashboardSummary; periodo: Periodo; recarregar: number }) {
   return (
     <>
       <div className="stat-grid">
@@ -357,236 +269,6 @@ function ResumoFila({
         />
         <CardJanelaPagamento periodo={periodo} recarregar={recarregar} />
       </div>
-
-      <div className="card">
-        <div className="card-header">
-          <h3>Por faixa</h3>
-        </div>
-        {summary.por_faixa.length === 0 ? (
-          <div className="empty-state">
-            <IconBolt width={28} height={28} />
-            <div className="title">Nenhuma faixa com movimento ainda</div>
-            <p>Nenhum cliente entrou na fila de nenhuma faixa neste período.</p>
-          </div>
-        ) : (
-          <TabelaAjustavel id="por-faixa" rotulo="Por faixa">
-            <table className="tabela-por-faixa">
-              <thead>
-                <tr>
-                  {th("faixa", "Faixa")}
-                  {ordem.map((c) => th(c, COLUNAS[c].rotulo, COLUNAS[c].dica))}
-                </tr>
-              </thead>
-              <tbody>
-                {porFaixaOrdenado.map((row) => {
-                  // "Pagaram" abre Quem pagou na base do Dashboard (clientes com envio no período)
-                  const link = (aba: string) =>
-                    linkRelatorio(aba, periodo, { faixa_id: row.faixa_id, ...(aba === "pagamentos" ? { base: "envios" } : {}) });
-                  const celula: CelulaLink = (aba, valor, rotulo) => (
-                    <Link
-                      to={link(aba)}
-                      className="link-celula"
-                      aria-label={`Ver ${formatNumero(valor)} ${rotulo} da faixa ${row.faixa}`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {formatNumero(valor)}
-                    </Link>
-                  );
-                  return (
-                    // A linha inteira abre os envios da faixa; cada número abre o próprio relatório
-                    <tr key={row.faixa} className="linha-clicavel" onClick={() => navigate(link("envios"))}>
-                      <td className="cell-strong">
-                        <Link to={link("envios")} className="link-celula" onClick={(e) => e.stopPropagation()}>
-                          {row.faixa}
-                        </Link>
-                      </td>
-                      {ordem.map((c) => (
-                        <td key={c}>{COLUNAS[c].celula(row, celula)}</td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="linha-total">
-                  <td className="cell-strong">Total</td>
-                  {ordem.map((c) => (
-                    <td key={c}>{COLUNAS[c].total(total)}</td>
-                  ))}
-                </tr>
-              </tfoot>
-            </table>
-          </TabelaAjustavel>
-        )}
-      </div>
-
     </>
   );
 }
-
-type Dica = { texto: string; formula: string };
-
-const DICAS: Record<
-  "clientes_cobrados" | "frequencia" | "pagaram" | "conversao" | "representatividade" | "valor_pago" | "roas",
-  Dica
-> = {
-  clientes_cobrados: {
-    texto: "Clientes distintos que receberam mensagem desta faixa no período filtrado. No total, cada cliente conta uma vez.",
-    formula: "Contagem de clientes distintos com mensagem enviada na faixa no período",
-  },
-  frequencia: {
-    texto: "Média de mensagens enviadas no período por cliente cobrado.",
-    formula: "Mensagens enviadas no período ÷ Clientes cobrados no período",
-  },
-  pagaram: {
-    texto: "Clientes cobrados no período que pagaram depois do primeiro envio do período.",
-    formula: "Contagem de clientes distintos cobrados que pagaram após o primeiro envio do período",
-  },
-  conversao: {
-    texto: "Dos clientes cobrados na faixa, quantos pagaram depois da cobrança.",
-    formula: "Pagaram após cobrança ÷ Clientes cobrados × 100",
-  },
-  representatividade: {
-    texto:
-      "Quanto esta faixa representa do total de clientes que pagaram após cobrança. Soma a coluna das faixas para fechar 100%.",
-    formula: "Pagaram após cobrança da faixa ÷ Σ Pagaram após cobrança de todas as faixas × 100",
-  },
-  valor_pago: {
-    texto:
-      "Valor pago depois da cobrança pelos clientes cobrados no período. Cada pagamento conta uma vez por faixa e, no total, uma vez só, mesmo com o cliente em mais de uma faixa.",
-    formula: "Σ valor pago após a cobrança",
-  },
-  roas: {
-    texto:
-      "Quanto voltou em pagamento para cada R$ 1 gasto com WhatsApp nesta faixa. O custo de cada dia na Meta é dividido pelas mensagens enviadas no dia.",
-    formula: "Valor pago ÷ Custo do WhatsApp das mensagens da faixa no período",
-  },
-};
-
-type CelulaLink = (aba: string, valor: number, rotulo: string) => ReactNode;
-
-// Colunas da tabela "Por faixa" depois da Faixa: título, célula da linha e célula do total
-const COLUNAS: Record<
-  ColunaPorFaixa,
-  {
-    rotulo: string;
-    dica?: Dica;
-    celula: (row: LinhaPorFaixa, link: CelulaLink) => ReactNode;
-    total: (t: ReturnType<typeof totalPorFaixa>) => ReactNode;
-  }
-> = {
-  pending: { rotulo: "Pendente", celula: (r, l) => l("pendentes", r.pending, "pendentes"), total: (t) => formatNumero(t.pending) },
-  error: { rotulo: "Erro", celula: (r, l) => l("erros", r.error, "erros"), total: (t) => formatNumero(t.error) },
-  sent: { rotulo: "Enviado", celula: (r, l) => l("envios", r.sent, "enviados"), total: (t) => formatNumero(t.sent) },
-  clientes_cobrados: {
-    rotulo: "Clientes cobrados",
-    dica: DICAS.clientes_cobrados,
-    celula: (r) => formatNumero(r.clientes_cobrados),
-    total: (t) => formatNumero(t.clientes_cobrados),
-  },
-  frequencia: {
-    rotulo: "Frequência",
-    dica: DICAS.frequencia,
-    celula: (r) => formatDecimal(r.frequencia),
-    total: (t) => formatDecimal(t.frequencia),
-  },
-  pagaram: {
-    rotulo: "Pagaram após cobrança",
-    dica: DICAS.pagaram,
-    celula: (r, l) => l("pagamentos", r.pagaram, "clientes que pagaram"),
-    total: (t) => formatNumero(t.pagaram),
-  },
-  representatividade: {
-    rotulo: "%\u00a0Rep.",
-    dica: DICAS.representatividade,
-    celula: (r) => formatPercentual(r.representatividade),
-    total: () => null, // sempre 100%: não traz nada
-  },
-  conversao: {
-    rotulo: "%\u00a0Conv.",
-    dica: DICAS.conversao,
-    celula: (r) => formatPercentual(r.conversao),
-    total: (t) => formatPercentual(t.conversao),
-  },
-  valor_pago: { rotulo: "Valor pago", dica: DICAS.valor_pago, celula: (r) => formatBRL(r.valor_pago), total: (t) => formatBRL(t.valor_pago) },
-  roas: { rotulo: "ROAS", dica: DICAS.roas, celula: (r) => formatRoas(r.roas), total: (t) => formatRoas(t.roas) },
-};
-
-// Ordem de quem ainda não arrastou nenhuma coluna
-const ORDEM_PADRAO = Object.keys(COLUNAS) as ColunaPorFaixa[];
-
-// Ordem salva na conta: ignora coluna que não existe mais e põe no fim, na
-// ordem padrão, coluna nova que a ordem salva ainda não tinha
-function ordemColunas(salvas: string[]): ColunaPorFaixa[] {
-  const validas = salvas.filter((c): c is ColunaPorFaixa => c in COLUNAS);
-  return [...new Set([...validas, ...ORDEM_PADRAO])];
-}
-
-// Colunas numéricas que vêm do backend em cada linha
-const CAMPOS_NUMERICOS = [
-  "pending",
-  "error",
-  "sent",
-  "clientes_cobrados",
-  "enviados_cobrados",
-  "clientes_com_envio",
-  "pagaram",
-  "valor_pago",
-  "custo_whatsapp",
-] as const;
-type CampoNumerico = (typeof CAMPOS_NUMERICOS)[number];
-
-type LinhaPorFaixa = Pick<DashboardPorFaixa, "faixa" | "faixa_id"> &
-  Record<CampoNumerico, number> & {
-    frequencia: number | null;
-    conversao: number | null;
-    representatividade: number | null;
-    roas: number | null;
-  };
-type ColunaPorFaixa = Exclude<
-  keyof LinhaPorFaixa,
-  "faixa" | "faixa_id" | "enviados_cobrados" | "clientes_com_envio" | "custo_whatsapp"
->;
-
-// Divisão por zero (faixa sem cliente cobrado) vira "—", não 0
-const razao = (a: number, b: number) => (b ? a / b : null);
-
-function linhasPorFaixa(porFaixa: DashboardPorFaixa[]): LinhaPorFaixa[] {
-  const base = porFaixa.map((row) => ({
-    faixa: row.faixa,
-    faixa_id: row.faixa_id,
-    ...(Object.fromEntries(CAMPOS_NUMERICOS.map((c) => [c, Number(row[c] ?? 0)])) as Record<CampoNumerico, number>),
-  }));
-  // % Rep. sobre a soma das faixas (não clientes distintos), para fechar 100%
-  const somaPagaram = base.reduce((s, r) => s + r.pagaram, 0);
-  return base.map((r) => ({
-    ...r,
-    // Frequência só entre quem recebeu mensagem; % Conv. sobre todos os cobrados
-    frequencia: razao(r.enviados_cobrados, r.clientes_com_envio),
-    conversao: razao(r.pagaram, r.clientes_cobrados),
-    representatividade: razao(r.pagaram, somaPagaram),
-    // sem custo da Meta (null vira 0) o ROAS fica "—"
-    roas: razao(r.valor_pago, r.custo_whatsapp),
-  }));
-}
-
-// Pendente, Erro e Enviado somam a coluna; clientes e valor pago vêm do
-// backend contando cada cliente uma vez (somar a coluna contaria em cada faixa)
-function totalPorFaixa(linhas: LinhaPorFaixa[], doBackend: DashboardTotalPorFaixa) {
-  const soma = (c: "pending" | "error" | "sent") => linhas.reduce((s, r) => s + r[c], 0);
-  const t = {
-    pending: soma("pending"),
-    error: soma("error"),
-    sent: soma("sent"),
-    clientes_cobrados: doBackend.clientes_cobrados,
-    pagaram: doBackend.pagaram,
-    valor_pago: Number(doBackend.valor_pago),
-  };
-  return {
-    ...t,
-    frequencia: razao(doBackend.enviados_cobrados, doBackend.clientes_com_envio),
-    conversao: razao(t.pagaram, t.clientes_cobrados),
-    roas: razao(t.valor_pago, Number(doBackend.custo_whatsapp ?? 0)),
-  };
-}
-

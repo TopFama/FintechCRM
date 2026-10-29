@@ -24,7 +24,7 @@ são desse domínio (a mesma tabela está em `scripts/grafo_dependencias.py`, qu
 | **Plataforma** | O que todo domínio usa e não é de nenhum | `main.py`, `config.py`, `database.py`, `models.py`, `schemas.py`, `cache.py`, `timezone.py`, `utils/phone.py`, `utils/document.py`, `utils/spreadsheet.py`, `utils/xlsx.py`, `utils/erros.py`, `routers/comum.py` |
 
 `consultas_fila.py` é dono da regra de período do Dashboard: o dia de cada card
-(`periodo_dos_cards`, `contar_cards`) e a base de clientes cobrados do "Por faixa"
+(`periodo_dos_cards`, `contar_cards`) e a base de clientes cobrados da tabela por faixa do card Mensagens
 (`clientes_com_envio_no_periodo`: clientes com mensagem enviada no período), que
 `pagamentos_service.clientes_que_pagaram(base="envios")` também usa.
 

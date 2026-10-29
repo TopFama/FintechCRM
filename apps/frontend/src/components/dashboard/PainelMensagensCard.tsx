@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { AgruparPainel, api, MetaToken, PainelLinha, PainelMensagens, Template, WhatsappNumber } from "../../api";
-import { formatBRL, formatNumero, formatPercentual, formatRoas, rotuloWaba } from "../../format";
+import { formatBRL, formatDecimal, formatNumero, formatPercentual, formatRoas, rotuloWaba } from "../../format";
 import { IconAlert } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 import DicaIndicador from "../DicaIndicador";
@@ -9,6 +10,7 @@ import MultiSelect from "../MultiSelect";
 import SelectCampanha from "../SelectCampanha";
 import SortableTh from "../SortableTh";
 import TabelaAjustavel from "../TabelaAjustavel";
+import { linkRelatorio } from "./linkRelatorio";
 
 // pricing_category da Meta, na ordem do analytics deles; categoria nova da Meta entra no fim
 const CATEGORIAS: [string, string][] = [
@@ -88,91 +90,173 @@ function Linha({ rotulo, valor, dica }: { rotulo: string; valor: string; dica?: 
   );
 }
 
+type Dica = { texto: string; formula?: string };
+type LinhaTabela = PainelLinha & { frequencia: number | null; representatividade: number | null };
+type CelulaLink = (aba: string, valor: number, rotulo: string) => ReactNode;
+
+// Colunas da tabela depois do nome: título, valor para ordenar e célula da linha e do total. As chaves
+// são as que ficam guardadas na ordem de colunas de cada usuário (a mesma da antiga tabela Por faixa)
 type Coluna = {
-  chave: string;
   rotulo: string;
-  dica?: { texto: string; formula?: string };
-  valor: (t: PainelLinha) => string | number | null;
-  formato: (t: PainelLinha) => string;
+  dica?: Dica;
+  soFaixa?: boolean; // Pendente e Erro só existem no agrupamento por faixa
+  valor: (t: LinhaTabela) => string | number | null;
+  celula: (t: LinhaTabela, link: CelulaLink) => ReactNode;
+  total?: (t: LinhaTabela) => ReactNode; // quando difere da célula
 };
 
-const COLUNAS: Coluna[] = [
-  { chave: "enviados", rotulo: "Enviados", valor: (t) => t.enviados, formato: (t) => formatNumero(t.enviados) },
-  {
-    chave: "entregues",
-    rotulo: "Entregues",
-    dica: { texto: DICAS.entregues },
-    valor: (t) => t.entregues,
-    formato: (t) => formatNumero(t.entregues),
-  },
-  {
-    chave: "lidas",
-    rotulo: "Lidas",
-    dica: { texto: "Mensagens entregues que o cliente abriu e leu." },
-    valor: (t) => t.lidas,
-    formato: (t) => formatNumero(t.lidas),
-  },
-  {
-    chave: "cliques",
-    rotulo: "Cliques",
-    dica: { texto: "Cliques nos botões da mensagem." },
-    valor: (t) => t.cliques,
-    formato: (t) => formatNumero(t.cliques),
-  },
-  {
-    chave: "taxa_visualizacao",
-    rotulo: "% Visualização",
-    dica: {
-      texto: "Das mensagens entregues, quantas foram lidas. A Meta só informa leitura por 7 dias depois do envio.",
-      formula: "Lidas ÷ Entregues × 100",
+// Divisão por zero vira "—", não 0
+const razao = (a: number, b: number) => (b ? a / b : null);
+const numero = (v: string | null) => (v === null ? null : Number(v));
+
+function criarColunas(porFaixa: boolean): Record<string, Coluna> {
+  return {
+    pending: {
+      rotulo: "Pendente",
+      soFaixa: true,
+      valor: (t) => t.pendente,
+      celula: (t, l) => l("pendentes", t.pendente, "pendentes"),
     },
-    valor: (t) => (t.taxa_visualizacao === null ? null : Number(t.taxa_visualizacao)),
-    formato: (t) => formatPercentual(t.taxa_visualizacao),
-  },
-  {
-    chave: "taxa_cliques",
-    rotulo: "% Cliques",
-    dica: {
-      texto: "Das mensagens entregues, quantas tiveram clique em botão. A Meta só informa clique por 7 dias depois do envio.",
-      formula: "Cliques ÷ Entregues × 100",
+    error: { rotulo: "Erro", soFaixa: true, valor: (t) => t.erro, celula: (t, l) => l("erros", t.erro, "erros") },
+    sent: { rotulo: "Enviados", valor: (t) => t.enviados, celula: (t, l) => l("envios", t.enviados, "enviados") },
+    entregues: {
+      rotulo: "Entregues",
+      dica: { texto: DICAS.entregues },
+      valor: (t) => t.entregues,
+      celula: (t) => formatNumero(t.entregues),
     },
-    valor: (t) => (t.taxa_cliques === null ? null : Number(t.taxa_cliques)),
-    formato: (t) => formatPercentual(t.taxa_cliques),
-  },
-  { chave: "cobrados", rotulo: "Clientes cobrados", valor: (t) => t.cobrados, formato: (t) => formatNumero(t.cobrados) },
-  { chave: "pagaram", rotulo: "Pagaram", valor: (t) => t.pagaram, formato: (t) => formatNumero(t.pagaram) },
-  {
-    chave: "conversao",
-    rotulo: "% Conv.",
-    dica: {
-      texto:
-        "Dos clientes que receberam o template no período, quantos pagaram dentro da janela de pagamento. Cliente que recebeu mais de um template conta em todos.",
-      formula: "Pagaram ÷ Clientes cobrados × 100",
+    lidas: {
+      rotulo: "Lidas",
+      dica: { texto: "Mensagens entregues que o cliente abriu e leu." },
+      valor: (t) => t.lidas,
+      celula: (t) => formatNumero(t.lidas),
     },
-    valor: (t) => (t.conversao === null ? null : Number(t.conversao)),
-    formato: (t) => formatPercentual(t.conversao),
-  },
-  {
-    chave: "custo_brl",
-    rotulo: "Custo (R$)",
-    dica: {
-      texto: "A Meta não informa o custo por template. Cada linha leva a parte do gasto real da Meta, por WABA e categoria, igual à fatia dos envios dela.",
-      formula: "Gasto da WABA e categoria × Enviados da linha ÷ Enviados do CRM na WABA e categoria",
+    cliques: {
+      rotulo: "Cliques",
+      dica: { texto: "Cliques nos botões da mensagem." },
+      valor: (t) => t.cliques,
+      celula: (t) => formatNumero(t.cliques),
     },
-    valor: (t) => (t.custo_brl === null ? null : Number(t.custo_brl)),
-    formato: (t) => formatBRL(t.custo_brl),
-  },
-  {
-    chave: "roas",
-    rotulo: "ROAS",
-    dica: {
-      texto: "Quanto voltou em pagamento para cada R$ 1 gasto com WhatsApp nas mensagens da linha. Cliente que recebeu mais de um template conta em todos.",
-      formula: "Valor pago dos clientes cobrados ÷ Custo da linha",
+    taxa_visualizacao: {
+      rotulo: "% Visualização",
+      dica: {
+        texto: "Das mensagens entregues, quantas foram lidas. A Meta só informa leitura por 7 dias depois do envio.",
+        formula: "Lidas ÷ Entregues × 100",
+      },
+      valor: (t) => numero(t.taxa_visualizacao),
+      celula: (t) => formatPercentual(t.taxa_visualizacao),
     },
-    valor: (t) => (t.roas === null ? null : Number(t.roas)),
-    formato: (t) => formatRoas(t.roas),
-  },
-];
+    taxa_cliques: {
+      rotulo: "% Cliques",
+      dica: {
+        texto: "Das mensagens entregues, quantas tiveram clique em botão. A Meta só informa clique por 7 dias depois do envio.",
+        formula: "Cliques ÷ Entregues × 100",
+      },
+      valor: (t) => numero(t.taxa_cliques),
+      celula: (t) => formatPercentual(t.taxa_cliques),
+    },
+    clientes_cobrados: {
+      rotulo: "Clientes cobrados",
+      dica: {
+        texto: "Clientes distintos que receberam mensagem no período. No total, cada cliente conta uma vez.",
+        formula: "Contagem de clientes distintos com mensagem enviada no período",
+      },
+      valor: (t) => t.cobrados,
+      celula: (t) => formatNumero(t.cobrados),
+    },
+    frequencia: {
+      rotulo: "Frequência",
+      dica: { texto: "Média de mensagens enviadas no período por cliente cobrado.", formula: "Mensagens enviadas ÷ Clientes cobrados" },
+      valor: (t) => t.frequencia,
+      celula: (t) => formatDecimal(t.frequencia),
+    },
+    pagaram: {
+      rotulo: porFaixa ? "Pagaram após cobrança" : "Pagaram",
+      dica: {
+        texto: porFaixa
+          ? "Clientes cobrados no período que pagaram depois do primeiro envio do período, em qualquer data."
+          : "Clientes cobrados no período que pagaram dentro da janela de pagamento.",
+        formula: porFaixa
+          ? "Contagem de clientes distintos cobrados que pagaram após o primeiro envio do período"
+          : undefined,
+      },
+      valor: (t) => t.pagaram,
+      celula: (t, l) => (t.pagaram === null ? "—" : l("pagamentos", t.pagaram, "clientes que pagaram")),
+    },
+    representatividade: {
+      rotulo: "%\u00a0Rep.",
+      dica: {
+        texto: "Quanto esta linha representa do total de clientes que pagaram após cobrança. Soma a coluna das linhas para fechar 100%.",
+        formula: "Pagaram da linha ÷ Σ Pagaram de todas as linhas × 100",
+      },
+      valor: (t) => t.representatividade,
+      celula: (t) => formatPercentual(t.representatividade),
+      total: () => null, // sempre 100%: não traz nada
+    },
+    conversao: {
+      rotulo: "%\u00a0Conv.",
+      dica: {
+        texto: porFaixa
+          ? "Dos clientes cobrados na faixa, quantos pagaram depois da cobrança."
+          : "Dos clientes que receberam o template no período, quantos pagaram dentro da janela de pagamento. Cliente que recebeu mais de um template conta em todos.",
+        formula: "Pagaram ÷ Clientes cobrados × 100",
+      },
+      valor: (t) => numero(t.conversao),
+      celula: (t) => formatPercentual(t.conversao),
+    },
+    valor_pago: {
+      rotulo: "Valor pago",
+      dica: {
+        texto:
+          "Valor pago depois da cobrança pelos clientes cobrados no período. Cada pagamento conta uma vez por linha e, no total, uma vez só, mesmo com o cliente em mais de uma linha.",
+        formula: "Σ valor pago após a cobrança",
+      },
+      valor: (t) => numero(t.valor_pago),
+      celula: (t) => formatBRL(t.valor_pago),
+    },
+    custo_brl: {
+      rotulo: "Custo (R$)",
+      dica: {
+        texto:
+          "A Meta não informa o custo por template. Cada linha leva a parte do gasto real da Meta, por WABA e categoria, igual à fatia dos envios dela. Envio sem template registrado fica sem custo.",
+        formula: "Gasto da WABA e categoria × Enviados da linha ÷ Enviados do CRM na WABA e categoria",
+      },
+      valor: (t) => numero(t.custo_brl),
+      celula: (t) => formatBRL(t.custo_brl),
+    },
+    roas: {
+      rotulo: "ROAS",
+      dica: {
+        texto: "Quanto voltou em pagamento para cada R$ 1 gasto com WhatsApp nas mensagens da linha. Cliente que recebeu mais de um template conta em todos.",
+        formula: "Valor pago dos clientes cobrados ÷ Custo da linha",
+      },
+      valor: (t) => numero(t.roas),
+      celula: (t) => formatRoas(t.roas),
+    },
+  };
+}
+
+// Ordem de quem ainda não arrastou nenhuma coluna
+const ORDEM_PADRAO = Object.keys(criarColunas(true));
+
+// Ordem salva na conta: ignora coluna que não existe mais e põe no fim, na ordem padrão, coluna nova
+function ordemColunas(salvas: string[]): string[] {
+  return [...new Set([...salvas.filter((c) => ORDEM_PADRAO.includes(c)), ...ORDEM_PADRAO])];
+}
+
+// Frequência e % Rep. saem das próprias linhas; o total não tem % Rep.
+function comDerivados(linhas: PainelLinha[], total: PainelLinha | null): { linhas: LinhaTabela[]; total: LinhaTabela | null } {
+  const somaPagaram = linhas.reduce((s, t) => s + (t.pagaram ?? 0), 0);
+  const derivar = (t: PainelLinha, rep: number | null): LinhaTabela => ({
+    ...t,
+    frequencia: razao(t.enviados, t.cobrados),
+    representatividade: rep,
+  });
+  return {
+    linhas: linhas.map((t) => derivar(t, t.pagaram === null ? null : razao(t.pagaram, somaPagaram))),
+    total: total && derivar(total, null),
+  };
+}
 
 // Mini-tabelas do "Preços das mensagens" do analytics da Meta (em R$) e métricas por
 // template. Filtros próprios; a Meta não filtra por template nem campanha, então com
@@ -183,15 +267,23 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
   const [wabas, setWabas] = useState<string[]>([]);
   const [templates, setTemplates] = useState<string[]>([]);
   const [campanha, setCampanha] = useState("");
-  const [agrupar, setAgrupar] = useState<AgruparPainel>("template");
+  const [agrupar, setAgrupar] = useState<AgruparPainel>("faixa");
   const [numeros, setNumeros] = useState<WhatsappNumber[]>([]);
   const [tokens, setTokens] = useState<MetaToken[]>([]);
   const [modelos, setModelos] = useState<Template[]>([]);
   const [dados, setDados] = useState<PainelMensagens | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const ordenacao = useSort<string>(null);
+  const navigate = useNavigate();
+  const [ordem, setOrdem] = useState<string[]>(ORDEM_PADRAO);
+  const [arrastada, setArrastada] = useState<string | null>(null);
+  const [alvo, setAlvo] = useState<string | null>(null);
 
   useEffect(() => {
+    api
+      .colunasPorFaixa()
+      .then((r) => setOrdem(ordemColunas(r.colunas)))
+      .catch(() => {}); // sem a ordem salva, fica a padrão
     api.listNumbers().then(setNumeros).catch(() => undefined);
     api.listarTokensMeta().then(setTokens).catch(() => undefined);
     api.listTemplates().then(setModelos).catch(() => undefined);
@@ -219,7 +311,56 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
     .filter((t) => t.status === "approved")
     .map((t) => ({ value: t.id, label: t.name }));
 
-  const coluna = COLUNAS.find((c) => c.chave === ordenacao.sortKey);
+  const porFaixa = agrupar === "faixa";
+  const colunas = criarColunas(porFaixa);
+  const visiveis = ordem.filter((c) => !colunas[c].soFaixa || porFaixa);
+  const tabela = dados ? comDerivados(dados.linhas, dados.total) : null;
+  const coluna = ordenacao.sortKey ? colunas[ordenacao.sortKey] : undefined;
+
+  // Solta a coluna arrastada no lugar da coluna alvo e salva na conta do usuário
+  function soltar(chave: string) {
+    if (!arrastada || arrastada === chave) return;
+    const nova = ordem.filter((c) => c !== arrastada);
+    nova.splice(nova.indexOf(chave) + (ordem.indexOf(arrastada) < ordem.indexOf(chave) ? 1 : 0), 0, arrastada);
+    setOrdem(nova);
+    api.salvarColunasPorFaixa(nova).catch(() => {}); // sem salvar, a ordem vale só nesta visita
+  }
+
+  // A primeira coluna (nome) fica fixa; as outras se arrastam pelo título
+  const th = (chave: string, rotulo: string, dica?: Dica) => (
+    <SortableTh
+      key={chave}
+      active={ordenacao.sortKey === chave}
+      dir={ordenacao.sortDir}
+      onSort={() => ordenacao.toggleSort(chave)}
+      {...(chave !== "nome" && {
+        draggable: true,
+        className: alvo === chave && arrastada !== chave ? "th-alvo-arraste" : undefined,
+        onDragStart: (e) => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", chave);
+          setArrastada(chave);
+        },
+        onDragOver: (e) => {
+          if (!arrastada) return;
+          e.preventDefault();
+          setAlvo(chave);
+        },
+        onDragLeave: () => setAlvo((a) => (a === chave ? null : a)),
+        onDrop: (e) => {
+          e.preventDefault();
+          soltar(chave);
+        },
+        onDragEnd: () => {
+          setArrastada(null);
+          setAlvo(null);
+        },
+      })}
+    >
+      {rotulo}
+      {dica && <DicaIndicador titulo={rotulo} texto={dica.texto} formula={dica.formula} />}
+    </SortableTh>
+  );
 
   return (
     <div className="card">
@@ -328,45 +469,71 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
             )}
           </div>
 
-          {dados.linhas.length > 0 && (
+          {tabela && tabela.linhas.length > 0 && (
             <TabelaAjustavel id="painel-por-template" rotulo={`Por ${ROTULO_GRUPO[agrupar].toLowerCase()}`} style={{ marginTop: 16 }}>
-              <table>
+              <table className="tabela-por-faixa">
                 <thead>
                   <tr>
-                    <SortableTh
-                      active={ordenacao.sortKey === "nome"}
-                      dir={ordenacao.sortDir}
-                      onSort={() => ordenacao.toggleSort("nome")}
-                    >
-                      {ROTULO_GRUPO[agrupar]}
-                    </SortableTh>
-                    {COLUNAS.map((c) => (
-                      <SortableTh
-                        key={c.chave}
-                        active={ordenacao.sortKey === c.chave}
-                        dir={ordenacao.sortDir}
-                        onSort={() => ordenacao.toggleSort(c.chave)}
-                      >
-                        {c.rotulo}
-                        {c.dica && <DicaIndicador titulo={c.rotulo} texto={c.dica.texto} formula={c.dica.formula} />}
-                      </SortableTh>
-                    ))}
+                    {th("nome", ROTULO_GRUPO[agrupar])}
+                    {visiveis.map((c) => th(c, colunas[c].rotulo, colunas[c].dica))}
                   </tr>
                 </thead>
                 <tbody>
                   {ordenarPor(
-                    dados.linhas,
+                    tabela.linhas,
                     ordenacao.sortKey === "nome" ? (t) => t.nome : coluna ? coluna.valor : null,
                     ordenacao.sortDir
-                  ).map((t) => (
-                    <tr key={t.chave}>
-                      <td className="cell-strong">{t.nome}</td>
-                      {COLUNAS.map((c) => (
-                        <td key={c.chave}>{c.formato(t)}</td>
+                  ).map((t) => {
+                    // Por faixa, cada número abre o próprio relatório da faixa e a linha abre os envios dela
+                    const link = (aba: string) =>
+                      linkRelatorio(aba, periodo, { faixa_id: t.faixa_id ?? "", ...(aba === "pagamentos" ? { base: "envios" } : {}) });
+                    const celula: CelulaLink = (aba, valor, rotulo) =>
+                      porFaixa && t.faixa_id ? (
+                        <Link
+                          to={link(aba)}
+                          className="link-celula"
+                          aria-label={`Ver ${formatNumero(valor)} ${rotulo} da faixa ${t.nome}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {formatNumero(valor)}
+                        </Link>
+                      ) : (
+                        formatNumero(valor)
+                      );
+                    return (
+                      <tr
+                        key={t.chave}
+                        className={porFaixa && t.faixa_id ? "linha-clicavel" : undefined}
+                        onClick={porFaixa && t.faixa_id ? () => navigate(link("envios")) : undefined}
+                      >
+                        <td className="cell-strong">
+                          {porFaixa && t.faixa_id ? (
+                            <Link to={link("envios")} className="link-celula" onClick={(e) => e.stopPropagation()}>
+                              {t.nome}
+                            </Link>
+                          ) : (
+                            t.nome
+                          )}
+                        </td>
+                        {visiveis.map((c) => (
+                          <td key={c}>{colunas[c].celula(t, celula)}</td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {tabela.total && (
+                  <tfoot>
+                    <tr className="linha-total">
+                      <td className="cell-strong">Total</td>
+                      {visiveis.map((c) => (
+                        <td key={c}>
+                          {(colunas[c].total ?? ((t: LinhaTabela) => colunas[c].celula(t, (_aba, valor) => formatNumero(valor))))(tabela.total!)}
+                        </td>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
+                  </tfoot>
+                )}
               </table>
             </TabelaAjustavel>
           )}

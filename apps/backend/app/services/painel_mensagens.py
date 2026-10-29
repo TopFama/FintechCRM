@@ -172,7 +172,7 @@ def _analytics_de_templates(
 def _grupo(agrupar: str):
     """(chave, nome) do agrupamento escolhido (nome None por template: o nome vem do
     cadastro do template) sobre os envios, que pedem o join
-    com Faixa: a de atraso do cliente (a mesma do "Por faixa" do Dashboard), a
+    com Faixa: a de atraso do cliente (`consultas_fila.nome_faixa`), a
     campanha (a faixa própria dela; a régua entra junto, como "Régua de cobrança")
     ou, no padrão, o template."""
 
@@ -228,11 +228,78 @@ def _envios_da_fila(
     return [dict(l._mapping) for l in db.execute(q)]
 
 
+def _fila_aberta(
+    db: Session, de: date, ate: date, numeros: list[str] | None, templates: list[str], campanha: str
+) -> dict[str, dict[str, int]]:
+    """Pendentes (o reservado conta como pendente) e erros por faixa de atraso,
+    pela data em que entraram na fila, com os mesmos filtros dos envios."""
+
+    ini, fim = consultas_fila.limites_utc(de, ate)
+    faixa = consultas_fila.nome_faixa()  # um objeto só: o mesmo parâmetro no SELECT e no GROUP BY
+    q = (
+        select(faixa.label("faixa"), models.QueueItem.status, func.count())
+        .select_from(models.QueueItem)
+        .join(models.Faixa, models.Faixa.id == models.QueueItem.faixa_id)
+        .where(
+            models.QueueItem.status.in_([models.QueueStatus.pending, models.QueueStatus.reserved, models.QueueStatus.error]),
+            consultas_fila.condicao_periodo(models.QueueItem.created_at, ini, fim),
+        )
+        .group_by(faixa, models.QueueItem.status)
+    )
+    if numeros is not None:
+        q = q.where(models.QueueItem.whatsapp_number_id.in_(numeros))
+    if templates:
+        q = q.where(models.QueueItem.template_id.in_(templates))
+    if campanha:
+        q = q.where(consultas_fila.filtro_campanha(db, models.QueueItem.faixa_id, campanha))
+    aberta: dict[str, dict[str, int]] = {}
+    for nome, status, qtd in db.execute(q):
+        chave = "erro" if status == models.QueueStatus.error else "pendente"
+        linha = aberta.setdefault(nome, {"pendente": 0, "erro": 0})
+        linha[chave] += qtd
+    return aberta
+
+
+def _metricas(enviados, entregues, lidas, cliques, entregues_meta, cobrados, pagaram, valor_pago, custo) -> dict:
+    """Colunas calculadas de uma linha da tabela ou do total: as taxas e o ROAS saem
+    das somas, nunca da média das linhas."""
+
+    return {
+        "enviados": enviados,
+        "entregues": entregues,
+        "lidas": lidas,
+        "cliques": cliques,
+        "taxa_visualizacao": Decimal(lidas) / entregues if lidas is not None and entregues else None,
+        "taxa_cliques": Decimal(cliques) / entregues_meta if cliques is not None and entregues_meta else None,
+        "cobrados": cobrados,
+        "pagaram": pagaram,
+        "conversao": Decimal(pagaram) / cobrados if pagaram is not None and cobrados else None,
+        "valor_pago": valor_pago,
+        "custo_brl": custo.quantize(Decimal("0.01")) if custo is not None else None,
+        "roas": calcular_roas(valor_pago, custo) if valor_pago is not None else None,
+    }
+
+
+def _soma(valores: list):
+    """Soma das linhas; None se alguma não tem o dado."""
+    return None if any(v is None for v in valores) else sum(valores)
+
+
+def _linha_vazia(nome: str | None) -> dict:
+    return {
+        "nome": nome, "ids": set(), "enviados": 0, "clientes": set(), "entregues": 0, "lidas": 0,
+        "por_waba": {}, "sem_template": 0,
+    }
+
+
 def _custo(linha: dict, modelos: dict, gastos: dict, envios_crm: dict, sem_gasto: set[str]) -> Decimal | None:
     """Custo do grupo: o gasto real da Meta em cada (WABA, categoria) rateado pela
     fatia dos envios do CRM; a soma de todas as linhas fecha com o gasto do Orçamento.
-    None se faltar o gasto da categoria na WABA."""
+    None se faltar o gasto da categoria na WABA ou se a linha tem envio sem template
+    registrado (não há categoria para ratear)."""
 
+    if linha["sem_template"]:
+        return None
     total = Decimal("0")
     for (waba, tid), qtd in linha["por_waba"].items():
         categoria = modelos[tid].category if tid in modelos else ""
@@ -244,17 +311,27 @@ def _custo(linha: dict, modelos: dict, gastos: dict, envios_crm: dict, sem_gasto
     return total
 
 
-def _conversao(db: Session, de: date, ate: date, campanha: str) -> tuple[dict[str, Decimal] | None, str | None]:
-    """{cliente: valor pago} dos clientes cobrados no período que pagaram dentro da
+def _conversao(
+    db: Session, de: date, ate: date, campanha: str, usar_janela: bool
+) -> tuple[dict[str, Decimal] | None, str | None]:
+    """{cliente: valor pago} dos clientes cobrados no período que pagaram: dentro da
     janela de Indicadores (mesma lista e regra do card de pagamentos do Dashboard e
-    do Quem pagou). O cliente cobrado em dois dias vem em duas linhas com o mesmo
-    pagamento: vale o maior, como no Por faixa."""
+    do Quem pagou) ou, sem `usar_janela` (por faixa), em qualquer data depois do primeiro
+    envio do período. O cliente cobrado em dois dias vem em duas linhas com o mesmo
+    pagamento: vale o maior."""
 
-    dias_janela = db.query(models.ParametrosCobranca.dias_janela_dashboard).scalar()
+    dias_janela = db.query(models.ParametrosCobranca.dias_janela_dashboard).scalar() if usar_janela else None
     try:
-        linhas = pagamentos_service.snapshot_pagamentos(
-            cobrado_de=de, cobrado_ate=ate, dias_janela=dias_janela, campanha=campanha or None, base="envios"
-        ).data
+        try:
+            linhas = pagamentos_service.snapshot_pagamentos(
+                cobrado_de=de, cobrado_ate=ate, dias_janela=dias_janela, campanha=campanha or None, base="envios"
+            ).data
+        except seta_client.SetaIndisponivel:
+            # SETA fora com cliente novo sem cópia: mostra o que já está copiado
+            linhas = pagamentos_service.clientes_que_pagaram(
+                db, cobrado_de=de, cobrado_ate=ate, dias_janela=dias_janela, campanha=campanha or None,
+                buscar_novos=False, base="envios",
+            )
     except seta_client.SetaIndisponivel:
         return None, "Conversão indisponível: sem conexão com o SETA"
     except (cache.CacheIndisponivel, cache.CacheOcupado):
@@ -311,24 +388,33 @@ def montar(
     # a tabela mostra por_grupo: por template, os de mesmo nome (uma linha por WABA) somam numa só
     por_template: dict[str, dict] = {}
     por_grupo: dict[str, dict] = {}
+    # Por faixa, o envio sem template registrado (anterior à gravação do template) também conta;
+    # sem categoria não há como ratear o custo dele
+    por_faixa = agrupar == "faixa"
     for e in envios:
-        if not e["template_id"]:
+        if not e["template_id"] and not por_faixa:
             continue
         waba = e["waba_id"] or ""
         tpl = modelos.get(e["template_id"])
         chave_grupo = (tpl.name if tpl else e["template_id"]) if agrupar == "template" else e["grupo"]
         for destino, chave in ((por_template, e["template_id"]), (por_grupo, chave_grupo)):
-            linha = destino.setdefault(
-                chave,
-                {"nome": e.get("nome"), "ids": set(), "enviados": 0, "clientes": set(), "entregues": 0, "lidas": 0, "por_waba": {}},
-            )
-            linha["ids"].add(e["template_id"])
+            if destino is por_template and not e["template_id"]:
+                continue
+            linha = destino.setdefault(chave, _linha_vazia(e.get("nome")))
             linha["enviados"] += e["envios"]
             linha["clientes"].add(e["codigo_cliente"])
             linha["entregues"] += e["entregues"]
             linha["lidas"] += e["lidas"]
-            ponto = (waba, e["template_id"])
-            linha["por_waba"][ponto] = linha["por_waba"].get(ponto, 0) + e["envios"]
+            if e["template_id"]:
+                linha["ids"].add(e["template_id"])
+                ponto = (waba, e["template_id"])
+                linha["por_waba"][ponto] = linha["por_waba"].get(ponto, 0) + e["envios"]
+            else:
+                linha["sem_template"] += e["envios"]
+    # Pendente e Erro por faixa; faixa só com fila aberta também ganha linha
+    fila_aberta = _fila_aberta(db, de, ate, ids_numero, templates, campanha) if por_faixa else {}
+    for nome in fila_aberta:
+        por_grupo.setdefault(nome, _linha_vazia(nome))
     gastos = custo_whatsapp.gasto_por_categoria(custo) if meta_ok else {}
     envios_crm: dict[tuple[str, str], int] = {}
     for e in envios_todos:
@@ -342,6 +428,8 @@ def montar(
         linha["custo"] = _custo(linha, modelos, gastos, envios_crm, sem_gasto)
     if sem_gasto:
         avisos.append("Sem gasto da Meta no período para: " + "; ".join(sorted(sem_gasto)))
+    if any(l["sem_template"] for l in por_grupo.values()):
+        avisos.append("Envios anteriores à gravação do template ficam sem custo e ROAS")
 
     # Entregues, lidas e cliques são da Meta, por template; a faixa ou campanha leva a
     # parte do template igual à sua fatia dos envios dele
@@ -350,7 +438,7 @@ def montar(
     avisos += avisos_meta
     if (telefones or campanha) and template_meta:
         avisos.append("Entregues, lidas e cliques por template são da WABA inteira: a Meta não filtra por telefone nem campanha")
-    pagaram, aviso_conversao = _conversao(db, de, ate, campanha) if por_template else ({}, None)
+    pagaram, aviso_conversao = _conversao(db, de, ate, campanha, usar_janela=not por_faixa) if por_grupo else ({}, None)
     if aviso_conversao:
         avisos.append(aviso_conversao)
 
@@ -366,6 +454,7 @@ def montar(
         return int(sum(partes, Decimal("0")).to_integral_value()) if partes else None
 
     tabela = []
+    bases_meta = []  # entregues da Meta de cada linha: base da % Cliques do total
     for chave, linha in por_grupo.items():
         tpls = [modelos[i] for i in sorted(linha["ids"]) if i in modelos] if por_template_modo else []
         categorias = {t.category for t in tpls}
@@ -374,34 +463,59 @@ def montar(
         if not por_template_modo and linha["entregues"]:
             # Faixa e campanha: o dado real do Chatwoot, quando a linha tem recibos
             entregues, lidas = linha["entregues"], linha["lidas"]
+        bases_meta.append(entregues_meta)
         pagos = len(linha["clientes"] & pagaram.keys()) if pagaram is not None else None
         valor_pago = sum((pagaram[c] for c in linha["clientes"] if c in pagaram), Decimal("0")) if pagaram is not None else None
+        aberta = fila_aberta.get(chave, {})
         tabela.append(
             {
                 "chave": chave,
                 "nome": (tpls[0].name if tpls else "Template removido") if por_template_modo else linha["nome"],
                 "categoria": categorias.pop() if len(categorias) == 1 else "",
-                "enviados": linha["enviados"],
-                "entregues": entregues,
-                "lidas": lidas,
-                "cliques": cliques,
-                "taxa_visualizacao": Decimal(lidas) / entregues if lidas is not None and entregues else None,
-                "taxa_cliques": Decimal(cliques) / entregues_meta if cliques is not None and entregues_meta else None,
-                "cobrados": len(linha["clientes"]),
-                "pagaram": pagos,
-                "conversao": Decimal(pagos) / len(linha["clientes"]) if pagos is not None and linha["clientes"] else None,
-                "custo_brl": linha["custo"].quantize(Decimal("0.01")) if linha["custo"] is not None else None,
-                "roas": calcular_roas(valor_pago, linha["custo"]) if valor_pago is not None else None,
+                "pendente": aberta.get("pendente", 0),
+                "erro": aberta.get("erro", 0),
+                **_metricas(
+                    linha["enviados"], entregues, lidas, cliques, entregues_meta, len(linha["clientes"]), pagos, valor_pago,
+                    linha["custo"],
+                ),
             }
         )
-    if agrupar == "faixa":
-        # Mesma ordem do "Por faixa": a progressão de atraso das regras
+    total = None
+    if tabela:
+        # Cada cliente (e cada pagamento) conta uma vez, mesmo cobrado em mais de uma linha
+        todos = set().union(*(l["clientes"] for l in por_grupo.values()))
+        pagos = len(todos & pagaram.keys()) if pagaram is not None else None
+        valor_pago = sum((pagaram[c] for c in todos if c in pagaram), Decimal("0")) if pagaram is not None else None
+        total = {
+            "chave": "total",
+            "nome": "Total",
+            "categoria": "",
+            "pendente": sum(l["pendente"] for l in tabela),
+            "erro": sum(l["erro"] for l in tabela),
+            **_metricas(
+                sum(l["enviados"] for l in tabela),
+                _soma([l["entregues"] for l in tabela]),
+                _soma([l["lidas"] for l in tabela]),
+                _soma([l["cliques"] for l in tabela]),
+                _soma(bases_meta),
+                len(todos),
+                pagos,
+                valor_pago,
+                _soma([l["custo"] for l in por_grupo.values()]),
+            ),
+        }
+    if por_faixa:
+        # Id da faixa de cada linha: os números abrem os relatórios dela
+        ids_faixa = dict(db.query(models.Faixa.name, models.Faixa.id).filter(models.Faixa.name.in_([l["nome"] for l in tabela])))
+        for l in tabela:
+            l["faixa_id"] = ids_faixa.get(l["nome"])
+        # A progressão de atraso das regras
         ordem_faixa = {nome: i for i, nome in enumerate(carregar_regras(db).nomes_faixa)}
         tabela.sort(key=lambda l: (ordem_faixa.get(l["nome"], 9999), l["nome"]))
     else:
         tabela.sort(key=lambda l: -l["enviados"])
 
-    saida = {"de": de, "ate": ate, "origem": "fila" if (templates or campanha) else "meta", "linhas": tabela}
+    saida = {"de": de, "ate": ate, "origem": "fila" if (templates or campanha) else "meta", "linhas": tabela, "total": total}
     if templates or campanha:
         # A Meta não filtra por template nem campanha: quadros da fila, custo = gasto real rateado pelos envios
         por_categoria: dict[str, int] = {}

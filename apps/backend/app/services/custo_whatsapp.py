@@ -1,6 +1,6 @@
 """Gasto real com WhatsApp (Meta Pricing Analytics, em BRL) por dia, usado
 no orçamento do Dashboard, no "valor a pagar" do relatório de efetividade e,
-rateado por envio (`custo_por_envio`), no ROAS do "Por faixa" e da Efetividade.
+rateado por envio (`custo_por_envio`), no ROAS da Efetividade.
 A Meta devolve o custo na moeda de cobrança de cada WABA: USD é convertido pela
 cotação do dia, BRL entra como veio."""
 

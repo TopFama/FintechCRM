@@ -114,7 +114,7 @@ def valor_numerico():
 
 
 # Faixa: escolher uma faixa de atraso traz também as campanhas feitas a clientes que estavam
-# nela, como a linha da faixa no "Por faixa" do Dashboard (a contagem do card bate com o relatório)
+# nela, como a linha da faixa no card Mensagens (por faixa) do Dashboard (a contagem do card bate com o relatório)
 COLUNAS_ENVIOS = {
     "codigo_cliente": Coluna(models.QueueItem.codigo_cliente),
     "faixa": Coluna(models.Faixa.name, tambem=models.QueueItem.faixa_atraso),
@@ -252,7 +252,7 @@ def periodo_dos_cards(de: date | None, ate: date | None):
 
 
 def nome_faixa():
-    """Faixa da linha de "Por faixa" do Dashboard: a de atraso do cliente
+    """Faixa da linha da tabela por faixa do Dashboard: a de atraso do cliente
     (envio de campanha/remarketing), senão a faixa da fila. Pede o join com
     models.Faixa."""
     return func.coalesce(func.nullif(models.QueueItem.faixa_atraso, ""), models.Faixa.name)
@@ -264,7 +264,7 @@ def clientes_com_envio_no_periodo(db: Session, de: date | None, ate: date | None
     {codigo_cliente: linha}}, a linha com `mensagens` (quantas no período,
     na faixa) e os dados do primeiro envio do período na faixa (`primeiro_envio`
     em UTC, `nome`, `cpf`, `lojas`, `valor`). Base dos clientes cobrados, da
-    Frequência e do "Pagaram após cobrança" do Dashboard."""
+    Frequência e do "Pagaram após cobrança" da tabela por faixa do Dashboard."""
 
     ini, fim = limites_utc(de, ate)
     faixa = nome_faixa()
@@ -300,7 +300,7 @@ def clientes_com_envio_no_periodo(db: Session, de: date | None, ate: date | None
 def envios_por_dia(db: Session, de: date | None, ate: date | None) -> dict[tuple[date, str], int]:
     """Mensagens enviadas (sent) com data de envio no período, por dia de
     Brasília e faixa de nome_faixa(): base do rateio do custo do WhatsApp
-    (services/custo_whatsapp.custo_por_envio) e do custo por faixa do Dashboard."""
+    (services/custo_whatsapp.custo_por_envio) do ROAS da Efetividade."""
 
     ini, fim = limites_utc(de, ate)
     # sent_at é UTC ingênuo: vira timestamptz em UTC e depois o dia em Brasília

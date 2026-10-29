@@ -19,10 +19,10 @@ test.describe("Fumaça", { tag: "@smoke" }, () => {
     await contexto.close();
   });
 
-  test("Dashboard: resumo de hoje e tabela por faixa", async ({ page }) => {
+  test("Dashboard: resumo de hoje e tabela por faixa no card Mensagens", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator(".periodo-card", { hasText: "Hoje" }).first()).toHaveAttribute("aria-pressed", "true");
-    await expect(card(page, "Por faixa").locator("tbody tr", { hasText: "3 A 10" })).toBeVisible();
+    await expect(card(page, /^Mensagens$/).locator("tbody tr", { hasText: "3 A 10" })).toBeVisible({ timeout: 30_000 });
   });
 
   test("Cobrança: aplicar os filtros lista clientes do SETA", async ({ page }) => {
