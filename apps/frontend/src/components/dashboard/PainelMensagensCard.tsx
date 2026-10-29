@@ -236,7 +236,7 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
         </div>
       </div>
 
-      <FiltroPeriodo opcoes={["7dias", "mes", "personalizado"]} inicial="mes" onChange={(p) => setPeriodo(p)} />
+      <FiltroPeriodo opcoes={["hoje", "7dias", "mes", "personalizado"]} inicial="mes" onChange={(p) => setPeriodo(p)} />
       <div className="form-row">
         <MultiSelect id="painel-waba" label="WABA" options={opcoesWaba} value={wabas} onChange={setWabas} />
         <MultiSelect
