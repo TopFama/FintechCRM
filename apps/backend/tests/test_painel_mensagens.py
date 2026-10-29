@@ -131,15 +131,15 @@ assert p.cobranca.total_brl == Decimal("12.20") and p.cobranca.por_categoria["UT
 assert ("mensagens", "waba1", (0, 2), ()) in CHAMADAS and ("mensagens", "waba1", (100,), ()) in CHAMADAS
 
 # Por template: entregues/lidas/cliques da Meta, conversão pelos pagamentos, custo = envios × tarifa
-linhas = {t.chave: t for t in p.linhas}
-u = linhas[util_id]
+linhas = {t.nome: t for t in p.linhas}  # a linha do template é por nome
+u = linhas["Aviso"]
 assert (u.enviados, u.cobrados, u.pagaram) == (5, 4, 1), u
 assert (u.entregues, u.lidas, u.cliques) == (80, 40, 8), u
 assert u.taxa_visualizacao == Decimal("0.5") and u.taxa_cliques == Decimal("0.1"), u
 assert u.conversao == Decimal("0.25"), u
 assert u.custo_brl == Decimal("0.03"), u.custo_brl  # 5 × (10,20 ÷ 1500)
 # Marketing sem tarifa no período: custo "—" e aviso; sem insights do template (Meta não devolveu)
-m = linhas[mkt_id]
+m = linhas["Oferta"]
 assert m.enviados == 2 and m.custo_brl is None and m.entregues is None and m.taxa_visualizacao is None, m
 assert any("Sem tarifa" in a and "MARKETING" in a for a in p.avisos), p.avisos
 
@@ -147,7 +147,7 @@ assert any("Sem tarifa" in a and "MARKETING" in a for a in p.avisos), p.avisos
 CHAMADAS.clear()
 p = painel(telefones=[n1_id])
 assert ("mensagens", "waba1", (0, 2), ("551140000001",)) in CHAMADAS, CHAMADAS
-assert {t.chave: t.enviados for t in p.linhas} == {util_id: 4, mkt_id: 2}, p.linhas
+assert {t.nome: t.enviados for t in p.linhas} == {"Aviso": 4, "Oferta": 2}, p.linhas
 assert p.entregues.total == 1640  # só o número 1 tem custo no Pricing Analytics do teste
 assert any("não filtra por telefone" in a for a in p.avisos), p.avisos
 
@@ -161,7 +161,7 @@ assert p.origem == "fila" and p.entregues is None and p.gratuitas is None
 assert (p.todas.enviadas, p.todas.entregues, p.todas.recebidas) == (5, None, None), p.todas
 assert p.pagas.total == 5 and p.pagas.por_categoria == {"UTILITY": 5}, p.pagas
 assert p.cobranca.total_brl == Decimal("0.03") and p.cobranca.por_categoria == {"UTILITY": Decimal("0.03")}, p.cobranca
-assert [t.chave for t in p.linhas] == [util_id]
+assert [t.nome for t in p.linhas] == ["Aviso"]
 
 # Template sem tarifa: total da cobrança "—"
 p = painel(templates=[mkt_id])
@@ -203,6 +203,21 @@ for i in range(10):
 db.commit()
 p = painel(agrupar="faixa")
 assert [l.nome for l in p.linhas] == ["1 a 3 dias", "4 a 7 dias"] and p.linhas[1].enviados > p.linhas[0].enviados, p.linhas
+
+# Templates de mesmo nome (um registro por WABA) somam numa linha só
+util2 = models.Template(
+    name="Aviso", meta_template_name="aviso", category="UTILITY", status=models.TemplateStatus.approved,
+    waba_id="waba2", meta_template_id="333",
+)
+db.add(util2)
+db.commit()
+util2_id = util2.id
+antes = painel(templates=[util_id]).linhas[0]
+item("y1", n2, util2)
+item("y2", n2, util2)
+db.commit()
+p = painel(templates=[util_id, util2_id])
+assert [(l.nome, l.enviados, l.cobrados, l.categoria) for l in p.linhas] == [("Aviso", antes.enviados + 2, antes.cobrados + 2, "UTILITY")], p.linhas
 
 # Filtro de template vale em qualquer agrupamento
 p = painel(agrupar="campanha", templates=[mkt_id])

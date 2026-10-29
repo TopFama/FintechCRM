@@ -291,30 +291,33 @@ def montar(
         avisos.append(custo.motivo)
 
     envios = _envios_da_fila(db, de, ate, ids_numero, templates, campanha, agrupar)
-    # por_template alimenta os quadros e as métricas da Meta; a tabela mostra por_grupo
-    # (o mesmo dicionário quando se agrupa por template)
+    ids_envio = {e["template_id"] for e in envios if e["template_id"]}
+    modelos = {
+        t.id: t for t in db.query(models.Template).filter(models.Template.id.in_(list(ids_envio)))
+    } if ids_envio else {}
+
+    # por_template (um por registro de template) alimenta os quadros e as métricas da Meta;
+    # a tabela mostra por_grupo: por template, os de mesmo nome (uma linha por WABA) somam numa só
     por_template: dict[str, dict] = {}
-    por_grupo: dict[str, dict] = por_template if agrupar == "template" else {}
+    por_grupo: dict[str, dict] = {}
     for e in envios:
         if not e["template_id"]:
             continue
         waba = e["waba_id"] or ""
-        destinos = [(por_template, e["template_id"])]
-        if por_grupo is not por_template:
-            destinos.append((por_grupo, e["grupo"]))
-        for destino, chave in destinos:
+        tpl = modelos.get(e["template_id"])
+        chave_grupo = (tpl.name if tpl else e["template_id"]) if agrupar == "template" else e["grupo"]
+        for destino, chave in ((por_template, e["template_id"]), (por_grupo, chave_grupo)):
             linha = destino.setdefault(
-                chave, {"nome": e.get("nome"), "enviados": 0, "clientes": set(), "entregues": 0, "lidas": 0, "por_waba": {}}
+                chave,
+                {"nome": e.get("nome"), "ids": set(), "enviados": 0, "clientes": set(), "entregues": 0, "lidas": 0, "por_waba": {}},
             )
+            linha["ids"].add(e["template_id"])
             linha["enviados"] += e["envios"]
             linha["clientes"].add(e["codigo_cliente"])
             linha["entregues"] += e["entregues"]
             linha["lidas"] += e["lidas"]
             ponto = (waba, e["template_id"])
             linha["por_waba"][ponto] = linha["por_waba"].get(ponto, 0) + e["envios"]
-    modelos = {
-        t.id: t for t in db.query(models.Template).filter(models.Template.id.in_(list(por_template)))
-    } if por_template else {}
     tarifas = custo_whatsapp.tarifas_unitarias(custo) if meta_ok else {}
 
     sem_tarifa: set[str] = set()
@@ -336,8 +339,10 @@ def montar(
 
     tabela = []
     for chave, linha in por_grupo.items():
-        tpl = modelos.get(chave) if por_meta else None
-        meta = template_meta.get(chave)
+        tpls = [modelos[i] for i in sorted(linha["ids"]) if i in modelos] if por_meta else []
+        metas = [template_meta[i] for i in linha["ids"] if i in template_meta]
+        meta = {k: sum(m[k] for m in metas) for k in ("entregues", "lidas", "cliques")} if metas else None
+        categorias = {t.category for t in tpls}
         entregues = meta["entregues"] if meta else (None if por_meta else linha["entregues"])
         lidas = meta["lidas"] if meta else (None if por_meta else linha["lidas"])
         cliques = meta["cliques"] if meta else None
@@ -345,8 +350,8 @@ def montar(
         tabela.append(
             {
                 "chave": chave,
-                "nome": (tpl.name if tpl else "Template removido") if por_meta else linha["nome"],
-                "categoria": (tpl.category if tpl else "") if por_meta else "",
+                "nome": (tpls[0].name if tpls else "Template removido") if por_meta else linha["nome"],
+                "categoria": categorias.pop() if len(categorias) == 1 else "",
                 "enviados": linha["enviados"],
                 "entregues": entregues,
                 "lidas": lidas,
