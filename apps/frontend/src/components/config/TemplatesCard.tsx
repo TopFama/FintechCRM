@@ -4,6 +4,7 @@ import PreviaWhatsapp from "../PreviaWhatsapp";
 import { ControleFiltros, ThFiltravel } from "../FiltroColuna";
 import { CelulasColuna, passaFiltros, useFiltrosColuna, valoresLocais } from "../../filtrosColuna";
 import { IconAlert, IconCheckCircle, IconEye, IconPlus, IconTemplate, IconTrash } from "../../icons";
+import { rotuloWaba } from "../../format";
 import { ordenarPor, useSort } from "../../sort";
 
 type ColunaTemplate = "meta_template_name" | "waba_id" | "category" | "status";
@@ -191,15 +192,6 @@ export default function TemplatesCard() {
     () => Array.from(new Set(numbers.map((n) => n.waba_id))),
     [numbers]
   );
-  // Nome da WABA = nomes distintos dos tokens ativos dela (Tokens da Meta)
-  const nomesWaba = useMemo(() => {
-    const nomes = new Map<string, Set<string>>();
-    for (const t of tokensMeta) {
-      if (!t.ativo || !t.waba_id || !t.nome) continue;
-      nomes.set(t.waba_id, (nomes.get(t.waba_id) ?? new Set<string>()).add(t.nome));
-    }
-    return nomes;
-  }, [tokensMeta]);
 
   // Template que acabou de ser aprovado e o Chatwoot não sincronizou
   function avisarChatwoot(lista: Template[]) {
@@ -672,7 +664,7 @@ export default function TemplatesCard() {
                     <option value="">Selecione...</option>
                     {wabaIds.map((id) => (
                       <option key={id} value={id}>
-                        {nomesWaba.has(id) ? `${Array.from(nomesWaba.get(id)!).join(" / ")} (${id})` : id}
+                        {rotuloWaba(tokensMeta, id)}
                       </option>
                     ))}
                   </select>

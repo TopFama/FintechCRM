@@ -131,3 +131,9 @@ export function formatDecimal(v: number | null | undefined, casas = 1): string {
   if (v === null || v === undefined || isNaN(v)) return "—";
   return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
 }
+
+// Nome da WABA = nomes distintos dos tokens ativos dela (Tokens da Meta), com o ID entre parênteses
+export function rotuloWaba(tokens: { waba_id: string | null; nome: string; ativo: boolean }[], wabaId: string): string {
+  const nomes = new Set(tokens.filter((t) => t.ativo && t.waba_id === wabaId && t.nome).map((t) => t.nome));
+  return nomes.size ? `${Array.from(nomes).join(" / ")} (${wabaId})` : wabaId;
+}
