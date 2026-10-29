@@ -408,7 +408,8 @@ desenvolvimento.
    (`custo_whatsapp.custo_por_envio`, sobre `consultas_fila.envios_por_dia`) e cada lead ou loja
    leva o custo dos seus envios; o gasto da Meta fica 10 min no Redis. Sem custo da Meta o ROAS
    mostra "—". No card Mensagens o custo é o da linha (gasto real por WABA e categoria rateado pela fatia
-   dos envios).
+   dos envios); o envio sem template registrado (anterior a 28/10) leva o custo médio da mensagem no dia
+   e o gasto dele sai do rateio dos templates, para as linhas fecharem com o Orçamento.
    A **Efetividade** parte da mesma base dos cards: as mensagens enviadas (`sent`) com data de
    envio no período, cada uma com as parcelas do lead que ela cobrou (`cobranca_fila.lead_id`,
    gravado no envio; migration `c4e8a2f6b0d1` preencheu os envios antigos). O lead é o retrato da

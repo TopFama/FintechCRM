@@ -218,7 +218,7 @@ function criarColunas(porFaixa: boolean): Record<string, Coluna> {
       rotulo: "Custo (R$)",
       dica: {
         texto:
-          "A Meta não informa o custo por template. Cada linha leva a parte do gasto real da Meta, por WABA e categoria, igual à fatia dos envios dela. Envio sem template registrado fica sem custo.",
+          "A Meta não informa o custo por template. Cada linha leva a parte do gasto real da Meta, por WABA e categoria, igual à fatia dos envios dela. Envio sem template registrado (anterior a 28/10) leva o custo médio da mensagem no dia.",
         formula: "Gasto da WABA e categoria × Enviados da linha ÷ Enviados do CRM na WABA e categoria",
       },
       valor: (t) => numero(t.custo_brl),
