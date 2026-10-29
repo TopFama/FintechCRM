@@ -11,6 +11,11 @@ from typing import Sequence
 from .cobranca_regras import REGRAS_PADRAO
 
 
+def calcular_roas(valor_pago: Decimal, custo: Decimal | None) -> Decimal | None:
+    """ROAS = valor pago ÷ custo do WhatsApp; sem custo (Meta indisponível) não há ROAS."""
+    return (valor_pago / custo).quantize(Decimal("0.01")) if custo else None
+
+
 def _calcular_metricas(itens_grupo: list[dict]) -> dict:
     if not itens_grupo:
         return {
@@ -77,7 +82,7 @@ def _calcular_metricas(itens_grupo: list[dict]) -> dict:
     # Meta indisponível; sem custo não há ROAS)
     custos = [it.get("custo_whatsapp") for it in itens_grupo]
     custo = None if None in custos else sum((Decimal(str(c)) for c in custos), Decimal("0"))
-    roas = (valor_pago / custo).quantize(Decimal("0.01")) if custo else None
+    roas = calcular_roas(valor_pago, custo)
 
     return {
         "qtd_envios": qtd_envios,

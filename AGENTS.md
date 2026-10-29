@@ -111,6 +111,11 @@ envio. Backend em FastAPI + SQLAlchemy + Postgres, frontend em React + TypeScrip
   em `icons.tsx` no mesmo estilo dos existentes.
 - Sem dependência nova de frontend ou backend a menos que o pedido realmente precise — este é um
   projeto pequeno de propósito único, prefira resolver com o que já está instalado.
+- **Mesma informação, mesma fonte.** Quando um dado aparece em mais de um lugar (cards, relatórios,
+  Excel), todos leem da mesma função ou consulta, com o mesmo período e o mesmo cache; não recalcule
+  nem ajuste por tela. Se um lugar precisa de outro recorte, filtre o resultado da fonte, não refaça
+  a conta. Exemplo: o custo da Meta vem de `custo_whatsapp.custo_detalhado` (Orçamento, ROAS e painel
+  de Mensagens); o ROAS usa `relatorio_efetividade.calcular_roas`.
 - PRs/commits: mensagens em português. Quando a mudança altera comportamento visível, o padrão
   usado no histórico é um parágrafo "Antes" e um "Depois" descrevendo o efeito, não a
   implementação — veja `git log` para exemplos.

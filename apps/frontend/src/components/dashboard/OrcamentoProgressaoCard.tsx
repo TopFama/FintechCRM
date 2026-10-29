@@ -8,11 +8,12 @@ import MultiSelect from "../MultiSelect";
 import SortableTh from "../SortableTh";
 import TabelaAjustavel from "../TabelaAjustavel";
 
-// Categorias da Meta separadas no card; autenticação e outras só entram no gasto total
+// Categorias da Meta separadas no card; autenticação e o resto entram em "Outras"
 const CATEGORIAS: [CategoriaGasto, string][] = [
   ["utilitario", "Utilitário"],
   ["marketing", "Marketing"],
   ["servico", "Serviço"],
+  ["outras", "Outras"],
 ];
 
 type ColunaNumero = "numero" | "gasto_brl" | "qtd_mensagens" | `gasto_${CategoriaGasto}` | `qtd_${CategoriaGasto}`;

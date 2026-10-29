@@ -88,7 +88,7 @@ def cadastrar(wabas: list[str]) -> None:
 def calcular() -> custo_whatsapp.CustoWhatsapp:
     db = SessionLocal()
     try:
-        return custo_whatsapp.custo_detalhado(db, DIA, DIA)
+        return custo_whatsapp.consultar_custo(db, DIA, DIA)
     finally:
         db.close()
 
@@ -105,6 +105,8 @@ assert r.por_dia == {DIA: Decimal("46.47")}, r.por_dia
 assert r.por_categoria[(DIA, "+55 11 4000-0002", "utilitario")] == [Decimal("31.47"), 10], r.por_categoria
 assert [(a.waba_id, a.motivo) for a in r.avisos] == [("waba-eur", "moeda de cobrança EUR não suportada")], r.avisos
 assert len(PEDIDOS) == 4 and COTACOES, (PEDIDOS, COTACOES)
+# Guardado no Redis e lido de volta (fonte única do custo): sem perda
+assert custo_whatsapp._de_json(custo_whatsapp._para_json(r)) == r, r
 
 # Só WABA em reais: o custo entra como veio e a cotação do dólar não é buscada
 COTACOES.clear()

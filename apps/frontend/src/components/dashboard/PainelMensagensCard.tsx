@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AgruparPainel, api, MetaToken, PainelLinha, PainelMensagens, Template, WhatsappNumber } from "../../api";
-import { formatBRL, formatNumero, formatPercentual, rotuloWaba } from "../../format";
+import { formatBRL, formatNumero, formatPercentual, formatRoas, rotuloWaba } from "../../format";
 import { IconAlert } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 import DicaIndicador from "../DicaIndicador";
@@ -48,7 +48,7 @@ const DICAS = {
   cobranca:
     "Total aproximado das cobranças das mensagens entregues, em reais (dólar pela cotação do dia). Pode diferir da fatura por variações no processamento. O valor de cada mensagem paga depende da tarifa do país do número e de a mensagem ser iniciada pela empresa ou resposta em até 24 horas.",
   cobrancaFila:
-    "Estimativa: envios do filtro escolhido × tarifa unitária da categoria (custo ÷ mensagens cobradas da mesma WABA no período).",
+    "Gasto real da Meta em cada WABA e categoria, dividido pela fatia dos envios do CRM que o filtro escolhido representa.",
 };
 
 const ROTULO_GRUPO: Record<AgruparPainel, string> = { template: "Template", faixa: "Faixa de atraso", campanha: "Campanha" };
@@ -156,11 +156,21 @@ const COLUNAS: Coluna[] = [
     chave: "custo_brl",
     rotulo: "Custo (R$)",
     dica: {
-      texto: "Estimado: a Meta não informa o custo por template. Cada envio vale a tarifa unitária da categoria do template na WABA.",
-      formula: "Enviados × (custo ÷ mensagens cobradas da categoria no período)",
+      texto: "A Meta não informa o custo por template. Cada linha leva a parte do gasto real da Meta, por WABA e categoria, igual à fatia dos envios dela.",
+      formula: "Gasto da WABA e categoria × Enviados da linha ÷ Enviados do CRM na WABA e categoria",
     },
     valor: (t) => (t.custo_brl === null ? null : Number(t.custo_brl)),
     formato: (t) => formatBRL(t.custo_brl),
+  },
+  {
+    chave: "roas",
+    rotulo: "ROAS",
+    dica: {
+      texto: "Quanto voltou em pagamento para cada R$ 1 gasto com WhatsApp nas mensagens da linha. Cliente que recebeu mais de um template conta em todos.",
+      formula: "Valor pago dos clientes cobrados ÷ Custo da linha",
+    },
+    valor: (t) => (t.roas === null ? null : Number(t.roas)),
+    formato: (t) => formatRoas(t.roas),
   },
 ];
 
@@ -168,7 +178,7 @@ const COLUNAS: Coluna[] = [
 // template. Filtros próprios; a Meta não filtra por template nem campanha, então com
 // um deles marcado os quadros vêm da fila (o backend avisa em `origem`).
 export default function PainelMensagensCard({ recarregar }: { recarregar: number }) {
-  const [periodo, setPeriodo] = useState<Periodo>(() => periodoDe("7dias"));
+  const [periodo, setPeriodo] = useState<Periodo>(() => periodoDe("mes"));
   const [telefones, setTelefones] = useState<string[]>([]);
   const [wabas, setWabas] = useState<string[]>([]);
   const [templates, setTemplates] = useState<string[]>([]);
@@ -220,13 +230,13 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
             <div className="card-subtitle">
               {dados.origem === "meta"
                 ? "Analytics da Meta em R$, valores aproximados"
-                : "Envios da fila; custo = quantidade × tarifa da categoria"}
+                : "Envios da fila; custo = gasto real da Meta rateado pelos envios"}
             </div>
           )}
         </div>
       </div>
 
-      <FiltroPeriodo opcoes={["7dias", "mes", "personalizado"]} inicial="7dias" onChange={(p) => setPeriodo(p)} />
+      <FiltroPeriodo opcoes={["7dias", "mes", "personalizado"]} inicial="mes" onChange={(p) => setPeriodo(p)} />
       <div className="form-row">
         <MultiSelect id="painel-waba" label="WABA" options={opcoesWaba} value={wabas} onChange={setWabas} />
         <MultiSelect

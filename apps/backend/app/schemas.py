@@ -807,7 +807,7 @@ class LinhaEfetividadeBase(BaseModel):
     conversao_clientes: Decimal
     recuperacao_valor: Decimal
     # Recebimento ÷ custo do WhatsApp dos envios da linha; None = sem custo
-    roas: Decimal | None = None
+    roas: Decimal | None = None  # valor pago dos cobrados ÷ custo da linha
 
 
 class LinhaEfetividadeFaixa(LinhaEfetividadeBase):
@@ -907,8 +907,8 @@ class PainelLinhaOut(BaseModel):
     nome: str
     categoria: str  # só no agrupamento por template
     enviados: int  # envios da fila no período
-    # por template, da Meta (template_analytics): None sem insights ativados ou sem leitura da
-    # WABA. Por faixa e campanha, do Chatwoot (fila); cliques sempre None fora de template
+    # da Meta (template_analytics) por template; por faixa e campanha, a parte de cada template
+    # igual à fatia dos envios dele. None sem insights ativados ou sem leitura da WABA
     entregues: int | None = None
     lidas: int | None = None
     cliques: int | None = None
@@ -917,7 +917,8 @@ class PainelLinhaOut(BaseModel):
     cobrados: int  # clientes distintos que receberam o template
     pagaram: int | None = None  # cobrados que pagaram na janela de Indicadores
     conversao: Decimal | None = None  # pagaram ÷ cobrados
-    custo_brl: Decimal | None = None  # envios × tarifa unitária da categoria
+    custo_brl: Decimal | None = None  # gasto real da Meta rateado pela fatia dos envios
+    roas: Decimal | None = None
 
 
 class PainelMensagensOut(BaseModel):
