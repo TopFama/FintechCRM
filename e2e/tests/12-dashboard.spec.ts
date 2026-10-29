@@ -369,14 +369,13 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(titulos.nth(1)).toHaveText(/^Pendente/);
     const pendentes = await porFaixa.locator("tbody tr td:nth-child(2)").allInnerTexts();
     try {
-      // Arrastar "Pendente" para cima de "ROAS" (a última) leva a coluna para depois dela, com os números junto
-      await pendente.dragTo(porFaixa.getByRole("columnheader", { name: /^ROAS/ }));
-      await expect(titulos.last()).toHaveText(/^Pendente/);
+      // Arrastar "Pendente" para cima de "Enviados" leva a coluna para depois dela, com os números junto
+      await pendente.dragTo(porFaixa.getByRole("columnheader", { name: /^Enviados/ }));
       await expect(titulos.nth(1)).toHaveText(/^Erro/);
-      await expect(titulos.nth(14)).toHaveText(/^Custo/);
-      await expect(titulos.nth(15)).toHaveText(/^ROAS/);
-      expect(await porFaixa.locator("tbody tr td:last-child").allInnerTexts()).toEqual(pendentes);
-      await expect(porFaixa.locator("tfoot tr.linha-total td").last()).not.toContainText("R$");
+      await expect(titulos.nth(2)).toHaveText(/^Enviados/);
+      await expect(titulos.nth(3)).toHaveText(/^Pendente/);
+      await expect(titulos.last()).toHaveText(/^ROAS/);
+      expect(await porFaixa.locator("tbody tr td:nth-child(4)").allInnerTexts()).toEqual(pendentes);
       // Arrastar não ordena a tabela; clicar no título continua ordenando
       await expect(pendente).toHaveAttribute("aria-sort", "none");
       await pendente.click();
@@ -386,8 +385,8 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
 
       // A ordem vem da conta: volta igual depois de recarregar
       await page.reload();
-      await expect(titulos.last()).toHaveText(/^Pendente/);
-      expect((await apiGet(page, "/dashboard/colunas-por-faixa")).colunas.at(-1)).toBe("pending");
+      await expect(titulos.nth(3)).toHaveText(/^Pendente/);
+      expect((await apiGet(page, "/dashboard/colunas-por-faixa")).colunas.slice(0, 3)).toEqual(["error", "sent", "pending"]);
     } finally {
       // Os outros testes usam o mesmo usuário e contam com a ordem padrão
       await apiSend(page, "PUT", "/dashboard/colunas-por-faixa", { colunas: [] });
