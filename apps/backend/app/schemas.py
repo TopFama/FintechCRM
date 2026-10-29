@@ -917,7 +917,7 @@ class PainelLinhaOut(BaseModel):
     cobrados: int  # clientes distintos que receberam o template
     pagaram: int | None = None  # cobrados que pagaram na janela de Indicadores
     conversao: Decimal | None = None  # pagaram ÷ cobrados
-    custo_brl: Decimal | None = None  # envios × tarifa unitária da categoria
+    custo_brl: Decimal | None = None  # gasto real da Meta rateado pela fatia dos envios
     roas: Decimal | None = None
 
 
