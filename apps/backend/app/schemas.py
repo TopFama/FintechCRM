@@ -739,40 +739,8 @@ class PagosJanelaOut(BaseModel):
     dias_janela: int | None
 
 
-class DashboardPorFaixa(BaseModel):
-    # Demais status da fila (invalid_phone, cancelled) seguem como chaves extras
-    model_config = ConfigDict(extra="allow")
-
-    faixa: str
-    faixa_id: str
-    pending: int = 0
-    sent: int = 0
-    error: int = 0
-    clientes_cobrados: int = 0
-    # só entre os clientes cobrados no período: mensagens enviadas no período
-    # e quantos receberam alguma (base da Frequência)
-    enviados_cobrados: int = 0
-    clientes_com_envio: int = 0
-    pagaram: int = 0
-    valor_pago: Decimal = Decimal("0.00")
-    # custo do WhatsApp rateado pelos envios da faixa (base do ROAS); None = Meta indisponível
-    custo_whatsapp: Decimal | None = None
-
-
-class DashboardTotalPorFaixa(BaseModel):
-    """Linha de total de "Por faixa" no que não é soma da coluna: cada
-    cliente (e cada pagamento) uma vez, mesmo cobrado em mais de uma faixa."""
-
-    clientes_cobrados: int = 0
-    enviados_cobrados: int = 0
-    clientes_com_envio: int = 0
-    pagaram: int = 0
-    valor_pago: Decimal = Decimal("0.00")
-    custo_whatsapp: Decimal | None = None
-
-
 class ColunasPorFaixa(BaseModel):
-    """Ordem das colunas da tabela "Por faixa" do usuário logado. Vazia = ordem
+    """Ordem das colunas da tabela por faixa do card Mensagens do usuário logado. Vazia = ordem
     padrão; a tela ignora chave que não conhece e põe no fim coluna que falta."""
 
     colunas: list[str] = Field(default_factory=list, max_length=20)
@@ -791,8 +759,6 @@ class DashboardSummary(BaseModel):
     total_enviados: int
     total_erros: int
     total_telefones_invalidos: int
-    por_faixa: list[DashboardPorFaixa]
-    total_por_faixa: DashboardTotalPorFaixa
 
 
 class LinhaEfetividadeBase(BaseModel):
@@ -917,8 +883,12 @@ class PainelLinhaOut(BaseModel):
     cobrados: int  # clientes distintos que receberam o template
     pagaram: int | None = None  # cobrados que pagaram na janela de Indicadores
     conversao: Decimal | None = None  # pagaram ÷ cobrados
+    valor_pago: Decimal | None = None  # dos cobrados; por faixa conta o pagamento depois do 1º envio, em qualquer data
     custo_brl: Decimal | None = None  # gasto real da Meta rateado pela fatia dos envios
     roas: Decimal | None = None
+    pendente: int = 0  # por faixa: na fila no período
+    erro: int = 0
+    faixa_id: str | None = None  # por faixa: abre os relatórios dela
 
 
 class PainelMensagensOut(BaseModel):
@@ -931,6 +901,7 @@ class PainelMensagensOut(BaseModel):
     pagas: PainelQuantidadesOut | None = None
     cobranca: PainelCobrancaOut | None = None
     linhas: list[PainelLinhaOut] = []
+    total: PainelLinhaOut | None = None  # clientes e pagamentos contados uma vez; taxas e ROAS sobre as somas
     avisos: list[str] = []
 
 

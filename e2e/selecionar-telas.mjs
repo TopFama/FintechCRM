@@ -116,6 +116,7 @@ export const FUNCIONALIDADES = {
     `${F}components/FiltroPeriodo.tsx`, `${F}components/SelectCampanha.tsx`, `${F}components/MatrizTable.tsx`,
     `${F}components/usePainelTempoReal.ts`, `${B}painel_tempo_real.py`,
     `${B}routers/dashboard.py`, `${B}consultas_fila.py`, `${B}cobranca_relatorio.py`,
+    `${F}components/dashboard/PainelMensagensCard.tsx`, `${F}components/dashboard/linkRelatorio.ts`, `${B}services/painel_mensagens.py`,
   ],
   relatorios: [
     `${F}pages/Relatorios.tsx`, `${F}components/FiltroPeriodo.tsx`, `${F}components/Paginacao.tsx`, `${F}components/useRequisicaoUnica.ts`,
@@ -158,7 +159,7 @@ export const FUNCIONALIDADES = {
   pagamentos: [
     `${B}services/pagamentos_service.py`, `${B}services/pagamentos_seta.py`, `${B}seta_client.py`, `${B}cache.py`,
     `${B}consultas_fila.py`, `${B}routers/reports.py`, `${B}routers/dashboard.py`, `${B}lojas.py`, `${B}google_client.py`,
-    `${F}components/SelectJanelaPagamento.tsx`,
+    `${F}components/SelectJanelaPagamento.tsx`, `${F}components/dashboard/PainelMensagensCard.tsx`, `${B}services/painel_mensagens.py`,
   ],
   "pagos-janela": [
     `${B}services/pagos_janela_service.py`, `${B}services/pagamentos_service.py`, `${B}routers/dashboard.py`,

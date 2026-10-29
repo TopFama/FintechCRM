@@ -9,12 +9,11 @@ from typing import Literal
 import redis
 import redis.asyncio as redis_async
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
-from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from .. import cache, consultas_fila, painel_tempo_real, seta_client
-from ..services import custo_whatsapp, pagamentos_service, pagos_janela_service, painel_mensagens
+from .. import cache, consultas_fila, painel_tempo_real
+from ..services import custo_whatsapp, pagos_janela_service, painel_mensagens
 from ..timezone import hoje_br
 from ..config import settings
 from ..database import SessionLocal, get_db
@@ -43,15 +42,15 @@ def summary(
     _user: models.User = Depends(get_current_user),
 ):
     def calcular():
-        return _resumo(db, de, ate, buscar_novos=not auto).model_dump(mode="json")
+        return _resumo(db, de, ate).model_dump(mode="json")
 
     try:
         dados = cache.obter_ou_calcular(
             cache.chave("dashboard-resumo-v2", {"de": de, "ate": ate}), calcular, RESUMO_TTL_SEGUNDOS, reaproveitar=auto
         )
     except cache.CacheIndisponivel:
-        # Sem Redis não há como proteger o SETA: mostra só o que já está copiado, nunca vai ao ERP
-        dados = _resumo(db, de, ate, buscar_novos=False).model_dump(mode="json")
+        # Sem Redis calcula direto: o resumo é só da fila local
+        dados = _resumo(db, de, ate).model_dump(mode="json")
     return schemas.DashboardSummary(**dados)
 
 
@@ -135,136 +134,17 @@ async def tempo_real(websocket: WebSocket, de: date = Query(...), ate: date = Qu
         pass  # a tela já tinha fechado
 
 
-def _resumo(db: Session, de: date | None, ate: date | None, buscar_novos: bool = True) -> schemas.DashboardSummary:
-    """Cards e tabela por faixa respeitam o período: enviado conta pela data
-    do envio, o resto pela data em que entrou na fila. Pagos por faixa vêm da
-    cópia local do SETA; a atualização automática não vai ao SETA."""
+def _resumo(db: Session, de: date | None, ate: date | None) -> schemas.DashboardSummary:
+    """Cards respeitam o período: enviado conta pela data do envio, o resto pela
+    data em que entrou na fila."""
 
     periodo = consultas_fila.periodo_dos_cards(de, ate)
-
-    # Envio de campanha/remarketing conta na faixa de atraso do cliente
-    # (QueueItem.faixa_atraso), não na faixa própria da campanha.
-    por_faixa_rows = (
-        db.query(
-            models.Faixa.id, consultas_fila.nome_faixa(), models.QueueItem.faixa_atraso, models.QueueItem.status,
-            func.count(models.QueueItem.id),
-        )
-        # Só faixas com movimento no período (sem listar faixa zerada ou excluída)
-        .join(models.QueueItem, and_(models.QueueItem.faixa_id == models.Faixa.id, periodo))
-        .group_by(models.Faixa.id, models.Faixa.name, models.QueueItem.faixa_atraso, models.QueueItem.status)
-        .all()
-    )
-    id_por_nome = {
-        nome: fid
-        for fid, nome in db.query(models.Faixa.id, models.Faixa.name).filter(
-            models.Faixa.name.in_({r[2] for r in por_faixa_rows if r[2]})
-        )
-    }
-    por_faixa: dict[str, dict] = {}
-    for faixa_id, nome, faixa_atraso, status_value, total in por_faixa_rows:
-        entry = por_faixa.setdefault(
-            nome, {"faixa": nome, "faixa_id": id_por_nome.get(faixa_atraso, faixa_id) if faixa_atraso else faixa_id}
-        )
-        # reservado = pendente que um envio já pegou; pro operador é pendente
-        chave = "pending" if status_value == models.QueueStatus.reserved else status_value.value
-        entry[chave] = entry.get(chave, 0) + total
-
-    total_por_faixa = {
-        **_somar_cobrados_por_faixa(db, de, ate, por_faixa),
-        **_somar_pagos_por_faixa(db, de, ate, por_faixa, buscar_novos),
-        **_somar_custo_por_faixa(db, de, ate, por_faixa),
-    }
 
     return schemas.DashboardSummary(
         **consultas_fila.contar_cards(db, de, ate),
         total_pausados=consultas_fila.contar_pausados(db, periodo),
         total_telefones_invalidos=consultas_fila.contar_telefones_invalidos(db, de, ate),
-        por_faixa=list(por_faixa.values()),
-        total_por_faixa=schemas.DashboardTotalPorFaixa(**total_por_faixa),
     )
-
-
-def _somar_cobrados_por_faixa(
-    db: Session, de: date | None, ate: date | None, por_faixa: dict[str, dict]
-) -> dict[str, int]:
-    """Clientes cobrados = clientes distintos que receberam mensagem (sent) da
-    faixa com data de envio no período, a mesma base das Cobranças, da coluna
-    Enviado e do "Pagaram após cobrança" (base da % Conv.). Frequência =
-    mensagens do período ÷ esses clientes. Nos totais cada cliente conta uma
-    vez, mesmo com mensagem em mais de uma faixa."""
-
-    envios = consultas_fila.clientes_com_envio_no_periodo(db, de, ate)
-    clientes: set[str] = set()
-    for nome, entry in por_faixa.items():
-        da_faixa = envios.get(nome, {})
-        entry["clientes_cobrados"] = entry["clientes_com_envio"] = len(da_faixa)
-        entry["enviados_cobrados"] = sum(e.mensagens for e in da_faixa.values())
-        clientes.update(da_faixa)
-    return {
-        "clientes_cobrados": len(clientes),
-        "enviados_cobrados": sum(e["enviados_cobrados"] for e in por_faixa.values()),
-        "clientes_com_envio": len(clientes),
-    }
-
-
-def _somar_pagos_por_faixa(db: Session, de, ate, por_faixa: dict[str, dict], buscar_novos: bool) -> dict:
-    """Clientes cobrados no período (com envio no período) que pagaram depois
-    do primeiro envio do período (qualquer data), por faixa: mesma lista do
-    relatório Quem pagou com base=envios filtrado pela faixa.
-    O valor de cada cliente conta uma vez por faixa, e nos totais devolvidos
-    (clientes e valor) uma vez só, mesmo cobrado em mais de uma faixa."""
-
-    for entry in por_faixa.values():
-        entry["pagaram"] = 0
-        entry["valor_pago"] = "0.00"
-    try:
-        linhas = pagamentos_service.clientes_que_pagaram(
-            db, cobrado_de=de, cobrado_ate=ate, buscar_novos=buscar_novos, base="envios"
-        )
-    except seta_client.SetaIndisponivel:
-        # SETA fora com cliente novo sem cópia: mostra o que já está copiado
-        linhas = pagamentos_service.clientes_que_pagaram(
-            db, cobrado_de=de, cobrado_ate=ate, buscar_novos=False, base="envios"
-        )
-    # Uma linha por cliente e data de cobrança: cobrado em dois dias, as duas
-    # linhas trazem o mesmo pagamento (o da primeira já inclui o da segunda).
-    # Vale o maior valor do cliente, senão o pagamento soma duas vezes.
-    por_cliente: dict[str, dict[str, Decimal]] = {}
-    total: dict[str, Decimal] = {}
-    for l in linhas:
-        faixas = [nome for nome in l["faixa"].split(", ") if nome in por_faixa]
-        codigo = l["codigo_cliente"]
-        if faixas:
-            total[codigo] = max(total.get(codigo, Decimal("0")), l["valor_pago"])
-        for nome in faixas:
-            clientes = por_cliente.setdefault(nome, {})
-            clientes[codigo] = max(clientes.get(codigo, Decimal("0")), l["valor_pago"])
-    for nome, clientes in por_cliente.items():
-        por_faixa[nome]["pagaram"] = len(clientes)
-        por_faixa[nome]["valor_pago"] = str(sum(clientes.values(), Decimal("0")).quantize(Decimal("0.01")))
-    return {"pagaram": len(total), "valor_pago": sum(total.values(), Decimal("0")).quantize(Decimal("0.01"))}
-
-
-def _somar_custo_por_faixa(db: Session, de: date | None, ate: date | None, por_faixa: dict[str, dict]) -> dict:
-    """Custo do WhatsApp de cada faixa no período (base do ROAS): em cada dia,
-    o custo por envio do dia (custo_whatsapp.custo_por_envio) vezes as mensagens
-    enviadas pela faixa. Custo da Meta indisponível = None na faixa e no total."""
-
-    envios = consultas_fila.envios_por_dia(db, de, ate)
-    for entry in por_faixa.values():
-        entry["custo_whatsapp"] = None
-    if not envios:
-        return {"custo_whatsapp": None}
-    dias = [dia for dia, _faixa in envios]
-    por_envio, _motivo = custo_whatsapp.custo_por_envio(db, de or min(dias), ate or max(dias))
-    if por_envio is None:
-        return {"custo_whatsapp": None}
-    custos: dict[str, Decimal] = {}
-    for (dia, faixa), n in envios.items():
-        custos[faixa] = custos.get(faixa, Decimal("0")) + por_envio.get(dia, Decimal("0")) * n
-    for nome, entry in por_faixa.items():
-        entry["custo_whatsapp"] = str(custos.get(nome, Decimal("0")).quantize(Decimal("0.01")))
-    return {"custo_whatsapp": sum(custos.values(), Decimal("0")).quantize(Decimal("0.01"))}
 
 
 @router.get("/orcamento-progressao", response_model=schemas.OrcamentoProgressaoOut)
@@ -491,7 +371,7 @@ def salvar_colunas_por_faixa(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    """Ordem das colunas da tabela "Por faixa" salva na conta: vale em qualquer
+    """Ordem das colunas da tabela do card Mensagens (por faixa) salva na conta: vale em qualquer
     navegador em que o usuário entrar."""
     user.colunas_por_faixa = payload.colunas or None
     db.commit()

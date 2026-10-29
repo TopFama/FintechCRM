@@ -336,14 +336,15 @@ desenvolvimento.
    a loja do cliente (mesma origem da loja do item da fila).
 8. **Dashboard** — pendentes (e quantos estão pausados), enviados, erros, telefones inválidos,
    "Pagaram em até N dias" (via SETA; a janela vem de Configurações → Indicadores, padrão 7,
-   e "Qualquer data após a cobrança" vira "Pagaram após a cobrança") e por faixa. Cada card abre o
+   e "Qualquer data após a cobrança" vira "Pagaram após a cobrança"). Logo abaixo deles fica o card
+   "Mensagens", que agrupado por faixa de atraso (padrão) é a tabela por faixa. Cada card abre o
    relatório dele com o mesmo período (`/relatorios?aba=…&de=…&ate=…`). A tela se atualiza
    sozinha sem F5: resumo da fila a cada 30 s, leads a cada 60 s e orçamento a cada 15 min,
    parando enquanto a aba está oculta. O card de pagamentos (SETA) e a efetividade não se
    atualizam sozinhos, só ao abrir, trocar o filtro ou em "Atualizar agora". Os pedidos
    automáticos (`auto=true`) leem do cache compartilhado no Redis (15 s o resumo, 10 min o
    orçamento).
-   **Painel de mensagens** (card "Mensagens", abaixo do Orçamento; `GET /dashboard/painel-mensagens`,
+   **Painel de mensagens** (card "Mensagens", logo abaixo dos cards de resumo; `GET /dashboard/painel-mensagens`,
    `services/painel_mensagens.py`): as mini-tabelas do "Preços das mensagens" do analytics da Meta
    (todas as mensagens, entregues por categoria, gratuitas, pagas e cobrança aproximada), sempre em R$
    (a moeda de cada WABA vem do Pricing Analytics: USD converte, BRL entra como veio), e por template
@@ -354,7 +355,7 @@ desenvolvimento.
    fecha com o Orçamento; `custo_whatsapp.gasto_por_categoria`). Lidas e cliques vêm do `template_analytics` da Meta (até
    90 dias; leitura e clique só por 7 dias depois do envio; exige os insights ativados na WABA) e não
    filtram por telefone nem campanha. Conversão = clientes cobrados com o template que pagaram na janela de
-   Indicadores. A tabela agrupa por template (padrão), faixa de atraso do cliente ou campanha
+   Indicadores. A tabela agrupa por faixa de atraso do cliente (padrão), template ou campanha
    (`agrupar`; a régua entra como "Régua de cobrança"; templates de mesmo nome somam numa linha): por faixa e
    campanha, entregues e lidas vêm dos recibos do Chatwoot (`cobranca_fila.entregue_em`/`lida_em`, dado real)
    quando a linha tem algum, senão a parte dos templates dela pela fatia dos envios; cliques sempre a parte
@@ -388,22 +389,26 @@ desenvolvimento.
    quarentena para o polling não refazer a consulta. No front-end, trocar o filtro ou sair da tela
    cancela a consulta (`AbortController`, `useRequisicaoUnica`), o polling usa espera crescente com
    jitter e os botões de aplicar ficam desabilitados enquanto a consulta anterior roda.
-   A tabela **Por faixa** mostra Pendente, Erro, Enviado, Clientes cobrados (clientes distintos
-   que receberam mensagem da faixa com envio no período filtrado, a mesma base das Cobranças),
-   Frequência (mensagens do período ÷ clientes cobrados), Pagaram após cobrança (clientes
-   cobrados que pagaram depois do primeiro envio do período; o número abre Quem pagou com
-   `base=envios`, a mesma lista), % Rep. (pagaram da faixa ÷ soma das
-   faixas, fecha 100%), % Conv. (pagaram ÷ cobrados), Valor pago e ROAS (valor pago ÷ custo do
-   WhatsApp das mensagens da faixa), com linha de total
-   (clientes e pagamentos contados uma vez, mesmo em mais de uma faixa) e um ícone 🛈 com a
-   fórmula de cada indicador. Essa é a ordem padrão: cada usuário arrasta os títulos para
-   reordenar as colunas (a Faixa fica sempre na primeira) e a ordem fica salva na conta dele
+   Agrupada por **faixa de atraso**, a tabela do card Mensagens mostra Pendente e Erro (fila do período,
+   pela data de entrada), Enviados, Entregues, Lidas, Cliques, % Visualização, % Cliques, Clientes cobrados
+   (clientes distintos que receberam mensagem da faixa com envio no período filtrado, a mesma base das
+   Cobranças; `consultas_fila.clientes_com_envio_no_periodo`), Frequência (mensagens ÷ clientes cobrados),
+   Pagaram após cobrança (clientes cobrados que pagaram depois do primeiro envio do período, em qualquer
+   data, sem a janela de pagamento; o número abre Quem pagou com `base=envios`, a mesma lista), % Rep.
+   (pagaram da faixa ÷ soma das faixas, fecha 100%), % Conv. (pagaram ÷ cobrados), Valor pago, Custo (R$) e
+   ROAS (valor pago ÷ custo da linha). Envio sem `template_id` (anterior ao deploy que passou a gravá-lo) conta
+   nos números, mas deixa Custo e ROAS da linha em "—" com aviso. Os números de Pendente, Erro, Enviados e
+   Pagaram abrem o relatório da faixa e a linha abre os envios dela. A linha de total fica fixa no rodapé
+   (clientes e pagamentos contados uma vez, mesmo em mais de uma faixa; taxas e ROAS saem das somas, nunca da
+   média das linhas) e cada indicador tem um ícone 🛈 com a fórmula. Essa é a ordem padrão: cada usuário arrasta
+   os títulos para reordenar as colunas (a primeira fica sempre fixa) e a ordem fica salva na conta dele
    (`users.colunas_por_faixa`, `GET`/`PUT /dashboard/colunas-por-faixa`), valendo em qualquer
-   navegador. **ROAS** (aqui e na Efetividade, onde é Recebimento ÷ custo): a Meta só informa o custo por
+   navegador. **ROAS** na Efetividade (Recebimento ÷ custo): a Meta só informa o custo por
    dia e número, então o custo de cada dia é dividido pelas mensagens enviadas pela fila no dia
-   (`custo_whatsapp.custo_por_envio`, sobre `consultas_fila.envios_por_dia`) e cada faixa, lead ou loja
+   (`custo_whatsapp.custo_por_envio`, sobre `consultas_fila.envios_por_dia`) e cada lead ou loja
    leva o custo dos seus envios; o gasto da Meta fica 10 min no Redis. Sem custo da Meta o ROAS
-   mostra "—".
+   mostra "—". No card Mensagens o custo é o da linha (gasto real por WABA e categoria rateado pela fatia
+   dos envios).
    A **Efetividade** parte da mesma base dos cards: as mensagens enviadas (`sent`) com data de
    envio no período, cada uma com as parcelas do lead que ela cobrou (`cobranca_fila.lead_id`,
    gravado no envio; migration `c4e8a2f6b0d1` preencheu os envios antigos). O lead é o retrato da
@@ -416,7 +421,7 @@ desenvolvimento.
    aparece no aviso abaixo do card. A matriz **Base de cobrança — cluster × faixa** tem as abas
    Clientes, SPC, Valor em aberto e Valor em atraso (só parcelas vencidas, original ou com multa
    e juros conforme o filtro "Valor considerado").
-   As tabelas do Dashboard (Por faixa, Efetividade, gasto por número e a matriz) começam com no
+   As tabelas do Dashboard (Mensagens, Efetividade, gasto por número e a matriz) começam com no
    máximo 70% da altura da tela e têm uma barra embaixo para ajustar a altura (arrastar, ou ↑/↓
    com o foco nela; duplo clique volta ao padrão), guardada no navegador por tabela
    (`components/TabelaAjustavel.tsx`). Na rolagem, cabeçalho, linha de total e primeira coluna
@@ -463,7 +468,7 @@ desenvolvimento.
    sem a variável "Valor em atraso" (use "Valor da próxima parcela"). Quem a recebe não vai para a
    régua no dia seguinte (não está em atraso). Antecipado não tem faixa de envio própria em
    Configurações → Faixas (nem pelo "Nova faixa"): o único jeito de enviar para ela é por campanha.
-   No "Por faixa" do Dashboard, a linha Antecipado aparece quando há envio de campanha para ela no
+   No card Mensagens por faixa do Dashboard, a linha Antecipado aparece quando há envio de campanha para ela no
    período. A faixa de atraso **"1"** (1 dia de atraso) faz parte da régua: a migration
    `e6b2d8f4a1c7` a cria (regra de cobrança e faixa da régua, sem número/template e fora da matriz
    do WhatsApp) onde nenhuma faixa cobria o dia 1. Uma planilha de clientes (coluna
@@ -488,8 +493,8 @@ desenvolvimento.
    (base do SETA recalculada; quem pagou fica de fora), porque só sai uma cobrança por cliente por
    dia (`campanhas.enfileirar_na_regua`). A Efetividade e "Exportar leads enviados" do Dashboard têm
    o filtro **Campanha** (todas, só a régua ou uma campanha, inclusive excluídas). O item da fila de
-   campanha/remarketing guarda a faixa de atraso do cliente (`QueueItem.faixa_atraso`): o "Por faixa"
-   do Dashboard e os relatórios filtrados por uma faixa de atraso contam esses envios nela. Nas abas
+   campanha/remarketing guarda a faixa de atraso do cliente (`QueueItem.faixa_atraso`): o card Mensagens
+   por faixa do Dashboard e os relatórios filtrados por uma faixa de atraso contam esses envios nela. Nas abas
    Pendentes e Erros (e nas exportações), "Faixa de atraso (régua)" e "Campanha" são colunas separadas. A tabela `faixas` tem o campo
    **`tipo`** (`regua`, `campanha` ou `remarketing`, migration d4f8b2c6e0a3): é ele que decide o
    que aparece em Faixas, o que recebe planilha, o que conta como faixa de atraso e como a faixa é

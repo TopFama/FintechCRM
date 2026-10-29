@@ -1091,36 +1091,6 @@ export interface DashboardSummary {
   total_enviados: number;
   total_erros: number;
   total_telefones_invalidos: number;
-  por_faixa: DashboardPorFaixa[];
-  total_por_faixa: DashboardTotalPorFaixa;
-}
-
-// Linha de total de "Por faixa" no que não é soma da coluna: cada cliente (e
-// cada pagamento) uma vez, mesmo cobrado em mais de uma faixa
-export interface DashboardTotalPorFaixa {
-  clientes_cobrados: number;
-  enviados_cobrados: number;
-  clientes_com_envio: number;
-  pagaram: number;
-  valor_pago: string;
-  custo_whatsapp: string | null;
-}
-
-export interface DashboardPorFaixa {
-  faixa: string;
-  faixa_id: string;
-  pending: number;
-  sent: number;
-  error: number;
-  clientes_cobrados: number;
-  // só entre os clientes cobrados no período: mensagens enviadas no período
-  // e quantos receberam alguma (base da Frequência)
-  enviados_cobrados: number;
-  clientes_com_envio: number;
-  pagaram: number;
-  valor_pago: string;
-  // custo do WhatsApp rateado pelos envios da faixa (base do ROAS); null = Meta indisponível
-  custo_whatsapp: string | null;
 }
 
 // --- Cobrança ---
@@ -1244,8 +1214,13 @@ export interface PainelLinha {
   cobrados: number;
   pagaram: number | null;
   conversao: string | null;
+  valor_pago: string | null; // dos cobrados; por faixa conta o pagamento depois do 1º envio, em qualquer data
   custo_brl: string | null;
   roas: string | null; // valor pago dos cobrados ÷ custo da linha; null sem custo
+  // por faixa de atraso
+  pendente: number;
+  erro: number;
+  faixa_id: string | null; // abre os relatórios da faixa
 }
 
 export interface PainelMensagens {
@@ -1258,6 +1233,7 @@ export interface PainelMensagens {
   pagas: PainelQuantidades | null;
   cobranca: { total_brl: string | null; por_categoria: Record<string, string> } | null;
   linhas: PainelLinha[];
+  total: PainelLinha | null; // clientes e pagamentos contados uma vez; taxas e ROAS sobre as somas
   avisos: string[];
 }
 

@@ -297,16 +297,17 @@ test.describe.serial("Campanhas", { tag: ["@campanhas","@efetividade","@leads","
     expect((await apiSend(page, "POST", `/pausas/${pausa.corpo.id}/retomar`)).status).toBe(200);
   });
 
-  test("Por faixa do Dashboard mostra a faixa de atraso de quem recebeu, não a campanha", async ({ page }) => {
-    const resumo = await apiGet(page, "/dashboard/summary");
-    const nomes = resumo.por_faixa.map((f: any) => f.faixa);
+  test("Mensagens por faixa mostra a faixa de atraso de quem recebeu, não a campanha", async ({ page }) => {
+    const hoje = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+    const painel = await apiGet(page, `/dashboard/painel-mensagens?de=2020-01-01&ate=${hoje}&agrupar=faixa`);
+    const nomes = painel.linhas.map((f: any) => f.nome);
     expect(nomes.some((n: string) => n.startsWith("Campanha:"))).toBe(false);
     const faixasAtraso = (await apiGet(page, "/cobranca/regras")).faixas as string[];
     const campanha = (await apiGet(page, "/campanhas")).find((c: any) => c.nome === "Feirão lojas 01 e 06");
     const lead = (await apiGet(page, `/leads?campanha=${campanha.id}&limit=1&offset=0`)).itens[0];
     expect(faixasAtraso).toContain(lead.faixa);
-    const linha = resumo.por_faixa.find((f: any) => f.faixa === lead.faixa);
-    expect((linha.sent ?? 0) + (linha.cancelled ?? 0) + (linha.pending ?? 0)).toBeGreaterThan(0);
+    const linha = painel.linhas.find((f: any) => f.nome === lead.faixa);
+    expect(linha.enviados + linha.pendente + linha.erro).toBeGreaterThan(0);
   });
 
   test("Efetividade por campanha e lista de campanhas pelo período enviado", async ({ page }) => {
