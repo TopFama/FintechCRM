@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AgruparPainel, api, MetaToken, PainelLinha, PainelMensagens, Template, WhatsappNumber } from "../../api";
-import { formatBRL, formatNumero, formatPercentual, rotuloWaba } from "../../format";
+import { formatBRL, formatNumero, formatPercentual, formatRoas, rotuloWaba } from "../../format";
 import { IconAlert } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 import DicaIndicador from "../DicaIndicador";
