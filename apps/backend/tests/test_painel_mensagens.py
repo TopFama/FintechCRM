@@ -197,6 +197,12 @@ por = {l.nome: l for l in p.linhas}
 assert set(por) == {"1 a 3 dias", "4 a 7 dias"}, por.keys()  # faixa de atraso do cliente: a da campanha, senão a da régua
 assert por["1 a 3 dias"].enviados == 8 and por["4 a 7 dias"].enviados == 1, por
 assert por["4 a 7 dias"].lidas == 1 and por["1 a 3 dias"].entregues == 1, por
+# Ordem do "Por faixa" (progressão de atraso das regras), não por quantidade: a faixa de mais atraso, mesmo com mais envios, vem depois
+for i in range(10):
+    item(f"x{i}", n1, util, atraso="4 a 7 dias")
+db.commit()
+p = painel(agrupar="faixa")
+assert [l.nome for l in p.linhas] == ["1 a 3 dias", "4 a 7 dias"] and p.linhas[1].enviados > p.linhas[0].enviados, p.linhas
 
 # Filtro de template vale em qualquer agrupamento
 p = painel(agrupar="campanha", templates=[mkt_id])

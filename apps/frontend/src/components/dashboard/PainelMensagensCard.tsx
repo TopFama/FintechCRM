@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { AgruparPainel, api, PainelLinha, PainelMensagens, Template, WhatsappNumber } from "../../api";
-import { formatBRL, formatNumero, formatPercentual } from "../../format";
+import { AgruparPainel, api, MetaToken, PainelLinha, PainelMensagens, Template, WhatsappNumber } from "../../api";
+import { formatBRL, formatNumero, formatPercentual, rotuloWaba } from "../../format";
 import { IconAlert } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
 import DicaIndicador from "../DicaIndicador";
@@ -175,6 +175,7 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
   const [campanha, setCampanha] = useState("");
   const [agrupar, setAgrupar] = useState<AgruparPainel>("template");
   const [numeros, setNumeros] = useState<WhatsappNumber[]>([]);
+  const [tokens, setTokens] = useState<MetaToken[]>([]);
   const [modelos, setModelos] = useState<Template[]>([]);
   const [dados, setDados] = useState<PainelMensagens | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -182,6 +183,7 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
 
   useEffect(() => {
     api.listNumbers().then(setNumeros).catch(() => undefined);
+    api.listarTokensMeta().then(setTokens).catch(() => undefined);
     api.listTemplates().then(setModelos).catch(() => undefined);
   }, []);
 
@@ -199,7 +201,7 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
     };
   }, [periodo.de, periodo.ate, telefones, wabas, templates, campanha, agrupar, recarregar]);
 
-  const opcoesWaba = [...new Set(numeros.map((n) => n.waba_id))].map((w) => ({ value: w, label: w }));
+  const opcoesWaba = [...new Set(numeros.map((n) => n.waba_id))].map((w) => ({ value: w, label: rotuloWaba(tokens, w) }));
   const opcoesTelefone = numeros
     .filter((n) => wabas.length === 0 || wabas.includes(n.waba_id))
     .map((n) => ({ value: n.id, label: n.label ? `${n.display_phone_number} (${n.label})` : n.display_phone_number }));
