@@ -654,6 +654,7 @@ export const api = {
       template: string[];
       campanha: string;
       agrupar: AgruparPainel;
+      tipo: CategoriaGasto[];
     },
     auto = false
   ) => request<PainelMensagens>(`/dashboard/painel-mensagens?${montarQuery({ ...filtro, auto: auto || undefined })}`),

@@ -349,7 +349,9 @@ desenvolvimento.
    (todas as mensagens, entregues por categoria, gratuitas, pagas e cobrança aproximada), sempre em R$
    (a moeda de cada WABA vem do Pricing Analytics: USD converte, BRL entra como veio), e por template
    entregues, lidas, cliques, % visualização, % cliques, conversão e custo. Filtros: período, WABA,
-   telefone, template e campanha. A Meta não filtra por template nem campanha: com um deles marcado os
+   telefone, template, campanha e tipo de mensagem (as categorias do Orçamento: Marketing, Utilitário, Serviço e
+   Outras; vale nos quadros da Meta e pela categoria do template na tabela, que deixa de fora o envio sem template
+   e a fila aberta; "Todas as mensagens" fica "—"). A Meta não filtra por template nem campanha: com um deles marcado os
    quadros contam os envios da fila (`cobranca_fila.template_id`, gravado no envio, só a partir do deploy, sem histórico) e o custo é a
    gasto real da Meta em cada WABA e categoria rateado pela fatia dos envios do CRM (a soma das linhas
    fecha com o Orçamento; `custo_whatsapp.gasto_por_categoria`). Lidas e cliques vêm do `template_analytics` da Meta (até

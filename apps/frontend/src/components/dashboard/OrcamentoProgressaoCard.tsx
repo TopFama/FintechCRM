@@ -9,7 +9,7 @@ import SortableTh from "../SortableTh";
 import TabelaAjustavel from "../TabelaAjustavel";
 
 // Categorias da Meta separadas no card; autenticação e o resto entram em "Outras"
-const CATEGORIAS: [CategoriaGasto, string][] = [
+export const CATEGORIAS: [CategoriaGasto, string][] = [
   ["utilitario", "Utilitário"],
   ["marketing", "Marketing"],
   ["servico", "Serviço"],

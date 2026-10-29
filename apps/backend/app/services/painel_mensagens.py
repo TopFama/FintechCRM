@@ -55,10 +55,10 @@ def _quantidades(linhas: dict[str, int]) -> dict:
 
 
 def _quadros_da_meta(
-    custo: custo_whatsapp.CustoWhatsapp, wabas: set[str] | None, telefones: set[str] | None
+    custo: custo_whatsapp.CustoWhatsapp, wabas: set[str] | None, telefones: set[str] | None, tipos: list[str]
 ) -> dict:
     """Entregues por categoria, gratuitas, pagas e cobrança total aproximada do
-    Pricing Analytics, só das WABAs e números escolhidos."""
+    Pricing Analytics, só das WABAs, números e tipos de mensagem escolhidos."""
 
     entregues: dict[str, int] = {}
     pagas: dict[str, int] = {}
@@ -66,6 +66,8 @@ def _quadros_da_meta(
     gasto: dict[str, Decimal] = {}
     for (waba, numero, categoria, tipo), (valor, volume) in custo.por_tipo_categoria.items():
         if (wabas is not None and waba not in wabas) or (telefones is not None and custo_whatsapp.digitos(numero) not in telefones):
+            continue
+        if tipos and custo_whatsapp.categoria_orcamento(categoria) not in tipos:
             continue
         categoria = categoria or "OUTRAS"
         entregues[categoria] = entregues.get(categoria, 0) + volume
@@ -369,6 +371,7 @@ def montar(
     templates: list[str],
     campanha: str,
     agrupar: str = "template",
+    tipos: list[str] | None = None,
 ) -> dict:
     """Dados do painel (schemas.PainelMensagensOut). Levanta o que o cache
     levanta; falha da Meta ou do SETA vira aviso e deixa "—" no que depende dela."""
@@ -394,12 +397,19 @@ def montar(
 
     envios = _envios_da_fila(db, de, ate, ids_numero, templates, campanha, agrupar)
     # Base do rateio do gasto: todos os envios do período, sem filtro de número, template nem campanha
-    filtrado = ids_numero is not None or bool(templates) or bool(campanha)
+    tipos = tipos or []
+    filtrado = ids_numero is not None or bool(templates) or bool(campanha) or bool(tipos)
     envios_todos = _envios_da_fila(db, de, ate, None, [], "", "template") if filtrado else envios
     ids_envio = {e["template_id"] for e in (*envios, *envios_todos) if e["template_id"]}
     modelos = {
         t.id: t for t in db.query(models.Template).filter(models.Template.id.in_(list(ids_envio)))
     } if ids_envio else {}
+    if tipos:
+        # Tipo de mensagem = categoria do template; o envio sem template não tem categoria e fica fora
+        envios = [
+            e for e in envios
+            if e["template_id"] in modelos and custo_whatsapp.categoria_orcamento(modelos[e["template_id"]].category) in tipos
+        ]
 
     # por_template (um por registro de template) alimenta os quadros e as métricas da Meta;
     # a tabela mostra por_grupo: por template, os de mesmo nome (uma linha por WABA) somam numa só
@@ -427,7 +437,8 @@ def montar(
             else:
                 linha["sem_template"][e["dia"]] = linha["sem_template"].get(e["dia"], 0) + e["envios"]
     # Pendente e Erro por faixa; faixa só com fila aberta também ganha linha
-    fila_aberta = _fila_aberta(db, de, ate, ids_numero, templates, campanha) if por_faixa else {}
+    # (pendente e erro ainda não têm template, então com filtro de tipo ficam fora)
+    fila_aberta = _fila_aberta(db, de, ate, ids_numero, templates, campanha) if por_faixa and not tipos else {}
     for nome in fila_aberta:
         por_grupo.setdefault(nome, _linha_vazia(nome))
     gastos = custo_whatsapp.gasto_por_categoria(custo) if meta_ok else {}
@@ -577,9 +588,10 @@ def montar(
             if telefones
             else None
         )
-        todas, avisos_msg = _mensagens_da_meta(db, de, ate, wabas_conhecidas, telefones_por_waba)
+        # As mensagens enviadas e recebidas da Meta não vêm por categoria: com tipo escolhido ficam "—"
+        todas, avisos_msg = (None, []) if tipos else _mensagens_da_meta(db, de, ate, wabas_conhecidas, telefones_por_waba)
         avisos += avisos_msg
-        saida.update(todas=todas, **_quadros_da_meta(custo, wabas_alvo, telefones_alvo))
+        saida.update(todas=todas, **_quadros_da_meta(custo, wabas_alvo, telefones_alvo, tipos))
     else:
         saida.update(todas=None, entregues=None, gratuitas=None, pagas=None, cobranca=None)
     saida["avisos"] = avisos

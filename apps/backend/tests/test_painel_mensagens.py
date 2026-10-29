@@ -276,6 +276,20 @@ assert [(l.nome, l.enviados, l.cobrados, l.categoria) for l in p.linhas] == [("A
 p = painel(agrupar="campanha", templates=[mkt_id])
 assert [l.chave for l in p.linhas] == ["regua"] and p.linhas[0].enviados == 2, p.linhas
 
+# Tipo de mensagem = categoria do Orçamento (marketing, utilitario, servico, outras): vale na tabela (categoria do
+# template; envio sem template e fila aberta ficam fora) e nos quadros da Meta, que não vêm por categoria em "todas"
+p = painel(tipos=["utilitario"])
+assert [l.nome for l in p.linhas] == ["Aviso"] and p.todas is None, [l.nome for l in p.linhas]
+assert set(p.entregues.por_categoria) == {"UTILITY"}, p.entregues.por_categoria
+p = painel(tipos=["marketing"])
+assert [l.nome for l in p.linhas] == ["Oferta"], [l.nome for l in p.linhas]
+assert p.entregues.por_categoria == {}, p.entregues.por_categoria
+p = painel(tipos=["servico", "outras"])
+assert p.linhas == [] and p.total is None and set(p.entregues.por_categoria) == {"SERVICE"}, p
+p = painel(agrupar="faixa", tipos=["utilitario"])
+assert p.linhas and all(l.pendente == 0 and l.erro == 0 for l in p.linhas), p.linhas  # fila aberta ainda não tem template
+assert all(l.chave != "sem_template" for l in painel(tipos=["utilitario"]).linhas)
+
 # Endpoint exige o período e rejeita de > ate
 with TestClient(app) as client:
     login = client.post("/auth/login", json={"email": "admin@topfama.com.br", "password": os.environ["ADMIN_PASSWORD"]})

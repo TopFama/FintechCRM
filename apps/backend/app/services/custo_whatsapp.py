@@ -28,6 +28,11 @@ GASTO_TTL_SEGUNDOS = 600
 CATEGORIAS = {"UTILITY": "utilitario", "MARKETING": "marketing", "MARKETING_LITE": "marketing", "SERVICE": "servico"}
 CATEGORIA_OUTRAS = "outras"
 
+
+def categoria_orcamento(pricing_category: str | None) -> str:
+    """Categoria do Orçamento (utilitario, marketing, servico ou outras) de uma pricing_category da Meta."""
+    return CATEGORIAS.get(pricing_category, CATEGORIA_OUTRAS)
+
 # Moedas de cobrança da WABA que sabemos levar para BRL. Sem o campo currency
 # (resposta antiga da Meta) o custo é tratado como USD, como sempre foi.
 MOEDAS_SUPORTADAS = {"USD", "BRL"}

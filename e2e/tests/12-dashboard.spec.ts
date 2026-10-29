@@ -762,6 +762,10 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await painel.getByLabel("Agrupar por").selectOption("campanha");
     await expect.poll(() => pedidos.at(-1)?.searchParams.get("agrupar")).toBe("campanha");
     await expect(painel.locator("thead th").first()).toContainText("Campanha");
+
+    // Tipo de mensagem (as categorias do Orçamento): a API recebe as escolhidas
+    await escolherMulti(painel, "Tipo de mensagem", ["Marketing", "Outras"]);
+    await expect.poll(() => pedidos.at(-1)?.searchParams.getAll("tipo").sort()).toEqual(["marketing", "outras"]);
   });
 
   test("painel de mensagens: Meta fora do ar mostra o motivo", { tag: ["@orcamento", "@resiliencia"] }, async ({ page }) => {
