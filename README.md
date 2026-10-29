@@ -350,16 +350,17 @@ desenvolvimento.
    entregues, lidas, cliques, % visualização, % cliques, conversão e custo. Filtros: período, WABA,
    telefone, template e campanha. A Meta não filtra por template nem campanha: com um deles marcado os
    quadros contam os envios da fila (`cobranca_fila.template_id`, gravado no envio, só a partir do deploy, sem histórico) e o custo é a
-   quantidade × a tarifa unitária da categoria (custo ÷ mensagens cobradas da mesma WABA e categoria
-   no período, do próprio Pricing Analytics). Lidas e cliques vêm do `template_analytics` da Meta (até
+   gasto real da Meta em cada WABA e categoria rateado pela fatia dos envios do CRM (a soma das linhas
+   fecha com o Orçamento; `custo_whatsapp.gasto_por_categoria`). Lidas e cliques vêm do `template_analytics` da Meta (até
    90 dias; leitura e clique só por 7 dias depois do envio; exige os insights ativados na WABA) e não
    filtram por telefone nem campanha. Conversão = clientes cobrados com o template que pagaram na janela de
    Indicadores. A tabela agrupa por template (padrão), faixa de atraso do cliente ou campanha
    (`agrupar`; a régua entra como "Régua de cobrança"; templates de mesmo nome somam numa linha): por faixa e
-   campanha, entregues, lidas e cliques são os dos templates enviados nela, a parte de cada template igual à
-   fatia dos envios dele (só envios com `template_id`). ROAS = valor pago dos cobrados ÷ custo da linha
-   (`relatorio_efetividade.calcular_roas`). O webhook do Chatwoot guarda `entregue_em` e `lida_em` em
-   `cobranca_fila` (`delivered`/`read`), sem uso no painel. O período abre em "Este mês". Cada quadro e
+   campanha, entregues e lidas vêm dos recibos do Chatwoot (`cobranca_fila.entregue_em`/`lida_em`, dado real)
+   quando a linha tem algum, senão a parte dos templates dela pela fatia dos envios; cliques sempre a parte
+   da Meta (só envios com `template_id`). ROAS = valor pago dos cobrados ÷ custo da linha
+   (`relatorio_efetividade.calcular_roas`). O webhook do Chatwoot grava `entregue_em` e `lida_em` (`delivered`/`read`; só
+   envios depois do deploy; lida exige recibo de leitura ligado). O período abre em "Este mês". Cada quadro e
    linha tem o ícone "i" com a explicação. Guardado 10 min no Redis por conjunto de filtros; vencido, abre na hora com o último resultado (até 30 min) e atualiza ao fundo.
    **Tempo real** (`app/painel_tempo_real.py`, WebSocket `/dashboard/ws?de=&ate=`): os cards
    Pendentes (e pausados), Cobranças, Erros e Telefones inválidos mudam na hora. Triggers do

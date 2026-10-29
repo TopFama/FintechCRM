@@ -599,26 +599,26 @@ test.describe("Dashboard", { tag: "@dashboard" }, () => {
     await expect(linhas).toHaveCount(2);
     const brl = (t: string) => Number(t.replace(/[^\d,]/g, "").replace(",", "."));
     const qtd = (t: string) => Number(t.replace(/\D/g, ""));
-    // Número | Qtd e R$ de Utilitário, Marketing e Serviço | Total gasto | Total enviado
+    // Número | Qtd e R$ de Utilitário, Marketing, Serviço e Outras | Total gasto | Total enviado
     const titulos = o.locator("thead th");
     await expect(titulos).toHaveText([
       /^Número/, /^Utilitário \(qtd\)/, /^Utilitário \(R\$\)/, /^Marketing \(qtd\)/, /^Marketing \(R\$\)/,
-      /^Serviço \(qtd\)/, /^Serviço \(R\$\)/, /^Total gasto/, /^Total enviado/,
+      /^Serviço \(qtd\)/, /^Serviço \(R\$\)/, /^Outras \(qtd\)/, /^Outras \(R\$\)/, /^Total gasto/, /^Total enviado/,
     ]);
-    const C = { utilQtd: 2, utilRs: 3, mktQtd: 4, mktRs: 5, servQtd: 6, servRs: 7, gasto: 8, enviado: 9 };
-    const ehRs = (n: number) => [C.utilRs, C.mktRs, C.servRs, C.gasto].includes(n);
+    const C = { utilQtd: 2, utilRs: 3, mktQtd: 4, mktRs: 5, servQtd: 6, servRs: 7, outQtd: 8, outRs: 9, gasto: 10, enviado: 11 };
+    const ehRs = (n: number) => [C.utilRs, C.mktRs, C.servRs, C.outRs, C.gasto].includes(n);
     const coluna = async (n: number) => (await linhas.locator(`td:nth-child(${n})`).allInnerTexts()).map(ehRs(n) ? brl : qtd);
     const totalDa = async (n: number) => (ehRs(n) ? brl : qtd)(await o.locator(`tr.linha-total td:nth-child(${n})`).innerText());
-    for (let n = 2; n <= 9; n++) {
+    for (let n = 2; n <= 11; n++) {
       expect(await totalDa(n)).toBeCloseTo((await coluna(n)).reduce((a, b) => a + b, 0), 2);
     }
     // Serviço só conta mensagem cobrada (a Meta não cobra serviço)
     expect(await totalDa(C.servQtd)).toBe(0);
     expect(await totalDa(C.utilQtd)).toBeGreaterThan(0);
     expect(await totalDa(C.mktQtd)).toBeGreaterThan(0);
-    // Totais são da Meta inteira: incluem autenticação, que fica fora das categorias
-    expect(await totalDa(C.gasto)).toBeGreaterThan((await totalDa(C.utilRs)) + (await totalDa(C.mktRs)) + (await totalDa(C.servRs)));
-    expect(await totalDa(C.enviado)).toBeGreaterThan((await totalDa(C.utilQtd)) + (await totalDa(C.mktQtd)) + (await totalDa(C.servQtd)));
+    // "Outras" (autenticação etc.) faz a soma das categorias fechar com o total da Meta
+    expect(await totalDa(C.gasto)).toBeCloseTo((await totalDa(C.utilRs)) + (await totalDa(C.mktRs)) + (await totalDa(C.servRs)) + (await totalDa(C.outRs)), 2);
+    expect(await totalDa(C.enviado)).toBe((await totalDa(C.utilQtd)) + (await totalDa(C.mktQtd)) + (await totalDa(C.servQtd)) + (await totalDa(C.outQtd)));
     await o.getByRole("columnheader", { name: /Total gasto/ }).click();
     const ord = await coluna(C.gasto);
     expect(ord).toEqual([...ord].sort((a, b) => a - b));

@@ -316,7 +316,7 @@ def exportar_orcamento_por_dia(
     mes: int | None = Query(None, ge=1, le=12),
     de: date | None = Query(None),
     ate: date | None = Query(None),
-    categorias: list[Literal["utilitario", "marketing", "servico"]] = Query([]),
+    categorias: list[Literal["utilitario", "marketing", "servico", "outras"]] = Query([]),
     db: Session = Depends(get_db),
     _user: models.User = Depends(get_current_user),
 ):

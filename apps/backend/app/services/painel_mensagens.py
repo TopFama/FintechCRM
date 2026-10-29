@@ -7,9 +7,9 @@ Fontes: custo e volume por categoria e tipo vêm de `custo_whatsapp.custo_detalh
 (Pricing Analytics já convertido para BRL, uma consulta só), enviadas/entregues/
 recebidas do analytics da WABA e lidas/cliques do template_analytics. A Meta não
 filtra nada disso por template nem por campanha: com um deles marcado, os quadros
-passam a contar os envios da fila (`QueueItem.template_id`) e o custo é a
-quantidade vezes a tarifa unitária da categoria, que sai do próprio Pricing
-Analytics (custo ÷ volume da mesma WABA e categoria no período). Lidas e cliques
+passam a contar os envios da fila (`QueueItem.template_id`) e o custo é o gasto
+real da Meta em cada WABA e categoria rateado pela fatia dos envios do CRM (a soma
+das linhas fecha com o Orçamento). Lidas e cliques
 só existem por 7 dias depois do envio e com os insights ativados na WABA."""
 
 import asyncio
@@ -191,8 +191,9 @@ def _grupo(agrupar: str):
 def _envios_da_fila(
     db: Session, de: date, ate: date, numeros: list[str] | None, templates: list[str], campanha: str, agrupar: str
 ) -> list[dict]:
-    """Envios (sent) do período por grupo, template e WABA, com os clientes cobrados.
-    Mesmos filtros da fila: período em dias de Brasília e campanha pela faixa dela."""
+    """Envios (sent) do período por grupo, template e WABA, com os clientes cobrados
+    e quantos já têm entrega e leitura avisadas pelo Chatwoot. Mesmos filtros da
+    fila: período em dias de Brasília e campanha pela faixa dela."""
 
     ini, fim = consultas_fila.limites_utc(de, ate)
     grupo, nome = _grupo(agrupar)
@@ -204,6 +205,8 @@ def _envios_da_fila(
             models.WhatsappNumber.waba_id,
             models.QueueItem.codigo_cliente,
             func.count().label("envios"),
+            func.count(models.QueueItem.entregue_em).label("entregues"),
+            func.count(models.QueueItem.lida_em).label("lidas"),
         )
         .select_from(models.QueueItem)
         .join(models.Faixa, models.Faixa.id == models.QueueItem.faixa_id)
@@ -225,18 +228,19 @@ def _envios_da_fila(
     return [dict(l._mapping) for l in db.execute(q)]
 
 
-def _custo(linha: dict, modelos: dict, tarifas: dict, sem_tarifa: set[str]) -> Decimal | None:
-    """Custo estimado do grupo: envios de cada WABA e template × tarifa unitária
-    da categoria do template na WABA. None se faltar tarifa em algum."""
+def _custo(linha: dict, modelos: dict, gastos: dict, envios_crm: dict, sem_gasto: set[str]) -> Decimal | None:
+    """Custo do grupo: o gasto real da Meta em cada (WABA, categoria) rateado pela
+    fatia dos envios do CRM; a soma de todas as linhas fecha com o gasto do Orçamento.
+    None se faltar o gasto da categoria na WABA."""
 
     total = Decimal("0")
     for (waba, tid), qtd in linha["por_waba"].items():
         categoria = modelos[tid].category if tid in modelos else ""
-        tarifa = tarifas.get((waba, categoria))
-        if tarifa is None:
-            sem_tarifa.add(f"{categoria or 'sem categoria'} na WABA {waba or 'desconhecida'}")
+        gasto, base = gastos.get((waba, categoria)), envios_crm.get((waba, categoria))
+        if gasto is None or not base:
+            sem_gasto.add(f"{categoria or 'sem categoria'} na WABA {waba or 'desconhecida'}")
             return None
-        total += tarifa * qtd
+        total += gasto * qtd / base
     return total
 
 
@@ -295,7 +299,10 @@ def montar(
         avisos.append(custo.motivo)
 
     envios = _envios_da_fila(db, de, ate, ids_numero, templates, campanha, agrupar)
-    ids_envio = {e["template_id"] for e in envios if e["template_id"]}
+    # Base do rateio do gasto: todos os envios do período, sem filtro de número, template nem campanha
+    filtrado = ids_numero is not None or bool(templates) or bool(campanha)
+    envios_todos = _envios_da_fila(db, de, ate, None, [], "", "template") if filtrado else envios
+    ids_envio = {e["template_id"] for e in (*envios, *envios_todos) if e["template_id"]}
     modelos = {
         t.id: t for t in db.query(models.Template).filter(models.Template.id.in_(list(ids_envio)))
     } if ids_envio else {}
@@ -313,20 +320,28 @@ def montar(
         for destino, chave in ((por_template, e["template_id"]), (por_grupo, chave_grupo)):
             linha = destino.setdefault(
                 chave,
-                {"nome": e.get("nome"), "ids": set(), "enviados": 0, "clientes": set(), "por_waba": {}},
+                {"nome": e.get("nome"), "ids": set(), "enviados": 0, "clientes": set(), "entregues": 0, "lidas": 0, "por_waba": {}},
             )
             linha["ids"].add(e["template_id"])
             linha["enviados"] += e["envios"]
             linha["clientes"].add(e["codigo_cliente"])
+            linha["entregues"] += e["entregues"]
+            linha["lidas"] += e["lidas"]
             ponto = (waba, e["template_id"])
             linha["por_waba"][ponto] = linha["por_waba"].get(ponto, 0) + e["envios"]
-    tarifas = custo_whatsapp.tarifas_unitarias(custo) if meta_ok else {}
+    gastos = custo_whatsapp.gasto_por_categoria(custo) if meta_ok else {}
+    envios_crm: dict[tuple[str, str], int] = {}
+    for e in envios_todos:
+        if e["template_id"]:
+            tpl = modelos.get(e["template_id"])
+            ponto = (e["waba_id"] or "", tpl.category if tpl else "")
+            envios_crm[ponto] = envios_crm.get(ponto, 0) + e["envios"]
 
-    sem_tarifa: set[str] = set()
+    sem_gasto: set[str] = set()
     for linha in {id(l): l for l in (*por_template.values(), *por_grupo.values())}.values():
-        linha["custo"] = _custo(linha, modelos, tarifas, sem_tarifa)
-    if sem_tarifa:
-        avisos.append("Sem tarifa no período para: " + "; ".join(sorted(sem_tarifa)))
+        linha["custo"] = _custo(linha, modelos, gastos, envios_crm, sem_gasto)
+    if sem_gasto:
+        avisos.append("Sem gasto da Meta no período para: " + "; ".join(sorted(sem_gasto)))
 
     # Entregues, lidas e cliques são da Meta, por template; a faixa ou campanha leva a
     # parte do template igual à sua fatia dos envios dele
@@ -355,6 +370,10 @@ def montar(
         tpls = [modelos[i] for i in sorted(linha["ids"]) if i in modelos] if por_template_modo else []
         categorias = {t.category for t in tpls}
         entregues, lidas, cliques = (parte_meta(linha, c) for c in ("entregues", "lidas", "cliques"))
+        entregues_meta = entregues
+        if not por_template_modo and linha["entregues"]:
+            # Faixa e campanha: o dado real do Chatwoot, quando a linha tem recibos
+            entregues, lidas = linha["entregues"], linha["lidas"]
         pagos = len(linha["clientes"] & pagaram.keys()) if pagaram is not None else None
         valor_pago = sum((pagaram[c] for c in linha["clientes"] if c in pagaram), Decimal("0")) if pagaram is not None else None
         tabela.append(
@@ -367,7 +386,7 @@ def montar(
                 "lidas": lidas,
                 "cliques": cliques,
                 "taxa_visualizacao": Decimal(lidas) / entregues if lidas is not None and entregues else None,
-                "taxa_cliques": Decimal(cliques) / entregues if cliques is not None and entregues else None,
+                "taxa_cliques": Decimal(cliques) / entregues_meta if cliques is not None and entregues_meta else None,
                 "cobrados": len(linha["clientes"]),
                 "pagaram": pagos,
                 "conversao": Decimal(pagos) / len(linha["clientes"]) if pagos is not None and linha["clientes"] else None,
@@ -384,7 +403,7 @@ def montar(
 
     saida = {"de": de, "ate": ate, "origem": "fila" if (templates or campanha) else "meta", "linhas": tabela}
     if templates or campanha:
-        # A Meta não filtra por template nem campanha: quadros da fila, custo = quantidade × tarifa
+        # A Meta não filtra por template nem campanha: quadros da fila, custo = gasto real rateado pelos envios
         por_categoria: dict[str, int] = {}
         gasto: dict[str, Decimal] = {}
         gasto_completo = True

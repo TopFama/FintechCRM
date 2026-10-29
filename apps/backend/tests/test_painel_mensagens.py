@@ -3,9 +3,9 @@ analytics da Meta (todas, entregues por categoria, gratuitas, pagas, cobrança e
 BRL) e métricas por template (entregues, lidas, cliques, conversão, custo).
 
 Sem filtro de template/campanha os quadros vêm da Meta; com um deles a Meta não
-filtra, então os quadros passam a contar a fila e o custo é a quantidade vezes a
-tarifa unitária da categoria (custo ÷ volume do Pricing Analytics). Filtro de
-telefone vai para o analytics da WABA e restringe a fila. Categoria sem tarifa no
+filtra, então os quadros passam a contar a fila e o custo é o
+gasto real da Meta por WABA e categoria rateado pela fatia dos envios do CRM. Filtro de
+telefone vai para o analytics da WABA e restringe a fila. Categoria sem gasto no
 período deixa o custo "—" com aviso.
 
 Executa com assert simples, sem pytest. Encerra imprimindo 'OK'.
@@ -130,19 +130,19 @@ assert p.gratuitas.total == 40 and p.gratuitas.por_tipo == {"FREE_CUSTOMER_SERVI
 assert p.cobranca.total_brl == Decimal("12.20") and p.cobranca.por_categoria["UTILITY"] == Decimal("10.20"), p.cobranca
 assert ("mensagens", "waba1", (0, 2), ()) in CHAMADAS and ("mensagens", "waba1", (100,), ()) in CHAMADAS
 
-# Por template: entregues/lidas/cliques da Meta, conversão pelos pagamentos, custo = envios × tarifa
+# Por template: entregues/lidas/cliques da Meta, conversão pelos pagamentos, custo = gasto real rateado pelos envios
 linhas = {t.nome: t for t in p.linhas}  # a linha do template é por nome
 u = linhas["Aviso"]
 assert (u.enviados, u.cobrados, u.pagaram) == (5, 4, 1), u
 assert (u.entregues, u.lidas, u.cliques) == (80, 40, 8), u
 assert u.taxa_visualizacao == Decimal("0.5") and u.taxa_cliques == Decimal("0.1"), u
 assert u.conversao == Decimal("0.25"), u
-assert u.roas == Decimal("2941.18"), u.roas  # 100,00 pagos ÷ (5 × 10,20 ÷ 1500)
-assert u.custo_brl == Decimal("0.03"), u.custo_brl  # 5 × (10,20 ÷ 1500)
-# Marketing sem tarifa no período: custo "—" e aviso; sem insights do template (Meta não devolveu)
+assert u.roas == Decimal("9.80"), u.roas  # 100,00 pagos ÷ 10,20
+assert u.custo_brl == Decimal("10.20"), u.custo_brl  # os 5 envios do Aviso são todos os do CRM em utilidade: levam o gasto inteiro
+# Marketing sem gasto no período: custo "—" e aviso; sem insights do template (Meta não devolveu)
 m = linhas["Oferta"]
 assert m.enviados == 2 and m.custo_brl is None and m.entregues is None and m.taxa_visualizacao is None and m.roas is None, m
-assert any("Sem tarifa" in a and "MARKETING" in a for a in p.avisos), p.avisos
+assert any("Sem gasto" in a and "MARKETING" in a for a in p.avisos), p.avisos
 
 # Telefone: vai para o analytics da WABA (só dígitos) e restringe a fila
 CHAMADAS.clear()
@@ -156,15 +156,15 @@ assert any("não filtra por telefone" in a for a in p.avisos), p.avisos
 p = painel(wabas=["outra"])
 assert p.entregues.total == 0 and p.linhas == [], p
 
-# Template marcado: quadros da fila, custo = quantidade × tarifa da categoria
+# Template marcado: quadros da fila, custo = gasto real rateado pelos envios
 p = painel(templates=[util_id])
 assert p.origem == "fila" and p.entregues is None and p.gratuitas is None
 assert (p.todas.enviadas, p.todas.entregues, p.todas.recebidas) == (5, None, None), p.todas
 assert p.pagas.total == 5 and p.pagas.por_categoria == {"UTILITY": 5}, p.pagas
-assert p.cobranca.total_brl == Decimal("0.03") and p.cobranca.por_categoria == {"UTILITY": Decimal("0.03")}, p.cobranca
+assert p.cobranca.total_brl == Decimal("10.20") and p.cobranca.por_categoria == {"UTILITY": Decimal("10.20")}, p.cobranca
 assert [t.nome for t in p.linhas] == ["Aviso"]
 
-# Template sem tarifa: total da cobrança "—"
+# Template sem gasto: total da cobrança "—"
 p = painel(templates=[mkt_id])
 assert p.cobranca.total_brl is None and p.pagas.por_categoria == {"MARKETING": 2}, p
 
@@ -188,19 +188,20 @@ assert set(por) == {"regua", campanha_id}, por.keys()
 assert por["regua"].nome == "Régua de cobrança" and por["regua"].enviados == 7 and por["regua"].custo_brl is None, por["regua"]
 c = por[campanha_id]
 assert c.nome == "Campanha: Black" and (c.enviados, c.cobrados, c.pagaram) == (2, 2, 0), c
-# Aviso: 7 envios na régua e na campanha; 80 entregues, 40 lidas e 8 cliques repartidos em 5 e 2 deles
-assert (c.entregues, c.lidas, c.cliques) == (23, 11, 2), c
-assert c.taxa_visualizacao == Decimal(11) / 23 and c.taxa_cliques == Decimal(2) / 23 and c.categoria == "", c
+# Campanha tem recibos do Chatwoot (2 entregues, 1 lida): dado real; os cliques são a parte da Meta (2 dos 7 envios do Aviso)
+assert (c.entregues, c.lidas, c.cliques) == (2, 1, 2), c
+assert c.taxa_visualizacao == Decimal("0.5") and c.taxa_cliques == Decimal(2) / 23 and c.categoria == "", c
+# Régua sem recibos: a parte da Meta (80 entregues, 40 lidas e 8 cliques repartidos em 5 e 2 dos 7 envios)
 assert (por["regua"].entregues, por["regua"].lidas, por["regua"].cliques) == (57, 29, 6), por["regua"]
 assert c.roas == Decimal("0.00") and por["regua"].roas is None, (c.roas, por["regua"].roas)
-assert c.custo_brl == Decimal("0.01"), c.custo_brl  # 2 × (10,20 ÷ 1500)
+assert c.custo_brl == Decimal("2.91"), c.custo_brl  # 10,20 × 2 ÷ 7 envios do CRM em utilidade
 
 p = painel(agrupar="faixa")
 por = {l.nome: l for l in p.linhas}
 assert set(por) == {"1 a 3 dias", "4 a 7 dias"}, por.keys()  # faixa de atraso do cliente: a da campanha, senão a da régua
 assert por["1 a 3 dias"].enviados == 8 and por["4 a 7 dias"].enviados == 1, por
-assert (por["4 a 7 dias"].entregues, por["4 a 7 dias"].lidas) == (11, 6), por  # 1 dos 7 envios do Aviso
-assert (por["1 a 3 dias"].entregues, por["1 a 3 dias"].lidas) == (69, 34), por  # 6 dos 7
+assert (por["4 a 7 dias"].entregues, por["4 a 7 dias"].lidas) == (1, 1), por  # recibos do Chatwoot
+assert (por["1 a 3 dias"].entregues, por["1 a 3 dias"].lidas) == (1, 0), por
 # Ordem do "Por faixa" (progressão de atraso das regras), não por quantidade: a faixa de mais atraso, mesmo com mais envios, vem depois
 for i in range(10):
     item(f"x{i}", n1, util, atraso="4 a 7 dias")

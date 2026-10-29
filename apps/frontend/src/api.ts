@@ -1199,7 +1199,7 @@ export interface OrcamentoProgressaoDia {
   por_categoria: Partial<Record<CategoriaGasto, GastoCategoria>>; // do dia, não acumulado
 }
 
-export type CategoriaGasto = "utilitario" | "marketing" | "servico";
+export type CategoriaGasto = "utilitario" | "marketing" | "servico" | "outras";
 
 export interface GastoCategoria {
   gasto_brl: string;

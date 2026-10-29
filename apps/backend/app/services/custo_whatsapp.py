@@ -5,6 +5,7 @@ A Meta devolve o custo na moeda de cobrança de cada WABA: USD é convertido pel
 cotação do dia, BRL entra como veio."""
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
@@ -14,7 +15,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from .. import cache, cambio, consultas_fila, crypto, meta_client, models
-from ..timezone import BUSINESS_TZ
+from ..timezone import BUSINESS_TZ, hoje_br
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,10 @@ logger = logging.getLogger(__name__)
 # pode ir à Meta a cada vez
 GASTO_TTL_SEGUNDOS = 600
 
-# pricing_category da Meta → categoria do Orçamento. Autenticação e outras ficam
-# de fora da quebra por categoria (continuam no gasto total).
+# pricing_category da Meta → categoria do Orçamento; autenticação e o resto entram
+# em "outras", para a soma das categorias fechar com o gasto total.
 CATEGORIAS = {"UTILITY": "utilitario", "MARKETING": "marketing", "MARKETING_LITE": "marketing", "SERVICE": "servico"}
+CATEGORIA_OUTRAS = "outras"
 
 # Moedas de cobrança da WABA que sabemos levar para BRL. Sem o campo currency
 # (resposta antiga da Meta) o custo é tratado como USD, como sempre foi.
@@ -118,23 +120,21 @@ async def consultar_waba(tokens: list[str], chamar) -> tuple[object | None, str 
     return None, erro
 
 
-def tarifas_unitarias(custo: "CustoWhatsapp") -> dict[tuple[str, str], Decimal]:
-    """Tarifa unitária em BRL por (WABA, pricing_category da Meta): o que foi cobrado
-    (TIPO_COBRADA) ÷ mensagens cobradas no período, já com câmbio e faixa de volume."""
+def gasto_por_categoria(custo: "CustoWhatsapp") -> dict[tuple[str, str], Decimal]:
+    """Gasto real em BRL por (WABA, pricing_category da Meta) no período, já com câmbio
+    e faixa de volume: base do rateio do custo por envio no painel de mensagens."""
 
-    soma: dict[tuple[str, str], list] = {}
-    for (waba, _numero, categoria, tipo), (gasto, volume) in custo.por_tipo_categoria.items():
-        if tipo == TIPO_COBRADA and volume:
-            linha = soma.setdefault((waba, categoria), [Decimal("0"), 0])
-            linha[0] += gasto
-            linha[1] += volume
-    return {chave: gasto / volume for chave, (gasto, volume) in soma.items()}
+    soma: dict[tuple[str, str], Decimal] = {}
+    for (waba, _numero, categoria, _tipo), (gasto, _volume) in custo.por_tipo_categoria.items():
+        soma[(waba, categoria)] = soma.get((waba, categoria), Decimal("0")) + gasto
+    return soma
 
 
-def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
-    """Custo de TODAS as WABAs conectadas (tokens ativos + números importados)
-    no período, por dia e por número, com aviso de cada WABA que não pôde ser
-    lida e quais números ficaram de fora do total."""
+def consultar_custo(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
+    """Consulta direta à Meta, sem cache: quem lê o custo usa `custo_detalhado`.
+    Custo de TODAS as WABAs conectadas (tokens ativos + números importados) no
+    período, por dia e por número, com aviso de cada WABA que não pôde ser lida e
+    quais números ficaram de fora do total."""
 
     numeros_por_waba: dict[str, list[str]] = {}
     for n in db.query(models.WhatsappNumber).filter(models.WhatsappNumber.waba_id.isnot(None)):
@@ -227,39 +227,75 @@ def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
         )
         linha[0] += custo
         linha[1] += int(p.get("volume", 0) or 0)
-        categoria = CATEGORIAS.get(p.get("pricing_category"))
-        if categoria:
-            linha = por_categoria.setdefault((dia, chave, categoria), [Decimal("0"), 0])
-            linha[0] += custo
-            linha[1] += cobradas
+        categoria = CATEGORIAS.get(p.get("pricing_category"), CATEGORIA_OUTRAS)
+        linha = por_categoria.setdefault((dia, chave, categoria), [Decimal("0"), 0])
+        linha[0] += custo
+        linha[1] += cobradas
         if telefone:
             por_numero[chave] = por_numero.get(chave, Decimal("0")) + custo
     return CustoWhatsapp(por_dia, None, avisos, por_numero, por_dia_numero, por_categoria, por_tipo_categoria)
 
 
-def gasto_diario_brl(db: Session, inicio: date, fim: date) -> tuple[dict[date, Decimal] | None, str | None]:
-    """(gasto por dia em BRL, motivo) — gasto None quando não deu pra calcular
-    nada; o motivo explica por quê. Guardado GASTO_TTL_SEGUNDOS no Redis (falha
-    não é guardada); sem Redis consulta a Meta direto."""
+def _para_json(r: CustoWhatsapp) -> dict:
+    """CustoWhatsapp em estrutura guardável no Redis (chaves em tupla viram listas)."""
 
-    def calcular() -> dict:
-        r = custo_detalhado(db, inicio, fim)
-        motivo = r.motivo or ("; ".join(f"WABA {a.waba_id}: {a.motivo}" for a in r.avisos) or None)
-        por_dia = None if r.por_dia is None else {d.isoformat(): str(v) for d, v in r.por_dia.items()}
-        return {"por_dia": por_dia, "motivo": motivo}
+    def tabela(d: dict) -> list:
+        return [[*(k if isinstance(k, tuple) else (k,)), *(v if isinstance(v, list) else [v])] for k, v in d.items()]
 
+    dados = {
+        "por_dia": None if r.por_dia is None else tabela(r.por_dia),
+        "motivo": r.motivo,
+        "avisos": [[a.waba_id, a.numeros, a.motivo] for a in r.avisos],
+        "por_numero": tabela(r.por_numero),
+        "por_dia_numero": tabela(r.por_dia_numero),
+        "por_categoria": tabela(r.por_categoria),
+        "por_tipo_categoria": tabela(r.por_tipo_categoria),
+    }
+    # Datas e Decimal viram texto já aqui: o resultado calculado e o lido do Redis são iguais
+    return json.loads(json.dumps(dados, default=str))
+
+
+def _de_json(d: dict) -> CustoWhatsapp:
+    def tabela(linhas: list, n_chave: int) -> dict:
+        return {tuple(l[:n_chave]): [Decimal(l[n_chave]), int(l[n_chave + 1])] for l in linhas}
+
+    por_dia = None if d["por_dia"] is None else {date.fromisoformat(dia): Decimal(v) for dia, v in d["por_dia"]}
+    return CustoWhatsapp(
+        por_dia,
+        d["motivo"],
+        [AvisoWaba(*a) for a in d["avisos"]],
+        {n: Decimal(v) for n, v in d["por_numero"]},
+        {(date.fromisoformat(k[0]), *k[1:]): v for k, v in tabela(d["por_dia_numero"], 3).items()},
+        {(date.fromisoformat(k[0]), *k[1:]): v for k, v in tabela(d["por_categoria"], 3).items()},
+        tabela(d["por_tipo_categoria"], 4),
+    )
+
+
+def custo_detalhado(db: Session, inicio: date, fim: date) -> CustoWhatsapp:
+    """Fonte única do custo da Meta: Orçamento, Mensagens e ROAS leem daqui. Guardado
+    GASTO_TTL_SEGUNDOS no Redis por período, com o fim limitado a hoje (a Meta só vai
+    até agora), então "1º ao dia 31" e "1º até hoje" são o mesmo snapshot. Falha não é
+    guardada; sem Redis consulta a Meta direto."""
+
+    fim = min(fim, hoje_br())
     try:
         dados = cache.obter_ou_calcular(
-            cache.chave("custo-whatsapp-dia", {"inicio": inicio, "fim": fim}),
-            calcular,
+            cache.chave("custo-whatsapp-detalhado", {"inicio": inicio, "fim": fim}),
+            lambda: _para_json(consultar_custo(db, inicio, fim)),
             GASTO_TTL_SEGUNDOS,
             guardar_se=lambda d: d["por_dia"] is not None,
         )
     except (cache.CacheIndisponivel, cache.CacheOcupado):
-        dados = calcular()
-    if dados["por_dia"] is None:
-        return None, dados["motivo"]
-    return {date.fromisoformat(d): Decimal(v) for d, v in dados["por_dia"].items()}, dados["motivo"]
+        return consultar_custo(db, inicio, fim)
+    return _de_json(dados)
+
+
+def gasto_diario_brl(db: Session, inicio: date, fim: date) -> tuple[dict[date, Decimal] | None, str | None]:
+    """(gasto por dia em BRL, motivo) — gasto None quando não deu pra calcular
+    nada; o motivo explica por quê."""
+
+    r = custo_detalhado(db, inicio, fim)
+    return r.por_dia, r.motivo or ("; ".join(f"WABA {a.waba_id}: {a.motivo}" for a in r.avisos) or None)
 
 
 def custo_por_envio(db: Session, inicio: date, fim: date) -> tuple[dict[date, Decimal] | None, str | None]:
