@@ -212,11 +212,12 @@ util2 = models.Template(
 db.add(util2)
 db.commit()
 util2_id = util2.id
+antes = painel(templates=[util_id]).linhas[0]
 item("y1", n2, util2)
 item("y2", n2, util2)
 db.commit()
 p = painel(templates=[util_id, util2_id])
-assert [(l.nome, l.enviados, l.cobrados, l.categoria) for l in p.linhas] == [("Aviso", 17, 16, "UTILITY")], p.linhas
+assert [(l.nome, l.enviados, l.cobrados, l.categoria) for l in p.linhas] == [("Aviso", antes.enviados + 2, antes.cobrados + 2, "UTILITY")], p.linhas
 
 # Filtro de template vale em qualquer agrupamento
 p = painel(agrupar="campanha", templates=[mkt_id])
