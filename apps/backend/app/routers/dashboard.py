@@ -325,6 +325,7 @@ def painel_mensagens_dashboard(
     template: list[str] = Query([]),
     campanha: str = Query(""),
     agrupar: Literal["template", "faixa", "campanha"] = Query("template"),
+    tipo: list[Literal["marketing", "utilitario", "servico", "outras"]] = Query([]),
     auto: bool = Query(False),
     _user: models.User = Depends(get_current_user),
 ):
@@ -340,11 +341,12 @@ def painel_mensagens_dashboard(
         # Sessão própria: a atualização em segundo plano roda depois da requisição
         with SessionLocal() as sessao:
             dados = painel_mensagens.montar(
-                sessao, de, ate, telefones=telefone, wabas=waba, templates=template, campanha=campanha, agrupar=agrupar
+                sessao, de, ate, telefones=telefone, wabas=waba, templates=template, campanha=campanha, agrupar=agrupar,
+                tipos=tipo,
             )
         return schemas.PainelMensagensOut(**dados).model_dump(mode="json")
 
-    filtros = dict(de=de, ate=ate, telefone=sorted(telefone), waba=sorted(waba), template=sorted(template), campanha=campanha, agrupar=agrupar)
+    filtros = dict(de=de, ate=ate, telefone=sorted(telefone), waba=sorted(waba), template=sorted(template), campanha=campanha, agrupar=agrupar, tipo=sorted(tipo))
     try:
         dados = cache.obter_snapshot(
             cache.chave("dashboard-painel-mensagens", filtros),

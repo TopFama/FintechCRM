@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AgruparPainel, api, MetaToken, PainelLinha, PainelMensagens, Template, WhatsappNumber } from "../../api";
+import { AgruparPainel, api, CategoriaGasto, MetaToken, PainelLinha, PainelMensagens, Template, WhatsappNumber } from "../../api";
 import { formatBRL, formatDecimal, formatNumero, formatPercentual, formatRoas, rotuloWaba } from "../../format";
 import { IconAlert } from "../../icons";
 import { ordenarPor, useSort } from "../../sort";
@@ -10,6 +10,7 @@ import MultiSelect from "../MultiSelect";
 import SelectCampanha from "../SelectCampanha";
 import SortableTh from "../SortableTh";
 import TabelaAjustavel from "../TabelaAjustavel";
+import { CATEGORIAS as TIPOS_MENSAGEM } from "./OrcamentoProgressaoCard";
 import { linkRelatorio } from "./linkRelatorio";
 
 // pricing_category da Meta, na ordem do analytics deles; categoria nova da Meta entra no fim
@@ -267,6 +268,7 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
   const [wabas, setWabas] = useState<string[]>([]);
   const [templates, setTemplates] = useState<string[]>([]);
   const [campanha, setCampanha] = useState("");
+  const [tipos, setTipos] = useState<CategoriaGasto[]>([]);
   const [agrupar, setAgrupar] = useState<AgruparPainel>("faixa");
   const [numeros, setNumeros] = useState<WhatsappNumber[]>([]);
   const [tokens, setTokens] = useState<MetaToken[]>([]);
@@ -295,13 +297,13 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
     setDados(null);
     setErro(null);
     api
-      .getPainelMensagens({ de: periodo.de, ate: periodo.ate, telefone: telefones, waba: wabas, template: templates, campanha, agrupar })
+      .getPainelMensagens({ de: periodo.de, ate: periodo.ate, telefone: telefones, waba: wabas, template: templates, campanha, agrupar, tipo: tipos })
       .then((d) => atual && setDados(d))
       .catch((e) => atual && setErro(e.message));
     return () => {
       atual = false;
     };
-  }, [periodo.de, periodo.ate, telefones, wabas, templates, campanha, agrupar, recarregar]);
+  }, [periodo.de, periodo.ate, telefones, wabas, templates, campanha, agrupar, tipos, recarregar]);
 
   const opcoesWaba = [...new Set(numeros.map((n) => n.waba_id))].map((w) => ({ value: w, label: rotuloWaba(tokens, w) }));
   const opcoesTelefone = numeros
@@ -388,6 +390,13 @@ export default function PainelMensagensCard({ recarregar }: { recarregar: number
           onChange={setTelefones}
         />
         <MultiSelect id="painel-template" label="Template" options={opcoesTemplate} value={templates} onChange={setTemplates} />
+        <MultiSelect
+          id="painel-tipo"
+          label="Tipo de mensagem"
+          options={TIPOS_MENSAGEM.map(([value, label]) => ({ value, label }))}
+          value={tipos}
+          onChange={(v) => setTipos(v as CategoriaGasto[])}
+        />
         <SelectCampanha id="painel-campanha" value={campanha} onChange={setCampanha} enviadoDe={periodo.de} enviadoAte={periodo.ate} />
         <div className="field" style={{ flex: "1 1 200px" }}>
           <label htmlFor="painel-agrupar">Agrupar por</label>
