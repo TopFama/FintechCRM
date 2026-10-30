@@ -717,6 +717,7 @@ async def _cadastrar_na_meta(db: Session, template: models.Template, editar_cate
             template.meta_template_id = result.get("id")
             status_meta = result.get("status") or "PENDING"
     except MetaAPIError as exc:
+        logger.warning("Meta recusou o template %s: %s", template.meta_template_name, exc.payload)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
     return _aplicar_status(template, status_meta)
