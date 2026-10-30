@@ -85,7 +85,7 @@ ctx = vt.contexto_cliente(
         "vencimento_mais_antigo": date(2026, 9, 21),
     }
 )
-assert len(ctx) == 15
+assert len(ctx) == 16
 assert all(isinstance(v, str) for v in ctx.values())
 assert ctx["codigo"] == "00123456"
 assert ctx["primeiro_nome"] == "Maria"
@@ -205,7 +205,7 @@ with TestClient(app) as client:
     resp = client.get("/templates/variaveis/campos", headers=auth_headers)
     assert resp.status_code == 200
     campos_out = resp.json()
-    assert len(campos_out) == 15
+    assert len(campos_out) == 16
     campos_dict = {item["campo"]: item for item in campos_out}
     assert "codigo" in campos_dict
     assert campos_dict["codigo"]["rotulo"] == "Código SETA"
@@ -213,6 +213,7 @@ with TestClient(app) as client:
     assert "valor_cobrar" not in campos_dict
     assert campos_dict["valor_atraso"]["exemplo"] == "1.100,00"
     assert campos_dict["valor_proxima_parcela"]["exemplo"] == "189,90"
+    assert campos_dict["valor_parcelas_hoje"]["exemplo"] == "189,90"
 
     # Cria número de WhatsApp para as faixas
     num_resp = client.post(

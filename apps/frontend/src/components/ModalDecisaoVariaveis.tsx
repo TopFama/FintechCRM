@@ -23,6 +23,7 @@ const OPCOES_CAMPOS = [
   { valor: "vencimento", rotulo: "Vencimento da parcela mais antiga" },
   { valor: "valor_parcela_amanha", rotulo: "Valor da parcela que vence amanhã" },
   { valor: "valor_proxima_parcela", rotulo: "Valor da próxima parcela" },
+  { valor: "valor_parcelas_hoje", rotulo: "Valor das parcelas que vencem hoje" },
   { valor: "valor_atraso", rotulo: "Valor em atraso" },
 ];
 
