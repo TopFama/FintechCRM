@@ -49,6 +49,11 @@ def meta_falsa(request: httpx.Request) -> httpx.Response:
     if caminho == "upload:SESSAO1":
         return httpx.Response(200, json={"h": "4::HANDLE"})
     if caminho == f"{WABA}/message_templates" and request.method == "POST":
+        if json.loads(request.content)["name"] == "recusado_pela_meta":
+            return httpx.Response(400, json={"error": {
+                "message": "Invalid parameter", "code": 100, "error_subcode": 2388072,
+                "error_user_title": "Formato de rodapé inválido", "error_user_msg": "O rodapé não aceita emoji.",
+            }})
         return httpx.Response(200, json={"id": f"TPL{len(CHAMADAS)}", "status": "PENDING", "category": "UTILITY"})
     if caminho.startswith("TPL") and request.method == "POST":
         return httpx.Response(200, json={"success": True})
@@ -322,5 +327,15 @@ remoto = {"components": [
 ]}
 assert (_extract_titulo(remoto), _extract_rodape(remoto)) == ("Fatura em atraso", "Lojas TopFama")
 assert (_extract_titulo({"components": [{"type": "HEADER", "format": "IMAGE"}]}), _extract_rodape({"components": []})) == (None, None)
+
+# Recusa da Meta: o motivo dela (error_user_title/msg) chega ao usuário, não só o "Invalid parameter"
+recusado = criar(meta_template_name="recusado_pela_meta").json()
+resp = enviar(recusado["id"])
+assert resp.status_code == 502, resp.text
+assert resp.json()["detail"] == (
+    "Meta API error (400): Invalid parameter — Formato de rodapé inválido O rodapé não aceita emoji."
+)
+# continua rascunho, sem meta_template_id
+assert not next(t for t in client.get("/templates", headers=h).json() if t["id"] == recusado["id"])["meta_template_id"]
 
 print("OK")

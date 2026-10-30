@@ -19,7 +19,15 @@ class MetaAPIError(Exception):
     def __init__(self, status_code: int, payload: dict):
         self.status_code = status_code
         self.payload = payload
-        message = payload.get("error", {}).get("message", str(payload))
+        erro = payload.get("error", {}) if isinstance(payload, dict) else {}
+        message = erro.get("message", str(payload))
+        # O "message" costuma ser genérico ("Invalid parameter"); o motivo de
+        # verdade vem em error_user_title/error_user_msg (ex.: regra de template)
+        detalhe = " ".join(
+            texto for texto in (erro.get("error_user_title"), erro.get("error_user_msg")) if texto
+        )
+        if detalhe:
+            message = f"{message} — {detalhe}"
         super().__init__(f"Meta API error ({status_code}): {message}")
 
 
