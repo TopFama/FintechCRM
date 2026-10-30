@@ -136,4 +136,14 @@ assert contexto_cliente({"parcelas": parcelas})["valor_proxima_parcela"] == "110
 assert contexto_cliente({"parcelas": parcelas[:1]})["valor_proxima_parcela"] == ""
 print("  OK")
 
+print("6. Valor das parcelas que vencem hoje")
+vencem_hoje = [
+    {"vencimento": hoje, "valor": Decimal("40.25")},
+    {"vencimento": hoje, "valor": Decimal("10")},
+    {"vencimento": hoje + timedelta(days=1), "valor": Decimal("7")},
+]
+assert contexto_cliente({"parcelas": vencem_hoje})["valor_parcelas_hoje"] == "50,25"
+assert contexto_cliente({"parcelas": vencem_hoje[2:]})["valor_parcelas_hoje"] == ""
+print("  OK")
+
 print("OK")

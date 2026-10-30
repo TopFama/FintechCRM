@@ -23,6 +23,7 @@ CAMPOS_CLIENTE: dict[str, str] = {
     "vencimento": "Vencimento da parcela mais antiga",
     "valor_parcela_amanha": "Valor da parcela que vence amanhã",
     "valor_proxima_parcela": "Valor da próxima parcela",
+    "valor_parcelas_hoje": "Valor das parcelas que vencem hoje",
     "valor_atraso": "Valor em atraso",
 }
 
@@ -129,6 +130,14 @@ def valor_em_atraso_com_juros(parcelas: Iterable, juros: Any = None) -> Decimal:
     return total
 
 
+def _soma_vencendo_em(parcelas: Iterable, dia: date) -> Decimal | None:
+    total = sum(
+        (Decimal(str(_campo(p, "valor") or 0)) for p in parcelas if _campo(p, "vencimento") == dia),
+        Decimal("0"),
+    )
+    return total or None
+
+
 def contexto_cliente(cliente: Mapping) -> dict[str, str]:
     if not isinstance(cliente, Mapping):
         cliente = {}
@@ -150,14 +159,11 @@ def contexto_cliente(cliente: Mapping) -> dict[str, str]:
     # Aceita o valor já calculado ou a lista de parcelas do lead.
     valor_amanha = cliente.get("valor_parcela_amanha")
     if valor_amanha is None and cliente.get("parcelas") is not None:
-        amanha = hoje_br() + timedelta(days=1)
-        valor_amanha = sum(
-            (Decimal(str(_campo(p, "valor") or 0)) for p in cliente["parcelas"]
-             if _campo(p, "vencimento") == amanha),
-            Decimal("0"),
-        )
-        if valor_amanha == 0:
-            valor_amanha = None
+        valor_amanha = _soma_vencendo_em(cliente["parcelas"], hoje_br() + timedelta(days=1))
+    # Soma de tudo do cliente que vence hoje (GMT-3), em qualquer loja.
+    valor_hoje = cliente.get("valor_parcelas_hoje")
+    if valor_hoje is None and cliente.get("parcelas") is not None:
+        valor_hoje = _soma_vencendo_em(cliente["parcelas"], hoje_br())
     # Próxima parcela (faixa Antecipado): soma das parcelas da primeira data
     # de vencimento a partir de hoje (GMT-3).
     valor_proxima = cliente.get("valor_proxima_parcela")
@@ -193,6 +199,7 @@ def contexto_cliente(cliente: Mapping) -> dict[str, str]:
         "vencimento": formatar_data(venc_val),
         "valor_parcela_amanha": formatar_moeda(valor_amanha),
         "valor_proxima_parcela": formatar_moeda(valor_proxima),
+        "valor_parcelas_hoje": formatar_moeda(valor_hoje),
         "valor_atraso": formatar_moeda(valor_atraso),
     }
 
